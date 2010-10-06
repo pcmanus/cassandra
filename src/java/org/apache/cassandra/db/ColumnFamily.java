@@ -71,7 +71,7 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     private final Integer cfid;
     private final ColumnFamilyType type;
 
-    private transient ICompactSerializer2<IColumn> columnSerializer;
+    private transient final IColumnSerializer columnSerializer;
     final AtomicLong markedForDeleteAt = new AtomicLong(Long.MIN_VALUE);
     final AtomicInteger localDeletionTime = new AtomicInteger(Integer.MIN_VALUE);
     private ConcurrentSkipListMap<ByteBuffer, IColumn> columns;
@@ -79,7 +79,7 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     public ColumnFamily(ColumnFamilyType type, AbstractType comparator, AbstractType subcolumnComparator, Integer cfid)
     {
         this.type = type;
-        columnSerializer = type == ColumnFamilyType.Standard ? Column.serializer() : SuperColumn.serializer(subcolumnComparator);
+        columnSerializer = type.isSuper() ? SuperColumn.serializer(subcolumnComparator) : Column.serializer();
         columns = new ConcurrentSkipListMap<ByteBuffer, IColumn>(comparator);
         this.cfid = cfid;
      }
@@ -138,19 +138,19 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     /**
      * FIXME: Gross.
      */
-    public ICompactSerializer2<IColumn> getColumnSerializer()
+    public IColumnSerializer getColumnSerializer()
     {
         return columnSerializer;
     }
 
-    int getColumnCount()
+    public int getColumnCount()
     {
         return columns.size();
     }
 
     public boolean isSuper()
     {
-        return type == ColumnFamilyType.Super;
+        return type.isSuper();
     }
 
     public void addColumn(QueryPath path, ByteBuffer value, long timestamp)

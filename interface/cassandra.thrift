@@ -46,8 +46,7 @@ namespace rb CassandraThrift
 #           for every edit that doesn't result in a change to major/minor.
 #
 # See the Semantic Versioning Specification (SemVer) http://semver.org.
-const string VERSION = "19.4.0"
-
+const string VERSION = "19.5.0"
 
 #
 # data structures
@@ -346,6 +345,7 @@ struct CfDef {
     21: optional i32 memtable_flush_after_mins,
     22: optional i32 memtable_throughput_in_mb,
     23: optional double memtable_operations_in_millions,
+    24: optional string counter_metadata_cf,
 }
 
 /* describes a keyspace. */
@@ -355,6 +355,36 @@ struct KsDef {
     3: optional map<string,string> strategy_options,
     4: required i32 replication_factor,
     5: required list<CfDef> cf_defs,
+}
+
+# counters
+
+struct CounterPath {
+    1: required string column_family,
+    2: required binary name,
+}
+
+struct Counter {
+    1: required binary name,
+    2: required i64 value
+}
+
+/**
+ * Increment and decrement of counters.
+ * @param counter the delta to apply to the counter (can be positive or negative)
+ * @param timestamp the timestamp for the insertion. This plays a similar role
+ *        to the timestamp of a column, even though new update do not
+ *        overwrite old ones as the counter are delta based.
+ * @param uuid an optional unique identifier of this update. This is use to allow replaying a 
+ *        CounterUpdate in case of failure (TimeoutException mainly). In such eventuality, 
+ *        you can safely reinsert the same update (with the same uuid) without the risk 
+ *        of the update being counted twice. You can skip this argument if you can afford to 
+ *        loose some increments in failure case but need slightly better write performances.
+ */
+struct CounterUpdate {
+    1: required Counter counter,
+    2: required i64 timestamp,
+    3: optional binary uuid,
 }
 
 service Cassandra {
@@ -470,6 +500,41 @@ service Cassandra {
   */
   void truncate(1:required string cfname)
        throws (1: InvalidRequestException ire, 2: UnavailableException ue),
+
+  # Counters
+
+  void add(1:required binary key,
+           2:required string column_family,
+           3:required CounterUpdate update,
+           4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+       throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
+
+  void batch_add(1:required map<binary, map<string, list<CounterUpdate>>> update_map,
+                 2:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+       throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
+
+  Counter get_counter(1:required binary key,
+                      2:required CounterPath path,
+                      3:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+      throws (1:InvalidRequestException ire, 2:NotFoundException nfe, 3:UnavailableException ue, 4:TimedOutException te),
+
+  list<Counter> get_counter_slice(1:required binary key,
+                                  2:required string column_family, 
+                                  3:required SlicePredicate predicate, 
+                                  4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+      throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
+  
+  map<binary,list<Counter>> multiget_counter_slice(1:required list<binary> keys,
+                                                   2:required string column_family,
+                                                   3:required SlicePredicate predicate, 
+                                                   4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+      throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
+
+  void remove_counter(1:required binary key,
+                      2:required CounterPath path,
+                      3:required i64 timestamp,
+                      4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
+      throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
     
   // Meta-APIs -- APIs to get information about the node or cluster,
   // rather than user data.  The nodeprobe program provides usage examples.

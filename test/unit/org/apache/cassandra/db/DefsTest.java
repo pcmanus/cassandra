@@ -719,7 +719,8 @@ public class DefsTest extends CleanupHelper
                               CFMetaData.DEFAULT_MEMTABLE_LIFETIME_IN_MINS,
                               CFMetaData.DEFAULT_MEMTABLE_THROUGHPUT_IN_MB,
                               CFMetaData.DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS,
-                              Collections.<ByteBuffer, ColumnDefinition>emptyMap());
+                              Collections.<ByteBuffer, ColumnDefinition>emptyMap(),
+                              null);
     }
 
 }

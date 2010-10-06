@@ -39,6 +39,7 @@ public abstract class ReadCommand
     public static final String DO_REPAIR = "READ-REPAIR";
     public static final byte CMD_TYPE_GET_SLICE_BY_NAMES = 1;
     public static final byte CMD_TYPE_GET_SLICE = 2;
+    public static final byte CMD_TYPE_GET_COUNTER = 3;
 
     private static ReadCommandSerializer serializer = new ReadCommandSerializer();
 
@@ -101,8 +102,8 @@ class ReadCommandSerializer implements ICompactSerializer<ReadCommand>
     {
         CMD_SERIALIZER_MAP.put(ReadCommand.CMD_TYPE_GET_SLICE_BY_NAMES, new SliceByNamesReadCommandSerializer());
         CMD_SERIALIZER_MAP.put(ReadCommand.CMD_TYPE_GET_SLICE, new SliceFromReadCommandSerializer());
+        CMD_SERIALIZER_MAP.put(ReadCommand.CMD_TYPE_GET_COUNTER, new SliceFromReadCommandSerializer());
     }
-
 
     public void serialize(ReadCommand rm, DataOutputStream dos) throws IOException
     {

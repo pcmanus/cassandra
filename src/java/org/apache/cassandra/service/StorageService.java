@@ -75,6 +75,7 @@ import org.apache.cassandra.db.SchemaCheckVerbHandler;
 import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.TruncateVerbHandler;
+import org.apache.cassandra.db.CounterUpdateVerbHandler;
 import org.apache.cassandra.db.migration.AddKeyspace;
 import org.apache.cassandra.db.migration.Migration;
 import org.apache.cassandra.dht.BootStrapper;
@@ -164,6 +165,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         SCHEMA_CHECK,
         INDEX_SCAN,
         REPLICATION_FINISHED,
+        COUNTER_UPDATE,
         INTERNAL_RESPONSE, // responses to internal calls
         ;
         // remember to add new verbs at the end, since we serialize by ordinal
@@ -175,6 +177,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         put(Verb.MUTATION, Stage.MUTATION);
         put(Verb.BINARY, Stage.MUTATION);
         put(Verb.READ_REPAIR, Stage.MUTATION);
+        put(Verb.COUNTER_UPDATE, Stage.MUTATION);
         put(Verb.READ, Stage.READ);
         put(Verb.REQUEST_RESPONSE, Stage.REQUEST_RESPONSE);
         put(Verb.STREAM_REPLY, Stage.MISC); // TODO does this really belong on misc? I've just copied old behavior here
@@ -277,6 +280,7 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
         /* register the verb handlers */
         MessagingService.instance.registerVerbHandlers(Verb.BINARY, new BinaryVerbHandler());
         MessagingService.instance.registerVerbHandlers(Verb.MUTATION, new RowMutationVerbHandler());
+        MessagingService.instance.registerVerbHandlers(Verb.COUNTER_UPDATE, new CounterUpdateVerbHandler());
         MessagingService.instance.registerVerbHandlers(Verb.READ_REPAIR, new ReadRepairVerbHandler());
         MessagingService.instance.registerVerbHandlers(Verb.READ, new ReadVerbHandler());
         MessagingService.instance.registerVerbHandlers(Verb.RANGE_SLICE, new RangeSliceVerbHandler());

@@ -15,36 +15,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.cassandra.db;
 
-/**
- * column family type enum
- */
-public enum ColumnFamilyType
+import java.nio.ByteBuffer;
+import java.io.IOException;
+
+import org.apache.cassandra.net.Message;
+
+public interface IMutation
 {
-    Standard,
-    Super,
-    Counter;
-
-    public final static ColumnFamilyType create(String name)
-    {
-        try
-        {
-            return name == null ? null : ColumnFamilyType.valueOf(name);
-        }
-        catch (IllegalArgumentException e)
-        {
-            return null;
-        }
-    }
-
-    public boolean isSuper()
-    {
-        return this == Super || this == Counter;
-    }
-
-    public boolean isCounter()
-    {
-        return this == Counter;
-    }
+    public String getTable();
+    public ByteBuffer key();
+    public Message makeMutationMessage() throws IOException;
+    public void apply() throws IOException;
+    public String toString(boolean shallow);
 }

@@ -131,6 +131,23 @@ public class ColumnFamilySerializer implements ICompactSerializer2<ColumnFamily>
         }
     }
 
+    /*
+     * Deserialize columns without expiring them.
+     * This ensure that reserializing the resulting cf will yield serialized
+     * data of the same length that this function will read.
+     * (Used to switch the local flag for counter column after streaming.
+     * See SSTableWriter.CounterRowIndexer)
+     */
+    public void deserializeColumnsNoExpiration(DataInput dis, ColumnFamily cf) throws IOException
+    {
+        int size = dis.readInt();
+        for (int i = 0; i < size; ++i)
+        {
+            IColumn column = cf.getColumnSerializer().deserialize(dis, false);
+            cf.addColumn(column);
+        }
+    }
+
     public ColumnFamily deserializeFromSSTableNoColumns(ColumnFamily cf, DataInput input) throws IOException
     {        
         cf.delete(input.readInt(), input.readLong());

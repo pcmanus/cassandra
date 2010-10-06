@@ -537,7 +537,7 @@ public class    DatabaseDescriptor
                 AbstractType default_validator = getComparator(cf.default_validation_class);
 
                 ColumnFamilyType cfType = cf.column_type == null ? ColumnFamilyType.Standard : cf.column_type;
-                if (cfType == ColumnFamilyType.Super)
+                if (cfType.isSuper())
                 {
                     subcolumnComparator = getComparator(cf.compare_subcolumns_with);
                 }
@@ -607,7 +607,12 @@ public class    DatabaseDescriptor
                                              cf.memtable_flush_after_mins,
                                              cf.memtable_throughput_in_mb,
                                              cf.memtable_operations_in_millions,
-                                             metadata);
+                                             metadata,
+                                             cf.counter_metadata_cf);
+            }
+            for (CFMetaData cfm : cfDefs)
+            {
+                validateCounterMetadata(cfm, cfDefs);
             }
             defs.add(new KSMetaData(keyspace.name,
                                     strategyClass,
@@ -1104,5 +1109,50 @@ public class    DatabaseDescriptor
     public static double getDynamicBadnessThreshold()
     {
         return conf.dynamic_snitch_badness_threshold;
+    }
+
+    public static void validateCounterMetadata(CFMetaData cfm, Collection<CFMetaData> cfDefs)
+    throws ConfigurationException
+    {
+        if (cfm.cfType != ColumnFamilyType.Counter || cfm.counterMetadataCF == null)
+            return;
+
+        String metadataCF = cfm.counterMetadataCF;
+        CFMetaData metadataCfm = DatabaseDescriptor.getCFMetaData(cfm.tableName, metadataCF);
+        if (metadataCfm == null && cfDefs != null)
+        {
+            for (CFMetaData c : cfDefs)
+            {
+                if (c.cfName.equals(metadataCF))
+                {
+                    metadataCfm = c;
+                    break;
+                }
+            }
+        }
+        if (metadataCfm == null)
+        {
+            throw new ConfigurationException("Cannot find CF " + metadataCF + " in keyspace " + cfm.tableName);
+        }
+        if (metadataCfm.cfType != ColumnFamilyType.Standard)
+        {
+            throw new ConfigurationException("Cannot track metadata for " + cfm.cfName + " using non standard CF " + metadataCF);
+        }
+        if (!(metadataCfm.comparator instanceof org.apache.cassandra.db.marshal.BytesType))
+        {
+            throw new ConfigurationException("Invalid comparator type for " + metadataCF + " (should be BytesType to track counter CF metadata)");
+        }
+    }
+
+    public static void validateCounterMetadata(CFMetaData cfm, CFMetaData[] cfDefs)
+    throws ConfigurationException
+    {
+        validateCounterMetadata(cfm, Arrays.asList(cfDefs));
+    }
+
+    public static void validateCounterMetadata(CFMetaData cfm)
+    throws ConfigurationException
+    {
+        validateCounterMetadata(cfm, (Collection<CFMetaData>) null);
     }
 }

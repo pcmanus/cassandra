@@ -80,6 +80,12 @@ public class ExpiringColumn extends Column
     }
 
     @Override
+    public int serializationFlags()
+    {
+        return ColumnSerializer.EXPIRATION_MASK;
+    }
+
+    @Override
     public void updateDigest(MessageDigest digest)
     {
         digest.update(name.array(), name.position()+name.arrayOffset(), name.remaining());
@@ -88,7 +94,7 @@ public class ExpiringColumn extends Column
         try
         {
             buffer.writeLong(timestamp);
-            buffer.writeByte(ColumnSerializer.EXPIRATION_MASK);
+            buffer.writeByte(serializationFlags());
             buffer.writeInt(timeToLive);
         }
         catch (IOException e)

@@ -41,7 +41,12 @@ public class SliceFromReadCommand extends ReadCommand
 
     public SliceFromReadCommand(String table, ByteBuffer key, QueryPath path, ByteBuffer start, ByteBuffer finish, boolean reversed, int count)
     {
-        super(table, key, path, CMD_TYPE_GET_SLICE);
+        this(table, key, path, start, finish, reversed, count, CMD_TYPE_GET_SLICE);
+    }
+
+    protected SliceFromReadCommand(String table, ByteBuffer key, QueryPath path, ByteBuffer start, ByteBuffer finish, boolean reversed, int count, byte cmdType)
+    {
+        super(table, key, path, cmdType);
         this.start = start;
         this.finish = finish;
         this.reversed = reversed;

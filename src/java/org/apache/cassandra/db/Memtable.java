@@ -129,7 +129,9 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         currentThroughput.addAndGet(cf.size());
         currentOperations.addAndGet(cf.getColumnCount());
 
+        logger.info("Trying to put " + cf);
         ColumnFamily oldCf = columnFamilies.putIfAbsent(key, cf);
+        logger.info("Got oldCf " + oldCf);
         if (oldCf == null)
             return;
 
@@ -171,9 +173,18 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         {
             public void runMayThrow() throws IOException
             {
-                cfs.addSSTable(writeSortedContents());
-                cfs.getMemtablesPendingFlush().remove(Memtable.this);
-                latch.countDown();
+                SSTableReader sstable = writeSortedContents();
+                cfs.lockCounterLockForWrite(); // no-op for non counter cfs
+                try
+                {
+                    cfs.addSSTable(sstable);
+                    cfs.getMemtablesPendingFlush().remove(Memtable.this);
+                }
+                finally
+                {
+                    cfs.unlockCounterLockForWrite();
+                    latch.countDown();
+                }
             }
         });
     }

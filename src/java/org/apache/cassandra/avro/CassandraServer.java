@@ -849,7 +849,8 @@ public class CassandraServer implements Cassandra {
                               cf_def.memtable_flush_after_mins == null ? CFMetaData.DEFAULT_MEMTABLE_LIFETIME_IN_MINS : cf_def.memtable_flush_after_mins,
                               cf_def.memtable_throughput_in_mb == null ? CFMetaData.DEFAULT_MEMTABLE_THROUGHPUT_IN_MB : cf_def.memtable_throughput_in_mb,
                               cf_def.memtable_operations_in_millions == null ? CFMetaData.DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS : cf_def.memtable_operations_in_millions,
-                              ColumnDefinition.fromColumnDefs((Iterable<ColumnDef>) cf_def.column_metadata));
+                              ColumnDefinition.fromColumnDefs((Iterable<ColumnDef>) cf_def.column_metadata),
+                              cf_def.counter_metadata_cf == null ? null : cf_def.counter_metadata_cf.toString());
     }
 
     public KsDef describe_keyspace(CharSequence keyspace) throws AvroRemoteException, NotFoundException

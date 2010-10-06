@@ -155,13 +155,18 @@ public class Column implements IColumn
         try
         {
             buffer.writeLong(timestamp);
-            buffer.writeByte((isMarkedForDelete()) ? ColumnSerializer.DELETION_MASK : 0);
+            buffer.writeByte(serializationFlags());
         }
         catch (IOException e)
         {
             throw new RuntimeException(e);
         }
         digest.update(buffer.getData(), 0, buffer.getLength());
+    }
+
+    public int serializationFlags()
+    {
+        return 0;
     }
 
     public int getLocalDeletionTime()

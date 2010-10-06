@@ -157,6 +157,7 @@ protocol Cassandra {
         union { null, double} memtable_operations_in_millions = null;
         union { int, null } id;
         union { array<ColumnDef>, null } column_metadata;
+        union { string, null } counter_metadata_cf;
     }
 
     /* describes a keyspace. */

@@ -151,6 +151,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             ssTables.saveKeyCache();
         }
     };
+    private final ReentrantReadWriteLock counterLock;
 
     private ColumnFamilyStore(Table table, String columnFamilyName, IPartitioner partitioner, int generation, CFMetaData metadata)
     {
@@ -164,6 +165,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         this.memsize = metadata.memtableThroughputInMb;
         this.memops = metadata.memtableOperationsInMillions;
         this.partitioner = partitioner;
+        this.counterLock = metadata.cfType.isCounter() ? new ReentrantReadWriteLock(true) : null;
+
         fileIndexGenerator.set(generation);
         memtable = new Memtable(this);
         binaryMemtable = new AtomicReference<BinaryMemtable>(new BinaryMemtable(this));
@@ -250,6 +253,30 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             logger.warn(String.format("error reading saved cache at %s", path.getAbsolutePath()), ioe);
         }
         return keys;
+    }
+
+    public void lockCounterLockForRead()
+    {
+        if (counterLock != null)
+            counterLock.readLock().lock();
+    }
+
+    public void unlockCounterLockForRead()
+    {
+        if (counterLock != null)
+            counterLock.readLock().unlock();
+    }
+
+    public void lockCounterLockForWrite()
+    {
+        if (counterLock != null)
+            counterLock.writeLock().lock();
+    }
+
+    public void unlockCounterLockForWrite()
+    {
+        if (counterLock != null)
+            counterLock.writeLock().unlock();
     }
 
     public void addIndex(final ColumnDefinition info)
@@ -580,7 +607,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             logger.info("switching in a fresh Memtable for " + columnFamily + " at " + ctx);
 
             // submit the memtable for any indexed sub-cfses, and our own.
-            List<ColumnFamilyStore> icc = new ArrayList<ColumnFamilyStore>(indexedColumns.size());
+            List<ColumnFamilyStore> icc = new ArrayList<ColumnFamilyStore>(indexedColumns.size() + 1);
             icc.add(this);
             for (ColumnFamilyStore indexCfs : indexedColumns.values())
             {
@@ -590,8 +617,16 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             final CountDownLatch latch = new CountDownLatch(icc.size());
             for (ColumnFamilyStore cfs : icc)
             {
-                submitFlush(cfs.memtable, latch);
-                cfs.memtable = new Memtable(cfs);
+                cfs.lockCounterLockForWrite(); // no-op for non counter cfs
+                try
+                {
+                    submitFlush(cfs.memtable, latch);
+                    cfs.memtable = new Memtable(cfs);
+                }
+                finally
+                {
+                    cfs.unlockCounterLockForWrite();
+                }
             }
 
             // when all the memtables have been written, including for indexes, mark the flush in the commitlog header.
@@ -799,7 +834,15 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      */
     public void addSSTable(SSTableReader sstable)
     {
-        ssTables.add(Arrays.asList(sstable));
+        lockCounterLockForWrite();
+        try
+        {
+          ssTables.add(Arrays.asList(sstable));
+        }
+        finally
+        {
+            unlockCounterLockForWrite();
+        }
         CompactionManager.instance.submitMinorIfNeeded(this);
     }
 
@@ -853,7 +896,15 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     void replaceCompactedSSTables(Collection<SSTableReader> sstables, Iterable<SSTableReader> replacements)
     {
-        ssTables.replace(sstables, replacements);
+        lockCounterLockForWrite();
+        try
+        {
+            ssTables.replace(sstables, replacements);
+        }
+        finally
+        {
+            unlockCounterLockForWrite();
+        }
     }
 
     public void removeAllSSTables()
@@ -1115,40 +1166,54 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             IColumnIterator iter;
 
-            /* add the current memtable */
-            iter = filter.getMemtableColumnIterator(getMemtableThreadSafe(), getComparator());
-            if (iter != null)
+            // For Counter CFs, we must ensure that during a read we will
+            // never read the exact same row. This could happen if we read
+            // from the current memtable and it is added to the memtablesPendingFlush
+            // before we actually read from them. Same race condition when a
+            // flushed memtable becomes an active sstable. The following lock
+            // ensure none of those condition can happen. It is a no-op for
+            // non counter CFS.
+            lockCounterLockForRead();
+            try
             {
-                returnCF.delete(iter.getColumnFamily());
-                    
-                iterators.add(iter);
-            }
-
-            /* add the memtables being flushed */
-            for (Memtable memtable : memtablesPendingFlush)
-            {
-                iter = filter.getMemtableColumnIterator(memtable, getComparator());
+                /* add the current memtable */
+                iter = filter.getMemtableColumnIterator(getMemtableThreadSafe(), getComparator());
                 if (iter != null)
                 {
                     returnCF.delete(iter.getColumnFamily());
                     iterators.add(iter);
                 }
-            }
-
-            /* add the SSTables on disk */
-            int sstablesToIterate = 0;
-            for (SSTableReader sstable : ssTables)
-            {
-                iter = filter.getSSTableColumnIterator(sstable);
-                if (iter.getColumnFamily() != null)
+                
+                /* add the memtables being flushed */
+                for (Memtable memtable : memtablesPendingFlush)
                 {
-                    returnCF.delete(iter.getColumnFamily());
-                    iterators.add(iter);
-                    sstablesToIterate++;
+                    iter = filter.getMemtableColumnIterator(memtable, getComparator());
+                    if (iter != null)
+                    {
+                        returnCF.delete(iter.getColumnFamily());
+                        iterators.add(iter);
+                    }
                 }
+
+                /* add the SSTables on disk */
+                int sstablesToIterate = 0;
+                for (SSTableReader sstable : ssTables)
+                {
+                    iter = filter.getSSTableColumnIterator(sstable);
+                    if (iter.getColumnFamily() != null)
+                    {
+                        returnCF.delete(iter.getColumnFamily());
+                        iterators.add(iter);
+                        sstablesToIterate++;
+                    }
+                }
+                recentSSTablesPerRead.add(sstablesToIterate);
+                sstablesPerRead.add(sstablesToIterate);
             }
-            recentSSTablesPerRead.add(sstablesToIterate);
-            sstablesPerRead.add(sstablesToIterate);
+            finally
+            {
+                unlockCounterLockForRead();
+            }
 
             Comparator<IColumn> comparator = filter.filter.getColumnComparator(getComparator());
             Iterator collated = IteratorUtils.collatedIterator(comparator, iterators);
@@ -1204,12 +1269,20 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         DecoratedKey stopAt = new DecoratedKey(range.right, null);
 
         QueryFilter filter = new QueryFilter(null, new QueryPath(columnFamily, superColumn, null), columnFilter);
+            
         Collection<Memtable> memtables = new ArrayList<Memtable>();
-        memtables.add(getMemtableThreadSafe());
-        memtables.addAll(memtablesPendingFlush);
-
         Collection<SSTableReader> sstables = new ArrayList<SSTableReader>();
-        Iterables.addAll(sstables, ssTables);
+        lockCounterLockForRead();
+        try
+        {
+            memtables.add(getMemtableThreadSafe());
+            memtables.addAll(memtablesPendingFlush);
+            Iterables.addAll(sstables, ssTables);
+        }
+        finally
+        {
+            unlockCounterLockForRead();
+        }
 
         RowIterator iterator = RowIteratorFactory.getIterator(memtables, sstables, startWith, stopAt, filter, getComparator(), this);
 

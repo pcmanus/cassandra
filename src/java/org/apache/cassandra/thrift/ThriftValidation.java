@@ -85,6 +85,10 @@ public class ThriftValidation
     {
         validateTable(tablename);
         ColumnFamilyType cfType = validateColumnFamily(tablename, column_path.column_family);
+        if (cfType.isCounter())
+        {
+            throw new InvalidRequestException("invalid operation on a counter CF " + column_path.column_family);
+        }
         if (cfType == ColumnFamilyType.Standard)
         {
             if (column_path.super_column != null)
@@ -115,6 +119,10 @@ public class ThriftValidation
     {
         validateTable(tablename);
         ColumnFamilyType cfType = validateColumnFamily(tablename, column_parent.column_family);
+        if (cfType.isCounter())
+        {
+            throw new InvalidRequestException("invalid operation on a counter CF " + column_parent.column_family);
+        }
         if (cfType == ColumnFamilyType.Standard)
         {
             if (column_parent.super_column != null)
@@ -133,6 +141,10 @@ public class ThriftValidation
     {
         validateTable(tablename);
         ColumnFamilyType cfType = validateColumnFamily(tablename, column_path_or_parent.column_family);
+        if (cfType.isCounter())
+        {
+            throw new InvalidRequestException("invalid operation on a counter CF " + column_path_or_parent.column_family);
+        }
         if (cfType == ColumnFamilyType.Standard)
         {
             if (column_path_or_parent.super_column != null)
@@ -267,7 +279,11 @@ public class ThriftValidation
 
     public static void validateDeletion(String keyspace, String cfName, Deletion del) throws InvalidRequestException
     {
-        validateColumnFamily(keyspace, cfName);
+        ColumnFamilyType cfType = validateColumnFamily(keyspace, cfName);
+        if (cfType.isCounter())
+        {
+            throw new InvalidRequestException("invalid operation on a counter CF " + cfName);
+        }
         if (del.predicate != null)
         {
             validateSlicePredicate(keyspace, cfName, del.super_column, del.predicate);
@@ -275,7 +291,7 @@ public class ThriftValidation
                 throw new InvalidRequestException("Deletion does not yet support SliceRange predicates.");
         }
 
-        if (ColumnFamilyType.Standard == DatabaseDescriptor.getColumnFamilyType(keyspace, cfName) && del.super_column != null)
+        if (cfType == ColumnFamilyType.Standard && del.super_column != null)
         {
             String msg = String.format("deletion of super_column is not possible on a standard ColumnFamily (KeySpace=%s ColumnFamily=%s Deletion=%s)", keyspace, cfName, del);
             throw new InvalidRequestException(msg);
@@ -376,5 +392,25 @@ public class ThriftValidation
                 return;
         }
         throw new InvalidRequestException("No indexed columns present in index clause with operator EQ");
+    }
+
+    public static void validateCounterUpdate(String keyspace, String column_family, CounterUpdate update)
+    throws InvalidRequestException
+    {
+        validateCounterColumnFamily(keyspace, column_family);
+        if (update.uuid != null && DatabaseDescriptor.getCFMetaData(keyspace, column_family).counterMetadataCF == null)
+        {
+            throw new InvalidRequestException("Cannot use an uuid, CF " + column_family + " has not defined metadata CF");
+        }
+    }
+
+    public static void validateCounterColumnFamily(String keyspace, String column_family)
+    throws InvalidRequestException
+    {
+        ColumnFamilyType cfType = validateColumnFamily(keyspace, column_family);
+        if (!cfType.isCounter())
+        {
+            throw new InvalidRequestException("invalid counter operation on a non counter CF " + column_family);
+        }
     }
 }

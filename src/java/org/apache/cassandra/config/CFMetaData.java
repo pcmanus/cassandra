@@ -96,7 +96,8 @@ public final class CFMetaData
                               DEFAULT_MEMTABLE_THROUGHPUT_IN_MB,
                               DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS,
                               cfId,
-                              Collections.<ByteBuffer, ColumnDefinition>emptyMap());
+                              Collections.<ByteBuffer, ColumnDefinition>emptyMap(),
+                              null);
     }
 
     /**
@@ -163,6 +164,10 @@ public final class CFMetaData
     // NOTE: if you find yourself adding members to this class, make sure you keep the convert methods in lockstep.
 
     public final Map<ByteBuffer, ColumnDefinition> column_metadata;
+    
+    public final String counterMetadataCF;        // default none
+
+    // NOTE: if you find yourself adding members to this class, make sure you keep the convert methods in lockstep.
 
     private CFMetaData(String tableName,
                        String cfName,
@@ -183,17 +188,17 @@ public final class CFMetaData
                        Integer memtableThroughputInMb,
                        Double memtableOperationsInMillions,
                        Integer cfId,
-                       Map<ByteBuffer, ColumnDefinition> column_metadata)
-
+                       Map<ByteBuffer, ColumnDefinition> column_metadata,
+                       String counterMetadataCF)
     {
         assert column_metadata != null;
         this.tableName = tableName;
         this.cfName = cfName;
         this.cfType = cfType;
         this.comparator = comparator;
-        // the default subcolumncomparator is null per thrift spec, but only should be null if cfType == Standard. If
+        // the default subcolumncomparator is null per thrift spec, but only should be null if cfType != Super. If
         // cfType == Super, subcolumnComparator should default to BytesType if not set.
-        this.subcolumnComparator = subcolumnComparator == null && cfType == ColumnFamilyType.Super
+        this.subcolumnComparator = subcolumnComparator == null && cfType.isSuper()
                                    ? BytesType.instance
                                    : subcolumnComparator;
         this.comment = comment == null ? "" : comment;
@@ -215,6 +220,7 @@ public final class CFMetaData
                                             : memtableOperationsInMillions;
         this.cfId = cfId;
         this.column_metadata = Collections.unmodifiableMap(column_metadata);
+        this.counterMetadataCF = counterMetadataCF;
     }
     
     /** adds this cfm to the map. */
@@ -248,7 +254,8 @@ public final class CFMetaData
                       Integer memSize,
                       Double memOps,
                       //This constructor generates the id!
-                      Map<ByteBuffer, ColumnDefinition> column_metadata)
+                      Map<ByteBuffer, ColumnDefinition> column_metadata,
+                      String counterMetadataCF)
     {
         this(tableName,
              cfName,
@@ -269,7 +276,8 @@ public final class CFMetaData
              memSize,
              memOps,
              nextId(),
-             column_metadata);
+             column_metadata,
+             counterMetadataCF);
     }
 
     public static CFMetaData newIndexMetadata(String table, String parentCf, ColumnDefinition info, AbstractType columnComparator)
@@ -292,7 +300,8 @@ public final class CFMetaData
                               DEFAULT_MEMTABLE_LIFETIME_IN_MINS,
                               DEFAULT_MEMTABLE_THROUGHPUT_IN_MB,
                               DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS,
-                              Collections.<ByteBuffer, ColumnDefinition>emptyMap());
+                              Collections.<ByteBuffer, ColumnDefinition>emptyMap(),
+                              null);
     }
 
     /** clones an existing CFMetaData using the same id. */
@@ -317,7 +326,8 @@ public final class CFMetaData
                               cfm.memtableThroughputInMb,
                               cfm.memtableOperationsInMillions,
                               cfm.cfId,
-                              cfm.column_metadata);
+                              cfm.column_metadata,
+                              cfm.counterMetadataCF);
     }
     
     /** clones existing CFMetaData. keeps the id but changes the table name.*/
@@ -342,7 +352,8 @@ public final class CFMetaData
                               cfm.memtableThroughputInMb,
                               cfm.memtableOperationsInMillions,
                               cfm.cfId,
-                              cfm.column_metadata);
+                              cfm.column_metadata,
+                              cfm.counterMetadataCF);
     }
     
     /** used for evicting cf data out of static tracking collections. */
@@ -434,7 +445,8 @@ public final class CFMetaData
                               memtable_throughput_in_mb,
                               memtable_operations_in_millions,
                               cf.id,
-                              column_metadata);
+                              column_metadata,
+                              cf.counter_metadata_cf == null ? null : cf.counter_metadata_cf.toString());
     }
 
     public boolean equals(Object obj) 
@@ -556,7 +568,8 @@ public final class CFMetaData
                               cf_def.memtable_throughput_in_mb,
                               cf_def.memtable_operations_in_millions,
                               cfId,
-                              column_metadata);
+                              column_metadata,
+                              cf_def.counter_metadata_cf == null ? null : cf_def.counter_metadata_cf.toString());
     }
     
     // merges some final fields from this CFM with modifiable fields from CfDef into a new CFMetaData.
@@ -618,7 +631,8 @@ public final class CFMetaData
                               cf_def.memtable_throughput_in_mb,
                               cf_def.memtable_operations_in_millions,
                               cfId,
-                              metadata);
+                              metadata, 
+                              cf_def.counter_metadata_cf);
     }
     
     // converts CFM to thrift CfDef

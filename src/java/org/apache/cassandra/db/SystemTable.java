@@ -42,6 +42,7 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.UUIDGen;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +61,8 @@ public class SystemTable
     private static final ByteBuffer GENERATION = ByteBufferUtil.bytes("Generation");
     private static final ByteBuffer CLUSTERNAME = ByteBufferUtil.bytes("ClusterName");
     private static final ByteBuffer PARTITIONER = ByteBufferUtil.bytes("Partioner");
+    private static final ByteBuffer NODE_UUID_KEY = ByteBufferUtil.bytes("NodeID");
+    private static final ByteBuffer NODE_UUID = ByteBufferUtil.bytes("N");
 
     private static DecoratedKey decorate(ByteBuffer key)
     {
@@ -369,5 +372,43 @@ public class SystemTable
         }
 
         forceBlockingFlush(INDEX_CF);
+    }
+
+    private static class NodeUUIDHolder
+    {
+        private final static ByteBuffer nodeUUID;
+        static
+        {
+            ByteBuffer uuid = null;
+            Table table = Table.open(Table.SYSTEM_TABLE);
+            QueryFilter filter = QueryFilter.getNamesFilter(decorate(NODE_UUID_KEY),
+                                                            new QueryPath(STATUS_CF),
+                                                            NODE_UUID_KEY);
+            ColumnFamily cf = table.getColumnFamilyStore(STATUS_CF).getColumnFamily(filter);
+            if (cf != null)
+                uuid = cf.getColumn(NODE_UUID_KEY).value();
+            if (uuid == null)
+            {
+                uuid = ByteBuffer.wrap(UUIDGen.decompose(UUIDGen.makeType1UUIDFromHost(FBUtilities.getLocalAddress())));
+                cf = ColumnFamily.create(Table.SYSTEM_TABLE, STATUS_CF);
+                cf.addColumn(new Column(NODE_UUID, uuid, System.currentTimeMillis()));
+                RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, NODE_UUID_KEY);
+                rm.add(cf);
+                try
+                {
+                    rm.apply();
+                }
+                catch (IOException e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+            nodeUUID = uuid;
+        }
+    }
+
+    public static ByteBuffer getNodeUUID()
+    {
+        return NodeUUIDHolder.nodeUUID;
     }
 }

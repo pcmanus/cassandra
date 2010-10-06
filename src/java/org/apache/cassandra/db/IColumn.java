@@ -45,4 +45,5 @@ public interface IColumn
     public void updateDigest(MessageDigest digest);
     public int getLocalDeletionTime(); // for tombstone GC, so int is sufficient granularity
     public String getString(AbstractType comparator);
+    public int serializationFlags();
 }

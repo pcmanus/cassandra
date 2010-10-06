@@ -41,6 +41,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyType;
 import org.apache.cassandra.db.DecoratedKey;
@@ -50,8 +51,10 @@ import org.apache.cassandra.db.RangeSliceCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.Row;
 import org.apache.cassandra.db.RowMutation;
+import org.apache.cassandra.db.CounterMutation;
 import org.apache.cassandra.db.SliceByNamesReadCommand;
 import org.apache.cassandra.db.SliceFromReadCommand;
+import org.apache.cassandra.db.CounterReadCommand;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.db.migration.AddColumnFamily;
@@ -79,12 +82,15 @@ import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.marshal.BytesType;
+
 public class CassandraServer implements Cassandra.Iface
 {
     private static Logger logger = LoggerFactory.getLogger(CassandraServer.class);
 
     private final static List<ColumnOrSuperColumn> EMPTY_COLUMNS = Collections.emptyList();
     private final static List<Column> EMPTY_SUBCOLUMNS = Collections.emptyList();
+    private final static List<Counter> EMPTY_COUNTERS = Collections.emptyList();
 
     // thread local state containing session information
     public final ThreadLocal<ClientState> clientState = new ThreadLocal<ClientState>()
@@ -436,7 +442,7 @@ public class CassandraServer implements Cassandra.Iface
         ThriftValidation.validateColumnPathOrParent(state().getKeyspace(), column_path);
 
         RowMutation rm = new RowMutation(state().getKeyspace(), key);
-        rm.delete(new QueryPath(column_path), timestamp); 
+        rm.delete(new QueryPath(column_path), timestamp);
 
         doInsert(consistency_level, Arrays.asList(rm));
     }
@@ -528,6 +534,268 @@ public class CassandraServer implements Cassandra.Iface
         }
 
         return thriftifyKeySlices(rows, column_parent, predicate);
+    }
+
+    public void add(ByteBuffer key, String column_family, CounterUpdate update, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("add");
+
+        String keyspace = state().getKeyspace();
+        state().hasColumnFamilyAccess(column_family, Permission.WRITE);
+
+        try
+        {
+            schedule();
+
+            try
+            {
+                ThriftValidation.validateKey(key);
+                ThriftValidation.validateCounterUpdate(keyspace, column_family, update);
+                int cfid = DatabaseDescriptor.getCFMetaData(keyspace, column_family).cfId;
+                CounterMutation cm = new CounterMutation(keyspace, key, cfid, update.counter.name, update.counter.value, update.timestamp, consistency_level, update.uuid);
+                StorageProxy.updateCounters(Collections.singletonList(cm));
+            }
+            catch (TimeoutException e)
+            {
+              throw new TimedOutException();
+            }
+        }
+        finally
+        {
+            release();
+        }
+    }
+
+    public void batch_add(Map<ByteBuffer, Map<String, List<CounterUpdate>>> update_map, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("batch_add");
+
+        List<String> cfamsSeen = new ArrayList<String>();
+
+        try
+        {
+            schedule();
+
+            try
+            {
+                List<CounterMutation> mutations = new ArrayList<CounterMutation>();
+                for (Map.Entry<ByteBuffer, Map<String, List<CounterUpdate>>> keyToCfmap : update_map.entrySet())
+                {
+                    ByteBuffer key = keyToCfmap.getKey();
+                    ThriftValidation.validateKey(key);
+                    for (Map.Entry<String, List<CounterUpdate>> cfmap : keyToCfmap.getValue().entrySet())
+                    {
+                        String cf = cfmap.getKey();
+
+                        // Avoid unneeded authorizations
+                        if (!(cfamsSeen.contains(cf)))
+                        {
+                          state().hasColumnFamilyAccess(cf, Permission.WRITE);
+                          cfamsSeen.add(cf);
+                        }
+
+
+                        String keyspace = state().getKeyspace();
+                        int cfid = DatabaseDescriptor.getCFMetaData(keyspace, cf).cfId;
+                        ThriftValidation.validateColumnFamily(keyspace, cf);
+                        for (CounterUpdate upd : cfmap.getValue())
+                        {
+                            mutations.add(new CounterMutation(keyspace, key, cfid, upd.counter.name, upd.counter.value, upd.timestamp, consistency_level, upd.uuid));
+                        }
+                    }
+                }
+                StorageProxy.updateCounters(mutations);
+            }
+            catch (TimeoutException e)
+            {
+              throw new TimedOutException();
+            }
+        }
+        finally
+        {
+            release();
+        }
+    }
+
+    public Counter get_counter(ByteBuffer key, CounterPath path, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException, NotFoundException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("get_counter");
+
+        String keyspace = state().getKeyspace();
+        state().hasColumnFamilyAccess(path.column_family, Permission.READ);
+
+        ThriftValidation.validateCounterColumnFamily(keyspace, path.column_family);
+        ThriftValidation.validateKey(key);
+
+        if (consistency_level == ConsistencyLevel.ANY)
+        {
+            throw new InvalidRequestException("Consistency level any may not be applied to read operations");
+        }
+
+        ReadCommand command = new CounterReadCommand(keyspace, key, path.column_family, path.name);
+        try
+        {
+            schedule();
+            Map<ByteBuffer, List<Counter>> counterMap = getCounterSlice(Collections.singletonList(command), consistency_level);
+            List<Counter> counters = counterMap.values().iterator().next();
+            if (counters.isEmpty())
+            {
+                throw new NotFoundException();
+            }
+            else
+            {
+                return counters.iterator().next();
+            }
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimedOutException();
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            release();
+        }
+    }
+
+    public List<Counter> get_counter_slice(ByteBuffer key, String column_family, SlicePredicate predicate, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("get_counter_slice");
+
+        String keyspace = state().getKeyspace();
+        state().hasColumnFamilyAccess(column_family, Permission.READ);
+
+        Map<ByteBuffer, List<Counter>> map = multigetCounterInternal(keyspace, Collections.singletonList(key), column_family, predicate, consistency_level);
+        if (map.size() == 0)
+        {
+            return EMPTY_COUNTERS;
+        }
+        else
+        {
+            return map.values().iterator().next();
+        }
+    }
+
+    public Map<ByteBuffer, List<Counter>> multiget_counter_slice(List<ByteBuffer> keys, String column_family, SlicePredicate predicate, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("multiget_counter_slice");
+
+        String keyspace = state().getKeyspace();
+        state().hasColumnFamilyAccess(column_family, Permission.READ);
+
+        return multigetCounterInternal(keyspace, keys, column_family, predicate, consistency_level);
+    }
+
+    public Map<ByteBuffer, List<Counter>> multigetCounterInternal(String keyspace, List<ByteBuffer> keys, String column_family, SlicePredicate predicate, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (consistency_level == ConsistencyLevel.ANY)
+        {
+            throw new InvalidRequestException("Consistency level any may not be applied to read operations");
+        }
+
+        List<ReadCommand> commands = new ArrayList<ReadCommand>();
+
+        for (ByteBuffer key : keys)
+        {
+            ThriftValidation.validateKey(key);
+            ThriftValidation.validateCounterColumnFamily(keyspace, column_family);
+
+            ColumnParent column_parent = new ColumnParent(column_family);
+            ThriftValidation.validatePredicate(keyspace, column_parent, predicate);
+
+            ReadCommand command;
+            if (predicate.column_names != null)
+            {
+                command = new SliceByNamesReadCommand(keyspace, key, column_parent, predicate.column_names);
+            }
+            else
+            {
+                SliceRange range = predicate.slice_range;
+                command = new SliceFromReadCommand(keyspace, key, column_parent, range.start, range.finish, range.reversed, range.count);
+            }
+            commands.add(command);
+        }
+
+        try
+        {
+            schedule();
+            return getCounterSlice(commands, consistency_level);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimedOutException();
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            release();
+        }
+    }
+
+    public Map<ByteBuffer, List<Counter>> getCounterSlice(List<ReadCommand> commands, ConsistencyLevel consistency_level)
+    throws IOException, UnavailableException, TimeoutException, InvalidRequestException
+    {
+        Map<DecoratedKey, Map<ByteBuffer, Long>> keysToRow = StorageProxy.readCounters(commands, consistency_level);
+        Map<ByteBuffer, List<Counter>> counterMap = new HashMap<ByteBuffer, List<Counter>>();
+        for (ReadCommand command: commands)
+        {
+            Map<ByteBuffer, Long> counters = keysToRow.get(StorageService.getPartitioner().decorateKey(command.key));
+            boolean reverseOrder = command instanceof SliceFromReadCommand && ((SliceFromReadCommand)command).reversed;
+            List<Counter> thriftifiedCounters = thriftifyCounters(counters, reverseOrder);
+            counterMap.put(command.key, thriftifiedCounters);
+        }
+        return counterMap;
+    }
+
+    private List<Counter> thriftifyCounters(Map<ByteBuffer, Long> counters, boolean reverseOrder)
+    {
+        if (counters == null || counters.size() == 0)
+            return EMPTY_COUNTERS;
+
+        List<Counter> results = new ArrayList<Counter>();
+        for (Map.Entry<ByteBuffer, Long> entry : counters.entrySet())
+        {
+            results.add(new Counter(entry.getKey(), entry.getValue()));
+        }
+        if (reverseOrder)
+            Collections.reverse(results);
+        return results;
+    }
+
+    public void remove_counter(ByteBuffer key, CounterPath path, long timestamp, ConsistencyLevel consistency_level)
+    throws InvalidRequestException, UnavailableException, TException, TimedOutException
+    {
+        if (logger.isDebugEnabled())
+            logger.debug("remove_counter");
+
+        String keyspace = state().getKeyspace();
+        state().hasColumnFamilyAccess(path.column_family, Permission.WRITE);
+
+        ThriftValidation.validateCounterColumnFamily(keyspace, path.column_family);
+        ThriftValidation.validateKey(key);
+
+        RowMutation rm = new RowMutation(keyspace, key);
+        rm.delete(new QueryPath(path.column_family, path.name), timestamp);
+        rm.delete(new QueryPath(path.column_family, path.name, SystemTable.getNodeUUID()), timestamp);
+
+        doInsert(consistency_level, Arrays.asList(rm));
     }
 
     private List<KeySlice> thriftifyKeySlices(List<Row> rows, ColumnParent column_parent, SlicePredicate predicate)
@@ -705,7 +973,9 @@ public class CassandraServer implements Cassandra.Iface
         state().hasColumnFamilyListAccess(Permission.WRITE);
         try
         {
-            applyMigrationOnStage(new AddColumnFamily(convertToCFMetaData(cf_def)));
+            CFMetaData cfm = convertToCFMetaData(cf_def);
+            DatabaseDescriptor.validateCounterMetadata(cfm);
+            applyMigrationOnStage(new AddColumnFamily(cfm));
             return DatabaseDescriptor.getDefsVersion().toString();
         }
         catch (ConfigurationException e)
@@ -764,6 +1034,10 @@ public class CassandraServer implements Cassandra.Iface
             for (CfDef cfDef : ks_def.cf_defs)
             {
                 cfDefs.add(convertToCFMetaData(cfDef));
+            }
+            for (CFMetaData cfm : cfDefs)
+            {
+                DatabaseDescriptor.validateCounterMetadata(cfm, cfDefs);
             }
 
             KSMetaData ksm = new KSMetaData(ks_def.name,
@@ -858,6 +1132,7 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             CFMetaData newCfm = oldCfm.apply(cf_def);
+            DatabaseDescriptor.validateCounterMetadata(newCfm);
             UpdateColumnFamily update = new UpdateColumnFamily(oldCfm, newCfm);
             applyMigrationOnStage(update);
             return DatabaseDescriptor.getDefsVersion().toString();
@@ -905,7 +1180,8 @@ public class CassandraServer implements Cassandra.Iface
                               cf_def.isSetMemtable_flush_after_mins() ? cf_def.memtable_flush_after_mins : CFMetaData.DEFAULT_MEMTABLE_LIFETIME_IN_MINS,
                               cf_def.isSetMemtable_throughput_in_mb() ? cf_def.memtable_throughput_in_mb : CFMetaData.DEFAULT_MEMTABLE_THROUGHPUT_IN_MB,
                               cf_def.isSetMemtable_operations_in_millions() ? cf_def.memtable_operations_in_millions : CFMetaData.DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS,
-                              ColumnDefinition.fromColumnDef(cf_def.column_metadata));
+                              ColumnDefinition.fromColumnDef(cf_def.column_metadata),
+                              cf_def.isSetCounter_metadata_cf() ? cf_def.counter_metadata_cf : null);
     }
 
     public void truncate(String cfname) throws InvalidRequestException, UnavailableException, TException

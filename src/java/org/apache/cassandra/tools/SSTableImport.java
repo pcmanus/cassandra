@@ -166,7 +166,7 @@ public class SSTableImport
 
             for (Map.Entry<DecoratedKey, String> rowKey : decoratedKeys.entrySet())
             {
-                if (cfType == ColumnFamilyType.Super)
+                if (cfType.isSuper())
                     addToSuperCF((JSONObject)json.get(rowKey.getValue()), cfamily);
                 else
                     addToStandardCF((JSONArray)json.get(rowKey.getValue()), cfamily);

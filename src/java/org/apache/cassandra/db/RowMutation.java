@@ -44,7 +44,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 
-public class RowMutation
+public class RowMutation implements IMutation
 {
     private static ICompactSerializer<RowMutation> serializer_;
     public static final String HINT = "HINT";
@@ -219,6 +219,11 @@ public class RowMutation
         return new Message(FBUtilities.getLocalAddress(), verb, bos.toByteArray());
     }
 
+    public Message makeMutationMessage() throws IOException
+    {
+        return makeRowMutationMessage();
+    }
+
     public static RowMutation getRowMutationFromMutations(String keyspace, ByteBuffer key, Map<String, List<Mutation>> cfmap)
     {
         RowMutation rm = new RowMutation(keyspace, key);
@@ -320,7 +325,7 @@ public class RowMutation
         {
             for(ByteBuffer c : del.predicate.column_names)
             {
-                if (del.super_column == null && DatabaseDescriptor.getColumnFamilyType(rm.table_, cfName) == ColumnFamilyType.Super)
+                if (del.super_column == null && DatabaseDescriptor.getColumnFamilyType(rm.table_, cfName).isSuper())
                     rm.delete(new QueryPath(cfName, c), del.timestamp);
                 else
                     rm.delete(new QueryPath(cfName, del.super_column, c), del.timestamp);

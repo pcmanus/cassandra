@@ -29,7 +29,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.io.ICompactSerializer2;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
@@ -286,9 +285,14 @@ public class SuperColumn implements IColumn, IColumnContainer
     {
         throw new UnsupportedOperationException("This operation is unsupported on super columns.");
     }
+
+    public int serializationFlags()
+    {
+        throw new UnsupportedOperationException("Super columns don't have a serialization mask");
+    }
 }
 
-class SuperColumnSerializer implements ICompactSerializer2<IColumn>
+class SuperColumnSerializer implements IColumnSerializer
 {
     private AbstractType comparator;
 
@@ -326,6 +330,11 @@ class SuperColumnSerializer implements ICompactSerializer2<IColumn>
 
     public IColumn deserialize(DataInput dis) throws IOException
     {
+        return deserialize(dis, true);
+    }
+
+    public IColumn deserialize(DataInput dis, boolean expireColumns) throws IOException
+    {
         ByteBuffer name = FBUtilities.readShortByteArray(dis);
         SuperColumn superColumn = new SuperColumn(name, comparator);
         int localDeleteTime = dis.readInt();
@@ -339,7 +348,7 @@ class SuperColumnSerializer implements ICompactSerializer2<IColumn>
         int size = dis.readInt();
         for ( int i = 0; i < size; ++i )
         {
-            IColumn subColumn = Column.serializer().deserialize(dis);
+            IColumn subColumn = Column.serializer().deserialize(dis, expireColumns);
             superColumn.addColumn(subColumn);
         }
         return superColumn;

@@ -15,50 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.utils.FBUtilities;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-public class DeletedColumn extends Column
+public class CounterReadCommand extends SliceFromReadCommand
 {
-    private static Logger logger = LoggerFactory.getLogger(DeletedColumn.class);
-    
-    public DeletedColumn(ByteBuffer name, int localDeletionTime, long timestamp)
+    public CounterReadCommand(String table, ByteBuffer rowKey, String ColumnFamilyName, ByteBuffer scName)
     {
-        this(name, FBUtilities.toByteBuffer(localDeletionTime), timestamp);
-    }
-
-    public DeletedColumn(ByteBuffer name, ByteBuffer value, long timestamp)
-    {
-        super(name, value, timestamp);
-    }
-
-    @Override
-    public boolean isMarkedForDelete()
-    {
-        return true;
-    }
-
-    @Override
-    public long getMarkedForDeleteAt()
-    {
-        return timestamp;
-    }
-
-    @Override
-    public int getLocalDeletionTime()
-    {
-       return value.getInt(value.position()+value.arrayOffset()	);
-    }
-
-    @Override
-    public int serializationFlags()
-    {
-        return ColumnSerializer.DELETION_MASK;
+        super(table, rowKey, new QueryPath(ColumnFamilyName, scName), FBUtilities.EMPTY_BYTE_BUFFER, FBUtilities.EMPTY_BYTE_BUFFER, false, Integer.MAX_VALUE, CMD_TYPE_GET_COUNTER);
     }
 }

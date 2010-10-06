@@ -29,15 +29,17 @@ import java.nio.ByteBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.io.ICompactSerializer2;
 import org.apache.cassandra.utils.FBUtilities;
 
-public class ColumnSerializer implements ICompactSerializer2<IColumn>
-{
-    private static final Logger logger = LoggerFactory.getLogger(ColumnSerializer.class);
+import java.nio.ByteBuffer;
 
-    public final static int DELETION_MASK = 0x01;
-    public final static int EXPIRATION_MASK = 0x02;
+public class ColumnSerializer implements IColumnSerializer
+{
+    public final static int DELETION_MASK      = 0x01;
+    public final static int EXPIRATION_MASK    = 0x02;
+    public final static int LOCAL_MASK         = 0x04; // used by counter
+    public final static int COUNTER_MASK       = 0x08;
+    public final static int MARKER_MASK        = 0x10;
 
     public void serialize(IColumn column, DataOutput dos)
     {
@@ -45,13 +47,14 @@ public class ColumnSerializer implements ICompactSerializer2<IColumn>
         FBUtilities.writeShortByteArray(column.name(), dos);
         try
         {
-            if (column instanceof ExpiringColumn) {
-              dos.writeByte(EXPIRATION_MASK);
+            dos.writeByte(column.serializationFlags());
+
+            if (column instanceof ExpiringColumn)
+            {
               dos.writeInt(((ExpiringColumn) column).getTimeToLive());
               dos.writeInt(column.getLocalDeletionTime());
-            } else {
-              dos.writeByte((column.isMarkedForDelete()) ? DELETION_MASK : 0);
             }
+
             dos.writeLong(column.timestamp());
             FBUtilities.writeByteArray(column.value(), dos);
         }
@@ -62,6 +65,11 @@ public class ColumnSerializer implements ICompactSerializer2<IColumn>
     }
 
     public Column deserialize(DataInput dis) throws IOException
+    {
+        return deserialize(dis, true);
+    }
+
+    public Column deserialize(DataInput dis, boolean expireColumns) throws IOException
     {
         ByteBuffer name = FBUtilities.readShortByteArray(dis);
         if (name.remaining() <= 0)
@@ -74,7 +82,7 @@ public class ColumnSerializer implements ICompactSerializer2<IColumn>
             int expiration = dis.readInt();
             long ts = dis.readLong();
             ByteBuffer value = FBUtilities.readByteArray(dis);
-            if ((int) (System.currentTimeMillis() / 1000 ) > expiration)
+            if (expireColumns && ((int) (System.currentTimeMillis() / 1000 ) > expiration))
             {
                 // the column is now expired, we can safely return a simple
                 // tombstone
@@ -85,7 +93,21 @@ public class ColumnSerializer implements ICompactSerializer2<IColumn>
             }
             else
             {
-                return new ExpiringColumn(name, value, ts, ttl, expiration);
+                if ((b & MARKER_MASK) != 0)
+                {
+                    if ((b & LOCAL_MASK) != 0 && MarkerColumn.getLeader(value).compareTo(SystemTable.getNodeUUID()) == 0)
+                    {
+                        return new LocalMarkerColumn(name, value, ts, ttl, expiration);
+                    }
+                    else
+                    {
+                        return new MarkerColumn(name, value, ts, ttl, expiration);
+                    }
+                }
+                else
+                {
+                    return new ExpiringColumn(name, value, ts, ttl, expiration);
+                }
             }
         }
         else
@@ -93,11 +115,26 @@ public class ColumnSerializer implements ICompactSerializer2<IColumn>
             boolean delete = (b & DELETION_MASK) != 0;
             long ts = dis.readLong();
             ByteBuffer value = FBUtilities.readByteArray(dis);
-            if ((b & DELETION_MASK) != 0) {
-                return new DeletedColumn(name, value, ts);
-            } else {
+            if (b == 0)
+            {
                 return new Column(name, value, ts);
             }
+            if ((b & DELETION_MASK) != 0)
+            {
+                return new DeletedColumn(name, value, ts);
+            }
+            if ((b & COUNTER_MASK) != 0)
+            {
+                if ((b & LOCAL_MASK) != 0 && name.compareTo(SystemTable.getNodeUUID()) == 0)
+                {
+                    return new LocalCounterColumn(value, ts);
+                }
+                else
+                {
+                    return new CounterColumn(name, value, ts);
+                }
+            }
+            throw new RuntimeException("Unknown flag value while deserializing column");
         }
     }
 

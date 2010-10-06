@@ -264,16 +264,15 @@ public class SSTableWriter extends SSTable
     {
         private final Descriptor desc;
         public final ColumnFamilyStore cfs;
-        private BufferedRandomAccessFile dfile;
+        private final RowIndexer indexer;
 
         public Builder(Descriptor desc)
         {
-
             this.desc = desc;
             cfs = Table.open(desc.ksname).getColumnFamilyStore(desc.cfname);
             try
             {
-                dfile = new BufferedRandomAccessFile(desc.filenameFor(SSTable.COMPONENT_DATA), "r", 8 * 1024 * 1024);
+                indexer = cfs.metadata.cfType.isCounter() ? new CounterRowIndexer(desc, cfs) : new RowIndexer(desc, cfs);
             }
             catch (IOException e)
             {
@@ -288,26 +287,81 @@ public class SSTableWriter extends SSTable
             assert !ifile.exists();
             assert !ffile.exists();
 
-            EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
-            EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
+            long estimatedRows = indexer.prepareIndexing();
 
-            IndexWriter iwriter;
+            // build the index and filter
+            long rows = indexer.index();
+
+            logger.debug("estimated row count was {} of real count", ((double)estimatedRows) / rows);
+            return SSTableReader.open(rename(desc, SSTable.componentsFor(desc)));
+        }
+
+        public long getTotalBytes()
+        {
+            try
+            {
+                return indexer.dfile.length();
+            }
+            catch (IOException e)
+            {
+                throw new IOError(e);
+            }
+        }
+
+        public long getBytesRead()
+        {
+            return indexer.dfile.getFilePointer();
+        }
+
+        public String getTaskType()
+        {
+            return "SSTable rebuild";
+        }
+    }
+
+    static class RowIndexer
+    {
+        protected final Descriptor desc;
+        protected final BufferedRandomAccessFile dfile;
+        protected final ColumnFamilyStore cfs;
+
+        protected IndexWriter iwriter;
+
+        RowIndexer(Descriptor desc, ColumnFamilyStore cfs) throws IOException
+        {
+            this(desc, cfs, new BufferedRandomAccessFile(desc.filenameFor(SSTable.COMPONENT_DATA), "r", 8 * 1024 * 1024));
+        }
+
+        protected RowIndexer(Descriptor desc, ColumnFamilyStore cfs, BufferedRandomAccessFile dfile) throws IOException
+        {
+            this.desc = desc;
+            this.cfs = cfs;
+            this.dfile = dfile;
+        }
+
+        long prepareIndexing() throws IOException
+        {
             long estimatedRows;
             try
             {
                 estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
                 iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
+                return estimatedRows;
             }
             catch(IOException e)
             {
                 dfile.close();
                 throw e;
             }
+        }
 
-            // build the index and filter
-            long rows = 0;
+        long index() throws IOException
+        {
             try
             {
+                EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
+                EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
+                long rows = 0;
                 DecoratedKey key;
                 long rowPosition = 0;
                 while (rowPosition < dfile.length())
@@ -320,15 +374,23 @@ public class SSTableWriter extends SSTable
 
                     IndexHelper.skipBloomFilter(dfile);
                     IndexHelper.skipIndex(dfile);
-                    ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(cfs.metadata), dfile);
+
+                    long mark = dfile.getFilePointer();
+
+                    ColumnFamily cf = ColumnFamily.create(cfs.metadata);
+                    ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf, dfile);
+
+                    int columnCount = processColumnFamily(mark, cf);
+
                     rowSizes.add(dataSize);
-                    columnCounts.add(dfile.readInt());
+                    columnCounts.add(columnCount);
 
                     dfile.seek(rowPosition);
                     rows++;
                 }
 
                 writeStatistics(desc, rowSizes, columnCounts);
+                return rows;
             }
             finally
             {
@@ -342,31 +404,29 @@ public class SSTableWriter extends SSTable
                     throw new IOError(e);
                 }
             }
-
-            logger.debug("estimated row count was %s of real count", ((double)estimatedRows) / rows);
-            return SSTableReader.open(rename(desc, SSTable.componentsFor(desc)));
         }
 
-        public long getTotalBytes()
+        protected int processColumnFamily(long mark, ColumnFamily cf) throws IOException
         {
-            try
-            {
-                return dfile.length();
-            }
-            catch (IOException e)
-            {
-                throw new IOError(e);
-            }
+            return dfile.readInt();
+        }
+    }
+
+    static class CounterRowIndexer extends RowIndexer
+    {
+        CounterRowIndexer(Descriptor desc, ColumnFamilyStore cfs) throws IOException
+        {
+            super(desc, cfs, new BufferedRandomAccessFile(desc.filenameFor(SSTable.COMPONENT_DATA), "rw", 8 * 1024 * 1024));
         }
 
-        public long getBytesRead()
+        @Override
+        protected int processColumnFamily(long mark, ColumnFamily cf) throws IOException
         {
-            return dfile.getFilePointer();
-        }
+            ColumnFamily.serializer().deserializeColumnsNoExpiration(dfile, cf);
 
-        public String getTaskType()
-        {
-            return "SSTable rebuild";
+            dfile.seek(mark);
+            ColumnFamily.serializer().serializeForSSTable(cf, dfile);
+            return cf.getColumnCount();
         }
     }
 
