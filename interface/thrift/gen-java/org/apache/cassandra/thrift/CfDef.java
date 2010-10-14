@@ -71,6 +71,7 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
   private static final TField MEMTABLE_FLUSH_AFTER_MINS_FIELD_DESC = new TField("memtable_flush_after_mins", TType.I32, (short)21);
   private static final TField MEMTABLE_THROUGHPUT_IN_MB_FIELD_DESC = new TField("memtable_throughput_in_mb", TType.I32, (short)22);
   private static final TField MEMTABLE_OPERATIONS_IN_MILLIONS_FIELD_DESC = new TField("memtable_operations_in_millions", TType.DOUBLE, (short)23);
+  private static final TField COUNTER_METADATA_CF_FIELD_DESC = new TField("counter_metadata_cf", TType.STRING, (short)24);
 
   public String keyspace;
   public String name;
@@ -92,6 +93,7 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
   public int memtable_flush_after_mins;
   public int memtable_throughput_in_mb;
   public double memtable_operations_in_millions;
+  public String counter_metadata_cf;
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements TFieldIdEnum {
@@ -114,7 +116,8 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     KEY_CACHE_SAVE_PERIOD_IN_SECONDS((short)20, "key_cache_save_period_in_seconds"),
     MEMTABLE_FLUSH_AFTER_MINS((short)21, "memtable_flush_after_mins"),
     MEMTABLE_THROUGHPUT_IN_MB((short)22, "memtable_throughput_in_mb"),
-    MEMTABLE_OPERATIONS_IN_MILLIONS((short)23, "memtable_operations_in_millions");
+    MEMTABLE_OPERATIONS_IN_MILLIONS((short)23, "memtable_operations_in_millions"),
+    COUNTER_METADATA_CF((short)24, "counter_metadata_cf");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -169,6 +172,8 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
           return MEMTABLE_THROUGHPUT_IN_MB;
         case 23: // MEMTABLE_OPERATIONS_IN_MILLIONS
           return MEMTABLE_OPERATIONS_IN_MILLIONS;
+        case 24: // COUNTER_METADATA_CF
+          return COUNTER_METADATA_CF;
         default:
           return null;
       }
@@ -267,6 +272,8 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
         new FieldValueMetaData(TType.I32)));
     tmpMap.put(_Fields.MEMTABLE_OPERATIONS_IN_MILLIONS, new FieldMetaData("memtable_operations_in_millions", TFieldRequirementType.OPTIONAL, 
         new FieldValueMetaData(TType.DOUBLE)));
+    tmpMap.put(_Fields.COUNTER_METADATA_CF, new FieldMetaData("counter_metadata_cf", TFieldRequirementType.OPTIONAL, 
+        new FieldValueMetaData(TType.STRING)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
     FieldMetaData.addStructMetaDataMap(CfDef.class, metaDataMap);
   }
@@ -339,6 +346,9 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     this.memtable_flush_after_mins = other.memtable_flush_after_mins;
     this.memtable_throughput_in_mb = other.memtable_throughput_in_mb;
     this.memtable_operations_in_millions = other.memtable_operations_in_millions;
+    if (other.isSetCounter_metadata_cf()) {
+      this.counter_metadata_cf = other.counter_metadata_cf;
+    }
   }
 
   public CfDef deepCopy() {
@@ -381,6 +391,7 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     this.memtable_throughput_in_mb = 0;
     setMemtable_operations_in_millionsIsSet(false);
     this.memtable_operations_in_millions = 0.0;
+    this.counter_metadata_cf = null;
   }
 
   public String getKeyspace() {
@@ -866,6 +877,30 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     __isset_bit_vector.set(__MEMTABLE_OPERATIONS_IN_MILLIONS_ISSET_ID, value);
   }
 
+  public String getCounter_metadata_cf() {
+    return this.counter_metadata_cf;
+  }
+
+  public CfDef setCounter_metadata_cf(String counter_metadata_cf) {
+    this.counter_metadata_cf = counter_metadata_cf;
+    return this;
+  }
+
+  public void unsetCounter_metadata_cf() {
+    this.counter_metadata_cf = null;
+  }
+
+  /** Returns true if field counter_metadata_cf is set (has been asigned a value) and false otherwise */
+  public boolean isSetCounter_metadata_cf() {
+    return this.counter_metadata_cf != null;
+  }
+
+  public void setCounter_metadata_cfIsSet(boolean value) {
+    if (!value) {
+      this.counter_metadata_cf = null;
+    }
+  }
+
   public void setFieldValue(_Fields field, Object value) {
     switch (field) {
     case KEYSPACE:
@@ -1028,6 +1063,14 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
       }
       break;
 
+    case COUNTER_METADATA_CF:
+      if (value == null) {
+        unsetCounter_metadata_cf();
+      } else {
+        setCounter_metadata_cf((String)value);
+      }
+      break;
+
     }
   }
 
@@ -1093,6 +1136,9 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     case MEMTABLE_OPERATIONS_IN_MILLIONS:
       return new Double(getMemtable_operations_in_millions());
 
+    case COUNTER_METADATA_CF:
+      return getCounter_metadata_cf();
+
     }
     throw new IllegalStateException();
   }
@@ -1144,6 +1190,8 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
       return isSetMemtable_throughput_in_mb();
     case MEMTABLE_OPERATIONS_IN_MILLIONS:
       return isSetMemtable_operations_in_millions();
+    case COUNTER_METADATA_CF:
+      return isSetCounter_metadata_cf();
     }
     throw new IllegalStateException();
   }
@@ -1341,6 +1389,15 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
         return false;
     }
 
+    boolean this_present_counter_metadata_cf = true && this.isSetCounter_metadata_cf();
+    boolean that_present_counter_metadata_cf = true && that.isSetCounter_metadata_cf();
+    if (this_present_counter_metadata_cf || that_present_counter_metadata_cf) {
+      if (!(this_present_counter_metadata_cf && that_present_counter_metadata_cf))
+        return false;
+      if (!this.counter_metadata_cf.equals(that.counter_metadata_cf))
+        return false;
+    }
+
     return true;
   }
 
@@ -1447,6 +1504,11 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
     builder.append(present_memtable_operations_in_millions);
     if (present_memtable_operations_in_millions)
       builder.append(memtable_operations_in_millions);
+
+    boolean present_counter_metadata_cf = true && (isSetCounter_metadata_cf());
+    builder.append(present_counter_metadata_cf);
+    if (present_counter_metadata_cf)
+      builder.append(counter_metadata_cf);
 
     return builder.toHashCode();
   }
@@ -1659,6 +1721,16 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
         return lastComparison;
       }
     }
+    lastComparison = Boolean.valueOf(isSetCounter_metadata_cf()).compareTo(typedOther.isSetCounter_metadata_cf());
+    if (lastComparison != 0) {
+      return lastComparison;
+    }
+    if (isSetCounter_metadata_cf()) {
+      lastComparison = TBaseHelper.compareTo(this.counter_metadata_cf, typedOther.counter_metadata_cf);
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+    }
     return 0;
   }
 
@@ -1839,6 +1911,13 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
             TProtocolUtil.skip(iprot, field.type);
           }
           break;
+        case 24: // COUNTER_METADATA_CF
+          if (field.type == TType.STRING) {
+            this.counter_metadata_cf = iprot.readString();
+          } else { 
+            TProtocolUtil.skip(iprot, field.type);
+          }
+          break;
         default:
           TProtocolUtil.skip(iprot, field.type);
       }
@@ -1972,6 +2051,13 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
       oprot.writeFieldBegin(MEMTABLE_OPERATIONS_IN_MILLIONS_FIELD_DESC);
       oprot.writeDouble(this.memtable_operations_in_millions);
       oprot.writeFieldEnd();
+    }
+    if (this.counter_metadata_cf != null) {
+      if (isSetCounter_metadata_cf()) {
+        oprot.writeFieldBegin(COUNTER_METADATA_CF_FIELD_DESC);
+        oprot.writeString(this.counter_metadata_cf);
+        oprot.writeFieldEnd();
+      }
     }
     oprot.writeFieldStop();
     oprot.writeStructEnd();
@@ -2127,6 +2213,16 @@ public class CfDef implements TBase<CfDef, CfDef._Fields>, java.io.Serializable,
       if (!first) sb.append(", ");
       sb.append("memtable_operations_in_millions:");
       sb.append(this.memtable_operations_in_millions);
+      first = false;
+    }
+    if (isSetCounter_metadata_cf()) {
+      if (!first) sb.append(", ");
+      sb.append("counter_metadata_cf:");
+      if (this.counter_metadata_cf == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.counter_metadata_cf);
+      }
       first = false;
     }
     sb.append(")");
