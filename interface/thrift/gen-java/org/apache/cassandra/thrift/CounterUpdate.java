@@ -64,18 +64,15 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
   private static final TStruct STRUCT_DESC = new TStruct("CounterUpdate");
 
   private static final TField COUNTER_FIELD_DESC = new TField("counter", TType.STRUCT, (short)1);
-  private static final TField TIMESTAMP_FIELD_DESC = new TField("timestamp", TType.I64, (short)2);
-  private static final TField UUID_FIELD_DESC = new TField("uuid", TType.STRING, (short)3);
+  private static final TField UUID_FIELD_DESC = new TField("uuid", TType.STRING, (short)2);
 
   public Counter counter;
-  public long timestamp;
   public ByteBuffer uuid;
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements TFieldIdEnum {
     COUNTER((short)1, "counter"),
-    TIMESTAMP((short)2, "timestamp"),
-    UUID((short)3, "uuid");
+    UUID((short)2, "uuid");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -92,9 +89,7 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
       switch(fieldId) {
         case 1: // COUNTER
           return COUNTER;
-        case 2: // TIMESTAMP
-          return TIMESTAMP;
-        case 3: // UUID
+        case 2: // UUID
           return UUID;
         default:
           return null;
@@ -136,16 +131,12 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
   }
 
   // isset id assignments
-  private static final int __TIMESTAMP_ISSET_ID = 0;
-  private BitSet __isset_bit_vector = new BitSet(1);
 
   public static final Map<_Fields, FieldMetaData> metaDataMap;
   static {
     Map<_Fields, FieldMetaData> tmpMap = new EnumMap<_Fields, FieldMetaData>(_Fields.class);
     tmpMap.put(_Fields.COUNTER, new FieldMetaData("counter", TFieldRequirementType.REQUIRED, 
         new StructMetaData(TType.STRUCT, Counter.class)));
-    tmpMap.put(_Fields.TIMESTAMP, new FieldMetaData("timestamp", TFieldRequirementType.REQUIRED, 
-        new FieldValueMetaData(TType.I64)));
     tmpMap.put(_Fields.UUID, new FieldMetaData("uuid", TFieldRequirementType.OPTIONAL, 
         new FieldValueMetaData(TType.STRING)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
@@ -156,25 +147,19 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
   }
 
   public CounterUpdate(
-    Counter counter,
-    long timestamp)
+    Counter counter)
   {
     this();
     this.counter = counter;
-    this.timestamp = timestamp;
-    setTimestampIsSet(true);
   }
 
   /**
    * Performs a deep copy on <i>other</i>.
    */
   public CounterUpdate(CounterUpdate other) {
-    __isset_bit_vector.clear();
-    __isset_bit_vector.or(other.__isset_bit_vector);
     if (other.isSetCounter()) {
       this.counter = new Counter(other.counter);
     }
-    this.timestamp = other.timestamp;
     if (other.isSetUuid()) {
       this.uuid = TBaseHelper.copyBinary(other.uuid);
 ;
@@ -188,8 +173,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
   @Override
   public void clear() {
     this.counter = null;
-    setTimestampIsSet(false);
-    this.timestamp = 0;
     this.uuid = null;
   }
 
@@ -215,29 +198,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     if (!value) {
       this.counter = null;
     }
-  }
-
-  public long getTimestamp() {
-    return this.timestamp;
-  }
-
-  public CounterUpdate setTimestamp(long timestamp) {
-    this.timestamp = timestamp;
-    setTimestampIsSet(true);
-    return this;
-  }
-
-  public void unsetTimestamp() {
-    __isset_bit_vector.clear(__TIMESTAMP_ISSET_ID);
-  }
-
-  /** Returns true if field timestamp is set (has been asigned a value) and false otherwise */
-  public boolean isSetTimestamp() {
-    return __isset_bit_vector.get(__TIMESTAMP_ISSET_ID);
-  }
-
-  public void setTimestampIsSet(boolean value) {
-    __isset_bit_vector.set(__TIMESTAMP_ISSET_ID, value);
   }
 
   public byte[] getUuid() {
@@ -284,14 +244,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
       }
       break;
 
-    case TIMESTAMP:
-      if (value == null) {
-        unsetTimestamp();
-      } else {
-        setTimestamp((Long)value);
-      }
-      break;
-
     case UUID:
       if (value == null) {
         unsetUuid();
@@ -307,9 +259,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     switch (field) {
     case COUNTER:
       return getCounter();
-
-    case TIMESTAMP:
-      return new Long(getTimestamp());
 
     case UUID:
       return getUuid();
@@ -327,8 +276,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     switch (field) {
     case COUNTER:
       return isSetCounter();
-    case TIMESTAMP:
-      return isSetTimestamp();
     case UUID:
       return isSetUuid();
     }
@@ -357,15 +304,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
         return false;
     }
 
-    boolean this_present_timestamp = true;
-    boolean that_present_timestamp = true;
-    if (this_present_timestamp || that_present_timestamp) {
-      if (!(this_present_timestamp && that_present_timestamp))
-        return false;
-      if (this.timestamp != that.timestamp)
-        return false;
-    }
-
     boolean this_present_uuid = true && this.isSetUuid();
     boolean that_present_uuid = true && that.isSetUuid();
     if (this_present_uuid || that_present_uuid) {
@@ -386,11 +324,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     builder.append(present_counter);
     if (present_counter)
       builder.append(counter);
-
-    boolean present_timestamp = true;
-    builder.append(present_timestamp);
-    if (present_timestamp)
-      builder.append(timestamp);
 
     boolean present_uuid = true && (isSetUuid());
     builder.append(present_uuid);
@@ -414,16 +347,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     }
     if (isSetCounter()) {
       lastComparison = TBaseHelper.compareTo(this.counter, typedOther.counter);
-      if (lastComparison != 0) {
-        return lastComparison;
-      }
-    }
-    lastComparison = Boolean.valueOf(isSetTimestamp()).compareTo(typedOther.isSetTimestamp());
-    if (lastComparison != 0) {
-      return lastComparison;
-    }
-    if (isSetTimestamp()) {
-      lastComparison = TBaseHelper.compareTo(this.timestamp, typedOther.timestamp);
       if (lastComparison != 0) {
         return lastComparison;
       }
@@ -463,15 +386,7 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
             TProtocolUtil.skip(iprot, field.type);
           }
           break;
-        case 2: // TIMESTAMP
-          if (field.type == TType.I64) {
-            this.timestamp = iprot.readI64();
-            setTimestampIsSet(true);
-          } else { 
-            TProtocolUtil.skip(iprot, field.type);
-          }
-          break;
-        case 3: // UUID
+        case 2: // UUID
           if (field.type == TType.STRING) {
             this.uuid = iprot.readBinary();
           } else { 
@@ -486,9 +401,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     iprot.readStructEnd();
 
     // check for required fields of primitive type, which can't be checked in the validate method
-    if (!isSetTimestamp()) {
-      throw new TProtocolException("Required field 'timestamp' was not found in serialized data! Struct: " + toString());
-    }
     validate();
   }
 
@@ -501,9 +413,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
       this.counter.write(oprot);
       oprot.writeFieldEnd();
     }
-    oprot.writeFieldBegin(TIMESTAMP_FIELD_DESC);
-    oprot.writeI64(this.timestamp);
-    oprot.writeFieldEnd();
     if (this.uuid != null) {
       if (isSetUuid()) {
         oprot.writeFieldBegin(UUID_FIELD_DESC);
@@ -527,10 +436,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
       sb.append(this.counter);
     }
     first = false;
-    if (!first) sb.append(", ");
-    sb.append("timestamp:");
-    sb.append(this.timestamp);
-    first = false;
     if (isSetUuid()) {
       if (!first) sb.append(", ");
       sb.append("uuid:");
@@ -550,7 +455,6 @@ public class CounterUpdate implements TBase<CounterUpdate, CounterUpdate._Fields
     if (counter == null) {
       throw new TProtocolException("Required field 'counter' was not present! Struct: " + toString());
     }
-    // alas, we cannot check 'timestamp' because it's a primitive and you chose the non-beans generator.
   }
 
 }
