@@ -383,8 +383,7 @@ struct Counter {
  */
 struct CounterUpdate {
     1: required Counter counter,
-    2: required i64 timestamp,
-    3: optional binary uuid,
+    2: optional binary uuid,
 }
 
 service Cassandra {
@@ -528,12 +527,6 @@ service Cassandra {
                                                    2:required string column_family,
                                                    3:required SlicePredicate predicate, 
                                                    4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
-      throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
-
-  void remove_counter(1:required binary key,
-                      2:required CounterPath path,
-                      3:required i64 timestamp,
-                      4:required ConsistencyLevel consistency_level=ConsistencyLevel.ONE)
       throws (1:InvalidRequestException ire, 2:UnavailableException ue, 3:TimedOutException te),
     
   // Meta-APIs -- APIs to get information about the node or cluster,

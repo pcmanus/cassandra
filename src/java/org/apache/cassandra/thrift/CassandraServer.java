@@ -554,7 +554,7 @@ public class CassandraServer implements Cassandra.Iface
                 ThriftValidation.validateKey(key);
                 ThriftValidation.validateCounterUpdate(keyspace, column_family, update);
                 int cfid = DatabaseDescriptor.getCFMetaData(keyspace, column_family).cfId;
-                CounterMutation cm = new CounterMutation(keyspace, key, cfid, update.counter.name, update.counter.value, update.timestamp, consistency_level, update.uuid);
+                CounterMutation cm = new CounterMutation(keyspace, key, cfid, update.counter.name, update.counter.value, System.currentTimeMillis(), consistency_level, update.uuid);
                 StorageProxy.updateCounters(Collections.singletonList(cm));
             }
             catch (TimeoutException e)
@@ -579,6 +579,7 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             schedule();
+            long now = System.currentTimeMillis();
 
             try
             {
@@ -604,7 +605,7 @@ public class CassandraServer implements Cassandra.Iface
                         ThriftValidation.validateColumnFamily(keyspace, cf);
                         for (CounterUpdate upd : cfmap.getValue())
                         {
-                            mutations.add(new CounterMutation(keyspace, key, cfid, upd.counter.name, upd.counter.value, upd.timestamp, consistency_level, upd.uuid));
+                            mutations.add(new CounterMutation(keyspace, key, cfid, upd.counter.name, upd.counter.value, now, consistency_level, upd.uuid));
                         }
                     }
                 }
@@ -777,25 +778,6 @@ public class CassandraServer implements Cassandra.Iface
         if (reverseOrder)
             Collections.reverse(results);
         return results;
-    }
-
-    public void remove_counter(ByteBuffer key, CounterPath path, long timestamp, ConsistencyLevel consistency_level)
-    throws InvalidRequestException, UnavailableException, TException, TimedOutException
-    {
-        if (logger.isDebugEnabled())
-            logger.debug("remove_counter");
-
-        String keyspace = state().getKeyspace();
-        state().hasColumnFamilyAccess(path.column_family, Permission.WRITE);
-
-        ThriftValidation.validateCounterColumnFamily(keyspace, path.column_family);
-        ThriftValidation.validateKey(key);
-
-        RowMutation rm = new RowMutation(keyspace, key);
-        rm.delete(new QueryPath(path.column_family, path.name), timestamp);
-        rm.delete(new QueryPath(path.column_family, path.name, SystemTable.getNodeUUID()), timestamp);
-
-        doInsert(consistency_level, Arrays.asList(rm));
     }
 
     private List<KeySlice> thriftifyKeySlices(List<Row> rows, ColumnParent column_parent, SlicePredicate predicate)

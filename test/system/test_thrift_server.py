@@ -1465,7 +1465,7 @@ class TestMutations(ThriftTester):
         cf = 'Counter1'
         name = 'c1'
         path = CounterPath(cf, name)
-        updates = [ CounterUpdate(Counter(name, v), 0) for v in values ]
+        updates = [ CounterUpdate(Counter(name, v)) for v in values ]
 
         client.add(key, cf, updates[0], ConsistencyLevel.ONE);
         assert client.get_counter(key, path, ConsistencyLevel.ONE).value == values[0]
@@ -1485,9 +1485,9 @@ class TestMutations(ThriftTester):
         v = 4
         counter = Counter(name, v)
 
-        upd1 = CounterUpdate(counter, 0, struct.pack('>q', 0))
-        upd2 = CounterUpdate(counter, 0, struct.pack('>q', 1))
-        upd3 = CounterUpdate(counter, 0, struct.pack('>q', 2))
+        upd1 = CounterUpdate(counter, struct.pack('>q', 0))
+        upd2 = CounterUpdate(counter, struct.pack('>q', 1))
+        upd3 = CounterUpdate(counter, struct.pack('>q', 2))
 
         client.add(key, cf, upd1, ConsistencyLevel.ONE)
         assert client.get_counter(key, path, ConsistencyLevel.ONE).value == v
@@ -1501,25 +1501,6 @@ class TestMutations(ThriftTester):
         client.add(key, cf, upd3, ConsistencyLevel.ONE)
         assert client.get_counter(key, path, ConsistencyLevel.ONE).value == 3 * v
 
-    def test_counter_delete(self):
-        _set_keyspace('Keyspace1')
-        key = 'row3'
-        cf = 'Counter1'
-        name = 'c1'
-        path = CounterPath(cf, name)
-
-        upd1 = CounterUpdate(Counter(name, 4), 0, struct.pack('>q', 0))
-        upd2 = CounterUpdate(Counter(name, 5), 2, struct.pack('>q', 1))
-
-        client.add(key, cf, upd1, ConsistencyLevel.ONE)
-        assert client.get_counter(key, path, ConsistencyLevel.ONE).value == 4
-
-        client.remove_counter(key, path, 1, ConsistencyLevel.ONE)
-        assert client.get_counter(key, path, ConsistencyLevel.ONE).value == 0
-
-        client.add(key, cf, upd2, ConsistencyLevel.ONE)
-        assert client.get_counter(key, path, ConsistencyLevel.ONE).value == 5
-
     def test_counter_batch_operation(self):
         _set_keyspace('Keyspace1')
         cf = 'Counter1'
@@ -1530,7 +1511,7 @@ class TestMutations(ThriftTester):
         totals = {}
         for i in xrange(0, len(counts)):
             cname = 'counter' + str(i)
-            updates = updates + [ CounterUpdate(Counter(cname, v), 0) for v in counts[i] ]
+            updates = updates + [ CounterUpdate(Counter(cname, v)) for v in counts[i] ]
             totals[cname] = sum(counts[i])
 
         client.batch_add({ key : { cf : updates }}, ConsistencyLevel.ONE)
