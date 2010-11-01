@@ -129,9 +129,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         currentThroughput.addAndGet(cf.size());
         currentOperations.addAndGet(cf.getColumnCount());
 
-        logger.info("Trying to put " + cf);
         ColumnFamily oldCf = columnFamilies.putIfAbsent(key, cf);
-        logger.info("Got oldCf " + oldCf);
         if (oldCf == null)
             return;
 

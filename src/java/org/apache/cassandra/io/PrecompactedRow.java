@@ -45,19 +45,17 @@ public class PrecompactedRow extends AbstractCompactedRow
 {
     private static Logger logger = LoggerFactory.getLogger(PrecompactedRow.class);
 
-    private final DataOutputBuffer buffer;
-    private int columnCount = 0;
+    private final ColumnFamily compactedCf;
 
-    public PrecompactedRow(DecoratedKey key, DataOutputBuffer buffer)
+    public PrecompactedRow(DecoratedKey key, ColumnFamily compacted)
     {
         super(key);
-        this.buffer = buffer;
+        this.compactedCf = compacted;
     }
 
     public PrecompactedRow(ColumnFamilyStore cfStore, List<SSTableIdentityIterator> rows, boolean major, int gcBefore)
     {
         super(rows.get(0).getKey());
-        buffer = new DataOutputBuffer();
 
         Set<SSTable> sstables = new HashSet<SSTable>();
         for (SSTableIdentityIterator row : rows)
@@ -66,68 +64,69 @@ public class PrecompactedRow extends AbstractCompactedRow
         }
         boolean shouldPurge = major || !cfStore.isKeyInRemainingSSTables(key, sstables);
 
-        if (rows.size() > 1 || shouldPurge)
+        ColumnFamily cf = null;
+        for (SSTableIdentityIterator row : rows)
         {
-            ColumnFamily cf = null;
-            for (SSTableIdentityIterator row : rows)
-            {
-                ColumnFamily thisCF;
-                try
-                {
-                    thisCF = row.getColumnFamilyWithColumns();
-                }
-                catch (IOException e)
-                {
-                    logger.error("Skipping row " + key + " in " + row.getPath(), e);
-                    continue;
-                }
-                if (cf == null)
-                {
-                    cf = thisCF;
-                }
-                else
-                {
-                    cf.addAll(thisCF);
-                }
-            }
-            ColumnFamily cfPurged = shouldPurge ? ColumnFamilyStore.removeDeleted(cf, gcBefore) : cf;
-            if (cfPurged == null)
-                return;
-            columnCount = ColumnFamily.serializer().serializeWithIndexes(cfPurged, buffer);
-        }
-        else
-        {
-            assert rows.size() == 1;
+            ColumnFamily thisCF;
             try
             {
-                rows.get(0).echoData(buffer);
-                columnCount = rows.get(0).columnCount;
+                thisCF = row.getColumnFamilyWithColumns();
             }
             catch (IOException e)
             {
-                throw new IOError(e);
+                logger.error("Skipping row " + key + " in " + row.getPath(), e);
+                continue;
+            }
+            if (cf == null)
+            {
+                cf = thisCF;
+            }
+            else
+            {
+                cf.addAll(thisCF);
             }
         }
+
+        compactedCf = shouldPurge ? ColumnFamilyStore.removeDeleted(cf, gcBefore) : cf;
     }
 
     public void write(DataOutput out) throws IOException
     {
-        out.writeLong(buffer.getLength());
-        out.write(buffer.getData(), 0, buffer.getLength());
+        if (compactedCf != null)
+        {
+            DataOutputBuffer buffer = new DataOutputBuffer();
+            ColumnFamily.serializer().serializeWithIndexes(compactedCf, buffer);
+            out.writeLong(buffer.getLength());
+            out.write(buffer.getData(), 0, buffer.getLength());
+        }
     }
 
     public void update(MessageDigest digest)
     {
-        digest.update(buffer.getData(), 0, buffer.getLength());
+        if (compactedCf != null)
+        {
+            DataOutputBuffer buffer = new DataOutputBuffer();
+            try
+            {
+                buffer.writeLong(compactedCf.getMarkedForDeleteAt());
+                buffer.writeInt(compactedCf.getLocalDeletionTime());
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+            digest.update(buffer.getData(), 0, buffer.getLength());
+            compactedCf.updateDigest(digest);
+        }
     }
 
     public boolean isEmpty()
     {
-        return buffer.getLength() == 0;
+        return compactedCf == null || compactedCf.getColumnCount() == 0;
     }
 
     public int columnCount()
     {
-        return columnCount;
+        return compactedCf == null ? 0 : compactedCf.getColumnCount();
     }
 }

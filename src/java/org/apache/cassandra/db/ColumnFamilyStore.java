@@ -25,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -1173,11 +1174,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             // flushed memtable becomes an active sstable. The following lock
             // ensure none of those condition can happen. It is a no-op for
             // non counter CFS.
+            Memtable current = getMemtableThreadSafe();
             lockCounterLockForRead();
             try
             {
                 /* add the current memtable */
-                iter = filter.getMemtableColumnIterator(getMemtableThreadSafe(), getComparator());
+                iter = filter.getMemtableColumnIterator(current, getComparator());
                 if (iter != null)
                 {
                     returnCF.delete(iter.getColumnFamily());

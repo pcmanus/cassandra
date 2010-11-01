@@ -155,7 +155,7 @@ public class Column implements IColumn
         try
         {
             buffer.writeLong(timestamp);
-            buffer.writeByte(serializationFlags());
+            buffer.writeByte(serializationFlagsForDigest());
         }
         catch (IOException e)
         {
@@ -167,6 +167,11 @@ public class Column implements IColumn
     public int serializationFlags()
     {
         return 0;
+    }
+
+    public int serializationFlagsForDigest()
+    {
+        return serializationFlags();
     }
 
     public int getLocalDeletionTime()

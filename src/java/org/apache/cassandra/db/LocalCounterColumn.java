@@ -71,6 +71,13 @@ public class LocalCounterColumn extends CounterColumn
         return super.serializationFlags() | ColumnSerializer.LOCAL_MASK;
     }
 
+    // don't take local mask into account for digests
+    @Override
+    public int serializationFlagsForDigest()
+    {
+        return super.serializationFlags();
+    }
+
     @Override
     public String getString(AbstractType comparator)
     {
