@@ -182,9 +182,8 @@ public class CounterMutation implements IMutation
             }
         }
         mutation.add(cfCounter);
-        logger.info("mutation = " + mutation);
         mutation.apply();
-        logger.info("applied");
+        logger.debug("Applied mutation " + mutation);
     }
 
     private CounterColumn readLocalCounterColumn() throws IOException
@@ -194,21 +193,27 @@ public class CounterMutation implements IMutation
         ReadCommand readCommand = new SliceByNamesReadCommand(table, key, queryPath, Collections.singletonList(SystemTable.getNodeUUID()));
         Table t = Table.open(readCommand.table);
         Row row = readCommand.getRow(t);
+        logger.debug("Read " + row + ", cmd was " + readCommand);
         if (row == null || row.cf == null || row.cf.getColumnCount() == 0)
         {
             return null;
         }
         else
         {
-            IColumn c = row.cf.getColumn(SystemTable.getNodeUUID());
+            IColumn c = row.cf.getColumn(name);
             if (c == null || c.isMarkedForDelete())
             {
                 return null;
             }
             else
             {
-                assert c instanceof CounterColumn;
-                return (CounterColumn) c;
+                IColumn sub = c.getSubColumn(SystemTable.getNodeUUID());
+                if (sub == null)
+                {
+                    return null;
+                }
+                assert sub instanceof CounterColumn;
+                return (CounterColumn) sub;
             }
         }
     }
@@ -216,6 +221,7 @@ public class CounterMutation implements IMutation
     public void updateCount() throws IOException
     {
       CounterColumn localCounter = readLocalCounterColumn();
+      logger.debug("Update count - read " + localCounter);
       if (localCounter != null)
       {
         repairValue = localCounter.getCount() - value;
