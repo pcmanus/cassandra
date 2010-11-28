@@ -27,6 +27,7 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DeletedColumn;
+import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
@@ -53,10 +54,18 @@ public class SSTableImportTest extends SchemaLoader
 
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
-        QueryFilter qf = QueryFilter.getNamesFilter(Util.dk("rowA"), new QueryPath("Standard1", null, null), ByteBufferUtil.bytes("colAA"));
+        System.out.println("Getting row " + Util.dk("rowA"));
+        //QueryFilter qf = QueryFilter.getIdentityFilter(Util.dk("rowA"), new QueryPath("Standard1"));
+        QueryFilter qf = QueryFilter.getNamesFilter(Util.dk("rowA"), new QueryPath("Standard1"), ByteBufferUtil.bytes("colAA"));
         ColumnFamily cf = qf.getSSTableColumnIterator(reader).getColumnFamily();
+        System.out.println(cf);
         assert cf.getColumn(ByteBufferUtil.bytes("colAA")).value().equals(ByteBuffer.wrap(hexToBytes("76616c4141")));
         assert !(cf.getColumn(ByteBufferUtil.bytes("colAA")) instanceof DeletedColumn);
+        IColumn expCol = cf.getColumn(ByteBufferUtil.bytes("colAC"));
+        System.out.println(expCol);
+        assert expCol.value().equals(ByteBuffer.wrap(hexToBytes("76616c4143")));
+        assert expCol instanceof ExpiringColumn;
+        assert ((ExpiringColumn)expCol).getTimeToLive() == 60 && ((ExpiringColumn)expCol).getLocalDeletionTime() == 42;
     }
 
     @Test
