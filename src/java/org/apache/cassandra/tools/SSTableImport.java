@@ -115,6 +115,7 @@ public class SSTableImport
                 cfamily.addColumn(path, ByteBuffer.wrap(hexToBytes(col.value)), col.timestamp);
             }
         }
+        System.out.println("Resulting cf: " + cfamily);
     }
     
     /**
@@ -188,6 +189,7 @@ public class SSTableImport
 
             for (Map.Entry<DecoratedKey, String> rowKey : decoratedKeys.entrySet())
             {
+                System.out.println("Rk : " + rowKey.getKey());
                 if (cfType == ColumnFamilyType.Super)
                     addToSuperCF((JSONObject)json.get(rowKey.getValue()), cfamily);
                 else
