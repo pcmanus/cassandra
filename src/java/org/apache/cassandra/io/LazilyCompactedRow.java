@@ -143,17 +143,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         Iterator<IColumn> iter = iterator();
         while (iter.hasNext())
         {
-            IColumn column = iter.next();
-            out.reset();
-            try
-            {
-                emptyColumnFamily.getColumnSerializer().serialize(column, out);
-            }
-            catch (IOException e)
-            {
-                throw new IOError(e);
-            }
-            digest.update(out.getData(), 0, out.getLength());
+            iter.next().updateDigest(digest);
         }
     }
 

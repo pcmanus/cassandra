@@ -126,24 +126,8 @@ public class CounterMutation implements IMutation
         {
             Table table = Table.open(readCommand.table);
             Row row = readCommand.getRow(table);
-            if (row == null || row.cf == null)
-                continue;
-            AbstractType defaultValidator = row.cf.metadata().getDefaultValidator();
-            if (defaultValidator.isCommutative())
-            {
-                /**
-                 * Clean out contexts for all nodes we're sending the repair to, otherwise,
-                 * we could send a context which is local to one of the foreign replicas,
-                 * which would then incorrectly add that to its own count, because
-                 * local resolution aggregates.
-                 */
-                // note: the following logic could be optimized
-                for (InetAddress foreignNode : foreignReplicas)
-                {
-                    ((AbstractCommutativeType)defaultValidator).cleanContext(row.cf, foreignNode);
-                }
-            }
-            replicationMutation.add(row.cf);
+            if (row != null && row.cf != null)
+                replicationMutation.add(row.cf);
         }
         return replicationMutation;
     }

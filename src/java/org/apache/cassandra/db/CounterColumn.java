@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.db;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -28,19 +29,21 @@ import org.apache.log4j.Logger;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.context.IContext.ContextRelationship;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.NodeId;
 
 /**
  * A column that represents a partitioned counter.
  */
 public class CounterColumn extends Column
 {
-    private static Logger logger = Logger.getLogger(CounterColumn.class);
+    private static final Logger logger = Logger.getLogger(CounterColumn.class);
 
-    private static CounterContext contextManager = CounterContext.instance();
+    protected static final CounterContext contextManager = CounterContext.instance();
 
-    protected final long timestampOfLastDelete;
+    private final long timestampOfLastDelete;
 
     public CounterColumn(ByteBuffer name, long value, long timestamp)
     {
@@ -98,11 +101,30 @@ public class CounterColumn extends Column
         return null;
     }
 
+    /*
+     * We have to special case digest creation for counter column because
+     * we don't want to include the information about which shard of the
+     * context is a delta or not, since this information differs from node to
+     * node.
+     */
     @Override
     public void updateDigest(MessageDigest digest)
     {
-        super.updateDigest(digest);
-        digest.update(ByteBufferUtil.bytes(timestampOfLastDelete));
+        digest.update(name.duplicate());
+        // We don't take the deltas into account in a digest
+        contextManager.updateDigest(digest, value);
+        DataOutputBuffer buffer = new DataOutputBuffer();
+        try
+        {
+            buffer.writeLong(timestamp);
+            buffer.writeByte(serializationFlags());
+            buffer.writeLong(timestampOfLastDelete);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        digest.update(buffer.getData(), 0, buffer.getLength());
     }
 
     @Override
@@ -181,17 +203,11 @@ public class CounterColumn extends Column
         return ColumnSerializer.COUNTER_MASK;
     }
 
-    public CounterColumn cleanNodeCounts(InetAddress node)
+    /**
+     * Check if a given nodeId is found in this CounterColumn context.
+     */
+    public boolean hasNodeId(NodeId id)
     {
-        // use cases:
-        //     1) AES post-stream
-        //     2) RRR, after CF.cloneMe()
-        //     3) RRR, after CF.diff() which creates a new CF
-        ByteBuffer cleanedValue = contextManager.cleanNodeCounts(value, node);
-        if (cleanedValue == value) // reference equality is enough
-            return this;
-        if (0 == value.remaining())
-            return null;
-        return new CounterColumn(name, cleanedValue, timestamp, timestampOfLastDelete);
+        return contextManager.hasNodeId(value(), id);
     }
 }
