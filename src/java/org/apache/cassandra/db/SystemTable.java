@@ -26,6 +26,8 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
@@ -436,5 +438,27 @@ public class SystemTable
         {
             throw new RuntimeException(e);
         }
+    }
+
+    public static List<NodeId.NodeIdRecord> getOldLocalNodeIds()
+    {
+        List<NodeId.NodeIdRecord> l = new ArrayList<NodeId.NodeIdRecord>();
+
+        Table table = Table.open(Table.SYSTEM_TABLE);
+        QueryFilter filter = QueryFilter.getIdentityFilter(decorate(ALL_LOCAL_NODE_ID_KEY),
+                new QueryPath(NODE_ID_CF));
+        ColumnFamily cf = table.getColumnFamilyStore(NODE_ID_CF).getColumnFamily(filter);
+
+        NodeId previous = null;
+        for (IColumn c : cf.getReverseSortedColumns())
+        {
+            if (previous != null)
+                l.add(new NodeId.NodeIdRecord(previous, c.timestamp()));
+
+            // this will ignore the last column on purpose since it is the
+            // current local node id
+            previous = NodeId.wrap(c.name());
+        }
+        return l;
     }
 }

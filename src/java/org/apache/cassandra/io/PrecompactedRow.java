@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnIndexer;
+import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
@@ -89,6 +90,10 @@ public class PrecompactedRow extends AbstractCompactedRow
             }
         }
         compactedCf = shouldPurge ? ColumnFamilyStore.removeDeleted(cf, gcBefore) : cf;
+        if (compactedCf != null && compactedCf.metadata().getDefaultValidator().isCommutative())
+        {
+            CounterColumn.removeOldShards(compactedCf, gcBefore);
+        }
     }
 
     public void write(DataOutput out) throws IOException

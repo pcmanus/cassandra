@@ -19,7 +19,9 @@
 package org.apache.cassandra.utils;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,34 +35,13 @@ public class NodeId implements Comparable<NodeId>
 
     public static final int LENGTH = 16; // we assume a fixed length size for all NodeIds
 
-    private ByteBuffer id;
+    private static final LocalNodeIdHistory localIds = new LocalNodeIdHistory();
 
-    // Relying on class loader for lazy initialisation (we don't want this to
-    // initialize too early)
-    private static class LocalNodeIdHolder
-    {
-        private final static AtomicReference<NodeId> localId;
-        static
-        {
-            NodeId id = SystemTable.getCurrentLocalNodeId();
-            if (id == null)
-            {
-                // no recorded local node id, generating a new one and saving it
-                id = generate();
-                SystemTable.writeCurrentLocalNodeId(null, id);
-                logger.info("No saved local node id, using newly generated: {}", id);
-            }
-            else
-            {
-                logger.info("Saved local node id: {}", id);
-            }
-            localId = new AtomicReference<NodeId>(id);
-        }
-    }
+    private ByteBuffer id;
 
     public static NodeId getLocalId()
     {
-        return LocalNodeIdHolder.localId.get();
+        return localIds.current.get();
     }
 
     /**
@@ -70,9 +51,17 @@ public class NodeId implements Comparable<NodeId>
      */
     public static synchronized void renewLocalId()
     {
-        NodeId newNodeId = generate();
-        SystemTable.writeCurrentLocalNodeId(getLocalId(), newNodeId);
-        LocalNodeIdHolder.localId.set(newNodeId);
+        localIds.renewCurrent();
+    }
+
+    /**
+     * Return the list of old local node id of this node.
+     * It is guaranteed that the returned list is sorted by growing node id
+     * (and hence the first item will be the oldest node id for this host)
+     */
+    public static List<NodeIdRecord> getOldLocalNodeIds()
+    {
+        return localIds.olds;
     }
 
     /**
@@ -132,7 +121,7 @@ public class NodeId implements Comparable<NodeId>
 
     public int compareTo(NodeId o)
     {
-        return ByteBufferUtil.compareSubArrays(id, 0, o.id, 0, NodeId.LENGTH);
+        return ByteBufferUtil.compareSubArrays(id, id.position(), o.id, o.id.position(), NodeId.LENGTH);
     }
 
     @Override
@@ -177,6 +166,58 @@ public class NodeId implements Comparable<NodeId>
                 renewLocalId();
                 renewed = true;
             }
+        }
+    }
+
+    private static class LocalNodeIdHistory
+    {
+        private final AtomicReference<NodeId> current;
+        private final List<NodeIdRecord> olds;
+
+        LocalNodeIdHistory()
+        {
+            NodeId id = SystemTable.getCurrentLocalNodeId();
+            if (id == null)
+            {
+                // no recorded local node id, generating a new one and saving it
+                id = generate();
+                logger.info("No saved local node id, using newly generated: {}", id);
+                SystemTable.writeCurrentLocalNodeId(null, id);
+                current = new AtomicReference<NodeId>(id);
+                olds = new CopyOnWriteArrayList();
+            }
+            else
+            {
+                logger.info("Saved local node id: {}", id);
+                current = new AtomicReference<NodeId>(id);
+                olds = new CopyOnWriteArrayList(SystemTable.getOldLocalNodeIds());
+            }
+        }
+
+        synchronized void renewCurrent()
+        {
+            NodeId newNodeId = generate();
+            NodeId old = current.get();
+            SystemTable.writeCurrentLocalNodeId(old, newNodeId);
+            current.set(newNodeId);
+            olds.add(new NodeIdRecord(old));
+        }
+    }
+
+    public static class NodeIdRecord
+    {
+        public final NodeId id;
+        public final long timestamp;
+
+        public NodeIdRecord(NodeId id)
+        {
+            this(id, System.currentTimeMillis());
+        }
+
+        public NodeIdRecord(NodeId id, long timestamp)
+        {
+            this.id = id;
+            this.timestamp = timestamp;
         }
     }
 }

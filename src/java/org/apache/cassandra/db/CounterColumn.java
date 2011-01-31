@@ -23,6 +23,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.Map;
 
 import org.apache.log4j.Logger;
 
@@ -209,5 +210,63 @@ public class CounterColumn extends Column
     public boolean hasNodeId(NodeId id)
     {
         return contextManager.hasNodeId(value(), id);
+    }
+
+    public CounterColumn computeOldShardMerger()
+    {
+        ByteBuffer bb = contextManager.computeOldShardMerger(value(), NodeId.getOldLocalNodeIds());
+        if (bb == null)
+            return null;
+        else
+            return new CounterColumn(name(), bb, timestamp(), timestampOfLastDelete);
+    }
+
+    private CounterColumn removeOldShards(int gcBefore)
+    {
+        ByteBuffer bb = contextManager.removeOldShards(value(), gcBefore);
+        if (bb == value())
+            return this;
+        else
+        {
+            return new CounterColumn(name(), bb, timestamp(), timestampOfLastDelete);
+        }
+    }
+
+    public static void removeOldShards(ColumnFamily cf, int gcBefore)
+    {
+        if (!cf.isSuper())
+        {
+            for (Map.Entry<ByteBuffer, IColumn> entry : cf.getColumnsMap().entrySet())
+            {
+                ByteBuffer cname = entry.getKey();
+                IColumn c = entry.getValue();
+                if (!(c instanceof CounterColumn))
+                    continue;
+                CounterColumn cleaned = ((CounterColumn) c).removeOldShards(gcBefore);
+                if (cleaned != c)
+                {
+                    cf.remove(cname);
+                    cf.addColumn(cleaned);
+                }
+            }
+        }
+        else
+        {
+            for (Map.Entry<ByteBuffer, IColumn> entry : cf.getColumnsMap().entrySet())
+            {
+                SuperColumn c = (SuperColumn) entry.getValue();
+                for (IColumn subColumn : c.getSubColumns())
+                {
+                    if (!(subColumn instanceof CounterColumn))
+                        continue;
+                    CounterColumn cleaned = ((CounterColumn) subColumn).removeOldShards(gcBefore);
+                    if (cleaned != subColumn)
+                    {
+                        c.remove(subColumn.name());
+                        c.addColumn(cleaned);
+                    }
+                }
+            }
+        }
     }
 }

@@ -64,6 +64,10 @@ public class CounterContext implements IContext
     private static final int COUNT_LENGTH = DBConstants.longSize_;
     private static final int STEP_LENGTH = NodeId.LENGTH + CLOCK_LENGTH + COUNT_LENGTH;
 
+    // Time in ms since a node id has been renewed before we consider using it
+    // during a merge
+    private static final long MIN_MERGE_DELAY = 5 * 60 * 1000; // should be aplenty
+
     // lazy-load singleton
     private static class LazyHolder
     {
@@ -161,7 +165,8 @@ public class CounterContext implements IContext
                 {
                     continue;
                 }
-                else if (leftClock > rightClock)
+                else if ((leftClock >= 0 && rightClock > 0 && leftClock > rightClock)
+                      || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock)))
                 {
                     if (relationship == ContextRelationship.EQUAL)
                     {
@@ -178,7 +183,6 @@ public class CounterContext implements IContext
                     }
                 }
                 else
-                // leftClock < rightClock
                 {
                     if (relationship == ContextRelationship.EQUAL)
                     {
@@ -335,7 +339,13 @@ public class CounterContext implements IContext
                 }
                 else
                 {
-                    (leftState.getClock() >= rightState.getClock() ? leftState : rightState).copyTo(mergedState);
+                    long leftClock = leftState.getClock();
+                    long rightClock = rightState.getClock();
+                    if ((leftClock >= 0 && rightClock > 0 && leftClock >= rightClock)
+                     || (leftClock < 0 && (rightClock > 0 || leftClock < rightClock)))
+                        leftState.copyTo(mergedState);
+                    else
+                        rightState.copyTo(mergedState);
                 }
                 rightState.moveToNext();
                 leftState.moveToNext();
@@ -388,6 +398,10 @@ public class CounterContext implements IContext
             sb.append(state.getClock()).append(", ");;
             sb.append(state.getCount());
             sb.append("}");
+            if (state.isDelta())
+            {
+                sb.append("*");
+            }
             state.moveToNext();
         }
 
@@ -475,6 +489,130 @@ public class CounterContext implements IContext
     }
 
     /**
+     * Compute a new context such that if applied to context yields the same
+     * total but with the older local node id merged into the second to older one
+     * (excluding current local node id) if need be.
+     */
+    public ByteBuffer computeOldShardMerger(ByteBuffer context, List<NodeId.NodeIdRecord> oldIds)
+    {
+        long now = System.currentTimeMillis();
+        int hlength = headerLength(context);
+
+        // Don't bother if we know we can't find what we are looking for
+        if (oldIds.size() < 2
+         || now - oldIds.get(0).timestamp < MIN_MERGE_DELAY
+         || now - oldIds.get(1).timestamp < MIN_MERGE_DELAY
+         || context.remaining() - hlength < 2 * STEP_LENGTH)
+            return null;
+
+        Iterator<NodeId.NodeIdRecord> recordIterator = oldIds.iterator();
+        NodeId.NodeIdRecord currRecord = recordIterator.next();
+
+        ContextState state = new ContextState(context, hlength);
+        ContextState foundState = null;
+
+        while (state.hasRemaining() && currRecord != null)
+        {
+            if (now - currRecord.timestamp < MIN_MERGE_DELAY)
+                return context;
+
+            int c = state.getNodeId().compareTo(currRecord.id);
+            if (c == 0)
+            {
+                if (foundState == null)
+                {
+                    // We found a canditate for being merged
+                    if (state.getClock() < 0)
+                        return null;
+
+                    foundState = state.duplicate();
+                    currRecord = recordIterator.hasNext() ? recordIterator.next() : null;
+                    state.moveToNext();
+                }
+                else
+                {
+                    // Found someone to merge it to
+                    int nbDelta = foundState.isDelta() ? 1 : 0;
+                    nbDelta += state.isDelta() ? 1 : 0;
+                    ContextState merger = ContextState.allocate(2, nbDelta);
+
+                    long fclock = foundState.getClock();
+                    long fcount = foundState.getCount();
+                    long clock = state.getClock();
+                    long count = state.getCount();
+
+                    if (foundState.isDelta())
+                        merger.writeElement(foundState.getNodeId(), -now - fclock, -fcount, true);
+                    else
+                        merger.writeElement(foundState.getNodeId(), -now, 0);
+
+                    if (state.isDelta())
+                        merger.writeElement(state.getNodeId(), fclock + clock, fcount, true);
+                    else
+                        merger.writeElement(state.getNodeId(), fclock + clock, fcount + count);
+
+                    return merger.context;
+                }
+            }
+            else if (c < 0) // nodeid < record
+            {
+                state.moveToNext();
+            }
+            else // c > 0, nodeid > record
+            {
+                currRecord = recordIterator.hasNext() ? recordIterator.next() : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Remove shards that have been canceled through computeOldShardMerger
+     * since a time older than gcBefore.
+     * Used by compaction to strip context of unecessary information,
+     * shrinking them.
+     */
+    public ByteBuffer removeOldShards(ByteBuffer context, int gcBefore)
+    {
+        int hlength = headerLength(context);
+        ContextState state = new ContextState(context, hlength);
+        int removedBodySize = 0, removedHeaderSize = 0;
+        while (state.hasRemaining())
+        {
+            long clock = state.getClock();
+            if (clock < 0 && -((int)(clock / 1000)) < gcBefore)
+            {
+                assert state.getCount() == 0;
+                removedBodySize += STEP_LENGTH;
+                if (state.isDelta())
+                    removedHeaderSize += HEADER_ELT_LENGTH;
+            }
+            state.moveToNext();
+        }
+
+        if (removedBodySize == 0)
+            return context;
+
+        int newSize = context.remaining() - removedHeaderSize - removedBodySize;
+        int newHlength = hlength - removedHeaderSize;
+        ByteBuffer cleanedContext = ByteBuffer.allocate(newSize);
+        cleanedContext.putShort(cleanedContext.position(), (short) ((newHlength - HEADER_SIZE_LENGTH) / HEADER_ELT_LENGTH));
+        ContextState cleaned = new ContextState(cleanedContext, newHlength);
+
+        state.reset();
+        while (state.hasRemaining())
+        {
+            long clock = state.getClock();
+            if (clock > 0 || -((int)(clock / 1000)) >= gcBefore)
+            {
+                state.copyTo(cleaned);
+            }
+            state.moveToNext();
+        }
+        return cleanedContext;
+    }
+
+    /**
      * Helper class to work on contexts (works by iterating over them).
      * A context being abstractly a list of tuple (nodeid, clock, count), a
      * ContextState encapsulate a context and a position to one of the tuple.
@@ -494,11 +632,22 @@ public class CounterContext implements IContext
 
         public ContextState(ByteBuffer context, int headerLength)
         {
+            this(context, headerLength, HEADER_SIZE_LENGTH, headerLength, false);
+            updateIsDelta();
+        }
+
+        public ContextState(ByteBuffer context)
+        {
+            this(context, headerLength(context));
+        }
+
+        private ContextState(ByteBuffer context, int headerLength, int headerOffset, int bodyOffset, boolean currentIsDelta)
+        {
             this.context = context;
             this.headerLength = headerLength;
-            this.headerOffset = HEADER_SIZE_LENGTH;
-            this.bodyOffset = headerLength;
-            updateIsDelta();
+            this.headerOffset = headerOffset;
+            this.bodyOffset = bodyOffset;
+            this.currentIsDelta = currentIsDelta;
         }
 
         public boolean isDelta()
@@ -597,15 +746,19 @@ public class CounterContext implements IContext
             return (bodyOffset - headerLength) / STEP_LENGTH;
         }
 
+        public ContextState duplicate()
+        {
+            return new ContextState(context, headerLength, headerOffset, bodyOffset, currentIsDelta);
+        }
+
         /*
-         * Function used for tests only
          * Allocate a new context big enough for {@code elementCount} elements
          * with {@code deltaCount} of them being delta, and return the initial
          * ContextState corresponding.
          */
         public static ContextState allocate(int elementCount, int deltaCount)
         {
-            assert deltaCount < elementCount;
+            assert deltaCount <= elementCount;
             int hlength = HEADER_SIZE_LENGTH + deltaCount * HEADER_ELT_LENGTH;
             ByteBuffer context = ByteBuffer.allocate(hlength + elementCount * STEP_LENGTH);
             context.putShort(0, (short)deltaCount);
