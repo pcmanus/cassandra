@@ -1235,7 +1235,8 @@ public class CassandraServer implements Cassandra.Iface
                 
         try
         {
-            return QueryProcessor.process(queryString, state());
+            return org.apache.cassandra.cql3.QueryProcessor.process(queryString, state());
+            //return QueryProcessor.process(queryString, state());
         }
         catch (RecognitionException e)
         {
