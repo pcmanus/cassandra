@@ -137,7 +137,7 @@ public class SSTableWriter extends SSTable
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataPosition) throws IOException
+    private RowIndexEntry afterAppend(DecoratedKey decoratedKey, long dataPosition, DeletionInfo delInfo, ColumnIndexer.Result index) throws IOException
     {
         lastWrittenKey = decoratedKey;
         this.last = lastWrittenKey;
@@ -146,11 +146,13 @@ public class SSTableWriter extends SSTable
 
         if (logger.isTraceEnabled())
             logger.trace("wrote " + decoratedKey + " at " + dataPosition);
-        iwriter.afterAppend(decoratedKey, dataPosition);
+        RowIndexEntry entry = RowIndexEntry.create(dataPosition, delInfo, index);
+        iwriter.append(decoratedKey, entry);
         dbuilder.addPotentialBoundary(dataPosition);
+        return entry;
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    public RowIndexEntry append(AbstractCompactedRow row) throws IOException
     {
         long currentPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile.stream);
@@ -168,8 +170,7 @@ public class SSTableWriter extends SSTable
         sstableMetadataCollector.updateMaxTimestamp(row.maxTimestamp());
         sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - currentPosition);
         sstableMetadataCollector.addColumnCount(row.columnCount());
-        afterAppend(row.key, currentPosition);
-        return currentPosition;
+        return afterAppend(row.key, currentPosition, row.deletionInfo(), row.index());
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
@@ -177,30 +178,20 @@ public class SSTableWriter extends SSTable
         long startPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile.stream);
 
-        // serialize index and bloom filter into in-memory structure
-        ColumnIndexer.RowHeader header = ColumnIndexer.serialize(cf);
+        // build column index
+        // TODO: build and serialization could be merged
+        ColumnIndexer.Result index = new ColumnIndexer(cf.getComparator(), decoratedKey.key, cf.getColumnCount()).build(cf);
 
-        // write out row size
-        dataFile.stream.writeLong(header.serializedSize() + cf.serializedSizeForSSTable());
+        // write out row size + data
+        dataFile.stream.writeLong(cf.serializedSizeForSSTable());
+        int columnCount = ColumnFamily.serializer().serializeForSSTable(cf, dataFile.stream);
 
-        // write out row header and data
-        int columnCount = ColumnFamily.serializer().serializeWithIndexes(cf, header, dataFile.stream);
-        afterAppend(decoratedKey, startPosition);
+        afterAppend(decoratedKey, startPosition, cf.deletionInfo(), index);
 
         // track max column timestamp
         sstableMetadataCollector.updateMaxTimestamp(cf.maxTimestamp());
         sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - startPosition);
         sstableMetadataCollector.addColumnCount(columnCount);
-    }
-
-    public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
-    {
-        long currentPosition = beforeAppend(decoratedKey);
-        ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile.stream);
-        assert value.remaining() > 0;
-        dataFile.stream.writeLong(value.remaining());
-        ByteBufferUtil.write(value, dataFile.stream);
-        afterAppend(decoratedKey, currentPosition);
     }
 
     public long appendFromStream(DecoratedKey key, CFMetaData metadata, long dataSize, DataInput in) throws IOException
@@ -212,21 +203,12 @@ public class SSTableWriter extends SSTable
         // write row size
         dataFile.stream.writeLong(dataSize);
 
-        // write BF
-        int bfSize = in.readInt();
-        dataFile.stream.writeInt(bfSize);
-        for (int i = 0; i < bfSize; i++)
-            dataFile.stream.writeByte(in.readByte());
-
-        // write index
-        int indexSize = in.readInt();
-        dataFile.stream.writeInt(indexSize);
-        for (int i = 0; i < indexSize; i++)
-            dataFile.stream.writeByte(in.readByte());
-
         // cf data
-        dataFile.stream.writeInt(in.readInt());
-        dataFile.stream.writeLong(in.readLong());
+        int lct = in.readInt();
+        long mfda = in.readLong();
+        DeletionInfo deletionInfo = new DeletionInfo(mfda, lct);
+        dataFile.stream.writeInt(lct);
+        dataFile.stream.writeLong(mfda);
 
         // column size
         int columnCount = in.readInt();
@@ -235,6 +217,7 @@ public class SSTableWriter extends SSTable
         // deserialize each column to obtain maxTimestamp and immediately serialize it.
         long maxTimestamp = Long.MIN_VALUE;
         ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
+        ColumnIndexer columnIndexer = new ColumnIndexer(cf.getComparator(), key.key, columnCount);
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
@@ -258,6 +241,7 @@ public class SSTableWriter extends SSTable
             }
             maxTimestamp = Math.max(maxTimestamp, column.maxTimestamp());
             cf.getColumnSerializer().serialize(column, dataFile.stream);
+            columnIndexer.add(column);
         }
 
         assert dataSize == dataFile.getFilePointer() - (dataStart + 8)
@@ -265,7 +249,7 @@ public class SSTableWriter extends SSTable
         sstableMetadataCollector.updateMaxTimestamp(maxTimestamp);
         sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - currentPosition);
         sstableMetadataCollector.addColumnCount(columnCount);
-        afterAppend(key, currentPosition);
+        afterAppend(key, currentPosition, deletionInfo, columnIndexer.build());
         return currentPosition;
     }
 
@@ -409,14 +393,14 @@ public class SSTableWriter extends SSTable
                : BloomFilter.getFilter(keyCount, fpChance);
         }
 
-        public void afterAppend(DecoratedKey key, long dataPosition) throws IOException
+        public void append(DecoratedKey key, RowIndexEntry indexEntry) throws IOException
         {
             bf.add(key.key);
             long indexPosition = indexFile.getFilePointer();
             ByteBufferUtil.writeWithShortLength(key.key, indexFile.stream);
-            indexFile.stream.writeLong(dataPosition);
+            RowIndexEntry.serializer.serialize(indexEntry, indexFile.stream);
             if (logger.isTraceEnabled())
-                logger.trace("wrote index of " + key + " at " + indexPosition);
+                logger.trace("wrote index entry: " + indexEntry + " at " + indexPosition);
 
             summary.maybeAddEntry(key, indexPosition);
             builder.addPotentialBoundary(indexPosition);

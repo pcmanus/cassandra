@@ -206,7 +206,7 @@ public class IndexHelper
             return 2 + firstName.remaining() + 2 + lastName.remaining() + 8 + 8;
         }
 
-        public static IndexInfo deserialize(FileDataInput dis) throws IOException
+        public static IndexInfo deserialize(DataInput dis) throws IOException
         {
             return new IndexInfo(ByteBufferUtil.readWithShortLength(dis), ByteBufferUtil.readWithShortLength(dis), dis.readLong(), dis.readLong());
         }

@@ -55,13 +55,13 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
     private final List<? extends ICountableColumnIterator> rows;
     private final CompactionController controller;
     private final boolean shouldPurge;
-    private final DataOutputBuffer headerBuffer;
     private ColumnFamily emptyColumnFamily;
     private Reducer reducer;
     private int columnCount;
     private long maxTimestamp;
     private long columnSerializedSize;
     private boolean closed;
+    private final ColumnIndexer.Result columnsIndex;
 
     public LazilyCompactedRow(CompactionController controller, List<? extends ICountableColumnIterator> rows)
     {
@@ -80,9 +80,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
                 emptyColumnFamily.delete(cf);
         }
 
-        // initialize row header so isEmpty can be called
-        headerBuffer = new DataOutputBuffer();
-        ColumnIndexer.serialize(this, headerBuffer);
+        this.columnsIndex = new ColumnIndexer(emptyColumnFamily.getComparator(), key.key, getEstimatedColumnCount()).build(this);
         // reach into the reducer used during iteration to get column count, size, max column timestamp
         // (however, if there are zero columns, iterator() will not be called by ColumnIndexer and reducer will be null)
         columnCount = reducer == null ? 0 : reducer.size;
@@ -98,13 +96,11 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         DataOutputBuffer clockOut = new DataOutputBuffer();
         ColumnFamily.serializer().serializeCFInfo(emptyColumnFamily, clockOut);
 
-        long dataSize = headerBuffer.getLength() + clockOut.getLength() + columnSerializedSize;
+        long dataSize = clockOut.getLength() + columnSerializedSize;
         if (logger.isDebugEnabled())
-            logger.debug(String.format("header / clock / column sizes are %s / %s / %s",
-                         headerBuffer.getLength(), clockOut.getLength(), columnSerializedSize));
+            logger.debug(String.format("clock / column sizes are %s / %s", clockOut.getLength(), columnSerializedSize));
         assert dataSize > 0;
         out.writeLong(dataSize);
-        out.write(headerBuffer.getData(), 0, headerBuffer.getLength());
         out.write(clockOut.getData(), 0, clockOut.getLength());
         out.writeInt(columnCount);
 
@@ -203,6 +199,19 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
             }
         }
         closed = true;
+    }
+
+    public DeletionInfo deletionInfo()
+    {
+        return emptyColumnFamily.deletionInfo();
+    }
+
+    /**
+     * @return the column index for this row.
+     */
+    public ColumnIndexer.Result index()
+    {
+        return columnsIndex;
     }
 
     private class Reducer extends MergeIterator.Reducer<IColumn, IColumn>

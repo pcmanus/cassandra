@@ -31,6 +31,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnIndexer;
 import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.HeapAllocator;
@@ -129,12 +130,9 @@ public class PrecompactedRow extends AbstractCompactedRow
     {
         assert compactedCf != null;
         DataOutputBuffer buffer = new DataOutputBuffer();
-        DataOutputBuffer headerBuffer = new DataOutputBuffer();
-        ColumnIndexer.serialize(compactedCf, headerBuffer);
         ColumnFamily.serializer().serializeForSSTable(compactedCf, buffer);
-        int dataSize = headerBuffer.getLength() + buffer.getLength();
-        out.writeLong(dataSize);
-        out.write(headerBuffer.getData(), 0, headerBuffer.getLength());
+        int dataSize = buffer.getLength();
+        out.writeLong(buffer.getLength());
         out.write(buffer.getData(), 0, buffer.getLength());
         return dataSize;
     }
@@ -180,5 +178,18 @@ public class PrecompactedRow extends AbstractCompactedRow
     public ColumnFamily getFullColumnFamily()  throws IOException
     {
         return compactedCf;
+    }
+
+    public DeletionInfo deletionInfo()
+    {
+        return compactedCf.deletionInfo();
+    }
+
+    /**
+     * @return the column index for this row.
+     */
+    public ColumnIndexer.Result index()
+    {
+        return new ColumnIndexer(compactedCf.getComparator(), key.key, compactedCf.getColumnCount()).build(compactedCf);
     }
 }
