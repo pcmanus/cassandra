@@ -196,7 +196,7 @@ public final class CFMetaData
         this(keyspace, name, type, comp, subcc, Schema.instance.nextCFId());
     }
 
-    private CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc, int id)
+    CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc, int id)
     {
         // Final fields must be set in constructor
         ksName = keyspace;
@@ -328,114 +328,6 @@ public final class CFMetaData
     {
         // TODO simplify this when info.index_name is guaranteed to be set
         return cfName + Directories.SECONDARY_INDEX_NAME_SEPARATOR + (info.getIndexName() == null ? ByteBufferUtil.bytesToHex(info.name) : info.getIndexName());
-    }
-
-    @Deprecated
-    public static CFMetaData fromAvro(org.apache.cassandra.db.migration.avro.CfDef cf)
-    {
-        AbstractType<?> comparator;
-        AbstractType<?> subcolumnComparator = null;
-        AbstractType<?> validator;
-        AbstractType<?> keyValidator;
-
-        try
-        {
-            comparator = TypeParser.parse(cf.comparator_type.toString());
-            if (cf.subcomparator_type != null)
-                subcolumnComparator = TypeParser.parse(cf.subcomparator_type);
-            validator = TypeParser.parse(cf.default_validation_class);
-            keyValidator = TypeParser.parse(cf.key_validation_class);
-        }
-        catch (Exception ex)
-        {
-            throw new RuntimeException("Could not inflate CFMetaData for " + cf, ex);
-        }
-        Map<ByteBuffer, ColumnDefinition> column_metadata = new TreeMap<ByteBuffer, ColumnDefinition>(BytesType.instance);
-        for (org.apache.cassandra.db.migration.avro.ColumnDef aColumn_metadata : cf.column_metadata)
-        {
-            ColumnDefinition cd = ColumnDefinition.fromAvro(aColumn_metadata);
-            if (cd.getIndexType() != null && cd.getIndexName() == null)
-                cd.setIndexName(getDefaultIndexName(cf.name.toString(), comparator, cd.name));
-            column_metadata.put(cd.name, cd);
-        }
-
-        CFMetaData newCFMD = new CFMetaData(cf.keyspace.toString(),
-                                            cf.name.toString(),
-                                            ColumnFamilyType.create(cf.column_type.toString()),
-                                            comparator,
-                                            subcolumnComparator,
-                                            cf.id);
-
-        // When we pull up an old avro CfDef which doesn't have these arguments,
-        //  it doesn't default them correctly. Without explicit defaulting,
-        //  grandfathered metadata becomes wrong or causes crashes.
-        //  Isn't AVRO supposed to handle stuff like this?
-        if (cf.min_compaction_threshold != null) { newCFMD.minCompactionThreshold(cf.min_compaction_threshold); }
-        if (cf.max_compaction_threshold != null) { newCFMD.maxCompactionThreshold(cf.max_compaction_threshold); }
-        if (cf.key_alias != null) { newCFMD.keyAlias(cf.key_alias); }
-        if (cf.column_aliases != null) { newCFMD.columnAliases(fixAvroRetardation(cf.column_aliases)); }
-        if (cf.value_alias != null) { newCFMD.valueAlias(cf.value_alias); }
-        if (cf.compaction_strategy != null)
-        {
-            try
-            {
-                newCFMD.compactionStrategyClass = createCompactionStrategy(cf.compaction_strategy.toString());
-            }
-            catch (ConfigurationException e)
-            {
-                throw new RuntimeException(e);
-            }
-        }
-        if (cf.compaction_strategy_options != null)
-        {
-            for (Map.Entry<CharSequence, CharSequence> e : cf.compaction_strategy_options.entrySet())
-                newCFMD.compactionStrategyOptions.put(e.getKey().toString(), e.getValue().toString());
-        }
-
-        CompressionParameters cp;
-        try
-        {
-            cp = CompressionParameters.create(cf.compression_options);
-        }
-        catch (ConfigurationException e)
-        {
-            throw new RuntimeException(e);
-        }
-
-        Caching caching;
-
-        try
-        {
-            caching = cf.caching == null ? Caching.KEYS_ONLY : Caching.fromString(cf.caching.toString());
-        }
-        catch (ConfigurationException e)
-        {
-            throw new RuntimeException(e);
-        }
-
-        return newCFMD.comment(cf.comment.toString())
-                      .readRepairChance(cf.read_repair_chance)
-                      .dclocalReadRepairChance(cf.dclocal_read_repair_chance)
-                      .replicateOnWrite(cf.replicate_on_write)
-                      .gcGraceSeconds(cf.gc_grace_seconds)
-                      .defaultValidator(validator)
-                      .keyValidator(keyValidator)
-                      .columnMetadata(column_metadata)
-                      .compressionParameters(cp)
-                      .bloomFilterFpChance(cf.bloom_filter_fp_chance)
-                      .caching(caching);
-    }
-
-    /*
-     * Avro handles array with it's own class, GenericArray, that extends
-     * AbstractList but redefine equals() in a way that violate List.equals()
-     * specification (basically only a GenericArray can ever be equal to a
-     * GenericArray).
-     * (Concretely, keeping the list returned by avro breaks DefsTest.saveAndRestore())
-     */
-    private static <T> List<T> fixAvroRetardation(List<T> array)
-    {
-        return new ArrayList<T>(array);
     }
 
     public String getComment()

@@ -46,7 +46,7 @@ public final class KSMetaData
     private final Map<String, CFMetaData> cfMetaData;
     public final boolean durableWrites;
 
-    private KSMetaData(String name, Class<? extends AbstractReplicationStrategy> strategyClass, Map<String, String> strategyOptions, boolean durableWrites, Iterable<CFMetaData> cfDefs)
+    KSMetaData(String name, Class<? extends AbstractReplicationStrategy> strategyClass, Map<String, String> strategyOptions, boolean durableWrites, Iterable<CFMetaData> cfDefs)
     {
         this.name = name;
         this.strategyClass = strategyClass == null ? NetworkTopologyStrategy.class : strategyClass;
@@ -122,47 +122,6 @@ public final class KSMetaData
           .append("}")
           .append(", durable_writes: ").append(durableWrites);
         return sb.toString();
-    }
-
-    @Deprecated
-    public static KSMetaData fromAvro(org.apache.cassandra.db.migration.avro.KsDef ks)
-    {
-        Class<? extends AbstractReplicationStrategy> repStratClass;
-        try
-        {
-            String strategyClassName = convertOldStrategyName(ks.strategy_class.toString());
-            repStratClass = (Class<AbstractReplicationStrategy>)Class.forName(strategyClassName);
-        }
-        catch (Exception ex)
-        {
-            throw new RuntimeException("Could not create ReplicationStrategy of type " + ks.strategy_class, ex);
-        }
-
-        Map<String, String> strategyOptions = new HashMap<String, String>();
-        if (ks.strategy_options != null)
-        {
-            for (Map.Entry<CharSequence, CharSequence> e : ks.strategy_options.entrySet())
-            {
-                String name = e.getKey().toString();
-                // Silently discard a replication_factor option to NTS.
-                // The history is, people were creating CFs with the default settings (which in the CLI is NTS) and then
-                // giving it a replication_factor option, which is nonsensical.  Initially our strategy was to silently
-                // ignore this option, but that turned out to confuse people more.  So in 0.8.2 we switched to throwing
-                // an exception in the NTS constructor, which would be turned into an InvalidRequestException for the
-                // client.  But, it also prevented startup for anyone upgrading without first cleaning that option out.
-                if (repStratClass == NetworkTopologyStrategy.class && name.trim().toLowerCase().equals("replication_factor"))
-                    continue;
-                strategyOptions.put(name, e.getValue().toString());
-            }
-        }
-
-        int cfsz = ks.cf_defs.size();
-        List<CFMetaData> cfMetaData = new ArrayList<CFMetaData>(cfsz);
-        Iterator<org.apache.cassandra.db.migration.avro.CfDef> cfiter = ks.cf_defs.iterator();
-        for (int i = 0; i < cfsz; i++)
-            cfMetaData.add(CFMetaData.fromAvro(cfiter.next()));
-
-        return new KSMetaData(ks.name.toString(), repStratClass, strategyOptions, ks.durable_writes, cfMetaData);
     }
 
     public static String convertOldStrategyName(String name)

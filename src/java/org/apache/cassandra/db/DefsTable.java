@@ -32,10 +32,7 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificRecord;
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ConfigurationException;
-import org.apache.cassandra.config.KSMetaData;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AsciiType;
@@ -198,7 +195,7 @@ public class DefsTable
                 if (column.name().equals(DEFINITION_SCHEMA_COLUMN_NAME))
                     continue;
                 KsDef ks = deserializeAvro(schema, column.value(), new KsDef());
-                keyspaces.add(KSMetaData.fromAvro(ks));
+                keyspaces.add(Avro.ksFromAvro(ks));
             }
 
             // store deserialized keyspaces into new place

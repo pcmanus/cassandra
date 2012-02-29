@@ -86,22 +86,6 @@ public class ColumnDefinition
         return result;
     }
 
-    @Deprecated
-    public static ColumnDefinition fromAvro(org.apache.cassandra.db.migration.avro.ColumnDef cd)
-    {
-        IndexType index_type = cd.index_type == null ? null : Enum.valueOf(IndexType.class, cd.index_type.name());
-        String index_name = cd.index_name == null ? null : cd.index_name.toString();
-        try
-        {
-            AbstractType<?> validatorType = TypeParser.parse(cd.validation_class);
-            return new ColumnDefinition(ByteBufferUtil.clone(cd.name), validatorType, index_type, getStringMap(cd.index_options), index_name);
-        }
-        catch (ConfigurationException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
     public ColumnDef toThrift()
     {
         ColumnDef cd = new ColumnDef();
