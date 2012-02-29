@@ -44,7 +44,7 @@ public class UpdateKeyspace extends Migration
 
     protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
     {
-        Collection<RowMutation> mutations = MigrationHelper.updateKeyspace(newState, timestamp);
+        Collection<RowMutation> mutations = MigrationHelper.updateKeyspace(newState, timestamp, true);
         logger.info("Keyspace updated. Please perform any manual operations.");
         return mutations;
     }

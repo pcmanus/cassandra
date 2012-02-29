@@ -41,7 +41,7 @@ public class UpdateColumnFamily extends Migration
 
     protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
     {
-        return MigrationHelper.updateColumnFamily(newState, timestamp);
+        return MigrationHelper.updateColumnFamily(newState, timestamp, true);
     }
 
     @Override

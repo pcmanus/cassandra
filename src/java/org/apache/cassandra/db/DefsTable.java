@@ -202,8 +202,8 @@ public class DefsTable
             dumpToStorage(keyspaces);
 
             logger.info("Truncating deprecated system column families (migrations, schema)...");
-            MigrationHelper.dropColumnFamily(Table.SYSTEM_TABLE, Migration.MIGRATIONS_CF);
-            MigrationHelper.dropColumnFamily(Table.SYSTEM_TABLE, Migration.SCHEMA_CF);
+            MigrationHelper.dropColumnFamily(Table.SYSTEM_TABLE, Migration.MIGRATIONS_CF, -1, false);
+            MigrationHelper.dropColumnFamily(Table.SYSTEM_TABLE, Migration.SCHEMA_CF, -1, false);
         }
 
         return keyspaces;
@@ -245,7 +245,7 @@ public class DefsTable
 
         // it is save to drop a keyspace only when all nested ColumnFamilies where deleted
         for (String keyspaceToDrop : keyspacesToDrop)
-            MigrationHelper.dropKeyspace(keyspaceToDrop);
+            MigrationHelper.dropKeyspace(keyspaceToDrop, -1, false);
     }
 
     private static Set<String> mergeKeyspaces(Map<DecoratedKey, ColumnFamily> old, Map<DecoratedKey, ColumnFamily> updated)
@@ -263,7 +263,7 @@ public class DefsTable
 
             // we don't care about nested ColumnFamilies here because those are going to be processed separately
             if (!ksAttrs.isEmpty())
-                MigrationHelper.addKeyspace(KSMetaData.fromSchema(entry.getValue(), null));
+                MigrationHelper.addKeyspace(KSMetaData.fromSchema(entry.getValue(), null), -1, false);
         }
 
         /**
@@ -284,7 +284,7 @@ public class DefsTable
 
             if (prevValue.isEmpty())
             {
-                MigrationHelper.addKeyspace(KSMetaData.fromSchema(newValue, null));
+                MigrationHelper.addKeyspace(KSMetaData.fromSchema(newValue, null), -1, false);
                 continue;
             }
 
@@ -309,7 +309,7 @@ public class DefsTable
             if (newState.isEmpty())
                 keyspacesToDrop.add(AsciiType.instance.getString(key.key));
             else
-                MigrationHelper.updateKeyspace(KSMetaData.fromSchema(newState));
+                MigrationHelper.updateKeyspace(KSMetaData.fromSchema(newState), -1, false);
         }
 
         return keyspacesToDrop;
@@ -353,7 +353,7 @@ public class DefsTable
             else if (newValue.isEmpty()) // whole keyspace is deleted
             {
                 for (CfDef cfDef : KSMetaData.deserializeColumnFamilies(prevValue).values())
-                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name);
+                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name, -1, false);
             }
             else // has modifications in the nested ColumnFamilies, need to perform nested diff to determine what was really changed
             {
@@ -371,10 +371,10 @@ public class DefsTable
                     MigrationHelper.addColumnFamily(cfDef);
 
                 for (CfDef cfDef : cfDefDiff.entriesOnlyOnLeft().values())
-                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name);
+                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name, -1, false);
 
                 for (MapDifference.ValueDifference<CfDef> cfDef : cfDefDiff.entriesDiffering().values())
-                    MigrationHelper.updateColumnFamily(cfDef.rightValue());
+                    MigrationHelper.updateColumnFamily(cfDef.rightValue(), -1, false);
             }
         }
     }

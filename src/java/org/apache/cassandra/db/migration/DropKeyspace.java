@@ -43,7 +43,7 @@ public class DropKeyspace extends Migration
 
     protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
     {
-        return MigrationHelper.dropKeyspace(name, timestamp);
+        return MigrationHelper.dropKeyspace(name, timestamp, true);
     }
 
     @Override

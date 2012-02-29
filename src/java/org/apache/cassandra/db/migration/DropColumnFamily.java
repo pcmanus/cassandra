@@ -46,7 +46,7 @@ public class DropColumnFamily extends Migration
 
     protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
     {
-        return MigrationHelper.dropColumnFamily(ksName, cfName, timestamp);
+        return MigrationHelper.dropColumnFamily(ksName, cfName, timestamp, true);
     }
 
     @Override
