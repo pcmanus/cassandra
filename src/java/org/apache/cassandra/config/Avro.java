@@ -146,7 +146,7 @@ public class Avro
 
         return newCFMD.comment(cf.comment.toString())
                       .readRepairChance(cf.read_repair_chance)
-                      .dclocalReadRepairChance(cf.dclocal_read_repair_chance)
+                      .dcLocalReadRepairChance(cf.dclocal_read_repair_chance)
                       .replicateOnWrite(cf.replicate_on_write)
                       .gcGraceSeconds(cf.gc_grace_seconds)
                       .defaultValidator(validator)

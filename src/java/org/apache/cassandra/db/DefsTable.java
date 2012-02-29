@@ -150,16 +150,16 @@ public class DefsTable
             if (row.cf == null || row.cf.isEmpty() || row.cf.isMarkedForDelete())
                 continue;
 
-            keyspaces.add(KSMetaData.fromSchema(row.cf, serializedColumnFamilies(row.key)));
+            keyspaces.add(KSMetaData.fromSchema(row, serializedColumnFamilies(row.key)));
         }
 
         return keyspaces;
     }
 
-    private static ColumnFamily serializedColumnFamilies(DecoratedKey ksNameKey)
+    private static Row serializedColumnFamilies(DecoratedKey ksNameKey)
     {
         ColumnFamilyStore cfsStore = SystemTable.schemaCFS(SystemTable.SCHEMA_COLUMNFAMILIES_CF);
-        return cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey, new QueryPath(SystemTable.SCHEMA_COLUMNFAMILIES_CF)));
+        return new Row(ksNameKey, cfsStore.getColumnFamily(QueryFilter.getIdentityFilter(ksNameKey, new QueryPath(SystemTable.SCHEMA_COLUMNFAMILIES_CF))));
     }
 
     /**
@@ -263,7 +263,10 @@ public class DefsTable
 
             // we don't care about nested ColumnFamilies here because those are going to be processed separately
             if (!ksAttrs.isEmpty())
-                MigrationHelper.addKeyspace(KSMetaData.fromSchema(entry.getValue(), null), -1, false);
+            {
+                KSMetaData ksm = KSMetaData.fromSchema(new Row(entry.getKey(), entry.getValue()), Collections.<CFMetaData>emptyList());
+                MigrationHelper.addKeyspace(ksm, -1, false);
+            }
         }
 
         /**
@@ -284,7 +287,8 @@ public class DefsTable
 
             if (prevValue.isEmpty())
             {
-                MigrationHelper.addKeyspace(KSMetaData.fromSchema(newValue, null), -1, false);
+                KSMetaData ksm = KSMetaData.fromSchema(new Row(entry.getKey(), newValue), Collections.<CFMetaData>emptyList());
+                MigrationHelper.addKeyspace(ksm, -1, false);
                 continue;
             }
 
@@ -307,9 +311,14 @@ public class DefsTable
             ColumnFamily newState = valueDiff.rightValue();
 
             if (newState.isEmpty())
+            {
                 keyspacesToDrop.add(AsciiType.instance.getString(key.key));
+            }
             else
-                MigrationHelper.updateKeyspace(KSMetaData.fromSchema(newState), -1, false);
+            {
+                KSMetaData ksm = KSMetaData.fromSchema(new Row(key, newState), Collections.<CFMetaData>emptyList());
+                MigrationHelper.updateKeyspace(ksm, -1, false);
+            }
         }
 
         return keyspacesToDrop;
@@ -328,10 +337,10 @@ public class DefsTable
 
             if (!cfAttrs.isEmpty())
             {
-               Map<String, CfDef> cfDefs = KSMetaData.deserializeColumnFamilies(cfAttrs);
+               Map<String, CFMetaData> cfDefs = KSMetaData.deserializeColumnFamilies(new Row(entry.getKey(), cfAttrs));
 
-                for (CfDef cfDef : cfDefs.values())
-                    MigrationHelper.addColumnFamily(cfDef);
+                for (CFMetaData cfDef : cfDefs.values())
+                    MigrationHelper.addColumnFamily(cfDef, -1, false);
             }
         }
 
@@ -344,36 +353,37 @@ public class DefsTable
 
             ColumnFamily prevValue = valueDiff.leftValue(); // state before external modification
             ColumnFamily newValue = valueDiff.rightValue(); // updated state
+            Row newRow = new Row(keyspace, newValue);
 
             if (prevValue.isEmpty()) // whole keyspace was deleted and now it's re-created
             {
-                for (CfDef cfDef : KSMetaData.deserializeColumnFamilies(newValue).values())
-                    MigrationHelper.addColumnFamily(cfDef);
+                for (CFMetaData cfm : KSMetaData.deserializeColumnFamilies(newRow).values())
+                    MigrationHelper.addColumnFamily(cfm, -1, false);
             }
             else if (newValue.isEmpty()) // whole keyspace is deleted
             {
-                for (CfDef cfDef : KSMetaData.deserializeColumnFamilies(prevValue).values())
-                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name, -1, false);
+                for (CFMetaData cfm : KSMetaData.deserializeColumnFamilies(new Row(keyspace, prevValue)).values())
+                    MigrationHelper.dropColumnFamily(cfm.ksName, cfm.cfName, -1, false);
             }
             else // has modifications in the nested ColumnFamilies, need to perform nested diff to determine what was really changed
             {
                 String ksName = AsciiType.instance.getString(keyspace.key);
 
-                Map<String, CfDef> oldCfDefs = new HashMap<String, CfDef>();
+                Map<String, CFMetaData> oldCfDefs = new HashMap<String, CFMetaData>();
                 for (CFMetaData cfm : Schema.instance.getKSMetaData(ksName).cfMetaData().values())
-                    oldCfDefs.put(cfm.cfName, cfm.toThrift());
+                    oldCfDefs.put(cfm.cfName, cfm);
 
-                Map<String, CfDef> newCfDefs = KSMetaData.deserializeColumnFamilies(newValue);
+                Map<String, CFMetaData> newCfDefs = KSMetaData.deserializeColumnFamilies(newRow);
 
-                MapDifference<String, CfDef> cfDefDiff = Maps.difference(oldCfDefs, newCfDefs);
+                MapDifference<String, CFMetaData> cfDefDiff = Maps.difference(oldCfDefs, newCfDefs);
 
-                for (CfDef cfDef : cfDefDiff.entriesOnlyOnRight().values())
-                    MigrationHelper.addColumnFamily(cfDef);
+                for (CFMetaData cfDef : cfDefDiff.entriesOnlyOnRight().values())
+                    MigrationHelper.addColumnFamily(cfDef, -1, false);
 
-                for (CfDef cfDef : cfDefDiff.entriesOnlyOnLeft().values())
-                    MigrationHelper.dropColumnFamily(cfDef.keyspace, cfDef.name, -1, false);
+                for (CFMetaData cfDef : cfDefDiff.entriesOnlyOnLeft().values())
+                    MigrationHelper.dropColumnFamily(cfDef.ksName, cfDef.cfName, -1, false);
 
-                for (MapDifference.ValueDifference<CfDef> cfDef : cfDefDiff.entriesDiffering().values())
+                for (MapDifference.ValueDifference<CFMetaData> cfDef : cfDefDiff.entriesDiffering().values())
                     MigrationHelper.updateColumnFamily(cfDef.rightValue(), -1, false);
             }
         }

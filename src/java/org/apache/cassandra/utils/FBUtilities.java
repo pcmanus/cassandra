@@ -54,10 +54,15 @@ import org.apache.thrift.TBase;
 import org.apache.thrift.TDeserializer;
 import org.apache.thrift.TException;
 import org.apache.thrift.TSerializer;
+import org.codehaus.jackson.JsonFactory;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.type.TypeReference;
 
 public class FBUtilities
 {
     private static Logger logger_ = LoggerFactory.getLogger(FBUtilities.class);
+
+    private static ObjectMapper jsonMapper = new ObjectMapper(new JsonFactory());
 
     public static final BigInteger TWO = new BigInteger("2");
 
@@ -506,6 +511,28 @@ public class FBUtilities
     public static <T> CloseableIterator<T> closeableIterator(Iterator<T> iterator)
     {
         return new WrappedCloseableIterator<T>(iterator);
+    }
+
+    public static Map<String, String> fromJsonMap(String json)
+    {
+        return jsonMapper.readValue(json, ?);
+    }
+
+    public static List<String> fromJsonList(String json)
+    {
+        return jsonMapper.readValue(json, ?);
+    }
+
+    public static String json(Object object)
+    {
+        try
+        {
+            return jsonMapper.writeValueAsString(object);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     private static final class WrappedCloseableIterator<T>

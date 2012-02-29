@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db.migration;
 
+import java.io.DataOutput;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -32,19 +34,12 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.Table;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.thrift.CfDef;
-import org.apache.cassandra.thrift.InvalidRequestException;
-import org.apache.cassandra.thrift.KsDef;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
-import org.codehaus.jackson.map.ObjectMapper;
-
 public class MigrationHelper
 {
-    private static final ObjectMapper jsonMapper = new ObjectMapper();
     private static final Map<Class<?>, Class<?>> primitiveToWrapper = new HashMap<Class<?>, Class<?>>();
     static
     {
@@ -58,118 +53,21 @@ public class MigrationHelper
         primitiveToWrapper.put(double.class, Double.class);
     }
 
-    public static ByteBuffer readableColumnName(ByteBuffer columnName, AbstractType comparator)
+    public static ByteBuffer searchComposite(String name, boolean start)
     {
-        return ByteBufferUtil.bytes(comparator.getString(columnName));
-    }
-
-    public static ByteBuffer valueAsBytes(Object value)
-    {
+        assert name != null;
+        ByteBuffer bytes = ByteBuffer.allocate(FBUtilities.encodedUTF8Length(name) + 1);
+        DataOutput out = new DataOutputStream(ByteBufferUtil.outputStream(bytes));
         try
         {
-            return ByteBuffer.wrap(jsonMapper.writeValueAsBytes(value));
+            out.writeUTF(name);
+            out.write(start ? 0 : 1);
         }
-        catch (Exception e)
+        catch (IOException e)
         {
             throw new RuntimeException(e);
         }
-    }
-
-    public static Object deserializeValue(ByteBuffer value, Class<?> valueClass)
-    {
-        try
-        {
-            // because jackson serialized ByteBuffer as byte[] and needs help with deserialization later
-            if (valueClass.equals(ByteBuffer.class))
-            {
-                byte[] bvalue = (byte[]) deserializeValue(value, byte[].class);
-                return bvalue == null ? null : ByteBuffer.wrap(bvalue);
-            }
-
-            return jsonMapper.readValue(ByteBufferUtil.getArray(value), valueClass);
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static Class<?> getValueClass(Class<?> klass, String name)
-    {
-        try
-        {
-            // We want to keep null values, so we must not return a primitive type
-            return maybeConvertToWrapperClass(klass.getField(name).getType());
-        }
-        catch (NoSuchFieldException e)
-        {
-            throw new RuntimeException(e); // never happens
-        }
-    }
-
-    private static Class<?> maybeConvertToWrapperClass(Class<?> klass)
-    {
-        Class<?> cl = primitiveToWrapper.get(klass);
-        return cl == null ? klass : cl;
-    }
-
-    public static ByteBuffer searchComposite(String comp1, boolean start)
-    {
-        return compositeNameFor(comp1, !start, null, false, null, false);
-    }
-
-    public static ByteBuffer compositeNameFor(String comp1, String comp2)
-    {
-        return compositeNameFor(comp1, ByteBufferUtil.bytes(comp2), null);
-    }
-
-    public static ByteBuffer compositeNameFor(String comp1, ByteBuffer comp2, String comp3)
-    {
-        return compositeNameFor(comp1, false, comp2, false, comp3, false);
-    }
-
-    public static ByteBuffer compositeNameFor(String comp1, boolean limit1, ByteBuffer comp2, boolean limit2, String comp3, boolean limit3)
-    {
-        int totalSize = 0;
-
-        if (comp1 != null)
-            totalSize += 2 + comp1.length() + 1;
-
-        if (comp2 != null)
-            totalSize += 2 + comp2.remaining() + 1;
-
-        if (comp3 != null)
-            totalSize += 2 + comp3.length() + 1;
-
-        ByteBuffer bytes = ByteBuffer.allocate(totalSize);
-
-        if (comp1 != null)
-        {
-            bytes.putShort((short) comp1.length());
-            bytes.put(comp1.getBytes());
-            bytes.put((byte) (limit1 ? 1 : 0));
-        }
-
-        if (comp2 != null)
-        {
-            int pos = comp2.position(), limit = comp2.limit();
-
-            bytes.putShort((short) comp2.remaining());
-            bytes.put(comp2);
-            bytes.put((byte) (limit2 ? 1 : 0));
-            // restore original range
-            comp2.position(pos).limit(limit);
-        }
-
-        if (comp3 != null)
-        {
-            bytes.putShort((short) comp3.length());
-            bytes.put(comp3.getBytes());
-            bytes.put((byte) (limit3 ? 1 : 0));
-        }
-
-        bytes.rewind();
-
+        bytes.flip();
         return bytes;
     }
 
@@ -186,20 +84,6 @@ public class MigrationHelper
 
         if (flush != null)
             FBUtilities.waitOnFuture(flush);
-    }
-
-    /* Schema Mutation Helpers */
-
-    public static void addColumnFamily(CfDef cfDef) throws ConfigurationException, IOException
-    {
-        try
-        {
-            addColumnFamily(CFMetaData.fromThrift(cfDef), -1, false);
-        }
-        catch (InvalidRequestException e)
-        {
-            throw new ConfigurationException(e.getMessage(), e);
-        }
     }
 
     /* Migration Helper implementations */
@@ -219,7 +103,7 @@ public class MigrationHelper
         return toCollection(keyspaceDef);
     }
 
-    static Collection<RowMutation> addColumnFamily(CFMetaData cfm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static Collection<RowMutation> addColumnFamily(CFMetaData cfm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
         KSMetaData ksm = Schema.instance.getTableDefinition(cfm.ksName);
         ksm = KSMetaData.cloneWith(ksm, Iterables.concat(ksm.cfMetaData().values(), Collections.singleton(cfm)));
@@ -246,7 +130,7 @@ public class MigrationHelper
         return toCollection(mutation);
     }
 
-    public static Collection<RowMutation> updateKeyspace(KsDef newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static Collection<RowMutation> updateKeyspace(KSMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
         KSMetaData oldKsm = Schema.instance.getKSMetaData(newState.name);
 
@@ -268,9 +152,9 @@ public class MigrationHelper
         return toCollection(schemaUpdate);
     }
 
-    public static Collection<RowMutation> updateColumnFamily(CfDef newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static Collection<RowMutation> updateColumnFamily(CFMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
-        CFMetaData cfm = Schema.instance.getCFMetaData(newState.keyspace, newState.name);
+        CFMetaData cfm = Schema.instance.getCFMetaData(newState.ksName, newState.cfName);
 
         RowMutation schemaUpdate = null;
 
@@ -313,11 +197,7 @@ public class MigrationHelper
         Collection<RowMutation> mutations = Collections.emptyList();
 
         if (withSchemaRecord)
-        {
-            mutations = ksm.dropFromSchema(timestamp);
-            for (RowMutation m : mutations)
-                m.apply();
-        }
+            ksm.dropFromSchema(timestamp).apply();
 
         // remove the table from the static instances.
         Table.clear(ksm.name);
