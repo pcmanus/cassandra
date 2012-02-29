@@ -169,6 +169,19 @@ public class RowMutation implements IMutation, MessageProducer
             throw new IllegalArgumentException("ColumnFamily " + columnFamily + " already has modifications in this mutation: " + prev);
     }
 
+    /**
+     * @return an empty ColumnFamily with the given @param cfName
+     */
+    public ColumnFamily add(String cfName)
+    {
+        ColumnFamily cf = ColumnFamily.create(table_, cfName);
+        ColumnFamily prev = modifications_.put(cf.id(), cf);
+        if (prev != null)
+            // developer error
+            throw new IllegalArgumentException("ColumnFamily " + cfName + " already has modifications in this mutation: " + prev);
+        return cf;
+    }
+
     public boolean isEmpty()
     {
         return modifications_.isEmpty();
@@ -186,6 +199,10 @@ public class RowMutation implements IMutation, MessageProducer
      * param @ value - value associated with the column
      * param @ timestamp - timestamp associated with this data.
      * param @ timeToLive - ttl for the column, 0 for standard (non expiring) columns
+     *
+     * @Deprecated this tends to be low-performance; we're doing two hash lookups,
+     * one of which instantiates a Pair, and callers tend to instantiate new QP objects
+     * for each call as well.  Use the add(ColumnFamily) overload instead.
      */
     public void add(QueryPath path, ByteBuffer value, long timestamp, int timeToLive)
     {
