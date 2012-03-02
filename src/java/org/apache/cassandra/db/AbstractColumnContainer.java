@@ -51,7 +51,12 @@ public abstract class AbstractColumnContainer implements IColumnContainer, IIter
 
     public void delete(AbstractColumnContainer cc2)
     {
-        columns.delete(cc2.columns.getDeletionInfo());
+        delete(cc2.columns.getDeletionInfo());
+    }
+
+    public void delete(DeletionInfo delInfo)
+    {
+        columns.delete(delInfo);
     }
 
     public boolean isMarkedForDelete()

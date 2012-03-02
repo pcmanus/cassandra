@@ -37,4 +37,10 @@ public class DeletionInfo
         this.markedForDeleteAt = markedForDeleteAt;
         this.localDeletionTime = localDeletionTime;
     }
+
+    @Override
+    public String toString()
+    {
+        return String.format("{deletedAt=%d, localDeletion=%d}", markedForDeleteAt, localDeletionTime);
+    }
 }
