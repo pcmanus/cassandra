@@ -82,7 +82,7 @@ public class SSTableReader extends SSTable
     private IndexSummary indexSummary;
     private Filter bf;
 
-    private InstrumentingCache<KeyCacheKey, Long> keyCache;
+    private InstrumentingCache<KeyCacheKey, RowIndexEntry> keyCache;
 
     private final BloomFilterTracker bloomFilterTracker = new BloomFilterTracker();
 
@@ -387,12 +387,12 @@ public class SSTableReader extends SSTable
                         indexSummary.addEntry(decoratedKey, indexPosition);
                     // if key cache could be used and we have key already pre-loaded
                     if (cacheLoading && keysToLoadInCache.contains(decoratedKey))
-                        cacheKey(decoratedKey, dataPosition);
+                        cacheKey(decoratedKey, indexEntry);
                 }
 
                 indexSummary.incrementRowid();
                 ibuilder.addPotentialBoundary(indexPosition);
-                dbuilder.addPotentialBoundary(dataPosition);
+                dbuilder.addPotentialBoundary(indexEntry.position);
             }
             indexSummary.complete();
         }
@@ -615,7 +615,7 @@ public class SSTableReader extends SSTable
         return positions;
     }
 
-    public void cacheKey(DecoratedKey key, Long info)
+    public void cacheKey(DecoratedKey key, RowIndexEntry info)
     {
         CFMetaData.Caching caching = metadata.getCaching();
 
@@ -629,12 +629,12 @@ public class SSTableReader extends SSTable
         keyCache.put(new KeyCacheKey(descriptor, ByteBufferUtil.clone(key.key)), info);
     }
 
-    public Long getCachedPosition(DecoratedKey key, boolean updateStats)
+    public RowIndexEntry getCachedPosition(DecoratedKey key, boolean updateStats)
     {
         return getCachedPosition(new KeyCacheKey(descriptor, key.key), updateStats);
     }
 
-    private Long getCachedPosition(KeyCacheKey unifiedKey, boolean updateStats)
+    private RowIndexEntry getCachedPosition(KeyCacheKey unifiedKey, boolean updateStats)
     {
         if (keyCache != null && keyCache.getCapacity() > 0)
             return updateStats ? keyCache.get(unifiedKey) : keyCache.getInternal(unifiedKey);
@@ -661,9 +661,7 @@ public class SSTableReader extends SSTable
         if ((op == Operator.EQ || op == Operator.GE) && (key instanceof DecoratedKey))
         {
             DecoratedKey decoratedKey = (DecoratedKey)key;
-            // TODO: FIX
-            //RowIndexEntry cachedPosition = getCachedPosition(new KeyCacheKey(descriptor, decoratedKey.key), true);
-            RowIndexEntry cachedPosition = null;
+            RowIndexEntry cachedPosition = getCachedPosition(new KeyCacheKey(descriptor, decoratedKey.key), true);
             if (cachedPosition != null)
                 return cachedPosition;
         }
@@ -703,7 +701,7 @@ public class SSTableReader extends SSTable
                             assert key instanceof DecoratedKey; // key can be == to the index key only if it's a true row key
                             DecoratedKey decoratedKey = (DecoratedKey)key;
                             // store exact match for the key
-                            cacheKey(decoratedKey, indexEntry.position);
+                            cacheKey(decoratedKey, indexEntry);
                         }
                         if (op == Operator.EQ)
                             bloomFilterTracker.addTruePositive();
@@ -949,7 +947,7 @@ public class SSTableReader extends SSTable
         return bloomFilterTracker.getRecentTruePositiveCount();
     }
 
-    public InstrumentingCache<KeyCacheKey, Long> getKeyCache()
+    public InstrumentingCache<KeyCacheKey, RowIndexEntry> getKeyCache()
     {
         return keyCache;
     }
