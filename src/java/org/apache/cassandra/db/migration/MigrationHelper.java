@@ -34,6 +34,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.Table;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
@@ -56,19 +57,14 @@ public class MigrationHelper
     public static ByteBuffer searchComposite(String name, boolean start)
     {
         assert name != null;
-        ByteBuffer bytes = ByteBuffer.allocate(FBUtilities.encodedUTF8Length(name) + 1);
-        DataOutput out = new DataOutputStream(ByteBufferUtil.outputStream(bytes));
-        try
-        {
-            out.writeUTF(name);
-            out.write(start ? 0 : 1);
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-        bytes.flip();
-        return bytes;
+        ByteBuffer nameBytes = UTF8Type.instance.decompose(name);
+        int length = nameBytes.remaining();
+        byte[] bytes = new byte[2 + length + 1];
+        bytes[0] = (byte)((length >> 8) & 0xFF);
+        bytes[1] = (byte)(length & 0xFF);
+        ByteBufferUtil.arrayCopy(nameBytes, 0, bytes, 2, length);
+        bytes[bytes.length - 1] = (byte)(start ? 0 : 1);
+        return ByteBuffer.wrap(bytes);
     }
 
     public static void flushSchemaCFs()

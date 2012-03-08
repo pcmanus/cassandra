@@ -472,17 +472,6 @@ public class ByteBufferUtil
         };
     }
 
-    public static OutputStream outputStream(final ByteBuffer bytes)
-    {
-        return new OutputStream()
-        {
-            public void write(int b) throws IOException
-            {
-                bytes.put((byte) b);
-            }
-        };
-    }
-
     public static String bytesToHex(ByteBuffer bytes)
     {
         final int offset = bytes.position();
