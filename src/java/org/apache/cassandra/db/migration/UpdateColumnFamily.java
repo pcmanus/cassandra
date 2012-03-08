@@ -39,7 +39,7 @@ public class UpdateColumnFamily extends Migration
         this.newState = newState;
     }
 
-    protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
+    protected RowMutation applyImpl() throws ConfigurationException, IOException
     {
         return MigrationHelper.updateColumnFamily(newState, timestamp, true);
     }

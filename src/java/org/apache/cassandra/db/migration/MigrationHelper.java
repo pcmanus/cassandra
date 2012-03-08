@@ -88,22 +88,25 @@ public class MigrationHelper
 
     /* Migration Helper implementations */
 
-    public static Collection<RowMutation> addKeyspace(KSMetaData ksm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static RowMutation addKeyspace(KSMetaData ksm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
-        RowMutation keyspaceDef = ksm.toSchema(timestamp);
+        RowMutation mutation = null;
 
         if (withSchemaRecord)
-            keyspaceDef.apply();
+        {
+            mutation = ksm.toSchema(timestamp);
+            mutation.apply();
+        }
 
         Schema.instance.load(ksm);
 
         if (!StorageService.instance.isClientMode())
             Table.open(ksm.name);
 
-        return toCollection(keyspaceDef);
+        return mutation;
     }
 
-    public static Collection<RowMutation> addColumnFamily(CFMetaData cfm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static RowMutation addColumnFamily(CFMetaData cfm, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
         KSMetaData ksm = Schema.instance.getTableDefinition(cfm.ksName);
         ksm = KSMetaData.cloneWith(ksm, Iterables.concat(ksm.cfMetaData().values(), Collections.singleton(cfm)));
@@ -127,19 +130,19 @@ public class MigrationHelper
         if (!StorageService.instance.isClientMode())
             Table.open(ksm.name).initCf(cfm.cfId, cfm.cfName);
 
-        return toCollection(mutation);
+        return mutation;
     }
 
-    public static Collection<RowMutation> updateKeyspace(KSMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static RowMutation updateKeyspace(KSMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
         KSMetaData oldKsm = Schema.instance.getKSMetaData(newState.name);
 
-        RowMutation schemaUpdate = null;
+        RowMutation mutation = null;
 
         if (withSchemaRecord)
         {
-            schemaUpdate = oldKsm.diff(newState, timestamp);
-            schemaUpdate.apply();
+            mutation = oldKsm.diff(newState, timestamp);
+            mutation.apply();
         }
 
         KSMetaData newKsm = KSMetaData.cloneWith(oldKsm.reloadAttributes(), oldKsm.cfMetaData().values());
@@ -149,19 +152,19 @@ public class MigrationHelper
         if (!StorageService.instance.isClientMode())
             Table.open(newState.name).createReplicationStrategy(newKsm);
 
-        return toCollection(schemaUpdate);
+        return mutation;
     }
 
-    public static Collection<RowMutation> updateColumnFamily(CFMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
+    public static RowMutation updateColumnFamily(CFMetaData newState, long timestamp, boolean withSchemaRecord) throws ConfigurationException, IOException
     {
         CFMetaData cfm = Schema.instance.getCFMetaData(newState.ksName, newState.cfName);
 
-        RowMutation schemaUpdate = null;
+        RowMutation mutation = null;
 
         if (withSchemaRecord)
         {
-            schemaUpdate = cfm.diff(newState, timestamp);
-            schemaUpdate.apply();
+            mutation = cfm.diff(newState, timestamp);
+            mutation.apply();
         }
 
         cfm.reload();
@@ -172,10 +175,10 @@ public class MigrationHelper
             table.getColumnFamilyStore(cfm.cfName).reload();
         }
 
-        return toCollection(schemaUpdate);
+        return mutation;
     }
 
-    public static Collection<RowMutation> dropKeyspace(String ksName, long timestamp, boolean withSchemaRecord) throws IOException
+    public static RowMutation dropKeyspace(String ksName, long timestamp, boolean withSchemaRecord) throws IOException
     {
         KSMetaData ksm = Schema.instance.getTableDefinition(ksName);
         String snapshotName = Table.getTimestampedSnapshotName(ksName);
@@ -194,19 +197,22 @@ public class MigrationHelper
             }
         }
 
-        Collection<RowMutation> mutations = Collections.emptyList();
+        RowMutation mutation = null;
 
         if (withSchemaRecord)
-            ksm.dropFromSchema(timestamp).apply();
+        {
+            mutation = ksm.dropFromSchema(timestamp);
+            mutation.apply();
+        }
 
         // remove the table from the static instances.
         Table.clear(ksm.name);
         Schema.instance.clearTableDefinition(ksm);
 
-        return mutations;
+        return mutation;
     }
 
-    public static Collection<RowMutation> dropColumnFamily(String ksName, String cfName, long timestamp, boolean withSchemaRecord) throws IOException
+    public static RowMutation dropColumnFamily(String ksName, String cfName, long timestamp, boolean withSchemaRecord) throws IOException
     {
         KSMetaData ksm = Schema.instance.getTableDefinition(ksName);
         ColumnFamilyStore cfs = Table.open(ksName).getColumnFamilyStore(cfName);
@@ -231,7 +237,7 @@ public class MigrationHelper
             Table.open(ksm.name).dropCf(cfm.cfId);
         }
 
-        return toCollection(mutation);
+        return mutation;
     }
 
     private static KSMetaData makeNewKeyspaceDefinition(KSMetaData ksm, CFMetaData toExclude)
@@ -241,10 +247,5 @@ public class MigrationHelper
         newCfs.remove(toExclude);
         assert newCfs.size() == ksm.cfMetaData().size() - 1;
         return KSMetaData.cloneWith(ksm, newCfs);
-    }
-
-    private static Collection<RowMutation> toCollection(RowMutation mutation)
-    {
-        return mutation == null ? Collections.<RowMutation>emptyList() : Collections.singleton(mutation);
     }
 }

@@ -44,7 +44,7 @@ public class DropColumnFamily extends Migration
         this.cfName = cfName;
     }
 
-    protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
+    protected RowMutation applyImpl() throws ConfigurationException, IOException
     {
         return MigrationHelper.dropColumnFamily(ksName, cfName, timestamp, true);
     }

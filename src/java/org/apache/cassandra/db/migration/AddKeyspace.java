@@ -46,7 +46,7 @@ public class AddKeyspace extends Migration
         this.ksm = ksm;
     }
 
-    protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
+    protected RowMutation applyImpl() throws ConfigurationException, IOException
     {
         return MigrationHelper.addKeyspace(ksm, timestamp, true);
     }

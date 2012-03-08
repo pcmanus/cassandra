@@ -46,7 +46,7 @@ public class  AddColumnFamily extends Migration
         this.cfm = cfm;
     }
 
-    protected Collection<RowMutation> applyImpl() throws ConfigurationException, IOException
+    protected RowMutation applyImpl() throws ConfigurationException, IOException
     {
         return MigrationHelper.addColumnFamily(cfm, timestamp, true);
     }
