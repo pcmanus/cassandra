@@ -120,7 +120,7 @@ public class QueryProcessor
         logger.trace("CQL QUERY: {}", queryString);
         return processStatement(getStatement(queryString, clientState).statement, clientState, Collections.<ByteBuffer>emptyList());
     }
-    
+
     public static UntypedResultSet resultify(String queryString, Row row)
     {
         SelectStatement ss;

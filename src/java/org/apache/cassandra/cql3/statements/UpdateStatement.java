@@ -151,7 +151,7 @@ public class UpdateStatement extends ModificationStatement
         // if true we need to wrap RowMutation into CounterMutation
         boolean hasCounterColumn = false;
         RowMutation rm = new RowMutation(cfDef.cfm.ksName, key);
-        ColumnFamily cf = rm.add(cfDef.cfm.cfName);
+        ColumnFamily cf = rm.addOrGet(cfDef.cfm.cfName);
 
         if (cfDef.isCompact)
         {

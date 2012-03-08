@@ -21,19 +21,20 @@ import java.io.IOException;
 import java.util.Collection;
 
 import org.apache.cassandra.config.ConfigurationException;
+import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.thrift.KsDef;
 
 public class UpdateKeyspace extends Migration
 {
-    private final KsDef newState;
+    private final KSMetaData newState;
 
-    public UpdateKeyspace(KsDef newState) throws ConfigurationException
+    public UpdateKeyspace(KSMetaData newState) throws ConfigurationException
     {
         super(System.nanoTime());
 
-        if (newState.isSetCf_defs() && newState.getCf_defs().size() > 0)
+        if (!newState.cfMetaData().isEmpty())
             throw new ConfigurationException("Updated keyspace must not contain any column families.");
 
         if (Schema.instance.getKSMetaData(newState.name) == null)

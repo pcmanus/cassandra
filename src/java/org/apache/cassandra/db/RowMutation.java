@@ -170,15 +170,17 @@ public class RowMutation implements IMutation, MessageProducer
     }
 
     /**
-     * @return an empty ColumnFamily with the given @param cfName
+     * @return the ColumnFamily in this RowMutation corresponding to @param cfName, creating an empty one if necessary.
      */
-    public ColumnFamily add(String cfName)
+    public ColumnFamily addOrGet(String cfName)
     {
-        ColumnFamily cf = ColumnFamily.create(table_, cfName);
-        ColumnFamily prev = modifications_.put(cf.id(), cf);
-        if (prev != null)
-            // developer error
-            throw new IllegalArgumentException("ColumnFamily " + cfName + " already has modifications in this mutation: " + prev);
+        CFMetaData cfm = Schema.instance.getCFMetaData(table_, cfName);
+        ColumnFamily cf = modifications_.get(cfm.cfId);
+        if (cf == null)
+        {
+            cf = ColumnFamily.create(cfm);
+            modifications_.put(cfm.cfId, cf);
+        }
         return cf;
     }
 

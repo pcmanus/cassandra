@@ -515,12 +515,26 @@ public class FBUtilities
 
     public static Map<String, String> fromJsonMap(String json)
     {
-        return jsonMapper.readValue(json, ?);
+        try
+        {
+            return jsonMapper.readValue(json, Map.class);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public static List<String> fromJsonList(String json)
     {
-        return jsonMapper.readValue(json, ?);
+        try
+        {
+            return jsonMapper.readValue(json, List.class);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public static String json(Object object)

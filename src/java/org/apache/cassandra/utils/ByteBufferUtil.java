@@ -471,7 +471,7 @@ public class ByteBufferUtil
             }
         };
     }
-    
+
     public static OutputStream outputStream(final ByteBuffer bytes)
     {
         return new OutputStream()

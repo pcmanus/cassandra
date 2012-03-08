@@ -214,12 +214,7 @@ public final class CFMetaData
     public CFMetaData minCompactionThreshold(int prop) {minCompactionThreshold = prop; return this;}
     public CFMetaData maxCompactionThreshold(int prop) {maxCompactionThreshold = prop; return this;}
     public CFMetaData keyAlias(ByteBuffer prop) {keyAlias = prop; updateCfDef(); return this;}
-    public CFMetaData keyAlias(String alias)
-    {
-        keyAlias = ByteBufferUtil.bytes(alias);
-        updateCfDef();
-        return this;
-    }
+    public CFMetaData keyAlias(String alias) { return keyAlias(ByteBufferUtil.bytes(alias)); }
     public CFMetaData columnAliases(List<ByteBuffer> prop) {columnAliases = prop; updateCfDef(); return this;}
     public CFMetaData valueAlias(ByteBuffer prop) {valueAlias = prop; updateCfDef(); return this;}
     public CFMetaData columnMetadata(Map<ByteBuffer,ColumnDefinition> prop) {column_metadata = prop; updateCfDef(); return this;}
@@ -229,9 +224,7 @@ public final class CFMetaData
         for (ColumnDefinition cd : cds)
             map.put(cd.name, cd);
 
-        columnMetadata(map);
-        updateCfDef();
-        return this;
+        return columnMetadata(map);
     }
     public CFMetaData compactionStrategyClass(Class<? extends AbstractCompactionStrategy> prop) {compactionStrategyClass = prop; return this;}
     public CFMetaData compactionStrategyOptions(Map<String, String> prop) {compactionStrategyOptions = prop; return this;}
@@ -332,6 +325,11 @@ public final class CFMetaData
         compactionStrategyOptions(parent.compactionStrategyOptions);
         compressionParameters(parent.compressionParameters);
         return this;
+    }
+
+    public CFMetaData clone()
+    {
+        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, subcolumnComparator, cfId), this);
     }
 
     // Create a new CFMD by changing just the cfName
@@ -920,7 +918,7 @@ public final class CFMetaData
     public RowMutation dropFromSchema(long timestamp)
     {
         RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, SystemTable.getSchemaKSKey(ksName));
-        ColumnFamily cf = rm.add(SystemTable.SCHEMA_KEYSPACES_CF);
+        ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_KEYSPACES_CF);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
         cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, "id"));
@@ -961,7 +959,7 @@ public final class CFMetaData
 
     private void toSchemaNoColumns(RowMutation rm, long timestamp)
     {
-        ColumnFamily cf = rm.add(SystemTable.SCHEMA_KEYSPACES_CF);
+        ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_KEYSPACES_CF);
 
         cf.addColumn(Column.create(cfId, timestamp, cfName, "id"));
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
@@ -1021,7 +1019,7 @@ public final class CFMetaData
         catch (ConfigurationException e)
         {
             throw new RuntimeException(e);
-        }        
+        }
     }
 
     /**

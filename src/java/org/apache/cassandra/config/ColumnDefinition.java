@@ -49,7 +49,7 @@ public class ColumnDefinition
     private IndexType index_type;
     private Map<String,String> index_options;
     private String index_name;
-    
+
     public ColumnDefinition(ByteBuffer name, AbstractType<?> validator, IndexType index_type, Map<String, String> index_options, String index_name)
     {
         this.name = name;
@@ -58,7 +58,7 @@ public class ColumnDefinition
 
         this.setIndexType(index_type, index_options);
     }
-    
+
     public static ColumnDefinition ascii(String name)
     {
         return new ColumnDefinition(ByteBufferUtil.bytes(name), AsciiType.instance, null, null, null);
@@ -161,7 +161,7 @@ public class ColumnDefinition
      */
     public void deleteFromSchema(RowMutation rm, String cfName, long timestamp)
     {
-        ColumnFamily cf = rm.add(SystemTable.SCHEMA_COLUMNS_CF);
+        ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
         cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, nameAsString(), "validator"));
@@ -172,7 +172,7 @@ public class ColumnDefinition
 
     public void toSchema(RowMutation rm, String cfName, long timestamp)
     {
-        ColumnFamily cf = rm.add(SystemTable.SCHEMA_COLUMNS_CF);
+        ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
 
         cf.addColumn(Column.create(TypeParser.getShortName(validator), timestamp, cfName, nameAsString(), "validator"));
         if (index_type != null)
