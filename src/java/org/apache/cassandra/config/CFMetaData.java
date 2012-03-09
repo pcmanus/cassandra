@@ -94,7 +94,7 @@ public final class CFMetaData
     public static final CFMetaData SchemaColumnsCf;
     static
     {
-        SchemaKeyspacesCf = newSystemMetadata(SystemTable.SCHEMA_KEYSPACES_CF,
+        SchemaKeyspacesCf = newSchemaMetadata(SystemTable.SCHEMA_KEYSPACES_CF,
                                               8,
                                               "Keyspace definitions",
                                               AsciiType.instance,
@@ -106,7 +106,7 @@ public final class CFMetaData
                                          ColumnDefinition.ascii("strategy_class"),
                                          ColumnDefinition.ascii("strategy_options"));
 
-        SchemaColumnFamiliesCf = newSystemMetadata(SystemTable.SCHEMA_COLUMNFAMILIES_CF,
+        SchemaColumnFamiliesCf = newSchemaMetadata(SystemTable.SCHEMA_COLUMNFAMILIES_CF,
                                                    9,
                                                    "ColumnFamily definitions",
                                                    CompositeType.getInstance(Arrays.<AbstractType<?>>asList(AsciiType.instance, AsciiType.instance)),
@@ -136,7 +136,7 @@ public final class CFMetaData
                                                  ColumnDefinition.utf8("column_aliases"),
                                                  ColumnDefinition.ascii("compaction_strategy_options"));
 
-        SchemaColumnsCf = newSystemMetadata(SystemTable.SCHEMA_COLUMNS_CF,
+        SchemaColumnsCf = newSchemaMetadata(SystemTable.SCHEMA_COLUMNS_CF,
                                             10,
                                             "ColumnFamily column attributes",
                                             CompositeType.getInstance(Arrays.<AbstractType<?>>asList(AsciiType.instance,
@@ -305,6 +305,17 @@ public final class CFMetaData
                       .readRepairChance(0)
                       .dcLocalReadRepairChance(0)
                       .gcGraceSeconds(0);
+    }
+
+    private static CFMetaData newSchemaMetadata(String cfName, int cfId, String comment, AbstractType<?> comparator, AbstractType<?> subcc)
+    {
+        /*
+         * Schema column families needs a gc_grace (since they are replicated
+         * on every node). That gc_grace should be high enough that no node
+         * could be dead for that long a time.
+         */
+        int gcGrace = 120 * 24 * 3600; // 3 months
+        return newSystemMetadata(cfName, cfId, comment, comparator, subcc).gcGraceSeconds(gcGrace);
     }
 
     public static CFMetaData newIndexMetadata(CFMetaData parent, ColumnDefinition info, AbstractType<?> columnComparator)

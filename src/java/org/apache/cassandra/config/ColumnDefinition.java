@@ -174,14 +174,15 @@ public class ColumnDefinition
     public void toSchema(RowMutation rm, String cfName, AbstractType<?> comparator, long timestamp)
     {
         ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
+        int ldt = (int) (System.currentTimeMillis() / 1000);
 
         cf.addColumn(Column.create(validator.toString(), timestamp, cfName, comparator.getString(name), "validator"));
-        if (index_type != null)
-            cf.addColumn(Column.create(index_type.toString(), timestamp, cfName, comparator.getString(name), "index_type"));
-        if (index_options != null)
-            cf.addColumn(Column.create(json(index_options), timestamp, cfName, comparator.getString(name), "index_options"));
-        if (index_name != null)
-            cf.addColumn(Column.create(index_name, timestamp, cfName, comparator.getString(name), "index_name"));
+        cf.addColumn(index_type == null ? DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_type")
+                                        : Column.create(index_type.toString(), timestamp, cfName, comparator.getString(name), "index_type"));
+        cf.addColumn(index_options == null ? DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_options")
+                                           : Column.create(json(index_options), timestamp, cfName, comparator.getString(name), "index_options"));
+        cf.addColumn(index_name == null ? DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_name")
+                                        : Column.create(index_name, timestamp, cfName, comparator.getString(name), "index_name"));
     }
 
     public void apply(ColumnDefinition def, AbstractType<?> comparator)  throws ConfigurationException

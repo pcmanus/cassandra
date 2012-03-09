@@ -547,24 +547,6 @@ public class DefsTest extends CleanupHelper
             throw new AssertionError("Should have blown up when you used a different comparator.");
         }
         catch (ConfigurationException expected) {}
-
-        newCfm = cf.clone();
-        newCfm.minCompactionThreshold(34);
-        try
-        {
-            cf.apply(newCfm);
-            throw new AssertionError("Should have blown up when min > max.");
-        }
-        catch (ConfigurationException expected) {}
-
-        newCfm = cf.clone();
-        newCfm.maxCompactionThreshold(2);
-        try
-        {
-            cf.apply(newCfm);
-            throw new AssertionError("Should have blown up when max > min.");
-        }
-        catch (ConfigurationException expected) {}
     }
 
     @Test
@@ -584,7 +566,7 @@ public class DefsTest extends CleanupHelper
         Descriptor desc = indexedCfs.getSSTables().iterator().next().descriptor;
 
         // drop the index
-        CFMetaData meta = CFMetaData.rename(cfs.metadata, cfs.metadata.cfName); // abusing rename to clone
+        CFMetaData meta = cfs.metadata.clone();
         ColumnDefinition cdOld = meta.getColumn_metadata().values().iterator().next();
         ColumnDefinition cdNew = new ColumnDefinition(cdOld.name, cdOld.getValidator(), null, null, null);
         meta.columnMetadata(Collections.singletonMap(cdOld.name, cdNew));
