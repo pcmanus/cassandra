@@ -703,9 +703,7 @@ public final class CFMetaData
         {
             ColumnDefinition oldDef = column_metadata.get(name);
             ColumnDefinition def = cfm.column_metadata.get(name);
-            oldDef.setValidator(def.getValidator());
-            oldDef.setIndexType(def.getIndexType(), def.getIndexOptions());
-            oldDef.setIndexName(def.getIndexName());
+            oldDef.apply(def);
         }
 
         compactionStrategyClass = cfm.compactionStrategyClass;
@@ -959,15 +957,18 @@ public final class CFMetaData
 
     private void toSchemaNoColumns(RowMutation rm, long timestamp)
     {
+        // For property that can be null (and can be changed), we insert tombstones, to make sure
+        // we don't keep a property the user has removed
         ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_KEYSPACES_CF);
+        int ldt = (int) (System.currentTimeMillis() / 1000);
 
         cf.addColumn(Column.create(cfId, timestamp, cfName, "id"));
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
         cf.addColumn(Column.create(TypeParser.getShortName(comparator), timestamp, cfName, "comparator"));
         if (subcolumnComparator != null)
             cf.addColumn(Column.create(TypeParser.getShortName(subcolumnComparator), timestamp, cfName, "subcomparator"));
-        if (comment != null)
-            cf.addColumn(Column.create(comment, timestamp, cfName, "comment"));
+        cf.addColumn(comment == null ? DeletedColumn.create(ldt, timestamp, cfName, "comment")
+                                     : Column.create(comment, timestamp, cfName, "comment"));
         cf.addColumn(Column.create(readRepairChance, timestamp, cfName, "read_repair_chance"));
         cf.addColumn(Column.create(dcLocalReadRepairChance, timestamp, cfName, "local_read_repair_chance"));
         cf.addColumn(Column.create(replicateOnWrite, timestamp, cfName, "replicate_on_write"));
@@ -976,12 +977,15 @@ public final class CFMetaData
         cf.addColumn(Column.create(TypeParser.getShortName(keyValidator), timestamp, cfName, "key_validator"));
         cf.addColumn(Column.create(minCompactionThreshold, timestamp, cfName, "min_compaction_threshold"));
         cf.addColumn(Column.create(maxCompactionThreshold, timestamp, cfName, "max_compaction_threshold"));
-        cf.addColumn(Column.create(keyAlias, timestamp, cfName, "key_alias"));
-        cf.addColumn(Column.create(bloomFilterFpChance, timestamp, cfName, "bloom_filter_fp_chance"));
+        cf.addColumn(keyAlias == null ? DeletedColumn.create(ldt, timestamp, cfName, "key_alias")
+                                      : Column.create(keyAlias, timestamp, cfName, "key_alias"));
+        cf.addColumn(bloomFilterFpChance == null ? DeletedColumn.create(ldt, timestamp, cfName, "bloomFilterFpChance")
+                                                 : Column.create(bloomFilterFpChance, timestamp, cfName, "bloom_filter_fp_chance"));
         cf.addColumn(Column.create(caching.toString(), timestamp, cfName, "caching"));
         cf.addColumn(Column.create(compactionStrategyClass.getName(), timestamp, cfName, "compaction_strategy_class"));
         cf.addColumn(Column.create(json(compressionParameters.asThriftOptions()), timestamp, cfName, "compression_parameters"));
-        cf.addColumn(Column.create(valueAlias, timestamp, cfName, "value_alias"));
+        cf.addColumn(valueAlias == null ? DeletedColumn.create(ldt, timestamp, cfName, "value_alias")
+                                        : Column.create(valueAlias, timestamp, cfName, "value_alias"));
         cf.addColumn(Column.create(json(columnAliasesAsStrings()), timestamp, cfName, "column_aliases"));
         cf.addColumn(Column.create(json(compactionStrategyOptions), timestamp, cfName, "compaction_strategy_options"));
     }

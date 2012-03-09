@@ -183,6 +183,13 @@ public class ColumnDefinition
         }
     }
 
+    public void apply(ColumnDefinition def)
+    {
+        setValidator(def.getValidator());
+        setIndexType(def.getIndexType(), def.getIndexOptions());
+        setIndexName(def.getIndexName());
+    }
+
     private String nameAsString()
     {
         String nameAsString;

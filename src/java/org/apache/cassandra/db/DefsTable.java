@@ -243,7 +243,7 @@ public class DefsTable
         Set<String> keyspacesToDrop = mergeKeyspaces(oldKeyspaces, SystemTable.getSchema(SystemTable.SCHEMA_KEYSPACES_CF));
         mergeColumnFamilies(oldColumnFamilies, SystemTable.getSchema(SystemTable.SCHEMA_COLUMNFAMILIES_CF));
 
-        // it is save to drop a keyspace only when all nested ColumnFamilies where deleted
+        // it is safe to drop a keyspace only when all nested ColumnFamilies where deleted
         for (String keyspaceToDrop : keyspacesToDrop)
             MigrationHelper.dropKeyspace(keyspaceToDrop, -1, false);
     }
