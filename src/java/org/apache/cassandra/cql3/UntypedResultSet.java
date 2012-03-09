@@ -74,6 +74,11 @@ public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
                 data.put(UTF8Type.instance.compose(column.name), column.value);
         }
 
+        public boolean has(String column)
+        {
+            return data.containsKey(column);
+        }
+
         public String getString(String column)
         {
             return UTF8Type.instance.compose(data.get(column));

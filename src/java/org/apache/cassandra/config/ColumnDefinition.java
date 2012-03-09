@@ -220,11 +220,22 @@ public class ColumnDefinition
         {
             try
             {
+                IndexType index_type = null;
+                Map<String,String> index_options = null;
+                String index_name = null;
+
+                if (result.has("index_type"))
+                {
+                    index_type = IndexType.valueOf(result.getString("index_type"));
+                    index_options = FBUtilities.fromJsonMap(result.getString("index_options"));
+                    index_name = result.getString("index_name");
+                }
+
                 cds.add(new ColumnDefinition(result.getBytes("name"),
                                              TypeParser.parse(result.getString("validator")),
-                                             IndexType.valueOf(result.getString("index_type")),
-                                             FBUtilities.fromJsonMap(result.getString("index_options")),
-                                             result.getString("index_name")));
+                                             index_type,
+                                             index_options,
+                                             index_name));
             }
             catch (ConfigurationException e)
             {
