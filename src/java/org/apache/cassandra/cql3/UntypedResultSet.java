@@ -59,6 +59,8 @@ public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
             protected Row computeNext()
             {
+                if (!iter.hasNext())
+                    return endOfData();
                 return new Row(iter.next());
             }
         };
@@ -76,7 +78,8 @@ public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
         public boolean has(String column)
         {
-            return data.containsKey(column);
+            // Note that containsKey won't work because we may have null values
+            return data.get(column) != null;
         }
 
         public String getString(String column)

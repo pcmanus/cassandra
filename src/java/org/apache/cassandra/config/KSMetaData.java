@@ -266,7 +266,7 @@ public final class KSMetaData
         for (CFMetaData cfm : cfms.values())
         {
             Row columnRow = ColumnDefinition.readSchema(cfm.ksName, cfm.cfName);
-            for (ColumnDefinition cd : ColumnDefinition.fromSchema(columnRow))
+            for (ColumnDefinition cd : ColumnDefinition.fromSchema(columnRow, cfm.comparator))
                 cfm.column_metadata.put(cd.name, cd);
         }
 

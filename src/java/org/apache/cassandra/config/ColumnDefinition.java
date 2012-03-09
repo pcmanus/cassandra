@@ -52,6 +52,7 @@ public class ColumnDefinition
 
     public ColumnDefinition(ByteBuffer name, AbstractType<?> validator, IndexType index_type, Map<String, String> index_options, String index_name)
     {
+        assert name != null && validator != null;
         this.name = name;
         this.index_name = index_name;
         this.validator = validator;
@@ -159,53 +160,39 @@ public class ColumnDefinition
      * @param cfName     The name of the parent ColumnFamily
      * @param timestamp  The timestamp to use for column modification
      */
-    public void deleteFromSchema(RowMutation rm, String cfName, long timestamp)
+    public void deleteFromSchema(RowMutation rm, String cfName, AbstractType<?> comparator, long timestamp)
     {
         ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
         int ldt = (int) (System.currentTimeMillis() / 1000);
 
-        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, nameAsString(), "validator"));
-        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, nameAsString(), "index_type"));
-        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, nameAsString(), "index_options"));
-        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, nameAsString(), "index_name"));
+        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "validator"));
+        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_type"));
+        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_options"));
+        cf.addColumn(DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), "index_name"));
     }
 
-    public void toSchema(RowMutation rm, String cfName, long timestamp)
+    public void toSchema(RowMutation rm, String cfName, AbstractType<?> comparator, long timestamp)
     {
         ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
 
-        cf.addColumn(Column.create(validator.toString(), timestamp, cfName, nameAsString(), "validator"));
+        cf.addColumn(Column.create(validator.toString(), timestamp, cfName, comparator.getString(name), "validator"));
         if (index_type != null)
-        {
-            cf.addColumn(Column.create(index_type.toString(), timestamp, cfName, nameAsString(), "index_type"));
-            cf.addColumn(Column.create(json(index_options), timestamp, cfName, nameAsString(), "index_options"));
-            cf.addColumn(Column.create(index_name, timestamp, cfName, "index_name"));
-        }
+            cf.addColumn(Column.create(index_type.toString(), timestamp, cfName, comparator.getString(name), "index_type"));
+        if (index_options != null)
+            cf.addColumn(Column.create(json(index_options), timestamp, cfName, comparator.getString(name), "index_options"));
+        if (index_name != null)
+            cf.addColumn(Column.create(index_name, timestamp, cfName, comparator.getString(name), "index_name"));
     }
 
-    public void apply(ColumnDefinition def)  throws ConfigurationException
+    public void apply(ColumnDefinition def, AbstractType<?> comparator)  throws ConfigurationException
     {
         // If an index is set (and not drop by this update), the validator shouldn't be change to a non-compatible one
         if (getIndexType() != null && def.getIndexType() != null && !def.validator.isCompatibleWith(validator))
-            throw new ConfigurationException(String.format("Cannot modify validator to a non-compatible one for column %s since an index is set", nameAsString()));
+            throw new ConfigurationException(String.format("Cannot modify validator to a non-compatible one for column %s since an index is set", comparator.getString(name)));
 
         setValidator(def.getValidator());
         setIndexType(def.getIndexType(), def.getIndexOptions());
         setIndexName(def.getIndexName());
-    }
-
-    private String nameAsString()
-    {
-        String nameAsString;
-        try
-        {
-            nameAsString = ByteBufferUtil.string(name);
-        }
-        catch (CharacterCodingException e)
-        {
-            throw new RuntimeException(e);
-        }
-        return nameAsString;
     }
 
     /**
@@ -214,7 +201,7 @@ public class ColumnDefinition
      * @return Thrift-based deserialized representation of the column
      * @param row
      */
-    public static List<ColumnDefinition> fromSchema(Row row)
+    public static List<ColumnDefinition> fromSchema(Row row, AbstractType<?> comparator)
     {
         if (row.cf == null)
             return Collections.emptyList();
@@ -229,13 +216,13 @@ public class ColumnDefinition
                 String index_name = null;
 
                 if (result.has("index_type"))
-                {
                     index_type = IndexType.valueOf(result.getString("index_type"));
+                if (result.has("index_options"))
                     index_options = FBUtilities.fromJsonMap(result.getString("index_options"));
+                if (result.has("index_name"))
                     index_name = result.getString("index_name");
-                }
 
-                cds.add(new ColumnDefinition(result.getBytes("name"),
+                cds.add(new ColumnDefinition(comparator.fromString(result.getString("column")),
                                              TypeParser.parse(result.getString("validator")),
                                              index_type,
                                              index_options,
