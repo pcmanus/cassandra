@@ -964,17 +964,17 @@ public final class CFMetaData
 
         cf.addColumn(Column.create(cfId, timestamp, cfName, "id"));
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
-        cf.addColumn(Column.create(TypeParser.getShortName(comparator), timestamp, cfName, "comparator"));
+        cf.addColumn(Column.create(comparator.toString(), timestamp, cfName, "comparator"));
         if (subcolumnComparator != null)
-            cf.addColumn(Column.create(TypeParser.getShortName(subcolumnComparator), timestamp, cfName, "subcomparator"));
+            cf.addColumn(Column.create(subcolumnComparator.toString(), timestamp, cfName, "subcomparator"));
         cf.addColumn(comment == null ? DeletedColumn.create(ldt, timestamp, cfName, "comment")
                                      : Column.create(comment, timestamp, cfName, "comment"));
         cf.addColumn(Column.create(readRepairChance, timestamp, cfName, "read_repair_chance"));
         cf.addColumn(Column.create(dcLocalReadRepairChance, timestamp, cfName, "local_read_repair_chance"));
         cf.addColumn(Column.create(replicateOnWrite, timestamp, cfName, "replicate_on_write"));
         cf.addColumn(Column.create(gcGraceSeconds, timestamp, cfName, "gc_grace_seconds"));
-        cf.addColumn(Column.create(TypeParser.getShortName(defaultValidator), timestamp, cfName, "default_validator"));
-        cf.addColumn(Column.create(TypeParser.getShortName(keyValidator), timestamp, cfName, "key_validator"));
+        cf.addColumn(Column.create(defaultValidator.toString(), timestamp, cfName, "default_validator"));
+        cf.addColumn(Column.create(keyValidator.toString(), timestamp, cfName, "key_validator"));
         cf.addColumn(Column.create(minCompactionThreshold, timestamp, cfName, "min_compaction_threshold"));
         cf.addColumn(Column.create(maxCompactionThreshold, timestamp, cfName, "max_compaction_threshold"));
         cf.addColumn(keyAlias == null ? DeletedColumn.create(ldt, timestamp, cfName, "key_alias")

@@ -174,7 +174,7 @@ public class ColumnDefinition
     {
         ColumnFamily cf = rm.addOrGet(SystemTable.SCHEMA_COLUMNS_CF);
 
-        cf.addColumn(Column.create(TypeParser.getShortName(validator), timestamp, cfName, nameAsString(), "validator"));
+        cf.addColumn(Column.create(validator.toString(), timestamp, cfName, nameAsString(), "validator"));
         if (index_type != null)
         {
             cf.addColumn(Column.create(index_type.toString(), timestamp, cfName, nameAsString(), "index_type"));
