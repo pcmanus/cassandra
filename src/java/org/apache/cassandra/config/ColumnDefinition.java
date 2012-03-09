@@ -183,8 +183,12 @@ public class ColumnDefinition
         }
     }
 
-    public void apply(ColumnDefinition def)
+    public void apply(ColumnDefinition def)  throws ConfigurationException
     {
+        // If an index is set (and not drop by this update), the validator shouldn't be change to a non-compatible one
+        if (getIndexType() != null && def.getIndexType() != null && !def.validator.isCompatibleWith(validator))
+            throw new ConfigurationException(String.format("Cannot modify validator to a non-compatible one for column %s since an index is set", nameAsString()));
+
         setValidator(def.getValidator());
         setIndexType(def.getIndexType(), def.getIndexOptions());
         setIndexName(def.getIndexName());
