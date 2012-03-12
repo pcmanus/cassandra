@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ColumnIndexer;
+import org.apache.cassandra.db.ColumnIndex;
 import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
@@ -188,8 +188,8 @@ public class PrecompactedRow extends AbstractCompactedRow
     /**
      * @return the column index for this row.
      */
-    public ColumnIndexer.Result index()
+    public ColumnIndex index()
     {
-        return new ColumnIndexer(compactedCf.getComparator(), key.key, compactedCf.getColumnCount()).build(compactedCf);
+        return new ColumnIndex.Builder(compactedCf.getComparator(), key.key, compactedCf.getColumnCount()).build(compactedCf);
     }
 }

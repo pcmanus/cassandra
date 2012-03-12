@@ -61,7 +61,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
     private long maxTimestamp;
     private long columnSerializedSize;
     private boolean closed;
-    private final ColumnIndexer.Result columnsIndex;
+    private final ColumnIndex columnsIndex;
 
     public LazilyCompactedRow(CompactionController controller, List<? extends ICountableColumnIterator> rows)
     {
@@ -80,9 +80,9 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
                 emptyColumnFamily.delete(cf);
         }
 
-        this.columnsIndex = new ColumnIndexer(emptyColumnFamily.getComparator(), key.key, getEstimatedColumnCount()).build(this);
+        this.columnsIndex = new ColumnIndex.Builder(emptyColumnFamily.getComparator(), key.key, getEstimatedColumnCount()).build(this);
         // reach into the reducer used during iteration to get column count, size, max column timestamp
-        // (however, if there are zero columns, iterator() will not be called by ColumnIndexer and reducer will be null)
+        // (however, if there are zero columns, iterator() will not be called by ColumnIndex and reducer will be null)
         columnCount = reducer == null ? 0 : reducer.size;
         columnSerializedSize = reducer == null ? 0 : reducer.serializedSize;
         maxTimestamp = reducer == null ? Long.MIN_VALUE : reducer.maxTimestampSeen;
@@ -209,7 +209,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
     /**
      * @return the column index for this row.
      */
-    public ColumnIndexer.Result index()
+    public ColumnIndex index()
     {
         return columnsIndex;
     }

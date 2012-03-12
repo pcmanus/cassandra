@@ -44,7 +44,7 @@ public class RowIndexEntry
         this.position = position;
     }
 
-    public static RowIndexEntry create(long position, DeletionInfo deletionInfo, ColumnIndexer.Result index)
+    public static RowIndexEntry create(long position, DeletionInfo deletionInfo, ColumnIndex index)
     {
         if (index != null && index.columnsIndex != null && index.columnsIndex.size() > 1)
             return new IndexedEntry(position, deletionInfo, index.columnsIndex, index.bloomFilter);
@@ -131,17 +131,7 @@ public class RowIndexEntry
             if (size <= 0)
                 return;
 
-            /* skip the remainder data */
-            if (dis instanceof FileDataInput)
-            {
-                FileUtils.skipBytesFully(dis, size);
-            }
-            else
-            {
-                // skip bytes
-                byte[] skip = new byte[size];
-                dis.readFully(skip);
-            }
+            FileUtils.skipBytesFully(dis, size);
         }
     }
 

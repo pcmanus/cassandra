@@ -22,10 +22,7 @@ public class DeletionInfo
     public final long markedForDeleteAt;
     public final int localDeletionTime;
 
-    public DeletionInfo()
-    {
-        this(Long.MIN_VALUE, Integer.MAX_VALUE);
-    }
+    public static final DeletionInfo LIVE = new DeletionInfo(Long.MIN_VALUE, Integer.MAX_VALUE);
 
     public DeletionInfo(long markedForDeleteAt, int localDeletionTime)
     {

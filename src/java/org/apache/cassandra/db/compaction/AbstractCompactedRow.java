@@ -24,7 +24,7 @@ import java.security.MessageDigest;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
-import org.apache.cassandra.db.ColumnIndexer;
+import org.apache.cassandra.db.ColumnIndex;
 
 /**
  * a CompactedRow is an object that takes a bunch of rows (keys + columnfamilies)
@@ -82,5 +82,5 @@ public abstract class AbstractCompactedRow
     /**
      * @return the column index for this row.
      */
-    public abstract ColumnIndexer.Result index();
+    public abstract ColumnIndex index();
 }

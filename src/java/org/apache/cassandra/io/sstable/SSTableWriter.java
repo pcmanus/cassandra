@@ -137,7 +137,7 @@ public class SSTableWriter extends SSTable
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
-    private RowIndexEntry afterAppend(DecoratedKey decoratedKey, long dataPosition, DeletionInfo delInfo, ColumnIndexer.Result index) throws IOException
+    private RowIndexEntry afterAppend(DecoratedKey decoratedKey, long dataPosition, DeletionInfo delInfo, ColumnIndex index) throws IOException
     {
         lastWrittenKey = decoratedKey;
         this.last = lastWrittenKey;
@@ -180,7 +180,7 @@ public class SSTableWriter extends SSTable
 
         // build column index
         // TODO: build and serialization could be merged
-        ColumnIndexer.Result index = new ColumnIndexer(cf.getComparator(), decoratedKey.key, cf.getColumnCount()).build(cf);
+        ColumnIndex index = new ColumnIndex.Builder(cf.getComparator(), decoratedKey.key, cf.getColumnCount()).build(cf);
 
         // write out row size + data
         dataFile.stream.writeLong(cf.serializedSizeForSSTable());
@@ -217,7 +217,7 @@ public class SSTableWriter extends SSTable
         // deserialize each column to obtain maxTimestamp and immediately serialize it.
         long maxTimestamp = Long.MIN_VALUE;
         ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
-        ColumnIndexer columnIndexer = new ColumnIndexer(cf.getComparator(), key.key, columnCount);
+        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf.getComparator(), key.key, columnCount);
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
