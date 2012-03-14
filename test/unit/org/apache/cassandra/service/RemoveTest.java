@@ -29,7 +29,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.apache.cassandra.CleanupHelper;
+import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.dht.IPartitioner;
@@ -46,7 +46,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.*;
 
-public class RemoveTest extends CleanupHelper
+public class RemoveTest extends SchemaLoader
 {
     StorageService ss = StorageService.instance;
     TokenMetadata tmd = ss.getTokenMetadata();

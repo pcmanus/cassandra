@@ -30,7 +30,7 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
-import org.apache.cassandra.CleanupHelper;
+import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.dht.*;
@@ -40,7 +40,7 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.SimpleSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
 
-public class MoveTest extends CleanupHelper
+public class MoveTest extends SchemaLoader
 {
     /*
      * Test whether write endpoints is correct when the node is moving. Uses
