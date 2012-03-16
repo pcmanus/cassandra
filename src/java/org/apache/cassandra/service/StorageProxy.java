@@ -814,7 +814,6 @@ public class StorageProxy implements StorageProxyMBean
 
             Table table = Table.open(command.table);
             Row r = command.getRow(table);
-            logger.info("read > " + r + ", from " + r.cf.metadata());
             ReadResponse result = ReadVerbHandler.getResponse(command, r);
             MessagingService.instance().addLatency(FBUtilities.getBroadcastAddress(), System.currentTimeMillis() - start);
             handler.response(result);

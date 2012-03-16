@@ -1052,7 +1052,7 @@ public final class CFMetaData
         CFMetaData cfDef = fromSchemaNoColumns(result);
 
         Row serializedColumnDefinitions = ColumnDefinition.readSchema(cfDef.ksName, cfDef.cfName);
-        return addColumnDefinitionSchema(cfDef, serializedColumnDefinitions);
+        return addColumnDefinitionSchema(cfDef, serializedColumnDefinitions).updateCfDef();
     }
 
     private static CFMetaData fromSchema(Row row)
@@ -1142,9 +1142,10 @@ public final class CFMetaData
         return column_metadata.remove(def.name) != null;
     }
 
-    private void updateCfDef()
+    private CFMetaData updateCfDef()
     {
         cqlCfDef = new CFDefinition(this);
+        return this;
     }
 
     public CFDefinition getCfDef()
@@ -1179,7 +1180,7 @@ public final class CFMetaData
             .append("maxCompactionThreshold", maxCompactionThreshold)
             .append("keyAlias", keyAlias)
             .append("columnAliases", columnAliases)
-            .append("valueAlias", keyAlias)
+            .append("valueAlias", valueAlias)
             .append("column_metadata", column_metadata)
             .append("compactionStrategyClass", compactionStrategyClass)
             .append("compactionStrategyOptions", compactionStrategyOptions)
