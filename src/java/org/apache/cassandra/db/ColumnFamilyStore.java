@@ -454,10 +454,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                          Descriptor.CURRENT_VERSION,
                                                          descriptor));
 
-            Descriptor newDescriptor = new Descriptor(descriptor.directory, 
-                                                      descriptor.ksname, 
-                                                      descriptor.cfname, 
-                                                      fileIndexGenerator.incrementAndGet(), 
+            Descriptor newDescriptor = new Descriptor(descriptor.directory,
+                                                      descriptor.ksname,
+                                                      descriptor.cfname,
+                                                      fileIndexGenerator.incrementAndGet(),
                                                       false);
             logger.info("Renaming new SSTable {} to {}", descriptor, newDescriptor);
             SSTableWriter.rename(descriptor, newDescriptor, entry.getValue());
@@ -465,7 +465,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             SSTableReader reader;
             try
             {
-                reader = SSTableReader.open(entry.getKey(), entry.getValue(), Collections.<DecoratedKey>emptySet(), data, metadata, partitioner);
+                reader = SSTableReader.open(newDescriptor, entry.getValue(), Collections.<DecoratedKey>emptySet(), data, metadata, partitioner);
             }
             catch (IOException e)
             {
