@@ -77,8 +77,7 @@ public class RowIndexEntry
             if (rie.isIndexed())
             {
                 dos.writeInt(((IndexedEntry)rie).serializedSize());
-                dos.writeInt(rie.deletionInfo().localDeletionTime);
-                dos.writeLong(rie.deletionInfo().markedForDeleteAt);
+                DeletionInfo.serializer().serialize(rie.deletionInfo(), dos);
                 dos.writeInt(rie.columnsIndex().size());
                 for (IndexHelper.IndexInfo info : rie.columnsIndex())
                     info.serialize(dos);
@@ -110,14 +109,13 @@ public class RowIndexEntry
                 int size = dis.readInt();
                 if (size > 0)
                 {
-                    int ldt = dis.readInt();
-                    long mfda = dis.readLong();
+                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis);
                     int entries = dis.readInt();
                     List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                     for (int i = 0; i < entries; i++)
                         columnsIndex.add(IndexHelper.IndexInfo.deserialize(dis));
                     Filter bf = FilterFactory.deserialize(dis, descriptor.filterType);
-                    return new IndexedEntry(position, new DeletionInfo(mfda, ldt), columnsIndex, bf);
+                    return new IndexedEntry(position, delInfo, columnsIndex, bf);
                 }
                 else
                 {
@@ -183,12 +181,14 @@ public class RowIndexEntry
 
         public int serializedSize()
         {
-            int size = DBConstants.LONG_SIZE + DBConstants.INT_SIZE; // deletion info
+            long size = deletionInfo.serializer().serializedSize(deletionInfo); // deletion info
             size += DBConstants.INT_SIZE; // number of entries
             for (IndexHelper.IndexInfo info : columnsIndex)
                 size += info.serializedSize();
 
-            return size + (int) FilterFactory.serializedSize(bloomFilter);
+            size += FilterFactory.serializedSize(bloomFilter);
+            assert size <= Integer.MAX_VALUE;
+            return (int)size;
         }
     }
 }

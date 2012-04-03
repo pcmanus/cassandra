@@ -93,8 +93,7 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
 
     public void serializeCFInfo(ColumnFamily columnFamily, DataOutput dos) throws IOException
     {
-        dos.writeInt(columnFamily.getLocalDeletionTime());
-        dos.writeLong(columnFamily.getMarkedForDeleteAt());
+        DeletionInfo.serializer().serialize(columnFamily.deletionInfo(), dos);
     }
 
     public ColumnFamily deserialize(DataInput dis) throws IOException
@@ -136,7 +135,7 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
 
     public ColumnFamily deserializeFromSSTableNoColumns(ColumnFamily cf, DataInput input) throws IOException
     {
-        cf.delete(input.readInt(), input.readLong());
+        cf.delete(DeletionInfo.serializer().deserialize(input));
         return cf;
     }
 

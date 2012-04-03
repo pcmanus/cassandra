@@ -125,8 +125,7 @@ public class SliceQueryFilter implements IFilter
 
             // only count live columns towards the `count` criteria
             if (column.isLive()
-                && (!container.isMarkedForDelete()
-                    || column.mostRecentLiveChangeAt() > container.getMarkedForDeleteAt()))
+                && (!container.deletionInfo().isDeleted(column)))
             {
                 liveColumns++;
             }

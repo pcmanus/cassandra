@@ -757,11 +757,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public static ColumnFamily removeDeletedCF(ColumnFamily cf, int gcBefore)
     {
-        if (cf.getColumnCount() == 0 && (!cf.isMarkedForDelete() || cf.getLocalDeletionTime() < gcBefore))
-            return null;
-
         cf.maybeResetDeletionTimes(gcBefore);
-        return cf;
+        return cf.getColumnCount() == 0 && !cf.isMarkedForDelete() ? null : cf;
     }
 
     /*
@@ -797,10 +794,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             IColumn c = iter.next();
             ByteBuffer cname = c.name();
             // remove columns if
-            // (a) the column itself is tombstoned or
-            // (b) the CF is tombstoned and the column is not newer than it
-            if (c.getLocalDeletionTime() < gcBefore
-                || c.timestamp() <= cf.getMarkedForDeleteAt())
+            // (a) the column itself is gcable or
+            // (b) the column is shadowed by a CF tombstone
+            if (c.getLocalDeletionTime() < gcBefore || cf.deletionInfo().isDeleted(c))
             {
                 iter.remove();
             }
@@ -816,27 +812,25 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         while (iter.hasNext())
         {
             SuperColumn c = (SuperColumn)iter.next();
-            long minTimestamp = Math.max(c.getMarkedForDeleteAt(), cf.getMarkedForDeleteAt());
             Iterator<IColumn> subIter = c.getSubColumns().iterator();
             while (subIter.hasNext())
             {
                 IColumn subColumn = subIter.next();
                 // remove subcolumns if
-                // (a) the subcolumn itself is tombstoned or
-                // (b) the supercolumn is tombstoned and the subcolumn is not newer than it
-                if (subColumn.timestamp() <= minTimestamp
-                    || subColumn.getLocalDeletionTime() < gcBefore)
+                // (a) the subcolumn itself is gcable or
+                // (b) the supercolumn is shadowed by the CF and the column is not newer
+                // (b) the subcolumn is shadowed by the supercolumn
+                if (subColumn.getLocalDeletionTime() < gcBefore
+                    || cf.deletionInfo().isDeleted(c.name(), subColumn.timestamp())
+                    || c.deletionInfo().isDeleted(subColumn))
                 {
                     subIter.remove();
                 }
             }
-            if (c.getSubColumns().isEmpty() && (!c.isMarkedForDelete() || c.getLocalDeletionTime() < gcBefore))
+            c.maybeResetDeletionTimes(gcBefore);
+            if (c.getSubColumns().isEmpty() && !c.isMarkedForDelete())
             {
                 iter.remove();
-            }
-            else
-            {
-                c.maybeResetDeletionTimes(gcBefore);
             }
         }
     }

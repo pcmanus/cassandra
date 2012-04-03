@@ -118,12 +118,10 @@ public class QueryFilter
                     // filterSuperColumn only looks at immediate parent (the supercolumn) when determining if a subcolumn
                     // is still live, i.e., not shadowed by the parent's tombstone.  so, bump it up temporarily to the tombstone
                     // time of the cf, if that is greater.
-                    long deletedAt = c.getMarkedForDeleteAt();
-                    if (returnCF.getMarkedForDeleteAt() > deletedAt)
-                        ((SuperColumn) c).delete(c.getLocalDeletionTime(), returnCF.getMarkedForDeleteAt());
-
+                    DeletionInfo delInfo = ((SuperColumn) c).deletionInfo();
+                    ((SuperColumn) c).delete(returnCF.deletionInfo());
                     c = filter.filterSuperColumn((SuperColumn) c, gcBefore);
-                    ((SuperColumn) c).delete(c.getLocalDeletionTime(), deletedAt); // reset sc tombstone time to what it should be
+                    ((SuperColumn) c).setDeletionInfo(delInfo); // reset sc tombstone time to what it should be
                 }
                 curCF.clear();
 
@@ -147,7 +145,7 @@ public class QueryFilter
         // (since otherwise, the only thing repair cares about is the container tombstone)
         long maxChange = column.mostRecentNonGCableChangeAt(gcBefore);
         return (column.getLocalDeletionTime() >= gcBefore || maxChange > column.getMarkedForDeleteAt()) // (1)
-               && (!container.isMarkedForDelete() || maxChange > container.getMarkedForDeleteAt()); // (2)
+               && (!container.deletionInfo().isDeleted(column.name(), maxChange)); // (2)
     }
 
     /**
