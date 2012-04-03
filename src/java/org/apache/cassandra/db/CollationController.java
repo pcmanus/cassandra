@@ -112,7 +112,7 @@ public class CollationController
                 // will also be older
                 if (sstable.getMaxTimestamp() < mostRecentRowTombstone)
                     break;
-                
+
                 long currentMaxTs = sstable.getMaxTimestamp();
                 reduceNameFilter(reducedFilter, container, currentMaxTs);
                 if (((NamesQueryFilter) reducedFilter.filter).columns.isEmpty())
@@ -126,9 +126,9 @@ public class CollationController
                     if (cf.isMarkedForDelete())
                     {
                         // track the most recent row level tombstone we encounter
-                        mostRecentRowTombstone = cf.getMarkedForDeleteAt();
+                        mostRecentRowTombstone = cf.deletionInfo().maxTimestamp();
                     }
-                    
+
                     container.delete(cf);
                     sstablesIterated++;
                     while (iter.hasNext())
@@ -241,7 +241,7 @@ public class CollationController
                     iterators.add(iter);
                 }
             }
-            
+
             long mostRecentRowTombstone = Long.MIN_VALUE;
             Map<IColumnIterator, Long> iteratorMaxTimes = Maps.newHashMapWithExpectedSize(view.sstables.size());
             for (SSTableReader sstable : view.sstables)
@@ -257,13 +257,13 @@ public class CollationController
                 {
                     ColumnFamily cf = iter.getColumnFamily();
                     if (cf.isMarkedForDelete())
-                        mostRecentRowTombstone = cf.getMarkedForDeleteAt();
+                        mostRecentRowTombstone = cf.deletionInfo().maxTimestamp();
 
                     returnCF.delete(cf);
                     sstablesIterated++;
                 }
             }
-            
+
             // If we saw a row tombstone, do a second pass through the iterators we
             // obtained from the sstables and drop any whose maxTimestamp < that of the
             // row tombstone

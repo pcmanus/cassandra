@@ -83,7 +83,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
                 emptyColumnFamily.delete(cf);
         }
 
-        this.columnsIndex = new ColumnIndex.Builder(emptyColumnFamily.getComparator(), key.key, getEstimatedColumnCount()).build(this);
+        this.columnsIndex = new ColumnIndex.Builder(emptyColumnFamily.getComparator(), key.key, emptyColumnFamily.deletionInfo(), getEstimatedColumnCount()).build(this);
         // reach into the reducer used during iteration to get column count, size, max column timestamp
         // (however, if there are zero columns, iterator() will not be called by ColumnIndexer and reducer will be null)
         columnStats = new ColumnStats(reducer == null ? 0 : reducer.columns, reducer == null ? Long.MIN_VALUE : reducer.maxTimestampSeen,

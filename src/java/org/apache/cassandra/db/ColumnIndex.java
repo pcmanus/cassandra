@@ -60,10 +60,10 @@ public class ColumnIndex
         private IColumn firstColumn = null;
         private IColumn lastColumn = null;
 
-        public Builder(Comparator<ByteBuffer> comparator, ByteBuffer key, int estimatedColumnCount)
+        public Builder(Comparator<ByteBuffer> comparator, ByteBuffer key, DeletionInfo delInfo, int estimatedColumnCount)
         {
             this.comparator = comparator;
-            this.indexOffset = rowHeaderSize(key);
+            this.indexOffset = rowHeaderSize(key, delInfo);
             this.result = new ColumnIndex(estimatedColumnCount);
         }
 
@@ -71,15 +71,15 @@ public class ColumnIndex
          * Returns the number of bytes between the beginning of the row and the
          * first serialized column.
          */
-        private static long rowHeaderSize(ByteBuffer key)
+        private static long rowHeaderSize(ByteBuffer key, DeletionInfo delInfo)
         {
             TypeSizes typeSizes = TypeSizes.NATIVE;
             // TODO fix constantSize when changing the nativeconststs.
             int keysize = key.remaining();
-            return typeSizes.sizeof((short) keysize) + keysize + // Row key
-                 + typeSizes.sizeof(0L)                        // Row data size
-                 + typeSizes.sizeof(0) + typeSizes.sizeof(0L) // Deletion info
-                 + typeSizes.sizeof(0);                        // Column count
+            return typeSizes.sizeof((short) keysize) + keysize +       // Row key
+                 + typeSizes.sizeof(0L)                                // Row data size
+                 + DeletionInfo.serializedSize.serializedSize(delInfo) // Deletion info
+                 + typeSizes.sizeof(0);                                // Column count
         }
 
         /**

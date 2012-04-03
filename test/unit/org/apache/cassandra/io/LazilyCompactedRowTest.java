@@ -122,8 +122,7 @@ public class LazilyCompactedRowTest extends SchemaLoader
             ColumnFamily cf2 = ColumnFamily.create(cfs.metadata);
             ColumnFamily.serializer.deserializeFromSSTableNoColumns(cf1, in1);
             ColumnFamily.serializer.deserializeFromSSTableNoColumns(cf2, in2);
-            assert cf1.getLocalDeletionTime() == cf2.getLocalDeletionTime();
-            assert cf1.getMarkedForDeleteAt() == cf2.getMarkedForDeleteAt();
+            assert cf1.deletionInfo().equals(cf2.deletionInfo());
             // columns
             int columns = in1.readInt();
             assert columns == in2.readInt();

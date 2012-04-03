@@ -241,12 +241,12 @@ public class RowMutation implements IMutation
 
         if (path.superColumnName == null && path.columnName == null)
         {
-            columnFamily.delete(localDeleteTime, timestamp);
+            columnFamily.delete(new DeletionInfo(timestamp, localDeleteTime));
         }
         else if (path.columnName == null)
         {
             SuperColumn sc = new SuperColumn(path.superColumnName, columnFamily.getSubComparator());
-            sc.delete(localDeleteTime, timestamp);
+            sc.delete(new DeletionInfo(timestamp, localDeleteTime));
             columnFamily.addColumn(sc);
         }
         else

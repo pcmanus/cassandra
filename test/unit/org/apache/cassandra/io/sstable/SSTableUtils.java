@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -48,7 +49,7 @@ public class SSTableUtils
     public static ColumnFamily createCF(long mfda, int ldt, IColumn... cols)
     {
         ColumnFamily cf = ColumnFamily.create(TABLENAME, CFNAME);
-        cf.delete(ldt, mfda);
+        cf.delete(new DeletionInfo(mfda, ldt));
         for (IColumn col : cols)
             cf.addColumn(col);
         return cf;
@@ -103,8 +104,7 @@ public class SSTableUtils
         }
         else if (rcf == null)
             throw new AssertionError("RHS had no content for " + lhs.getKey());
-        assertEquals(lcf.getMarkedForDeleteAt(), rcf.getMarkedForDeleteAt());
-        assertEquals(lcf.getLocalDeletionTime(), rcf.getLocalDeletionTime());
+        assertEquals(lcf.deletionInfo(), rcf.deletionInfo());
         // iterate columns
         while (lhs.hasNext())
         {
