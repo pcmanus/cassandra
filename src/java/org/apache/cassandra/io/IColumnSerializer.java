@@ -18,11 +18,12 @@
 package org.apache.cassandra.io;
 
 import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.cassandra.db.IColumn;
 
-public interface IColumnSerializer extends ISerializer<IColumn>
+public interface IColumnSerializer extends IVersionedSerializer<IColumn>
 {
     /**
      * Flag affecting deserialization behavior.
@@ -40,5 +41,8 @@ public interface IColumnSerializer extends ISerializer<IColumn>
         LOCAL, FROM_REMOTE, PRESERVE_SIZE;
     }
 
-    public IColumn deserialize(DataInput in, Flag flag, int expireBefore) throws IOException;
+    // Shorthand method to write a column in the current format
+    public void serialize(IColumn column, DataOutput dos) throws IOException;
+
+    public IColumn deserialize(DataInput in, Flag flag, int expireBefore, int version) throws IOException;
 }

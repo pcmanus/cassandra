@@ -420,7 +420,7 @@ public class RowMutation implements IMutation, MessageProducer
             for (Map.Entry<Integer,ColumnFamily> entry : rm.modifications.entrySet())
             {
                 dos.writeInt(entry.getKey());
-                ColumnFamily.serializer().serialize(entry.getValue(), dos);
+                ColumnFamily.serializer().serialize(entry.getValue(), dos, version);
             }
         }
 
@@ -433,7 +433,7 @@ public class RowMutation implements IMutation, MessageProducer
             for (int i = 0; i < size; ++i)
             {
                 Integer cfid = Integer.valueOf(dis.readInt());
-                ColumnFamily cf = ColumnFamily.serializer().deserialize(dis, flag, TreeMapBackedSortedColumns.factory());
+                ColumnFamily cf = ColumnFamily.serializer().deserialize(dis, flag, TreeMapBackedSortedColumns.factory(), version);
                 modifications.put(cfid, cf);
             }
             return new RowMutation(table, key, modifications);
@@ -453,7 +453,7 @@ public class RowMutation implements IMutation, MessageProducer
             for (Map.Entry<Integer,ColumnFamily> entry : rm.modifications.entrySet())
             {
                 size += DBConstants.INT_SIZE;
-                size += entry.getValue().serializedSize();
+                size += entry.getValue().serializedSize(version);
             }
 
             return size;

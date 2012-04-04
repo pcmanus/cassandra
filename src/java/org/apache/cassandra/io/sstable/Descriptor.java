@@ -22,6 +22,7 @@ import java.util.StringTokenizer;
 
 import com.google.common.base.Objects;
 
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FilterFactory;
 import org.apache.cassandra.utils.Pair;
 
@@ -236,6 +237,17 @@ public class Descriptor
         // (see SSTableWriter.appendFromStream) but versions earlier than 0.7.1 don't have the
         // MessagingService version awareness anyway so there's no point.
         return isCompatible() && version.charAt(0) >= 'f';
+    }
+
+    // Currently we only care about pre/post-#3708
+    public static int toMessagingVersion(String version)
+    {
+        return version.compareTo("i") < 0 ? MessagingService.VERSION_11: MessagingService.current_version;
+    }
+
+    public int getMessagingVersion()
+    {
+        return toMessagingVersion(version);
     }
 
     @Override

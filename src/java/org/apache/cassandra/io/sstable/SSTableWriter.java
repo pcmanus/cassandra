@@ -171,7 +171,7 @@ public class SSTableWriter extends SSTable
 
         // build column index
         // TODO: build and serialization could be merged
-        ColumnIndex index = new ColumnIndex.Builder(cf.getComparator(), decoratedKey.key, cf.getColumnCount()).build(cf);
+        ColumnIndex index = new ColumnIndex.Builder(cf.getComparator(), decoratedKey.key, cf.deletionInfo(), cf.getColumnCount()).build(cf);
 
         // write out row size + data
         dataFile.stream.writeLong(cf.serializedSizeForSSTable());
@@ -192,11 +192,8 @@ public class SSTableWriter extends SSTable
         dataFile.stream.writeLong(dataSize);
 
         // cf data
-        int lct = in.readInt();
-        long mfda = in.readLong();
-        DeletionInfo deletionInfo = new DeletionInfo(mfda, lct);
-        dataFile.stream.writeInt(lct);
-        dataFile.stream.writeLong(mfda);
+        DeletionInfo deletionInfo = DeletionInfo.serializer().deserialize(in, descriptor.getMessagingVersion());
+        DeletionInfo.serializer().serialize(deletionInfo, dataFile.stream, descriptor.getMessagingVersion());
 
         // column size
         int columnCount = in.readInt();
@@ -206,13 +203,13 @@ public class SSTableWriter extends SSTable
         long maxTimestamp = Long.MIN_VALUE;
         StreamingHistogram tombstones = new StreamingHistogram(TOMBSTONE_HISTOGRAM_BIN_SIZE);
         ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
-        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf.getComparator(), key.key, columnCount);
+        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf.getComparator(), key.key, deletionInfo, columnCount);
         IColumnSerializer columnSerializer = cf.getColumnSerializer();
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
             // data size received, so we must reserialize the exact same data
-            IColumn column = columnSerializer.deserialize(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE);
+            IColumn column = columnSerializer.deserialize(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, descriptor.getMessagingVersion());
             if (column instanceof CounterColumn)
             {
                 column = ((CounterColumn) column).markDeltaToBeCleared();
@@ -236,7 +233,7 @@ public class SSTableWriter extends SSTable
                 tombstones.update(deletionTime);
             }
             maxTimestamp = Math.max(maxTimestamp, column.maxTimestamp());
-            cf.getColumnSerializer().serialize(column, dataFile.stream);
+            cf.getColumnSerializer().serialize(column, dataFile.stream, descriptor.getMessagingVersion());
             columnIndexer.add(column);
         }
 

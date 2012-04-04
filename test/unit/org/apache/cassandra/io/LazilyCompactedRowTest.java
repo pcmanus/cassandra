@@ -122,16 +122,16 @@ public class LazilyCompactedRowTest extends SchemaLoader
             // cf metadata
             ColumnFamily cf1 = ColumnFamily.create(cfs.metadata);
             ColumnFamily cf2 = ColumnFamily.create(cfs.metadata);
-            ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf1, in1);
-            ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf2, in2);
+            ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf1, in1, MessagingService.current_version);
+            ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf2, in2, MessagingService.current_version);
             assert cf1.deletionInfo().equals(cf2.deletionInfo());
             // columns
             int columns = in1.readInt();
             assert columns == in2.readInt();
             for (int i = 0; i < columns; i++)
             {
-                IColumn c1 = cf1.getColumnSerializer().deserialize(in1);
-                IColumn c2 = cf2.getColumnSerializer().deserialize(in2);
+                IColumn c1 = cf1.getColumnSerializer().deserialize(in1, MessagingService.current_version);
+                IColumn c2 = cf2.getColumnSerializer().deserialize(in2, MessagingService.current_version);
                 assert c1.equals(c2) : c1.getString(cfs.metadata.comparator) + " != " + c2.getString(cfs.metadata.comparator);
             }
             // that should be everything

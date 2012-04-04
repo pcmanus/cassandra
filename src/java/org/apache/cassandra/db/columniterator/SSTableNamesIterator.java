@@ -143,7 +143,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
             ColumnFamilySerializer serializer = ColumnFamily.serializer();
             try
             {
-                cf = serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                cf = serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file, sstable.descriptor.getMessagingVersion());
             }
             catch (Exception e)
             {
@@ -198,7 +198,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         int n = 0;
         for (int i = 0; i < columns; i++)
         {
-            IColumn column = columnSerializer.deserialize(file);
+            IColumn column = columnSerializer.deserialize(file, sstable.descriptor.getMessagingVersion());
             if (columnNames.contains(column.name()))
             {
                 cf.addColumn(column);
@@ -242,7 +242,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
             // TODO only completely deserialize columns we are interested in
             while (file.bytesPastMark(mark) < indexInfo.width)
             {
-                IColumn column = columnSerializer.deserialize(file);
+                IColumn column = columnSerializer.deserialize(file, sstable.descriptor.getMessagingVersion());
                 // we check vs the original Set, not the filtered List, for efficiency
                 if (columnNames.contains(column.name()))
                 {

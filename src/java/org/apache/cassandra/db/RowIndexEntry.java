@@ -77,7 +77,7 @@ public class RowIndexEntry
             if (rie.isIndexed())
             {
                 dos.writeInt(((IndexedEntry)rie).serializedSize());
-                DeletionInfo.serializer().serialize(rie.deletionInfo(), dos);
+                DeletionInfo.serializer().serialize(rie.deletionInfo(), dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
                 dos.writeInt(rie.columnsIndex().size());
                 for (IndexHelper.IndexInfo info : rie.columnsIndex())
                     info.serialize(dos);
@@ -109,7 +109,7 @@ public class RowIndexEntry
                 int size = dis.readInt();
                 if (size > 0)
                 {
-                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis);
+                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, descriptor.getMessagingVersion());
                     int entries = dis.readInt();
                     List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                     for (int i = 0; i < entries; i++)
@@ -181,7 +181,7 @@ public class RowIndexEntry
 
         public int serializedSize()
         {
-            long size = deletionInfo.serializer().serializedSize(deletionInfo); // deletion info
+            long size = deletionInfo.serializer().serializedSize(deletionInfo, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION)); // deletion info
             size += DBConstants.INT_SIZE; // number of entries
             for (IndexHelper.IndexInfo info : columnsIndex)
                 size += info.serializedSize();

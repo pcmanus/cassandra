@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.util.IIterableColumns;
 import org.apache.cassandra.utils.Filter;
@@ -60,10 +61,10 @@ public class ColumnIndex
         private IColumn firstColumn = null;
         private IColumn lastColumn = null;
 
-        public Builder(Comparator<ByteBuffer> comparator, ByteBuffer key, int estimatedColumnCount)
+        public Builder(Comparator<ByteBuffer> comparator, ByteBuffer key, DeletionInfo delInfo, int estimatedColumnCount)
         {
             this.comparator = comparator;
-            this.indexOffset = rowHeaderSize(key);
+            this.indexOffset = rowHeaderSize(key, delInfo);
             this.result = new ColumnIndex(estimatedColumnCount);
         }
 
@@ -71,11 +72,11 @@ public class ColumnIndex
          * Returns the number of bytes between the beginning of the row and the
          * first serialized column.
          */
-        private static long rowHeaderSize(ByteBuffer key)
+        private static long rowHeaderSize(ByteBuffer key, DeletionInfo delInfo)
         {
             return DBConstants.SHORT_SIZE + key.remaining()     // Row key
                  + DBConstants.LONG_SIZE                        // Row data size
-                 + DBConstants.INT_SIZE + DBConstants.LONG_SIZE // Deletion info
+                 + DeletionInfo.serializer().serializedSize(delInfo, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION))
                  + DBConstants.INT_SIZE;                        // Column count
         }
 

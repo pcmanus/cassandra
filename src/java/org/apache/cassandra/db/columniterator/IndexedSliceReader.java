@@ -76,7 +76,7 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
                 if (indexes.isEmpty())
                 {
                     setToRowStart(sstable, indexEntry, input);
-                    this.emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                    this.emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file, sstable.descriptor.getMessagingVersion());
                     fetcher = new SimpleBlockFetcher();
                 }
                 else
@@ -91,7 +91,7 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
                 setToRowStart(sstable, indexEntry, input);
                 IndexHelper.skipBloomFilter(file);
                 this.indexes = IndexHelper.deserializeIndex(file);
-                this.emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                this.emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file, sstable.descriptor.getMessagingVersion());
                 fetcher = indexes.isEmpty() ? new SimpleBlockFetcher() : new IndexedBlockFetcher();
             }
         }
@@ -227,7 +227,7 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
             FileMark mark = file.mark();
             while (file.bytesPastMark(mark) < curColPosition.width && !outOfBounds)
             {
-                IColumn column = columnSerializer.deserialize(file);
+                IColumn column = columnSerializer.deserialize(file, sstable.descriptor.getMessagingVersion());
                 if (reversed)
                     blockColumns.addFirst(column);
                 else
@@ -256,7 +256,7 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
             int columns = file.readInt();
             for (int i = 0; i < columns; i++)
             {
-                IColumn column = columnSerializer.deserialize(file);
+                IColumn column = columnSerializer.deserialize(file, sstable.descriptor.getMessagingVersion());
                 if (reversed)
                     blockColumns.addFirst(column);
                 else

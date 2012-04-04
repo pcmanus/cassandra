@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -124,7 +125,12 @@ public class Column implements IColumn
         return timestamp;
     }
 
-    public int size()
+    public int serializedSize()
+    {
+        return serializedSize(Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+    }
+
+    public int serializedSize(int version)
     {
         /*
          * Size of a column is =
@@ -135,15 +141,6 @@ public class Column implements IColumn
          * + entire byte array.
         */
         return DBConstants.SHORT_SIZE + name.remaining() + 1 + DBConstants.TIMESTAMP_SIZE + DBConstants.INT_SIZE + value.remaining();
-    }
-
-    /*
-     * This returns the size of the column when serialized.
-     * @see com.facebook.infrastructure.db.IColumn#serializedSize()
-    */
-    public int serializedSize()
-    {
-        return size();
     }
 
     public int serializationFlags()

@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.io.IColumnSerializer;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -38,7 +39,12 @@ public class ColumnSerializer implements IColumnSerializer
     public final static int COUNTER_MASK        = 0x04;
     public final static int COUNTER_UPDATE_MASK = 0x08;
 
-    public void serialize(IColumn column, DataOutput dos)
+    public void serialize(IColumn column, DataOutput dos) throws IOException
+    {
+        serialize(column, dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+    }
+
+    public void serialize(IColumn column, DataOutput dos, int version)
     {
         assert column.name().remaining() > 0;
         ByteBufferUtil.writeWithShortLength(column.name(), dos);
@@ -63,9 +69,9 @@ public class ColumnSerializer implements IColumnSerializer
         }
     }
 
-    public Column deserialize(DataInput dis) throws IOException
+    public Column deserialize(DataInput dis, int version) throws IOException
     {
-        return deserialize(dis, Flag.LOCAL);
+        return deserialize(dis, Flag.LOCAL, version);
     }
 
     /*
@@ -73,12 +79,12 @@ public class ColumnSerializer implements IColumnSerializer
      * deserialize comes from a remote host. If it does, then we must clear
      * the delta.
      */
-    public Column deserialize(DataInput dis, IColumnSerializer.Flag flag) throws IOException
+    public Column deserialize(DataInput dis, IColumnSerializer.Flag flag, int version) throws IOException
     {
-        return deserialize(dis, flag, (int) (System.currentTimeMillis() / 1000));
+        return deserialize(dis, flag, (int) (System.currentTimeMillis() / 1000), version);
     }
 
-    public Column deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore) throws IOException
+    public Column deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore, int version) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
         if (name.remaining() <= 0)
@@ -121,9 +127,9 @@ public class ColumnSerializer implements IColumnSerializer
         }
     }
 
-    public long serializedSize(IColumn object)
+    public long serializedSize(IColumn object, int version)
     {
-        return object.serializedSize();
+        return object.serializedSize(version);
     }
 
     private static class CorruptColumnException extends IOException

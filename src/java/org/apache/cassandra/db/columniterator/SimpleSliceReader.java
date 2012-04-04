@@ -36,6 +36,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIterator
 {
+    private final SSTableReader sstable;
     private final FileDataInput file;
     private final boolean needsClosing;
     private final ByteBuffer finishColumn;
@@ -47,6 +48,7 @@ class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIter
 
     public SimpleSliceReader(SSTableReader sstable, RowIndexEntry indexEntry, FileDataInput input, ByteBuffer finishColumn)
     {
+        this.sstable = sstable;
         this.finishColumn = finishColumn;
         this.comparator = sstable.metadata.comparator;
         try
@@ -73,7 +75,7 @@ class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIter
                 IndexHelper.skipIndex(file);
             }
 
-            emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+            emptyColumnFamily = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file, sstable.descriptor.getMessagingVersion());
             columns = file.readInt();
             mark = file.mark();
         }
@@ -93,7 +95,7 @@ class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIter
         try
         {
             file.reset(mark);
-            column = emptyColumnFamily.getColumnSerializer().deserialize(file);
+            column = emptyColumnFamily.getColumnSerializer().deserialize(file, sstable.descriptor.getMessagingVersion());
         }
         catch (IOException e)
         {

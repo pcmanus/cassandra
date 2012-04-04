@@ -32,6 +32,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.ColumnSortedMap;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
@@ -99,30 +100,27 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
         return column;
     }
 
-    /**
-     * This calculates the exact size of the sub columns on the fly
-     */
-    public int size()
+    public int serializedSize()
     {
-        int size = 0;
-        for (IColumn subColumn : getSubColumns())
-        {
-            size += subColumn.serializedSize();
-        }
-        return size;
+        return serializedSize(Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
     }
 
     /**
      * This returns the size of the super-column when serialized.
      * @see org.apache.cassandra.db.IColumn#serializedSize()
     */
-    public int serializedSize()
+    public int serializedSize(int version)
     {
         /*
          * We need to keep the way we are calculating the column size in sync with the
          * way we are calculating the size for the column family serializer.
          */
-        return DBConstants.SHORT_SIZE + name.remaining() + DBConstants.INT_SIZE + DBConstants.LONG_SIZE + DBConstants.INT_SIZE + size();
+        int size = DBConstants.SHORT_SIZE + name.remaining() + (int)DeletionInfo.serializer().serializedSize(deletionInfo(), version) + DBConstants.INT_SIZE;
+        for (IColumn subColumn : getSubColumns())
+        {
+            size += subColumn.serializedSize(version);
+        }
+        return size;
     }
 
     public long timestamp()
@@ -356,18 +354,23 @@ class SuperColumnSerializer implements IColumnSerializer
         return comparator;
     }
 
-    public void serialize(IColumn column, DataOutput dos)
+    public void serialize(IColumn column, DataOutput dos) throws IOException
+    {
+        serialize(column, dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+    }
+
+    public void serialize(IColumn column, DataOutput dos, int version)
     {
         SuperColumn superColumn = (SuperColumn)column;
         ByteBufferUtil.writeWithShortLength(column.name(), dos);
         try
         {
-            DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos);
+            DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos, version);
             Collection<IColumn> columns = column.getSubColumns();
             dos.writeInt(columns.size());
             for (IColumn subColumn : columns)
             {
-                Column.serializer().serialize(subColumn, dos);
+                Column.serializer().serialize(subColumn, dos, version);
             }
         }
         catch (IOException e)
@@ -376,20 +379,20 @@ class SuperColumnSerializer implements IColumnSerializer
         }
     }
 
-    public IColumn deserialize(DataInput dis) throws IOException
+    public IColumn deserialize(DataInput dis, int version) throws IOException
     {
-        return deserialize(dis, IColumnSerializer.Flag.LOCAL);
+        return deserialize(dis, IColumnSerializer.Flag.LOCAL, version);
     }
 
-    public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag) throws IOException
+    public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag, int version) throws IOException
     {
-        return deserialize(dis, flag, (int)(System.currentTimeMillis() / 1000));
+        return deserialize(dis, flag, (int)(System.currentTimeMillis() / 1000), version);
     }
 
-    public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore) throws IOException
+    public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore, int version) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
-        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis);
+        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, version);
 
         /* read the number of columns */
         int size = dis.readInt();
@@ -400,8 +403,8 @@ class SuperColumnSerializer implements IColumnSerializer
         return superColumn;
     }
 
-    public long serializedSize(IColumn object)
+    public long serializedSize(IColumn object, int version)
     {
-        return object.serializedSize();
+        return object.serializedSize(version);
     }
 }

@@ -27,10 +27,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.io.IColumnSerializer;
-import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.ColumnStats;
+import org.apache.cassandra.io.sstable.Descriptor;
 
-public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
+public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily>
 {
     private static final Logger logger = LoggerFactory.getLogger(ColumnFamilySerializer.class);
 
@@ -51,7 +52,7 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
      * <column count>
      * <columns, serialized individually>
     */
-    public void serialize(ColumnFamily columnFamily, DataOutput dos)
+    public void serialize(ColumnFamily columnFamily, DataOutput dos, int version)
     {
         try
         {
@@ -68,14 +69,19 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
         {
             throw new RuntimeException(e);
         }
-        serializeForSSTable(columnFamily, dos);
+        serializeForSSTable(columnFamily, dos, version);
     }
 
     public void serializeForSSTable(ColumnFamily columnFamily, DataOutput dos)
     {
+        serializeForSSTable(columnFamily, dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+    }
+
+    public void serializeForSSTable(ColumnFamily columnFamily, DataOutput dos, int version)
+    {
         try
         {
-            serializeCFInfo(columnFamily, dos);
+            serializeCFInfo(columnFamily, dos, version);
 
             Collection<IColumn> columns = columnFamily.getSortedColumns();
             int count = columns.size();
@@ -83,7 +89,7 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
 
             IColumnSerializer columnSerializer = columnFamily.getColumnSerializer();
             for (IColumn column : columns)
-                columnSerializer.serialize(column, dos);
+                columnSerializer.serialize(column, dos, version);
         }
         catch (IOException e)
         {
@@ -93,15 +99,20 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
 
     public void serializeCFInfo(ColumnFamily columnFamily, DataOutput dos) throws IOException
     {
-        DeletionInfo.serializer().serialize(columnFamily.deletionInfo(), dos);
+        serializeCFInfo(columnFamily, dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
     }
 
-    public ColumnFamily deserialize(DataInput dis) throws IOException
+    public void serializeCFInfo(ColumnFamily columnFamily, DataOutput dos, int version) throws IOException
     {
-        return deserialize(dis, IColumnSerializer.Flag.LOCAL, TreeMapBackedSortedColumns.factory());
+        DeletionInfo.serializer().serialize(columnFamily.deletionInfo(), dos, version);
     }
 
-    public ColumnFamily deserialize(DataInput dis, IColumnSerializer.Flag flag, ISortedColumns.Factory factory) throws IOException
+    public ColumnFamily deserialize(DataInput dis, int version) throws IOException
+    {
+        return deserialize(dis, IColumnSerializer.Flag.LOCAL, TreeMapBackedSortedColumns.factory(), version);
+    }
+
+    public ColumnFamily deserialize(DataInput dis, IColumnSerializer.Flag flag, ISortedColumns.Factory factory, int version) throws IOException
     {
         if (!dis.readBoolean())
             return null;
@@ -111,36 +122,36 @@ public class ColumnFamilySerializer implements ISerializer<ColumnFamily>
         if (Schema.instance.getCF(cfId) == null)
             throw new UnknownColumnFamilyException("Couldn't find cfId=" + cfId, cfId);
         ColumnFamily cf = ColumnFamily.create(cfId, factory);
-        deserializeFromSSTableNoColumns(cf, dis);
-        deserializeColumns(dis, cf, flag);
+        deserializeFromSSTableNoColumns(cf, dis, version);
+        deserializeColumns(dis, cf, flag, version);
         return cf;
     }
 
-    public void deserializeColumns(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag) throws IOException
+    public void deserializeColumns(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag, int version) throws IOException
     {
         int size = dis.readInt();
-        deserializeColumns(dis, cf, size, flag);
+        deserializeColumns(dis, cf, size, flag, version);
     }
 
     /* column count is already read from DataInput */
-    public void deserializeColumns(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag) throws IOException
+    public void deserializeColumns(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag, int version) throws IOException
     {
         IColumnSerializer columnSerializer = cf.getColumnSerializer();
         for (int i = 0; i < size; ++i)
         {
-            IColumn column = columnSerializer.deserialize(dis, flag, (int) (System.currentTimeMillis() / 1000));
+            IColumn column = columnSerializer.deserialize(dis, flag, (int) (System.currentTimeMillis() / 1000), version);
             cf.addColumn(column);
         }
     }
 
-    public ColumnFamily deserializeFromSSTableNoColumns(ColumnFamily cf, DataInput input) throws IOException
+    public ColumnFamily deserializeFromSSTableNoColumns(ColumnFamily cf, DataInput input, int version) throws IOException
     {
-        cf.delete(DeletionInfo.serializer().deserialize(input));
+        cf.delete(DeletionInfo.serializer().deserialize(input, version));
         return cf;
     }
 
-    public long serializedSize(ColumnFamily cf)
+    public long serializedSize(ColumnFamily cf, int version)
     {
-        return cf == null ? DBConstants.BOOL_SIZE : cf.serializedSize();
+        return cf == null ? DBConstants.BOOL_SIZE : cf.serializedSize(version);
     }
 }

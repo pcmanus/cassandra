@@ -24,7 +24,7 @@ import java.nio.ByteBuffer;
 
 import com.google.common.base.Objects;
 
-import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.IVersionedSerializer;
 
 public class DeletionInfo
 {
@@ -46,7 +46,7 @@ public class DeletionInfo
         this.localDeletionTime = localDeletionTime;
     }
 
-    public static ISerializer<DeletionInfo> serializer()
+    public static IVersionedSerializer<DeletionInfo> serializer()
     {
         return serializer;
     }
@@ -133,15 +133,15 @@ public class DeletionInfo
         return Objects.hashCode(markedForDeleteAt, localDeletionTime);
     }
 
-    private static class DeletionInfoSerializer implements ISerializer<DeletionInfo>
+    private static class DeletionInfoSerializer implements IVersionedSerializer<DeletionInfo>
     {
-        public void serialize(DeletionInfo info, DataOutput out) throws IOException
+        public void serialize(DeletionInfo info, DataOutput out, int version) throws IOException
         {
             out.writeInt(info.localDeletionTime);
             out.writeLong(info.markedForDeleteAt);
         }
 
-        public DeletionInfo deserialize(DataInput in) throws IOException
+        public DeletionInfo deserialize(DataInput in, int version) throws IOException
         {
             int ldt = in.readInt();
             long mfda = in.readLong();
@@ -151,7 +151,7 @@ public class DeletionInfo
                 return new DeletionInfo(mfda, ldt);
         }
 
-        public long serializedSize(DeletionInfo info)
+        public long serializedSize(DeletionInfo info, int version)
         {
             return DBConstants.INT_SIZE + DBConstants.LONG_SIZE;
         }

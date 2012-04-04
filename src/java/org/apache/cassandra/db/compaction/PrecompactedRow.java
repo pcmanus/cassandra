@@ -187,6 +187,6 @@ public class PrecompactedRow extends AbstractCompactedRow
      */
     public ColumnIndex index()
     {
-        return new ColumnIndex.Builder(compactedCf.getComparator(), key.key, compactedCf.getColumnCount()).build(compactedCf);
+        return new ColumnIndex.Builder(compactedCf.getComparator(), key.key, compactedCf.deletionInfo(), compactedCf.getColumnCount()).build(compactedCf);
     }
 }

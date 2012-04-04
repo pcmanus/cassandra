@@ -17,13 +17,9 @@
  */
 package org.apache.cassandra.db;
 
-import static org.apache.cassandra.db.DBConstants.*;
-
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 
-import org.apache.cassandra.io.sstable.SSTable;
-import org.apache.cassandra.utils.*;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 
 import org.apache.cassandra.cache.IRowCacheEntry;
@@ -34,6 +30,11 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.ColumnStats;
+import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.utils.*;
+
+import static org.apache.cassandra.db.DBConstants.*;
 
 public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEntry
 {
@@ -258,7 +259,7 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         int size = 0;
         for (IColumn column : columns)
         {
-            size += column.size();
+            size += column.serializedSize();
         }
         return size;
     }
@@ -350,19 +351,24 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         addAll(cf, allocator);
     }
 
-    public long serializedSize()
+    public long serializedSize(int version)
     {
         return BOOL_SIZE // nullness bool
                + INT_SIZE // id
-               + serializedSizeForSSTable();
+               + serializedSizeForSSTable(version);
     }
 
     public long serializedSizeForSSTable()
     {
-        long size = DeletionInfo.serializer().serializedSize(deletionInfo())
+        return serializedSizeForSSTable(Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+    }
+
+    public long serializedSizeForSSTable(int version)
+    {
+        long size = DeletionInfo.serializer().serializedSize(deletionInfo(), version)
                   + INT_SIZE; // column count
         for (IColumn column : columns)
-            size += column.serializedSize();
+            size += column.serializedSize(version);
         return size;
     }
 
