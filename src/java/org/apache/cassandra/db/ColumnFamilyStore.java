@@ -65,8 +65,6 @@ import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.utils.*;
-import org.apache.cassandra.utils.IntervalTree.Interval;
-import org.apache.cassandra.utils.IntervalTree.IntervalTree;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import static org.apache.cassandra.config.CFMetaData.Caching;
@@ -847,12 +845,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (sstables.isEmpty())
             return ImmutableSet.of();
 
-        IntervalTree<SSTableReader> tree = data.getView().intervalTree;
+        IntervalTree<RowPosition, SSTableReader> tree = data.getView().intervalTree;
 
         Set<SSTableReader> results = null;
         for (SSTableReader sstable : sstables)
         {
-            Set<SSTableReader> overlaps = ImmutableSet.copyOf(tree.search(new Interval<SSTableReader>(sstable.first, sstable.last)));
+            Set<SSTableReader> overlaps = ImmutableSet.copyOf(tree.search(Interval.<RowPosition, SSTableReader>create(sstable.first, sstable.last)));
             assert overlaps.contains(sstable);
             results = results == null ? overlaps : Sets.union(results, overlaps);
         }
@@ -1239,7 +1237,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         while (true)
         {
             view = data.getView();
-            sstables = view.intervalTree.search(new Interval(key, key));
+            sstables = view.intervalTree.search(key);
             if (SSTableReader.acquireReferences(sstables))
                 break;
             // retry w/ new view
@@ -1259,9 +1257,17 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             view = data.getView();
             // startAt == minimum is ok, but stopAt == minimum is confusing because all IntervalTree deals with
-            // is Comparable, so it won't know to special-case that.
-            Comparable stopInTree = stopAt.isMinimum() ? view.intervalTree.max() : stopAt;
-            sstables = view.intervalTree.search(new Interval(startWith, stopInTree));
+            // is Comparable, so it won't know to special-case that. However max() should not be call if the
+            // intervalTree is empty sochecking that first
+            //
+            if (view.intervalTree.isEmpty())
+            {
+                sstables = Collections.<SSTableReader>emptyList();
+                break;
+            }
+
+            RowPosition stopInTree = stopAt.isMinimum() ? view.intervalTree.max() : stopAt;
+            sstables = view.intervalTree.search(Interval.<RowPosition, SSTableReader>create(startWith, stopInTree));
             if (SSTableReader.acquireReferences(sstables))
                 break;
             // retry w/ new view
