@@ -29,10 +29,11 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.utils.IntervalTree.Interval;
-import org.apache.cassandra.utils.IntervalTree.IntervalTree;
+import org.apache.cassandra.utils.Interval;
+import org.apache.cassandra.utils.IntervalTree;
 
 /**
  * Manage compaction options.
@@ -42,7 +43,7 @@ public class CompactionController
     private static final Logger logger = LoggerFactory.getLogger(CompactionController.class);
 
     private final ColumnFamilyStore cfs;
-    private final IntervalTree<SSTableReader> overlappingTree;
+    private final IntervalTree<RowPosition, SSTableReader> overlappingTree;
 
     public final int gcBefore;
     public final int mergeShardBefore;
@@ -77,7 +78,7 @@ public class CompactionController
      */
     public boolean shouldPurge(DecoratedKey key)
     {
-        List<SSTableReader> filteredSSTables = overlappingTree.search(new Interval(key, key));
+        List<SSTableReader> filteredSSTables = overlappingTree.search(key);
         for (SSTableReader sstable : filteredSSTables)
         {
             if (sstable.getBloomFilter().isPresent(key.key))
