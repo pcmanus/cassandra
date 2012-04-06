@@ -151,12 +151,12 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
 
     public long getMarkedForDeleteAt()
     {
-        return deletionInfo().getMarkedForDeleteAt();
+        return deletionInfo().getTopLevelMarkedForDeleteAt();
     }
 
     public int getLocalDeletionTime()
     {
-        return deletionInfo().getLocalDeletionTime();
+        return deletionInfo().getTopLevelLocalDeletionTime();
     }
 
     public long mostRecentNonGCableChangeAt(int gcbefore)
@@ -392,7 +392,7 @@ class SuperColumnSerializer implements IColumnSerializer
     public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore, int version) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
-        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, version);
+        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, version, comparator);
 
         /* read the number of columns */
         int size = dis.readInt();

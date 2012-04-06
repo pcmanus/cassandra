@@ -256,7 +256,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
                 if (row == null)
                 {
                     currentKey = sstable.decodeKey(ByteBufferUtil.readWithShortLength(ifile));
-                    currentEntry = RowIndexEntry.serializer.deserialize(ifile, sstable.descriptor);
+                    currentEntry = RowIndexEntry.serializer.deserialize(ifile, sstable.descriptor, sstable.metadata.comparator);
                 }
                 else
                 {
@@ -272,7 +272,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
                 else
                 {
                     nextKey = sstable.decodeKey(ByteBufferUtil.readWithShortLength(ifile));
-                    nextEntry = RowIndexEntry.serializer.deserialize(ifile, sstable.descriptor);
+                    nextEntry = RowIndexEntry.serializer.deserialize(ifile, sstable.descriptor, sstable.metadata.comparator);
                 }
 
                 assert !dfile.isEOF();

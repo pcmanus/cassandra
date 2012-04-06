@@ -146,7 +146,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
 
     public ColumnFamily deserializeFromSSTableNoColumns(ColumnFamily cf, DataInput input, int version) throws IOException
     {
-        cf.delete(DeletionInfo.serializer().deserialize(input, version));
+        cf.delete(DeletionInfo.serializer().deserialize(input, version, cf.getComparator()));
         return cf;
     }
 

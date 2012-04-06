@@ -480,7 +480,7 @@ public class CompactionManager implements CompactionManagerMBean
             ByteBuffer nextIndexKey = ByteBufferUtil.readWithShortLength(indexFile);
             {
                 // throw away variable so we don't have a side effect in the assert
-                long firstRowPositionFromIndex = RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor).position;
+                long firstRowPositionFromIndex = RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor, cfs.metadata.comparator).position;
                 assert firstRowPositionFromIndex == 0 : firstRowPositionFromIndex;
             }
 
@@ -517,7 +517,7 @@ public class CompactionManager implements CompactionManagerMBean
                     nextIndexKey = indexFile.isEOF() ? null : ByteBufferUtil.readWithShortLength(indexFile);
                     nextRowPositionFromIndex = indexFile.isEOF()
                                              ? dataFile.length()
-                                             : RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor).position;
+                                             : RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor, cfs.metadata.comparator).position;
                 }
                 catch (Throwable th)
                 {

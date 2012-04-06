@@ -81,7 +81,7 @@ public class RowIterationTest extends SchemaLoader
         rm.delete(new QueryPath(CF_NAME, null, null), 1);
         rm.add(new QueryPath(CF_NAME, null, ByteBufferUtil.bytes("c")), ByteBufferUtil.bytes("values"), 1L);
         DeletionInfo delInfo2 = rm.getColumnFamilies().iterator().next().deletionInfo();
-        assert delInfo2.getMarkedForDeleteAt() == 1L;
+        assert delInfo2.getTopLevelMarkedForDeleteAt() == 1L;
         rm.apply();
         store.forceBlockingFlush();
 

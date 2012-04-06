@@ -20,8 +20,10 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -101,7 +103,7 @@ public class RowIndexEntry
             return new RowIndexEntry(position);
         }
 
-        public RowIndexEntry deserialize(DataInput dis, Descriptor descriptor) throws IOException
+        public RowIndexEntry deserialize(DataInput dis, Descriptor descriptor, Comparator<ByteBuffer> comparator) throws IOException
         {
             long position = dis.readLong();
             if (descriptor.hasPromotedIndexes)
@@ -109,7 +111,7 @@ public class RowIndexEntry
                 int size = dis.readInt();
                 if (size > 0)
                 {
-                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, descriptor.getMessagingVersion());
+                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, descriptor.getMessagingVersion(), comparator);
                     int entries = dis.readInt();
                     List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                     for (int i = 0; i < entries; i++)

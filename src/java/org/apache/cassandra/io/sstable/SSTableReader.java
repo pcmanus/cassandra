@@ -387,7 +387,7 @@ public class SSTableReader extends SSTable
                     // if key cache could be used and we have key already pre-loaded
                     if (cacheLoading && keysToLoadInCache.contains(decoratedKey))
                     {
-                        indexEntry = RowIndexEntry.serializer.deserialize(input, descriptor);
+                        indexEntry = RowIndexEntry.serializer.deserialize(input, descriptor, metadata.comparator);
                         cacheKey(decoratedKey, indexEntry);
                     }
                 }
@@ -696,7 +696,7 @@ public class SSTableReader extends SSTable
                     int v = op.apply(comparison);
                     if (v == 0)
                     {
-                        RowIndexEntry indexEntry = RowIndexEntry.serializer.deserialize(input, descriptor);
+                        RowIndexEntry indexEntry = RowIndexEntry.serializer.deserialize(input, descriptor, metadata.comparator);
                         if (comparison == 0 && keyCache != null && keyCache.getCapacity() > 0)
                         {
                             assert key instanceof DecoratedKey; // key can be == to the index key only if it's a true row key
