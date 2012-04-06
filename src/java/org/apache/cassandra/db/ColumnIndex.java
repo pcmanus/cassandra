@@ -76,7 +76,7 @@ public class ColumnIndex
             TypeSizes typeSizes = TypeSizes.NATIVE;
             // TODO fix constantSize when changing the nativeconststs.
             int keysize = key.remaining();
-            return typeSizes.sizeof((short) keysize) + keysize +        // Row key
+            return typeSizes.sizeof((short) keysize) + keysize          // Row key
                  + typeSizes.sizeof(0L)                                 // Row data size
                  + DeletionInfo.serializer().serializedSize(delInfo, 0) // Deletion info
                  + typeSizes.sizeof(0);                                 // Column count

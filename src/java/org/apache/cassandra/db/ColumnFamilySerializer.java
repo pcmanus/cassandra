@@ -99,7 +99,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
 
         ColumnFamily cf = ColumnFamily.create(cfId, factory);
         IColumnSerializer columnSerializer = cf.getColumnSerializer();
-        cf.delete(DeletionInfo.serializer().deserialize(dis, version));
+        cf.delete(DeletionInfo.serializer().deserialize(dis, version, cf.getComparator()));
         int expireBefore = (int) (System.currentTimeMillis() / 1000);
         int size = dis.readInt();
         for (int i = 0; i < size; ++i)

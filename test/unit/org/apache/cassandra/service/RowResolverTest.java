@@ -111,7 +111,7 @@ public class RowResolverTest extends SchemaLoader
         // no columns in the cf
         assertColumns(resolved);
         assertTrue(resolved.isMarkedForDelete());
-        assertEquals(1, resolved.deletionInfo().getMarkedForDeleteAt());
+        assertEquals(1, resolved.deletionInfo().getTopLevelMarkedForDeleteAt());
 
         ColumnFamily scf1 = ColumnFamily.create("Keyspace1", "Super1");
         scf1.addColumn(superColumn(scf1, "super-foo", column("one", "A", 0)));
@@ -123,7 +123,7 @@ public class RowResolverTest extends SchemaLoader
         // no columns in the cf
         assertColumns(superResolved);
         assertTrue(superResolved.isMarkedForDelete());
-        assertEquals(1, superResolved.deletionInfo().getMarkedForDeleteAt());
+        assertEquals(1, superResolved.deletionInfo().getTopLevelMarkedForDeleteAt());
     }
 
     @Test
@@ -142,7 +142,7 @@ public class RowResolverTest extends SchemaLoader
         // no columns in the cf
         assertColumns(superResolved);
         assertTrue(superResolved.isMarkedForDelete());
-        assertEquals(2, superResolved.deletionInfo().getMarkedForDeleteAt());
+        assertEquals(2, superResolved.deletionInfo().getTopLevelMarkedForDeleteAt());
     }
 
     @Test
@@ -170,7 +170,7 @@ public class RowResolverTest extends SchemaLoader
         assertColumns(resolved, "two");
         assertColumn(resolved, "two", "B", 3);
         assertTrue(resolved.isMarkedForDelete());
-        assertEquals(2, resolved.deletionInfo().getMarkedForDeleteAt());
+        assertEquals(2, resolved.deletionInfo().getTopLevelMarkedForDeleteAt());
 
 
         ColumnFamily scf1 = ColumnFamily.create("Keyspace1", "Super1");
@@ -200,6 +200,6 @@ public class RowResolverTest extends SchemaLoader
         assertSubColumn(superResolved, "super2", "four", "A", 3);
 
         assertTrue(superResolved.isMarkedForDelete());
-        assertEquals(2, superResolved.deletionInfo().getMarkedForDeleteAt());
+        assertEquals(2, superResolved.deletionInfo().getTopLevelMarkedForDeleteAt());
     }
 }
