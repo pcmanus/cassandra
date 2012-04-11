@@ -52,6 +52,8 @@ public class SystemTable
     public static final String STATUS_CF = "LocationInfo"; // keep the old CF string for backwards-compatibility
     public static final String INDEX_CF = "IndexInfo";
     public static final String NODE_ID_CF = "NodeIdInfo";
+    public static final String HINTS_CF = "hints";
+    public static final String OLD_HINTS_CF = "HintsColumnFamily";
     public static final String VERSION_CF = "Versions";
     public static final String HOST_ID_CF = "HostUUID";
     // see layout description in the DefsTable class header
@@ -62,7 +64,6 @@ public class SystemTable
     private static final ByteBuffer LOCATION_KEY = ByteBufferUtil.bytes("L");
     private static final ByteBuffer RING_KEY = ByteBufferUtil.bytes("Ring");
     private static final ByteBuffer BOOTSTRAP_KEY = ByteBufferUtil.bytes("Bootstrap");
-    private static final ByteBuffer COOKIE_KEY = ByteBufferUtil.bytes("Cookies");
     private static final ByteBuffer BOOTSTRAP = ByteBufferUtil.bytes("B");
     private static final ByteBuffer TOKEN = ByteBufferUtil.bytes("Token");
     private static final ByteBuffer GENERATION = ByteBufferUtil.bytes("Generation");
@@ -109,34 +110,19 @@ public class SystemTable
     /** if hints become incompatible across versions of cassandra, that logic (and associated purging) is managed here. */
     private static void purgeIncompatibleHints() throws IOException
     {
-        ByteBuffer upgradeMarker = ByteBufferUtil.bytes("Pre-1.2 hints purged");
-        Table table = Table.open(Table.SYSTEM_TABLE);
-        QueryFilter filter = QueryFilter.getNamesFilter(decorate(COOKIE_KEY), new QueryPath(STATUS_CF), upgradeMarker);
-        ColumnFamily cf = table.getColumnFamilyStore(STATUS_CF).getColumnFamily(filter);
-        if (cf != null)
-        {
-            logger.debug("Pre-1.0 hints already purged");
-            return;
-        }
-
-        // marker not found.  Snapshot + remove hints and add the marker
-        ColumnFamilyStore hintsCfs = Table.open(Table.SYSTEM_TABLE).getColumnFamilyStore(HintedHandOffManager.HINTS_CF);
-        if (hintsCfs.getSSTables().size() > 0)
+        ColumnFamilyStore oldHintsCf = Table.open(Table.SYSTEM_TABLE).getColumnFamilyStore(OLD_HINTS_CF);
+        if (oldHintsCf.getSSTables().size() > 0)
         {
             logger.info("Possible old-format hints found. Truncating");
             try
             {
-                hintsCfs.truncate();
+                oldHintsCf.truncate();
             }
             catch (Exception e)
             {
                 throw new RuntimeException(e);
             }
         }
-        logger.debug("Marking pre-1.0 hints purged");
-        RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, COOKIE_KEY);
-        rm.add(new QueryPath(STATUS_CF, null, upgradeMarker), ByteBufferUtil.bytes("oh yes, they were purged"), FBUtilities.timestampMicros());
-        rm.apply();
     }
 
     /**

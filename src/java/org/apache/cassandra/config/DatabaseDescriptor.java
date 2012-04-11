@@ -434,6 +434,7 @@ public class DatabaseDescriptor
             // Hardcoded system tables
             KSMetaData systemMeta = KSMetaData.systemKeyspace();
             Schema.instance.load(CFMetaData.StatusCf);
+            Schema.instance.load(CFMetaData.OldHintsCf);
             Schema.instance.load(CFMetaData.HintsCf);
             Schema.instance.load(CFMetaData.MigrationsCf);
             Schema.instance.load(CFMetaData.SchemaCf);
