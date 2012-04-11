@@ -214,7 +214,7 @@ public class QueryProcessor
         return statement.prepare();
     }
 
-    private static ParsedStatement parseStatement(String queryStr) throws InvalidRequestException, RecognitionException
+    public static ParsedStatement parseStatement(String queryStr) throws InvalidRequestException, RecognitionException
     {
         try
         {
@@ -241,5 +241,4 @@ public class QueryProcessor
             throw ire;
         }
     }
-
 }
