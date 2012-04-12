@@ -856,6 +856,13 @@ public final class CFMetaData
         return SuperColumn.serializer(subcolumnComparator);
     }
 
+    public OnDiskAtom.Serializer getOnDiskSerializer()
+    {
+        if (cfType == ColumnFamilyType.Standard)
+            return Column.onDiskSerializer();
+        return SuperColumn.onDiskSerializer(subcolumnComparator);
+    }
+
     public static boolean isNameValid(String name)
     {
         return name != null && !name.isEmpty() && name.length() <= 32 && name.matches("\\w+");

@@ -18,7 +18,6 @@
 package org.apache.cassandra.io.sstable;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -169,13 +168,21 @@ public class SSTableWriter extends SSTable
         long startPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile.stream);
 
-        // build column index
-        // TODO: build and serialization could be merged
-        ColumnIndex index = new ColumnIndex.Builder(cf.getComparator(), decoratedKey.key, cf.deletionInfo(), cf.getColumnCount()).build(cf);
+        // Since the columnIndex may insert RangeTombstone marker, computing
+        // the size of the data is tricky.
+        DataOutputBuffer buffer = new DataOutputBuffer();
 
-        // write out row size + data
-        dataFile.stream.writeLong(cf.serializedSizeForSSTable());
-        ColumnFamily.serializer().serializeForSSTable(cf, dataFile.stream);
+        // build column index && write columns
+        ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, decoratedKey.key, cf.getColumnCount(), buffer);
+        ColumnIndex index = builder.build(cf);
+
+        long delSize = DeletionTime.serializer.serializedSize(cf.deletionInfo().getTopLevelDeletion());
+        dataFile.stream.writeLong(buffer.getLength() + delSize + DBConstants.INT_SIZE);
+
+        // Write deletion infos + column count
+        DeletionInfo.serializer().serializeForSSTable(cf.deletionInfo(), dataFile.stream);
+        dataFile.stream.writeInt(builder.writtenAtomCount());
+        dataFile.stream.write(buffer.getData(), 0, buffer.getLength());
 
         afterAppend(decoratedKey, startPosition, cf.deletionInfo(), index);
 
@@ -192,8 +199,8 @@ public class SSTableWriter extends SSTable
         dataFile.stream.writeLong(dataSize);
 
         // cf data
-        DeletionInfo deletionInfo = DeletionInfo.serializer().deserialize(in, descriptor.getMessagingVersion(), metadata.comparator);
-        DeletionInfo.serializer().serialize(deletionInfo, dataFile.stream, descriptor.getMessagingVersion());
+        DeletionInfo deletionInfo = DeletionInfo.serializer().deserializeFromSSTable(in, Descriptor.Version.CURRENT);
+        DeletionInfo.serializer().serializeForSSTable(deletionInfo, dataFile.stream);
 
         // column size
         int columnCount = in.readInt();
@@ -203,20 +210,22 @@ public class SSTableWriter extends SSTable
         long maxTimestamp = Long.MIN_VALUE;
         StreamingHistogram tombstones = new StreamingHistogram(TOMBSTONE_HISTOGRAM_BIN_SIZE);
         ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
-        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf.getComparator(), key.key, deletionInfo, columnCount);
-        IColumnSerializer columnSerializer = cf.getColumnSerializer();
+        cf.delete(deletionInfo);
+
+        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf, key.key, columnCount, dataFile.stream);
+        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
             // data size received, so we must reserialize the exact same data
-            IColumn column = columnSerializer.deserialize(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, descriptor.getMessagingVersion());
-            if (column instanceof CounterColumn)
+            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Descriptor.Version.CURRENT);
+            if (atom instanceof CounterColumn)
             {
-                column = ((CounterColumn) column).markDeltaToBeCleared();
+                atom = ((CounterColumn) atom).markDeltaToBeCleared();
             }
-            else if (column instanceof SuperColumn)
+            else if (atom instanceof SuperColumn)
             {
-                SuperColumn sc = (SuperColumn) column;
+                SuperColumn sc = (SuperColumn) atom;
                 for (IColumn subColumn : sc.getSubColumns())
                 {
                     if (subColumn instanceof CounterColumn)
@@ -227,14 +236,13 @@ public class SSTableWriter extends SSTable
                 }
             }
 
-            int deletionTime = column.getLocalDeletionTime();
+            int deletionTime = atom.getLocalDeletionTime();
             if (deletionTime < Integer.MAX_VALUE)
             {
                 tombstones.update(deletionTime);
             }
-            maxTimestamp = Math.max(maxTimestamp, column.maxTimestamp());
-            cf.getColumnSerializer().serialize(column, dataFile.stream, descriptor.getMessagingVersion());
-            columnIndexer.add(column);
+            maxTimestamp = Math.max(maxTimestamp, atom.maxTimestamp());
+            columnIndexer.add(atom); // This write the atom on disk too
         }
 
         assert dataSize == dataFile.getFilePointer() - (dataStart + 8)
@@ -407,7 +415,7 @@ public class SSTableWriter extends SSTable
             // bloom filter
             FileOutputStream fos = new FileOutputStream(descriptor.filenameFor(SSTable.COMPONENT_FILTER));
             DataOutputStream stream = new DataOutputStream(fos);
-            FilterFactory.serialize(bf, stream, descriptor.filterType);
+            FilterFactory.serialize(bf, stream, descriptor.version.filterType);
             stream.flush();
             fos.getFD().sync();
             stream.close();

@@ -480,7 +480,7 @@ public class CompactionManager implements CompactionManagerMBean
             ByteBuffer nextIndexKey = ByteBufferUtil.readWithShortLength(indexFile);
             {
                 // throw away variable so we don't have a side effect in the assert
-                long firstRowPositionFromIndex = RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor, cfs.metadata.comparator).position;
+                long firstRowPositionFromIndex = RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor.version, cfs.metadata.comparator).position;
                 assert firstRowPositionFromIndex == 0 : firstRowPositionFromIndex;
             }
 
@@ -500,7 +500,7 @@ public class CompactionManager implements CompactionManagerMBean
                 try
                 {
                     key = SSTableReader.decodeKey(sstable.partitioner, sstable.descriptor, ByteBufferUtil.readWithShortLength(dataFile));
-                    dataSize = sstable.descriptor.hasIntRowSize ? dataFile.readInt() : dataFile.readLong();
+                    dataSize = sstable.descriptor.version.hasIntRowSize ? dataFile.readInt() : dataFile.readLong();
                     if (logger.isDebugEnabled())
                         logger.debug(String.format("row %s is %s bytes", ByteBufferUtil.bytesToHex(key.key), dataSize));
                 }
@@ -517,7 +517,7 @@ public class CompactionManager implements CompactionManagerMBean
                     nextIndexKey = indexFile.isEOF() ? null : ByteBufferUtil.readWithShortLength(indexFile);
                     nextRowPositionFromIndex = indexFile.isEOF()
                                              ? dataFile.length()
-                                             : RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor, cfs.metadata.comparator).position;
+                                             : RowIndexEntry.serializer.deserialize(indexFile, sstable.descriptor.version, cfs.metadata.comparator).position;
                 }
                 catch (Throwable th)
                 {
@@ -529,7 +529,7 @@ public class CompactionManager implements CompactionManagerMBean
                 long dataStart = dataFile.getFilePointer();
                 long dataStartFromIndex = currentIndexKey == null
                                         ? -1
-                                        : rowStart + 2 + currentIndexKey.remaining() + (sstable.descriptor.hasIntRowSize ? 4 : 8);
+                                        : rowStart + 2 + currentIndexKey.remaining() + (sstable.descriptor.version.hasIntRowSize ? 4 : 8);
                 long dataSizeFromIndex = nextRowPositionFromIndex - dataStartFromIndex;
                 assert currentIndexKey != null || indexFile.isEOF();
                 if (logger.isDebugEnabled() && currentIndexKey != null)
@@ -722,15 +722,15 @@ public class CompactionManager implements CompactionManagerMBean
 
                             while (row.hasNext())
                             {
-                                IColumn column = row.next();
+                                OnDiskAtom column = row.next();
                                 if (column instanceof CounterColumn)
                                     renewer.maybeRenew((CounterColumn) column);
-                                if (indexedColumns.contains(column.name()))
+                                if (column instanceof IColumn && indexedColumns.contains(column.name()))
                                 {
                                     if (indexedColumnsInRow == null)
                                         indexedColumnsInRow = new ArrayList<IColumn>();
 
-                                    indexedColumnsInRow.add(column);
+                                    indexedColumnsInRow.add((IColumn)column);
                                 }
                             }
 

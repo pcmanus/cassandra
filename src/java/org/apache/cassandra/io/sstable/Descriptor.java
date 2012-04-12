@@ -45,50 +45,135 @@ public class Descriptor
     // we always incremented the major version.  In particular, versions g and h are
     // forwards-compatible with version f, so if the above convention had been followed,
     // we would have labeled them fb and fc.
-    public static final String LEGACY_VERSION = "a"; // "pre-history"
-    // b (0.7.0): added version to sstable filenames
-    // c (0.7.0): bloom filter component computes hashes over raw key bytes instead of strings
-    // d (0.7.0): row size in data component becomes a long instead of int
-    // e (0.7.0): stores undecorated keys in data and index components
-    // f (0.7.0): switched bloom filter implementations in data component
-    // g (0.8): tracks flushed-at context in metadata component
-    // h (1.0): tracks max client timestamp in metadata component
-    // hb (1.0.3): records compression ration in metadata component
-    // hc (1.0.4): records partitioner in metadata component
-    // ia (1.2.0): column indexes are promoted to the index file
-    //             records estimated histogram of deletion times in tombstones
-    public static final String CURRENT_VERSION = "ib";
+    public static class Version
+    {
+        // This needs to be at the begining for initialization sake
+        private static final String current_version = "ib";
+
+        public static final Version LEGACY = new Version("a"); // "pre-history"
+        // b (0.7.0): added version to sstable filenames
+        // c (0.7.0): bloom filter component computes hashes over raw key bytes instead of strings
+        // d (0.7.0): row size in data component becomes a long instead of int
+        // e (0.7.0): stores undecorated keys in data and index components
+        // f (0.7.0): switched bloom filter implementations in data component
+        // g (0.8): tracks flushed-at context in metadata component
+        // h (1.0): tracks max client timestamp in metadata component
+        // hb (1.0.3): records compression ration in metadata component
+        // hc (1.0.4): records partitioner in metadata component
+        // ia (1.2.0): column indexes are promoted to the index file
+        //             records estimated histogram of deletion times in tombstones
+        public static final Version CURRENT = new Version(current_version);
+
+        private final String version;
+
+        public final boolean hasStringsInBloomFilter;
+        public final boolean hasIntRowSize;
+        public final boolean hasEncodedKeys;
+        public final boolean isLatestVersion;
+        public final boolean metadataIncludesReplayPosition;
+        public final boolean tracksMaxTimestamp;
+        public final boolean hasCompressionRatio;
+        public final boolean hasPartitioner;
+        public final boolean tracksTombstones;
+        public final boolean hasPromotedIndexes;
+        public final FilterFactory.Type filterType;
+
+        public Version(String version)
+        {
+            this.version = version;
+            hasStringsInBloomFilter = version.compareTo("c") < 0;
+            hasIntRowSize = version.compareTo("d") < 0;
+            hasEncodedKeys = version.compareTo("e") < 0;
+            metadataIncludesReplayPosition = version.compareTo("g") >= 0;
+            tracksMaxTimestamp = version.compareTo("h") >= 0;
+            hasCompressionRatio = version.compareTo("hb") >= 0;
+            hasPartitioner = version.compareTo("hc") >= 0;
+            tracksTombstones = version.compareTo("ia") >= 0;
+            hasPromotedIndexes = version.compareTo("ia") >= 0;
+            isLatestVersion = version.compareTo(current_version) == 0;
+            if (version.compareTo("f") < 0)
+                filterType = FilterFactory.Type.SHA;
+            else if (version.compareTo("ia") <= 0)
+                filterType = FilterFactory.Type.MURMUR2;
+            else
+                filterType = FilterFactory.Type.MURMUR3;
+        }
+
+        /**
+         * @param ver SSTable version
+         * @return True if the given version string matches the format.
+         * @see #version
+         */
+        static boolean validate(String ver)
+        {
+            return ver != null && ver.matches("[a-z]+");
+        }
+
+        public boolean isCompatible()
+        {
+            return version.charAt(0) <= CURRENT.version.charAt(0);
+        }
+
+        public boolean isStreamCompatible()
+        {
+            // we could add compatibility for earlier versions with the new single-pass streaming
+            // (see SSTableWriter.appendFromStream) but versions earlier than 0.7.1 don't have the
+            // MessagingService version awareness anyway so there's no point.
+            return isCompatible() && version.charAt(0) >= 'f';
+        }
+
+        // Currently we only care about pre/post-#3708
+        public int asMessagingVersion()
+        {
+            return version.compareTo("i") < 0 ? MessagingService.VERSION_11: MessagingService.current_version;
+        }
+
+        @Override
+        public String toString()
+        {
+            return version;
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (o == this)
+                return true;
+            if (!(o instanceof Version))
+                return false;
+            return version.equals(((Version)o).version);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return version.hashCode();
+        }
+    }
 
     public final File directory;
     /** version has the following format: <code>[a-z]+</code> */
-    public final String version;
     public final String ksname;
     public final String cfname;
+    public final Version version;
     public final int generation;
     public final boolean temporary;
     private final int hashCode;
-
-    public final boolean hasStringsInBloomFilter;
-    public final boolean hasIntRowSize;
-    public final boolean hasEncodedKeys;
-    public final boolean isLatestVersion;
-    public final boolean metadataIncludesReplayPosition;
-    public final boolean tracksMaxTimestamp;
-    public final boolean hasCompressionRatio;
-    public final boolean hasPartitioner;
-    public final boolean tracksTombstones;
-    public final boolean hasPromotedIndexes;
-    public final FilterFactory.Type filterType;
 
     /**
      * A descriptor that assumes CURRENT_VERSION.
      */
     public Descriptor(File directory, String ksname, String cfname, int generation, boolean temp)
     {
-        this(CURRENT_VERSION, directory, ksname, cfname, generation, temp);
+        this(Version.CURRENT, directory, ksname, cfname, generation, temp);
     }
 
     public Descriptor(String version, File directory, String ksname, String cfname, int generation, boolean temp)
+    {
+        this(new Version(version), directory, ksname, cfname, generation, temp);
+    }
+
+    public Descriptor(Version version, File directory, String ksname, String cfname, int generation, boolean temp)
     {
         assert version != null && directory != null && ksname != null && cfname != null;
         this.version = version;
@@ -98,23 +183,6 @@ public class Descriptor
         this.generation = generation;
         temporary = temp;
         hashCode = Objects.hashCode(directory, generation, ksname, cfname);
-
-        hasStringsInBloomFilter = version.compareTo("c") < 0;
-        hasIntRowSize = version.compareTo("d") < 0;
-        hasEncodedKeys = version.compareTo("e") < 0;
-        metadataIncludesReplayPosition = version.compareTo("g") >= 0;
-        tracksMaxTimestamp = version.compareTo("h") >= 0;
-        hasCompressionRatio = version.compareTo("hb") >= 0;
-        hasPartitioner = version.compareTo("hc") >= 0;
-        tracksTombstones = version.compareTo("ia") >= 0;
-        hasPromotedIndexes = version.compareTo("ia") >= 0;
-        isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
-        if (version.compareTo("f") < 0)
-            filterType = FilterFactory.Type.SHA;
-        else if (version.compareTo("ia") <= 0)
-            filterType = FilterFactory.Type.MURMUR2;
-        else
-            filterType = FilterFactory.Type.MURMUR3;
     }
 
     public String filenameFor(Component component)
@@ -130,7 +198,7 @@ public class Descriptor
         buff.append(cfname).append(separator);
         if (temporary)
             buff.append(SSTable.TEMPFILE_MARKER).append(separator);
-        if (!LEGACY_VERSION.equals(version))
+        if (!Version.LEGACY.equals(version))
             buff.append(version).append(separator);
         buff.append(generation);
         return buff.toString();
@@ -184,10 +252,10 @@ public class Descriptor
         }
 
         // optional version string
-        String version = LEGACY_VERSION;
-        if (versionValidate(nexttok))
+        Version version = Version.LEGACY;
+        if (Version.validate(nexttok))
         {
-            version = nexttok;
+            version = new Version(nexttok);
             nexttok = st.nextToken();
         }
         int generation = Integer.parseInt(nexttok);
@@ -208,21 +276,11 @@ public class Descriptor
     }
 
     /**
-     * @param ver SSTable version
-     * @return True if the given version string matches the format.
-     * @see #version
-     */
-    static boolean versionValidate(String ver)
-    {
-        return ver != null && ver.matches("[a-z]+");
-    }
-
-    /**
      * @return true if the current Cassandra version can read the given sstable version
      */
     public boolean isCompatible()
     {
-        return version.charAt(0) <= CURRENT_VERSION.charAt(0);
+        return version.isCompatible();
     }
 
     /**
@@ -233,21 +291,7 @@ public class Descriptor
      */
     public boolean isStreamCompatible()
     {
-        // we could add compatibility for earlier versions with the new single-pass streaming
-        // (see SSTableWriter.appendFromStream) but versions earlier than 0.7.1 don't have the
-        // MessagingService version awareness anyway so there's no point.
-        return isCompatible() && version.charAt(0) >= 'f';
-    }
-
-    // Currently we only care about pre/post-#3708
-    public static int toMessagingVersion(String version)
-    {
-        return version.compareTo("i") < 0 ? MessagingService.VERSION_11: MessagingService.current_version;
-    }
-
-    public int getMessagingVersion()
-    {
-        return toMessagingVersion(version);
+        return version.isStreamCompatible();
     }
 
     @Override

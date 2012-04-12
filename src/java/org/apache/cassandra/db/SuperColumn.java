@@ -32,9 +32,9 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
-import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.ColumnSortedMap;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.HeapAllocator;
@@ -52,6 +52,11 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
             serializers.put(comparator, serializer);
         }
         return serializer;
+    }
+
+    public static OnDiskAtom.Serializer onDiskSerializer(AbstractType<?> comparator)
+    {
+        return new OnDiskAtom.Serializer(serializer(comparator));
     }
 
     private final ByteBuffer name;
@@ -102,7 +107,7 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
 
     public int serializedSize()
     {
-        return serializedSize(Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+        return serializedSize(MessagingService.current_version);
     }
 
     /**
@@ -121,6 +126,11 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
             size += subColumn.serializedSize(version);
         }
         return size;
+    }
+
+    public long serializedSizeForSSTable()
+    {
+        return serializedSize();
     }
 
     public long timestamp()
@@ -151,12 +161,12 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
 
     public long getMarkedForDeleteAt()
     {
-        return deletionInfo().getTopLevelMarkedForDeleteAt();
+        return deletionInfo().getTopLevelDeletion().markedForDeleteAt;
     }
 
     public int getLocalDeletionTime()
     {
-        return deletionInfo().getTopLevelLocalDeletionTime();
+        return deletionInfo().getTopLevelDeletion().localDeletionTime;
     }
 
     public long mostRecentNonGCableChangeAt(int gcbefore)
@@ -356,17 +366,17 @@ class SuperColumnSerializer implements IColumnSerializer
 
     public void serialize(IColumn column, DataOutput dos) throws IOException
     {
-        serialize(column, dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+        serialize(column, dos, MessagingService.current_version);
     }
 
     public void serialize(IColumn column, DataOutput dos, int version)
     {
         SuperColumn superColumn = (SuperColumn)column;
-        ByteBufferUtil.writeWithShortLength(column.name(), dos);
+        ByteBufferUtil.writeWithShortLength(superColumn.name(), dos);
         try
         {
             DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos, version);
-            Collection<IColumn> columns = column.getSubColumns();
+            Collection<IColumn> columns = superColumn.getSubColumns();
             dos.writeInt(columns.size());
             for (IColumn subColumn : columns)
             {
@@ -403,8 +413,8 @@ class SuperColumnSerializer implements IColumnSerializer
         return superColumn;
     }
 
-    public long serializedSize(IColumn object, int version)
+    public long serializedSize(IColumn column, int version)
     {
-        return object.serializedSize(version);
+        return column.serializedSize(version);
     }
 }

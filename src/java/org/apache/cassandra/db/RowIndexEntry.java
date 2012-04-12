@@ -79,7 +79,7 @@ public class RowIndexEntry
             if (rie.isIndexed())
             {
                 dos.writeInt(((IndexedEntry)rie).serializedSize());
-                DeletionInfo.serializer().serialize(rie.deletionInfo(), dos, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
+                DeletionInfo.serializer().serializeForSSTable(rie.deletionInfo(), dos);
                 dos.writeInt(rie.columnsIndex().size());
                 for (IndexHelper.IndexInfo info : rie.columnsIndex())
                     info.serialize(dos);
@@ -91,10 +91,10 @@ public class RowIndexEntry
             }
         }
 
-        public RowIndexEntry deserializePositionOnly(DataInput dis, Descriptor descriptor) throws IOException
+        public RowIndexEntry deserializePositionOnly(DataInput dis, Descriptor.Version version) throws IOException
         {
             long position = dis.readLong();
-            if (descriptor.hasPromotedIndexes)
+            if (version.hasPromotedIndexes)
             {
                 int size = dis.readInt();
                 if (size > 0)
@@ -103,20 +103,20 @@ public class RowIndexEntry
             return new RowIndexEntry(position);
         }
 
-        public RowIndexEntry deserialize(DataInput dis, Descriptor descriptor, Comparator<ByteBuffer> comparator) throws IOException
+        public RowIndexEntry deserialize(DataInput dis, Descriptor.Version version, Comparator<ByteBuffer> comparator) throws IOException
         {
             long position = dis.readLong();
-            if (descriptor.hasPromotedIndexes)
+            if (version.hasPromotedIndexes)
             {
                 int size = dis.readInt();
                 if (size > 0)
                 {
-                    DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, descriptor.getMessagingVersion(), comparator);
+                    DeletionInfo delInfo = DeletionInfo.serializer().deserializeFromSSTable(dis, version);
                     int entries = dis.readInt();
                     List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                     for (int i = 0; i < entries; i++)
                         columnsIndex.add(IndexHelper.IndexInfo.deserialize(dis));
-                    Filter bf = FilterFactory.deserialize(dis, descriptor.filterType);
+                    Filter bf = FilterFactory.deserialize(dis, version.filterType);
                     return new IndexedEntry(position, delInfo, columnsIndex, bf);
                 }
                 else
@@ -130,10 +130,10 @@ public class RowIndexEntry
             }
         }
 
-        public void skip(DataInput dis, Descriptor descriptor) throws IOException
+        public void skip(DataInput dis, Descriptor.Version version) throws IOException
         {
             dis.readLong();
-            if (!descriptor.hasPromotedIndexes)
+            if (!version.hasPromotedIndexes)
                 return;
 
             int size = dis.readInt();
@@ -183,7 +183,7 @@ public class RowIndexEntry
 
         public int serializedSize()
         {
-            long size = deletionInfo.serializer().serializedSize(deletionInfo, Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION)); // deletion info
+            long size = DeletionTime.serializer.serializedSize(deletionInfo.getTopLevelDeletion());
             size += DBConstants.INT_SIZE; // number of entries
             for (IndexHelper.IndexInfo info : columnsIndex)
                 size += info.serializedSize();

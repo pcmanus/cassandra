@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
-import org.apache.cassandra.db.columniterator.IColumnIterator;
+import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.SimpleAbstractColumnIterator;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.filter.AbstractColumnIterator;
@@ -351,7 +351,7 @@ public class Memtable
     /**
      * obtain an iterator of columns in this memtable in the specified order starting from a given column.
      */
-    public static IColumnIterator getSliceIterator(final DecoratedKey key, final ColumnFamily cf, SliceQueryFilter filter)
+    public static OnDiskAtomIterator getSliceIterator(final DecoratedKey key, final ColumnFamily cf, SliceQueryFilter filter)
     {
         assert cf != null;
         final Iterator<IColumn> filteredIter = filter.reversed
@@ -375,14 +375,14 @@ public class Memtable
                 return filteredIter.hasNext();
             }
 
-            public IColumn next()
+            public OnDiskAtom next()
             {
                 return filteredIter.next();
             }
         };
     }
 
-    public static IColumnIterator getNamesIterator(final DecoratedKey key, final ColumnFamily cf, final NamesQueryFilter filter)
+    public static OnDiskAtomIterator getNamesIterator(final DecoratedKey key, final ColumnFamily cf, final NamesQueryFilter filter)
     {
         assert cf != null;
         final boolean isStandard = !cf.isSuper();
@@ -401,7 +401,7 @@ public class Memtable
                 return key;
             }
 
-            protected IColumn computeNext()
+            protected OnDiskAtom computeNext()
             {
                 while (iter.hasNext())
                 {

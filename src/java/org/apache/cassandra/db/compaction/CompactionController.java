@@ -29,11 +29,8 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.utils.Interval;
-import org.apache.cassandra.utils.IntervalTree;
 
 /**
  * Manage compaction options.
@@ -43,7 +40,7 @@ public class CompactionController
     private static final Logger logger = LoggerFactory.getLogger(CompactionController.class);
 
     private final ColumnFamilyStore cfs;
-    private final IntervalTree<RowPosition, SSTableReader> overlappingTree;
+    private final DataTracker.SSTableIntervalTree overlappingTree;
 
     public final int gcBefore;
     public final int mergeShardBefore;

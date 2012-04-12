@@ -25,7 +25,7 @@ public class Interval<C, D>
     public final C max;
     public final D data;
 
-    private Interval(C min, C max, D data)
+    public Interval(C min, C max, D data)
     {
         this.min = min;
         this.max = max;

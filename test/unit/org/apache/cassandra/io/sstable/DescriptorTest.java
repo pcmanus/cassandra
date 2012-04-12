@@ -31,38 +31,38 @@ public class DescriptorTest
     {
         Descriptor descriptor = Descriptor.fromFilename("Keyspace1-userActionUtilsKey-9-Data.db");
 
-        assert descriptor.version.equals(Descriptor.LEGACY_VERSION);
-        assert descriptor.filterType == FilterFactory.Type.SHA;
+        assert descriptor.version.equals(Descriptor.Version.LEGACY);
+        assert descriptor.version.filterType == FilterFactory.Type.SHA;
     }
 
     @Test
     public void testVersion()
     {
         // letter only
-        Descriptor desc = Descriptor.fromFilename("Keyspace1-Standard1-h-1-Data.db");
-        assert "h".equals(desc.version);
+        Descriptor.Version desc = Descriptor.fromFilename("Keyspace1-Standard1-h-1-Data.db").version;
+        assert "h".equals(desc.toString());
         assert desc.tracksMaxTimestamp;
 
         // multiple letters
-        desc = Descriptor.fromFilename("Keyspace1-Standard1-ha-1-Data.db");
-        assert "ha".equals(desc.version);
+        desc = Descriptor.fromFilename("Keyspace1-Standard1-ha-1-Data.db").version;
+        assert "ha".equals(desc.toString());
         assert desc.tracksMaxTimestamp;
 
         // hypothetical two-letter g version
-        desc = Descriptor.fromFilename("Keyspace1-Standard1-gz-1-Data.db");
-        assert "gz".equals(desc.version);
+        desc = Descriptor.fromFilename("Keyspace1-Standard1-gz-1-Data.db").version;
+        assert "gz".equals(desc.toString());
         assert !desc.tracksMaxTimestamp;
     }
 
     @Test
     public void testMurmurBloomFilter()
     {
-        Descriptor desc = Descriptor.fromFilename("Keyspace1-Standard1-ia-1-Data.db");
-        assertEquals("ia", desc.version);
+        Descriptor.Version desc = Descriptor.fromFilename("Keyspace1-Standard1-ia-1-Data.db").version;
+        assertEquals("ia", desc.toString());
         assertEquals(desc.filterType, FilterFactory.Type.MURMUR2);
 
-        desc = Descriptor.fromFilename("Keyspace1-Standard1-ib-1-Data.db");
-        assertEquals("ib", desc.version);
+        desc = Descriptor.fromFilename("Keyspace1-Standard1-ib-1-Data.db").version;
+        assertEquals("ib", desc.toString());
         assertEquals(desc.filterType, FilterFactory.Type.MURMUR3);
     }
 }

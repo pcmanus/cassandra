@@ -30,8 +30,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.ColumnStats;
-import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.*;
 
 import static org.apache.cassandra.db.DBConstants.*;
@@ -132,6 +132,11 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         return cfm.getColumnSerializer();
     }
 
+    public OnDiskAtom.Serializer getOnDiskSerializer()
+    {
+        return cfm.getOnDiskSerializer();
+    }
+
     public boolean isSuper()
     {
         return getType() == ColumnFamilyType.Super;
@@ -213,6 +218,19 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         addColumn(c);
     }
 
+    public void addAtom(OnDiskAtom atom)
+    {
+        if (atom instanceof IColumn)
+        {
+            addColumn((IColumn)atom);
+        }
+        else
+        {
+            assert atom instanceof RangeTombstone;
+            delete(new DeletionInfo((RangeTombstone)atom, getComparator()));
+        }
+    }
+
     public void clear()
     {
         columns.clear();
@@ -256,7 +274,7 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
 
     int size()
     {
-        int size = 0;
+        int size = INT_SIZE;
         for (IColumn column : columns)
         {
             size += column.serializedSize();
@@ -351,21 +369,16 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         addAll(cf, allocator);
     }
 
+    public long serializedSize()
+    {
+        return serializedSize(MessagingService.current_version);
+    }
+
     public long serializedSize(int version)
     {
-        return BOOL_SIZE // nullness bool
-               + INT_SIZE // id
-               + serializedSizeForSSTable(version);
-    }
-
-    public long serializedSizeForSSTable()
-    {
-        return serializedSizeForSSTable(Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION));
-    }
-
-    public long serializedSizeForSSTable(int version)
-    {
-        long size = DeletionInfo.serializer().serializedSize(deletionInfo(), version)
+        long size = BOOL_SIZE // nullness bool
+                  + INT_SIZE // id
+                  + DeletionInfo.serializer().serializedSize(deletionInfo(), version)
                   + INT_SIZE; // column count
         for (IColumn column : columns)
             size += column.serializedSize(version);

@@ -44,7 +44,8 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     private final int columnCount;
     private final long columnPosition;
 
-    private final int dataVersion;
+    private final OnDiskAtom.Serializer atomSerializer;
+    private final Descriptor.Version dataVersion;
 
     private final BytesReadTracker inputWithTracker; // tracks bytes read
 
@@ -104,7 +105,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         this.expireBefore = (int)(System.currentTimeMillis() / 1000);
         this.flag = flag;
         this.validateColumns = checkData;
-        this.dataVersion = sstable == null ? Descriptor.toMessagingVersion(Descriptor.CURRENT_VERSION) : sstable.descriptor.getMessagingVersion();
+        this.dataVersion = sstable == null ? Descriptor.Version.CURRENT : sstable.descriptor.version;
 
         try
         {
@@ -115,11 +116,11 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                 if (dataStart + dataSize > file.length())
                     throw new IOException(String.format("dataSize of %s starting at %s would be larger than file %s length %s",
                                           dataSize, dataStart, file.getPath(), file.length()));
-                if (checkData && !sstable.descriptor.hasPromotedIndexes)
+                if (checkData && !sstable.descriptor.version.hasPromotedIndexes)
                 {
                     try
                     {
-                        IndexHelper.defreezeBloomFilter(file, dataSize, sstable.descriptor.filterType);
+                        IndexHelper.defreezeBloomFilter(file, dataSize, sstable.descriptor.version.filterType);
                     }
                     catch (Exception e)
                     {
@@ -142,13 +143,14 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                 }
             }
 
-            if (sstable != null && !sstable.descriptor.hasPromotedIndexes)
+            if (sstable != null && !sstable.descriptor.version.hasPromotedIndexes)
             {
                 IndexHelper.skipBloomFilter(inputWithTracker);
                 IndexHelper.skipIndex(inputWithTracker);
             }
             columnFamily = ColumnFamily.create(metadata);
-            ColumnFamily.serializer().deserializeFromSSTableNoColumns(columnFamily, inputWithTracker, dataVersion);
+            columnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(inputWithTracker, dataVersion));
+            atomSerializer = columnFamily.getOnDiskSerializer();
             columnCount = inputWithTracker.readInt();
 
             columnPosition = dataStart + inputWithTracker.getBytesRead();
@@ -176,14 +178,14 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         return inputWithTracker.getBytesRead() < dataSize;
     }
 
-    public IColumn next()
+    public OnDiskAtom next()
     {
         try
         {
-            IColumn column = columnFamily.getColumnSerializer().deserialize(inputWithTracker, flag, expireBefore, dataVersion);
+            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(inputWithTracker, flag, expireBefore, dataVersion);
             if (validateColumns)
-                column.validateFields(columnFamily.metadata());
-            return column;
+                atom.validateFields(columnFamily.metadata());
+            return atom;
         }
         catch (IOException e)
         {
@@ -235,7 +237,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         assert inputWithTracker.getBytesRead() == headerSize();
         ColumnFamily cf = columnFamily.cloneMeShallow(ArrayBackedSortedColumns.factory(), false);
         // since we already read column count, just pass that value and continue deserialization
-        ColumnFamily.serializer().deserializeColumns(inputWithTracker, cf, columnCount, flag, dataVersion);
+        columnFamily.serializer().deserializeColumnsFromSSTable(inputWithTracker, cf, columnCount, flag, expireBefore, dataVersion);
         if (validateColumns)
         {
             try
