@@ -111,7 +111,8 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
 
     public long contentSerializedSize(ColumnFamily cf, TypeSizes typeSizes, int version)
     {
-        long size = DeletionInfo.serializer().serializedSize(cf.deletionInfo(), version);
+        long size = DeletionInfo.serializer().serializedSize(cf.deletionInfo(), typeSizes, version);
+        size += typeSizes.sizeof(cf.getColumnCount());
         for (IColumn column : cf)
             size += column.serializedSize(typeSizes);
         return size;
@@ -136,25 +137,22 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         return serializedSize(cf, TypeSizes.NATIVE, version);
     }
 
-    public void serializeForSSTable(ColumnFamily cf, DataOutput dos) throws IOException
+    public void serializeForSSTable(ColumnFamily cf, DataOutput dos)
     {
-        DeletionInfo.serializer().serializeForSSTable(cf.deletionInfo(), dos);
-
-        IColumnSerializer columnSerializer = cf.getColumnSerializer();
-        int count = cf.getColumnCount();
-        dos.writeInt(count);
-        int written = 0;
-        for (IColumn column : cf)
-        {
-            columnSerializer.serialize(column, dos);
-            written++;
-        }
-        assert count == written: "Column family had " + count + " columns, but " + written + " written";
+        // Column families shouldn't be written directly to disk, use ColumnIndex.Builder instead
+        throw new UnsupportedOperationException();
     }
 
     public ColumnFamily deserializeFromSSTable(DataInput dis, Descriptor.Version version)
     {
         throw new UnsupportedOperationException();
+    }
+
+    public void deserializeColumnsFromSSTable(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
+    {
+        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
+        for (int i = 0; i < size; ++i)
+            cf.addAtom(atomSerializer.deserializeFromSSTable(dis, flag, expireBefore, version));
     }
 
     public void deserializeFromSSTable(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag, Descriptor.Version version) throws IOException
@@ -163,22 +161,5 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         int size = dis.readInt();
         int expireBefore = (int) (System.currentTimeMillis() / 1000);
         deserializeColumnsFromSSTable(dis, cf, size, flag, expireBefore, version);
-    }
-
-    public void deserializeColumnsFromSSTable(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
-    {
-        IColumnSerializer columnSerializer = cf.getColumnSerializer();
-        for (int i = 0; i < size; ++i)
-            cf.addColumn(columnSerializer.deserialize(dis, flag, expireBefore));
-    }
-
-    // Removed by following patches
-    public long serializedSizeForSSTable(ColumnFamily cf, TypeSizes typeSizes)
-    {
-        long size = DeletionInfo.serializer().serializedSizeForSSTable(cf.deletionInfo())
-                  + typeSizes.sizeof(cf.getColumnCount()); // column count
-        for (IColumn column : cf.columns)
-            size += column.serializedSize(typeSizes);
-        return size;
     }
 }

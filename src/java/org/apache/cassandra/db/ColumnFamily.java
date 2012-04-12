@@ -32,6 +32,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.ColumnStats;
+import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.utils.*;
 
 public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEntry
 {
@@ -124,6 +126,11 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         return cfm.getColumnSerializer();
     }
 
+    public OnDiskAtom.Serializer getOnDiskSerializer()
+    {
+        return cfm.getOnDiskSerializer();
+    }
+
     public boolean isSuper()
     {
         return getType() == ColumnFamilyType.Super;
@@ -203,6 +210,19 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
             c.addColumn(column); // checks subcolumn name
         }
         addColumn(c);
+    }
+
+    public void addAtom(OnDiskAtom atom)
+    {
+        if (atom instanceof IColumn)
+        {
+            addColumn((IColumn)atom);
+        }
+        else
+        {
+            assert atom instanceof RangeTombstone;
+            delete(new DeletionInfo((RangeTombstone)atom, getComparator()));
+        }
     }
 
     public void clear()

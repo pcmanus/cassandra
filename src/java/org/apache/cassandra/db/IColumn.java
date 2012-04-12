@@ -18,7 +18,6 @@
 package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
 import java.util.Collection;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -28,7 +27,7 @@ import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.FBUtilities;
 
 /** TODO: rename */
-public interface IColumn
+public interface IColumn extends OnDiskAtom
 {
     public static final int MAX_NAME_LENGTH = FBUtilities.MAX_UNSIGNED_SHORT;
 
@@ -41,8 +40,6 @@ public interface IColumn
     public long getMarkedForDeleteAt();
     public long mostRecentLiveChangeAt();
     public long mostRecentNonGCableChangeAt(int gcbefore);
-    public ByteBuffer name();
-    public int serializedSize(TypeSizes typeSizes);
     public int serializationFlags();
     public long timestamp();
     public ByteBuffer value();
@@ -53,8 +50,6 @@ public interface IColumn
     public IColumn diff(IColumn column);
     public IColumn reconcile(IColumn column);
     public IColumn reconcile(IColumn column, Allocator allocator);
-    public void updateDigest(MessageDigest digest);
-    public int getLocalDeletionTime(); // for tombstone GC, so int is sufficient granularity
     public String getString(AbstractType<?> comparator);
     public void validateFields(CFMetaData metadata) throws MarshalException;
 
@@ -79,10 +74,4 @@ public interface IColumn
      * @return true if the column or any its subcolumns expired before @param gcBefore
      */
     public boolean hasExpiredTombstones(int gcBefore);
-
-    /**
-     * For a standard column, this is the same as timestamp().
-     * For a super column, this is the max column timestamp of the sub columns.
-     */
-    public long maxTimestamp();
 }

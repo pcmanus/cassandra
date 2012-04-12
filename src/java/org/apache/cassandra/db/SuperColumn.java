@@ -54,6 +54,11 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
         return serializer;
     }
 
+    public static OnDiskAtom.Serializer onDiskSerializer(AbstractType<?> comparator)
+    {
+        return new OnDiskAtom.Serializer(serializer(comparator));
+    }
+
     private final ByteBuffer name;
 
     public SuperColumn(ByteBuffer name, AbstractType<?> comparator)
@@ -128,6 +133,11 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
         return size;
     }
 
+    public long serializedSizeForSSTable()
+    {
+        return serializedSize(TypeSizes.NATIVE);
+    }
+
     public long timestamp()
     {
         throw new UnsupportedOperationException("This operation is not supported for Super Columns.");
@@ -156,12 +166,12 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
 
     public long getMarkedForDeleteAt()
     {
-        return deletionInfo().getTopLevelMarkedForDeleteAt();
+        return deletionInfo().getTopLevelDeletion().markedForDeleteAt;
     }
 
     public int getLocalDeletionTime()
     {
-        return deletionInfo().getTopLevelLocalDeletionTime();
+        return deletionInfo().getTopLevelDeletion().localDeletionTime;
     }
 
     public long mostRecentNonGCableChangeAt(int gcbefore)
@@ -362,11 +372,11 @@ class SuperColumnSerializer implements IColumnSerializer
     public void serialize(IColumn column, DataOutput dos)
     {
         SuperColumn superColumn = (SuperColumn)column;
-        ByteBufferUtil.writeWithShortLength(column.name(), dos);
+        ByteBufferUtil.writeWithShortLength(superColumn.name(), dos);
         try
         {
             DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos, MessagingService.VERSION_10);
-            Collection<IColumn> columns = column.getSubColumns();
+            Collection<IColumn> columns = superColumn.getSubColumns();
             dos.writeInt(columns.size());
             for (IColumn subColumn : columns)
             {

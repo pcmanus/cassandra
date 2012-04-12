@@ -20,10 +20,11 @@ package org.apache.cassandra.utils;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Ordering;
@@ -34,7 +35,7 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 
-public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
+public class IntervalTree<C, D, I extends Interval<C, D>> implements Iterable<I>
 {
     private static final Logger logger = LoggerFactory.getLogger(IntervalTree.class);
 
@@ -45,24 +46,24 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
     private final int count;
     private final Comparator<C> comparator;
 
-    final Ordering<Interval> minOrdering;
-    final Ordering<Interval> maxOrdering;
+    final Ordering<I> minOrdering;
+    final Ordering<I> maxOrdering;
 
-    private IntervalTree(Collection<Interval<C, D>> intervals, Comparator<C> comparator)
+    protected IntervalTree(Collection<I> intervals, Comparator<C> comparator)
     {
         this.comparator = comparator;
 
         final IntervalTree it = this;
-        this.minOrdering = new Ordering<Interval>()
+        this.minOrdering = new Ordering<I>()
         {
-            public int compare(Interval interval1, Interval interval2)
+            public int compare(I interval1, I interval2)
             {
                 return it.comparePoints(interval1.min, interval2.min);
             }
         };
-        this.maxOrdering = new Ordering<Interval>()
+        this.maxOrdering = new Ordering<I>()
         {
-            public int compare(Interval interval1, Interval interval2)
+            public int compare(I interval1, I interval2)
             {
                 return it.comparePoints(interval1.max, interval2.max);
             }
@@ -72,31 +73,31 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
         this.count = intervals == null ? 0 : intervals.size();
     }
 
-    public static <C, D> IntervalTree<C, D> build(Collection<Interval<C, D>> intervals, Comparator<C> comparator)
+    public static <C, D, I extends Interval<C, D>> IntervalTree<C, D, I> build(Collection<I> intervals, Comparator<C> comparator)
     {
         if (intervals == null || intervals.isEmpty())
             return emptyTree();
 
-        return new IntervalTree<C, D>(intervals, comparator);
+        return new IntervalTree<C, D, I>(intervals, comparator);
     }
 
-    public static <C extends Comparable<C>, D> IntervalTree<C, D> build(Collection<Interval<C, D>> intervals)
+    public static <C extends Comparable<C>, D, I extends Interval<C, D>> IntervalTree<C, D, I> build(Collection<I> intervals)
     {
         if (intervals == null || intervals.isEmpty())
             return emptyTree();
 
-        return new IntervalTree<C, D>(intervals, null);
+        return new IntervalTree<C, D, I>(intervals, null);
     }
 
-    public static <C, D> Serializer<C, D> serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer)
+    public static <C, D, I extends Interval<C, D>> Serializer<C, D, I> serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer, Constructor<I> constructor)
     {
-        return new Serializer(pointSerializer, dataSerializer);
+        return new Serializer(pointSerializer, dataSerializer, constructor);
     }
 
     @SuppressWarnings("unchecked")
-    public static <C, D> IntervalTree<C, D> emptyTree()
+    public static <C, D, I extends Interval<C, D>> IntervalTree<C, D, I> emptyTree()
     {
-        return (IntervalTree<C, D>)EMPTY_TREE;
+        return (IntervalTree<C, D, I>)EMPTY_TREE;
     }
 
     public Comparator<C> comparator()
@@ -145,10 +146,10 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
         return search(Interval.<C, D>create(point, point, null));
     }
 
-    public Iterator<Interval<C, D>> iterator()
+    public Iterator<I> iterator()
     {
         if (head == null)
-            return Iterators.<Interval<C, D>>emptyIterator();
+            return Iterators.<I>emptyIterator();
 
         return new TreeIterator(head);
     }
@@ -214,13 +215,13 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
         final C low;
         final C high;
 
-        final List<Interval<C, D>> intersectsLeft;
-        final List<Interval<C, D>> intersectsRight;
+        final List<I> intersectsLeft;
+        final List<I> intersectsRight;
 
         final IntervalNode left;
         final IntervalNode right;
 
-        public IntervalNode(Collection<Interval<C, D>> toBisect)
+        public IntervalNode(Collection<I> toBisect)
         {
             assert !toBisect.isEmpty();
             logger.debug("Creating IntervalNode from {}", toBisect);
@@ -229,11 +230,11 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
             // common case for range tombstones, so it's worth optimizing
             if (toBisect.size() == 1)
             {
-                Interval<C, D> interval = toBisect.iterator().next();
+                I interval = toBisect.iterator().next();
                 low = interval.min;
                 center = interval.max;
                 high = interval.max;
-                List<Interval<C, D>> l = Collections.singletonList(interval);
+                List<I> l = Collections.singletonList(interval);
                 intersectsLeft = l;
                 intersectsRight = l;
                 left = null;
@@ -243,7 +244,7 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
             {
                 // Find min, median and max
                 List<C> allEndpoints = new ArrayList<C>(toBisect.size() * 2);
-                for (Interval<C, D> interval : toBisect)
+                for (I interval : toBisect)
                 {
                     assert (comparator == null ? ((Comparable)interval.min).compareTo(interval.max)
                                                : comparator.compare(interval.min, interval.max)) <= 0 : "Interval min > max";
@@ -260,11 +261,11 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
                 high = allEndpoints.get(allEndpoints.size() - 1);
 
                 // Separate interval in intersecting center, left of center and right of center
-                List<Interval<C, D>> intersects = new ArrayList<Interval<C, D>>();
-                List<Interval<C, D>> leftSegment = new ArrayList<Interval<C, D>>();
-                List<Interval<C, D>> rightSegment = new ArrayList<Interval<C, D>>();
+                List<I> intersects = new ArrayList<I>();
+                List<I> leftSegment = new ArrayList<I>();
+                List<I> rightSegment = new ArrayList<I>();
 
-                for (Interval<C, D> candidate : toBisect)
+                for (I candidate : toBisect)
                 {
                     if (comparePoints(candidate.max, center) < 0)
                         leftSegment.add(candidate);
@@ -333,10 +334,10 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
         }
     }
 
-    private class TreeIterator extends AbstractIterator<Interval<C, D>>
+    private class TreeIterator extends AbstractIterator<I>
     {
         private final Deque<IntervalNode> stack = new ArrayDeque<IntervalNode>();
-        private Iterator<Interval<C, D>> current;
+        private Iterator<I> current;
 
         TreeIterator(IntervalNode node)
         {
@@ -344,7 +345,7 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
             gotoMinOf(node);
         }
 
-        protected Interval<C, D> computeNext()
+        protected I computeNext()
         {
             if (current != null && current.hasNext())
                 return current.next();
@@ -373,18 +374,20 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
         }
     }
 
-    public static class Serializer<C, D> implements IVersionedSerializer<IntervalTree<C, D>>
+    public static class Serializer<C, D, I extends Interval<C, D>> implements IVersionedSerializer<IntervalTree<C, D, I>>
     {
         private final ISerializer<C> pointSerializer;
         private final ISerializer<D> dataSerializer;
+        private final Constructor<I> constructor;
 
-        private Serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer)
+        private Serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer, Constructor<I> constructor)
         {
             this.pointSerializer = pointSerializer;
             this.dataSerializer = dataSerializer;
+            this.constructor = constructor;
         }
 
-        public void serialize(IntervalTree<C, D> it, DataOutput dos, int version) throws IOException
+        public void serialize(IntervalTree<C, D, I> it, DataOutput dos, int version) throws IOException
         {
             dos.writeInt(it.count);
             for (Interval<C, D> interval : it)
@@ -401,28 +404,43 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
          * tree is to use a custom comparator, as the comparator is *not*
          * serialized.
          */
-        public IntervalTree<C, D> deserialize(DataInput dis, int version) throws IOException
+        public IntervalTree<C, D, I> deserialize(DataInput dis, int version) throws IOException
         {
             return deserialize(dis, version, null);
         }
 
-        public IntervalTree<C, D> deserialize(DataInput dis, int version, Comparator<C> comparator) throws IOException
+        public IntervalTree<C, D, I> deserialize(DataInput dis, int version, Comparator<C> comparator) throws IOException
         {
-            int count = dis.readInt();
-            List<Interval<C, D>> intervals = new ArrayList<Interval<C, D>>(count);
-            for (int i = 0; i < count; i++)
+            try
             {
-                C min = pointSerializer.deserialize(dis);
-                C max = pointSerializer.deserialize(dis);
-                D data = dataSerializer.deserialize(dis);
-                intervals.add(Interval.create(min, max, data));
+                int count = dis.readInt();
+                List<Interval<C, D>> intervals = new ArrayList<Interval<C, D>>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    C min = pointSerializer.deserialize(dis);
+                    C max = pointSerializer.deserialize(dis);
+                    D data = dataSerializer.deserialize(dis);
+                    intervals.add(constructor.newInstance(min, max, data));
+                }
+                return new IntervalTree(intervals, comparator);
             }
-            return new IntervalTree(intervals, comparator);
+            catch (InstantiationException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch (InvocationTargetException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch (IllegalAccessException e)
+            {
+                throw new RuntimeException(e);
+            }
         }
 
-        public long serializedSize(IntervalTree<C, D> it, TypeSizes typeSizes, int version)
+        public long serializedSize(IntervalTree<C, D, I> it, TypeSizes typeSizes, int version)
         {
-            long size = typeSizes.sizeof(0L);
+            long size = typeSizes.sizeof(0);
             for (Interval<C, D> interval : it)
             {
                 size += pointSerializer.serializedSize(interval.min, typeSizes);
@@ -432,7 +450,7 @@ public class IntervalTree<C, D> implements Iterable<Interval<C, D>>
             return size;
         }
 
-        public long serializedSize(IntervalTree<C, D> it, int version)
+        public long serializedSize(IntervalTree<C, D, I> it, int version)
         {
             return serializedSize(it, TypeSizes.NATIVE, version);
         }

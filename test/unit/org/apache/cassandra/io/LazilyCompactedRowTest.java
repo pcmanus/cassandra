@@ -129,8 +129,8 @@ public class LazilyCompactedRowTest extends SchemaLoader
             assert columns == in2.readInt();
             for (int i = 0; i < columns; i++)
             {
-                IColumn c1 = cf1.getColumnSerializer().deserialize(in1);
-                IColumn c2 = cf2.getColumnSerializer().deserialize(in2);
+                IColumn c1 = (IColumn)cf1.getOnDiskSerializer().deserializeFromSSTable(in1, Descriptor.Version.CURRENT);
+                IColumn c2 = (IColumn)cf2.getOnDiskSerializer().deserializeFromSSTable(in2, Descriptor.Version.CURRENT);
                 assert c1.equals(c2) : c1.getString(cfs.metadata.comparator) + " != " + c2.getString(cfs.metadata.comparator);
             }
             // that should be everything

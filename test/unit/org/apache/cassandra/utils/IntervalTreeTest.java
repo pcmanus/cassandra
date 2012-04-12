@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.io.*;
 
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 
@@ -53,7 +54,7 @@ public class IntervalTreeTest extends TestCase
         intervals.add(Interval.<Integer, Void>create(49,60));
 
 
-        IntervalTree<Integer, Void> it = IntervalTree.build(intervals);
+        IntervalTree<Integer, Void, Interval<Integer, Void>> it = IntervalTree.build(intervals);
 
         assertEquals(3, it.search(Interval.<Integer, Void>create(4,4)).size());
         assertEquals(4, it.search(Interval.<Integer, Void>create(4, 5)).size());
@@ -78,7 +79,7 @@ public class IntervalTreeTest extends TestCase
         //Schuetz
         intervals2.add(Interval.<Integer, Void>create(1585, 1672));
 
-        IntervalTree<Integer, Void> it2 = IntervalTree.build(intervals2);
+        IntervalTree<Integer, Void, Interval<Integer, Void>> it2 = IntervalTree.build(intervals2);
 
         assertEquals(0, it2.search(Interval.<Integer, Void>create(1829, 1842)).size());
 
@@ -108,7 +109,7 @@ public class IntervalTreeTest extends TestCase
         intervals.add(Interval.<Integer, Void>create(40,50));
         intervals.add(Interval.<Integer, Void>create(49,60));
 
-        IntervalTree<Integer, Void> it = IntervalTree.build(intervals);
+        IntervalTree<Integer, Void, Interval<Integer, Void>> it = IntervalTree.build(intervals);
 
         Collections.sort(intervals, it.minOrdering);
 
@@ -137,21 +138,22 @@ public class IntervalTreeTest extends TestCase
         intervals.add(Interval.<Integer, String>create(40,50, "k"));
         intervals.add(Interval.<Integer, String>create(49,60, "l"));
 
-        IntervalTree<Integer, String> it = IntervalTree.build(intervals);
+        IntervalTree<Integer, String, Interval<Integer, String>> it = IntervalTree.build(intervals);
 
-        IVersionedSerializer<IntervalTree<Integer, String>> serializer = IntervalTree.serializer(
+        IVersionedSerializer<IntervalTree<Integer, String, Interval<Integer, String>>> serializer = IntervalTree.serializer(
             new ISerializer<Integer>()
             {
                 public void serialize(Integer i, DataOutput dos) throws IOException { dos.writeInt(i); }
                 public Integer deserialize(DataInput dis) throws IOException { return dis.readInt(); }
-                public long serializedSize(Integer i) { return 4; }
+                public long serializedSize(Integer i, TypeSizes ts) { return 4; }
             },
             new ISerializer<String>()
             {
                 public void serialize(String v, DataOutput dos) throws IOException { dos.writeUTF(v); }
                 public String deserialize(DataInput dis) throws IOException { return dis.readUTF(); }
-                public long serializedSize(String v) { return v.length(); }
-            }
+                public long serializedSize(String v, TypeSizes ts) { return v.length(); }
+            },
+            Interval.class.getConstructor(Object.class, Object.class, Object.class)
         );
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -161,7 +163,7 @@ public class IntervalTreeTest extends TestCase
 
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(baos.toByteArray()));
 
-        IntervalTree<Integer, String> it2 = serializer.deserialize(in, 0);
+        IntervalTree<Integer, String, Interval<Integer, String>> it2 = serializer.deserialize(in, 0);
         List<Interval<Integer, String>> intervals2 = new ArrayList<Interval<Integer, String>>();
         for (Interval<Integer, String> i : it2)
             intervals2.add(i);

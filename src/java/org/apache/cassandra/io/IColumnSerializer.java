@@ -42,3 +42,4 @@ public interface IColumnSerializer extends ISerializer<IColumn>
 
     public IColumn deserialize(DataInput in, Flag flag, int expireBefore) throws IOException;
 }
+

@@ -733,15 +733,15 @@ public class CompactionManager implements CompactionManagerMBean
 
                             while (row.hasNext())
                             {
-                                IColumn column = row.next();
+                                OnDiskAtom column = row.next();
                                 if (column instanceof CounterColumn)
                                     renewer.maybeRenew((CounterColumn) column);
-                                if (indexedColumns.contains(column.name()))
+                                if (column instanceof IColumn && indexedColumns.contains(column.name()))
                                 {
                                     if (indexedColumnsInRow == null)
                                         indexedColumnsInRow = new ArrayList<IColumn>();
 
-                                    indexedColumnsInRow.add(column);
+                                    indexedColumnsInRow.add((IColumn)column);
                                 }
                             }
 

@@ -20,6 +20,7 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -27,13 +28,12 @@ import com.google.common.base.Objects;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.Interval;
 import org.apache.cassandra.utils.IntervalTree;
 
 public class DeletionInfo
@@ -43,26 +43,30 @@ public class DeletionInfo
     // We don't have way to represent the full interval of keys (Interval don't support the minimum token as the right bound),
     // so we keep the topLevel deletion info separatly. This also slightly optimize the case of full row deletion which is rather common.
     private final DeletionTime topLevel;
-    private final IntervalTree<ByteBuffer, DeletionTime> ranges;
+    private final IntervalTree<ByteBuffer, DeletionTime, RangeTombstone> ranges;
 
-    private static final DeletionTime LIVE_DELETION_TIME = new DeletionTime(Long.MIN_VALUE, Integer.MAX_VALUE);
-    public static final DeletionInfo LIVE = new DeletionInfo(LIVE_DELETION_TIME, IntervalTree.<ByteBuffer, DeletionTime>emptyTree());
+    public static final DeletionInfo LIVE = new DeletionInfo(DeletionTime.LIVE, IntervalTree.<ByteBuffer, DeletionTime, RangeTombstone>emptyTree());
 
     public DeletionInfo(long markedForDeleteAt, int localDeletionTime)
     {
         // Pre-1.1 node may return MIN_VALUE for non-deleted container, but the new default is MAX_VALUE
         // (see CASSANDRA-3872)
         this(new DeletionTime(markedForDeleteAt, localDeletionTime == Integer.MIN_VALUE ? Integer.MAX_VALUE : localDeletionTime),
-             IntervalTree.<ByteBuffer, DeletionTime>emptyTree());
+             IntervalTree.<ByteBuffer, DeletionTime, RangeTombstone>emptyTree());
     }
 
     public DeletionInfo(ByteBuffer start, ByteBuffer end, Comparator<ByteBuffer> comparator, long markedForDeleteAt, int localDeletionTime)
     {
-        this(LIVE_DELETION_TIME,
-             IntervalTree.build(Collections.singletonList(Interval.create(start, end, new DeletionTime(markedForDeleteAt, localDeletionTime))), comparator));
+        this(new RangeTombstone(start, end, new DeletionTime(markedForDeleteAt, localDeletionTime)), comparator);
     }
 
-    private DeletionInfo(DeletionTime topLevel, IntervalTree<ByteBuffer, DeletionTime> ranges)
+    public DeletionInfo(RangeTombstone rangeTombstone, Comparator<ByteBuffer> comparator)
+    {
+        this(DeletionTime.LIVE, IntervalTree.build(Collections.<RangeTombstone>singletonList(rangeTombstone), comparator));
+        assert comparator != null;
+    }
+
+    private DeletionInfo(DeletionTime topLevel, IntervalTree<ByteBuffer, DeletionTime, RangeTombstone> ranges)
     {
         this.topLevel = topLevel;
         this.ranges = ranges;
@@ -128,17 +132,17 @@ public class DeletionInfo
         else
         {
             // We rebuild a new intervalTree that contains only non expired range tombstones
-            List<Interval<ByteBuffer, DeletionTime>> nonExpired = new ArrayList<Interval<ByteBuffer, DeletionTime>>();
-            for (Interval<ByteBuffer, DeletionTime> range : ranges)
+            List<RangeTombstone> nonExpired = new ArrayList<RangeTombstone>();
+            for (RangeTombstone range : ranges)
             {
                 if (range.data.localDeletionTime >= gcBefore)
                     nonExpired.add(range);
             }
-            IntervalTree<ByteBuffer, DeletionTime> newRanges = nonExpired.size() == ranges.intervalCount()
-                                                             ? ranges
-                                                             : IntervalTree.build(nonExpired, ranges.comparator());
+            IntervalTree<ByteBuffer, DeletionTime, RangeTombstone> newRanges = nonExpired.size() == ranges.intervalCount()
+                                                                             ? ranges
+                                                                             : IntervalTree.build(nonExpired, ranges.comparator());
             return topLevel.localDeletionTime < gcBefore
-                 ? new DeletionInfo(LIVE_DELETION_TIME, newRanges)
+                 ? new DeletionInfo(DeletionTime.LIVE, newRanges)
                  : new DeletionInfo(topLevel, newRanges);
         }
     }
@@ -166,10 +170,10 @@ public class DeletionInfo
             else
             {
                 // Need to merge both ranges
-                Set<Interval<ByteBuffer, DeletionTime>> merged = new HashSet<Interval<ByteBuffer, DeletionTime>>();
+                Set<RangeTombstone> merged = new HashSet<RangeTombstone>();
                 Iterables.addAll(merged, Iterables.concat(ranges, newInfo.ranges));
                 return new DeletionInfo(topLevel.markedForDeleteAt < newInfo.topLevel.markedForDeleteAt ? newInfo.topLevel : topLevel,
-                                        IntervalTree.build(merged));
+                                        IntervalTree.build(merged, ranges.comparator()));
             }
         }
     }
@@ -180,23 +184,21 @@ public class DeletionInfo
     public long maxTimestamp()
     {
         long maxTimestamp = topLevel.markedForDeleteAt;
-        for (Interval<ByteBuffer, DeletionTime> i : ranges)
+        for (RangeTombstone i : ranges)
         {
             maxTimestamp = Math.max(maxTimestamp, i.data.markedForDeleteAt);
         }
         return maxTimestamp;
     }
 
-    // Only used by SuperColumn currently and should stay that way
-    public long getTopLevelMarkedForDeleteAt()
+    public DeletionTime getTopLevelDeletion()
     {
-        return topLevel.markedForDeleteAt;
+        return topLevel;
     }
 
-    // Only used by SuperColumn currently and should stay that way
-    public int getTopLevelLocalDeletionTime()
+    public Iterator<RangeTombstone> rangeIterator()
     {
-        return topLevel.localDeletionTime;
+        return ranges.iterator();
     }
 
     @Override
@@ -213,7 +215,8 @@ public class DeletionInfo
         assert !ranges.isEmpty();
         StringBuilder sb = new StringBuilder();
         AbstractType at = (AbstractType)ranges.comparator();
-        for (Interval<ByteBuffer, DeletionTime> i : ranges)
+        assert at != null;
+        for (RangeTombstone i : ranges)
         {
             sb.append("[");
             sb.append(at.getString(i.min)).append("-");
@@ -239,65 +242,6 @@ public class DeletionInfo
         return Objects.hashCode(topLevel, ranges);
     }
 
-    private static class DeletionTime
-    {
-        private final long markedForDeleteAt;
-        private final int localDeletionTime;
-
-        static final DeletionTimeSerializer serializer = new DeletionTimeSerializer();
-
-        DeletionTime(long markedForDeleteAt, int localDeletionTime)
-        {
-            this.markedForDeleteAt = markedForDeleteAt;
-            this.localDeletionTime = localDeletionTime;
-        }
-
-        @Override
-        public boolean equals(Object o)
-        {
-            if(!(o instanceof DeletionTime))
-                return false;
-            DeletionTime that = (DeletionTime)o;
-            return markedForDeleteAt == that.markedForDeleteAt && localDeletionTime == that.localDeletionTime;
-        }
-
-        @Override
-        public final int hashCode()
-        {
-            return Objects.hashCode(markedForDeleteAt, localDeletionTime);
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("deletedAt=%d, localDeletion=%d", markedForDeleteAt, localDeletionTime);
-        }
-
-        private static class DeletionTimeSerializer implements ISerializer<DeletionTime>
-        {
-            public void serialize(DeletionTime delTime, DataOutput out) throws IOException
-            {
-                out.writeInt(delTime.localDeletionTime);
-                out.writeLong(delTime.markedForDeleteAt);
-            }
-
-            public DeletionTime deserialize(DataInput in) throws IOException
-            {
-                int ldt = in.readInt();
-                long mfda = in.readLong();
-                if (mfda == Long.MIN_VALUE && ldt == Integer.MAX_VALUE)
-                    return DeletionInfo.LIVE_DELETION_TIME;
-                else
-                    return new DeletionTime(mfda, ldt);
-            }
-
-            public long serializedSize(DeletionTime delTime, TypeSizes typeSizes)
-            {
-                return typeSizes.sizeof(delTime.markedForDeleteAt) + typeSizes.sizeof(delTime.localDeletionTime);
-            }
-        }
-    }
-
     public static class Serializer implements IVersionedSerializer<DeletionInfo>, ISSTableSerializer<DeletionInfo>
     {
         private final static ISerializer<ByteBuffer> bbSerializer = new ISerializer<ByteBuffer>()
@@ -319,7 +263,19 @@ public class DeletionInfo
             }
         };
 
-        private final static IntervalTree.Serializer<ByteBuffer, DeletionTime> itSerializer = IntervalTree.serializer(bbSerializer, DeletionTime.serializer);
+        private final static IntervalTree.Serializer<ByteBuffer, DeletionTime, RangeTombstone> itSerializer;
+        static
+        {
+            try
+            {
+                Constructor<RangeTombstone> constructor = RangeTombstone.class.getConstructor(ByteBuffer.class, ByteBuffer.class, DeletionTime.class);
+                itSerializer = IntervalTree.serializer(bbSerializer, DeletionTime.serializer, constructor);
+            }
+            catch (NoSuchMethodException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
 
         public void serialize(DeletionInfo info, DataOutput out, int version) throws IOException
         {
@@ -338,6 +294,11 @@ public class DeletionInfo
             }
         }
 
+        public void serializeForSSTable(DeletionInfo info, DataOutput out) throws IOException
+        {
+            DeletionTime.serializer.serialize(info.topLevel, out);
+        }
+
         /*
          * Range tombstones internally depend on the column family serializer, but it is not serialized.
          * Thus deserialize(DataInput, int, Comparator<ByteBuffer>) should be used instead of this method.
@@ -349,12 +310,19 @@ public class DeletionInfo
 
         public DeletionInfo deserialize(DataInput in, int version, Comparator<ByteBuffer> comparator) throws IOException
         {
+            assert comparator != null;
             DeletionTime topLevel = DeletionTime.serializer.deserialize(in);
             if (version < MessagingService.VERSION_12)
-                return new DeletionInfo(topLevel, IntervalTree.<ByteBuffer, DeletionTime>emptyTree());
+                return new DeletionInfo(topLevel, IntervalTree.<ByteBuffer, DeletionTime, RangeTombstone>emptyTree());
 
-            IntervalTree<ByteBuffer, DeletionTime> ranges = itSerializer.deserialize(in, version, comparator);
+            IntervalTree<ByteBuffer, DeletionTime, RangeTombstone> ranges = itSerializer.deserialize(in, version, comparator);
             return new DeletionInfo(topLevel, ranges);
+        }
+
+        public DeletionInfo deserializeFromSSTable(DataInput in, Descriptor.Version version) throws IOException
+        {
+            DeletionTime topLevel = DeletionTime.serializer.deserialize(in);
+            return new DeletionInfo(topLevel, IntervalTree.<ByteBuffer, DeletionTime, RangeTombstone>emptyTree());
         }
 
         public long serializedSize(DeletionInfo info, TypeSizes typeSizes, int version)
@@ -369,21 +337,6 @@ public class DeletionInfo
         public long serializedSize(DeletionInfo info, int version)
         {
             return serializedSize(info, TypeSizes.NATIVE, version);
-        }
-
-        public void serializeForSSTable(DeletionInfo info, DataOutput dos) throws IOException
-        {
-            serialize(info, dos, 0);
-        }
-
-        public DeletionInfo deserializeFromSSTable(DataInput dis, Descriptor.Version version) throws IOException
-        {
-            return deserialize(dis, 0);
-        }
-
-        public long serializedSizeForSSTable(DeletionInfo info)
-        {
-            return serializedSize(info, 0);
         }
     }
 }

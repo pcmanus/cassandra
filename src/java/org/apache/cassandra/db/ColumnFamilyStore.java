@@ -42,7 +42,7 @@ import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.*;
-import org.apache.cassandra.db.columniterator.IColumnIterator;
+import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.AbstractCompactionStrategy;
@@ -845,7 +845,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (sstables.isEmpty())
             return ImmutableSet.of();
 
-        IntervalTree<RowPosition, SSTableReader> tree = data.getView().intervalTree;
+        DataTracker.SSTableIntervalTree tree = data.getView().intervalTree;
 
         Set<SSTableReader> results = null;
         for (SSTableReader sstable : sstables)
@@ -1186,8 +1186,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     ColumnFamily filterColumnFamily(ColumnFamily cached, QueryFilter filter, int gcBefore)
     {
         ColumnFamily cf = cached.cloneMeShallow(ArrayBackedSortedColumns.factory(), filter.filter.isReversed());
-        IColumnIterator ci = filter.getMemtableColumnIterator(cached, null);
-        filter.collateColumns(cf, Collections.singletonList(ci), gcBefore);
+        OnDiskAtomIterator ci = filter.getMemtableColumnIterator(cached, null);
+        filter.collateOnDiskAtom(cf, Collections.singletonList(ci), gcBefore);
         // TODO this is necessary because when we collate supercolumns together, we don't check
         // their subcolumns for relevance, so we need to do a second prune post facto here.
         return cf.isSuper() ? removeDeleted(cf, gcBefore) : removeDeletedCF(cf, gcBefore);

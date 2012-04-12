@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.HeapAllocator;
@@ -44,10 +45,16 @@ public class Column implements IColumn
 {
     private static final Logger logger = LoggerFactory.getLogger(Column.class);
     private static final ColumnSerializer serializer = new ColumnSerializer();
+    private static final OnDiskAtom.Serializer onDiskSerializer = new OnDiskAtom.Serializer(serializer);
 
     public static ColumnSerializer serializer()
     {
         return serializer;
+    }
+
+    public static OnDiskAtom.Serializer onDiskSerializer()
+    {
+        return onDiskSerializer;
     }
 
     protected final ByteBuffer name;
@@ -137,6 +144,11 @@ public class Column implements IColumn
         int nameSize = name.remaining();
         int valueSize = value.remaining();
         return typeSizes.sizeof((short) nameSize) + nameSize + 1 + typeSizes.sizeof(timestamp) + typeSizes.sizeof(valueSize) + valueSize;
+    }
+
+    public long serializedSizeForSSTable()
+    {
+        return serializedSize(TypeSizes.NATIVE);
     }
 
     public int serializationFlags()

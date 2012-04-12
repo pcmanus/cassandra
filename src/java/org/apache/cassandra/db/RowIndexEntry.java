@@ -184,7 +184,7 @@ public class RowIndexEntry
         public int serializedSize()
         {
             TypeSizes typeSizes = TypeSizes.NATIVE;
-            long size = deletionInfo.serializer().serializedSizeForSSTable(deletionInfo); // deletion info
+            long size = DeletionTime.serializer.serializedSize(deletionInfo.getTopLevelDeletion(), typeSizes);
             size += typeSizes.sizeof(columnsIndex.size()); // number of entries
             for (IndexHelper.IndexInfo info : columnsIndex)
                 size += info.serializedSize(typeSizes);

@@ -170,13 +170,22 @@ public class SSTableWriter extends SSTable
         long startPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile.stream);
 
-        // build column index
-        // TODO: build and serialization could be merged
-        ColumnIndex index = new ColumnIndex.Builder(cf.getComparator(), decoratedKey.key, cf.deletionInfo(), cf.getColumnCount()).build(cf);
+        // Since the columnIndex may insert RangeTombstone marker, computing
+        // the size of the data is tricky.
+        DataOutputBuffer buffer = new DataOutputBuffer();
 
-        // write out row size + data
-        dataFile.stream.writeLong(ColumnFamily.serializer.serializedSizeForSSTable(cf, typeSizes));
-        ColumnFamily.serializer.serializeForSSTable(cf, dataFile.stream);
+        // build column index && write columns
+        ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, decoratedKey.key, cf.getColumnCount(), buffer);
+        ColumnIndex index = builder.build(cf);
+
+        TypeSizes typeSizes = TypeSizes.NATIVE;
+        long delSize = DeletionTime.serializer.serializedSize(cf.deletionInfo().getTopLevelDeletion(), typeSizes);
+        dataFile.stream.writeLong(buffer.getLength() + delSize + typeSizes.sizeof(0));
+
+        // Write deletion infos + column count
+        DeletionInfo.serializer().serializeForSSTable(cf.deletionInfo(), dataFile.stream);
+        dataFile.stream.writeInt(builder.writtenAtomCount());
+        dataFile.stream.write(buffer.getData(), 0, buffer.getLength());
 
         afterAppend(decoratedKey, startPosition, cf.deletionInfo(), index);
 
@@ -204,20 +213,22 @@ public class SSTableWriter extends SSTable
         long maxTimestamp = Long.MIN_VALUE;
         StreamingHistogram tombstones = new StreamingHistogram(TOMBSTONE_HISTOGRAM_BIN_SIZE);
         ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
-        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf.getComparator(), key.key, deletionInfo, columnCount);
-        IColumnSerializer columnSerializer = cf.getColumnSerializer();
+        cf.delete(deletionInfo);
+
+        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf, key.key, columnCount, dataFile.stream);
+        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
             // data size received, so we must reserialize the exact same data
-            IColumn column = columnSerializer.deserialize(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE);
-            if (column instanceof CounterColumn)
+            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Descriptor.Version.CURRENT);
+            if (atom instanceof CounterColumn)
             {
-                column = ((CounterColumn) column).markDeltaToBeCleared();
+                atom = ((CounterColumn) atom).markDeltaToBeCleared();
             }
-            else if (column instanceof SuperColumn)
+            else if (atom instanceof SuperColumn)
             {
-                SuperColumn sc = (SuperColumn) column;
+                SuperColumn sc = (SuperColumn) atom;
                 for (IColumn subColumn : sc.getSubColumns())
                 {
                     if (subColumn instanceof CounterColumn)
@@ -228,14 +239,13 @@ public class SSTableWriter extends SSTable
                 }
             }
 
-            int deletionTime = column.getLocalDeletionTime();
+            int deletionTime = atom.getLocalDeletionTime();
             if (deletionTime < Integer.MAX_VALUE)
             {
                 tombstones.update(deletionTime);
             }
-            maxTimestamp = Math.max(maxTimestamp, column.maxTimestamp());
-            cf.getColumnSerializer().serialize(column, dataFile.stream);
-            columnIndexer.add(column);
+            maxTimestamp = Math.max(maxTimestamp, atom.maxTimestamp());
+            columnIndexer.add(atom); // This write the atom on disk too
         }
 
         assert dataSize == dataFile.getFilePointer() - (dataStart + 8)
