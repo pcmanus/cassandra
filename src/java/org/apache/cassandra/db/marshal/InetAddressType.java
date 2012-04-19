@@ -17,56 +17,37 @@
  */
 package org.apache.cassandra.db.marshal;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.cql.jdbc.JdbcInt32;
+import org.apache.cassandra.cql.jdbc.JdbcInetAddress;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public class InetAddressType extends AbstractType<Integer>
+public class InetAddressType extends AbstractType<InetAddress>
 {
     public static final InetAddressType instance = new InetAddressType();
 
     InetAddressType() {} // singleton
 
-    public Integer compose(ByteBuffer bytes)
+    public InetAddress compose(ByteBuffer bytes)
     {
-        return JdbcInt32.instance.compose(bytes);
+        return JdbcInetAddress.instance.compose(bytes);
     }
 
-    public ByteBuffer decompose(Integer value)
+    public ByteBuffer decompose(InetAddress value)
     {
-        return JdbcInt32.instance.decompose(value);
+        return JdbcInetAddress.instance.decompose(value);
     }
 
     public int compare(ByteBuffer o1, ByteBuffer o2)
     {
-        if (o1.remaining() == 0)
-        {
-            return o2.remaining() == 0 ? 0 : -1;
-        }
-        if (o2.remaining() == 0)
-        {
-            return 1;
-        }
-
-        int diff = o1.get(o1.position()) - o2.get(o2.position());
-        if (diff != 0)
-            return diff;
-
-
         return ByteBufferUtil.compareUnsigned(o1, o2);
     }
 
     public String getString(ByteBuffer bytes)
     {
-        try
-        {
-            return JdbcInt32.instance.getString(bytes);
-        }
-        catch (org.apache.cassandra.cql.jdbc.MarshalException e)
-        {
-            throw new MarshalException(e.getMessage());
-        }
+        return JdbcInetAddress.instance.getString(bytes);
     }
 
     public ByteBuffer fromString(String source) throws MarshalException
@@ -75,24 +56,29 @@ public class InetAddressType extends AbstractType<Integer>
         if (source.isEmpty())
             return ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
-        int int32Type;
+        InetAddress address;
 
         try
         {
-            int32Type = Integer.parseInt(source);
+            address = InetAddress.getByName(source);
         }
         catch (Exception e)
         {
-            throw new MarshalException(String.format("unable to make int from '%s'", source), e);
+            throw new MarshalException(String.format("unable to make inetaddress from '%s'", source), e);
         }
 
-        return decompose(int32Type);
+        return decompose(address);
     }
 
     public void validate(ByteBuffer bytes) throws MarshalException
     {
-        if (bytes.remaining() != 4 && bytes.remaining() != 0)
-            throw new MarshalException(String.format("Expected 4 or 0 byte int (%d)", bytes.remaining()));
+        try
+        {
+            InetAddress.getByAddress(ByteBufferUtil.getArray(bytes));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new MarshalException(String.format("Expected 4 or 16 byte inetaddress; got %s", ByteBufferUtil.bytesToHex(bytes)));
+        }
     }
-
 }
