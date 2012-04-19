@@ -467,12 +467,12 @@ public class SystemTable
         ByteBuffer id = null;
         Table table = Table.open(Table.SYSTEM_TABLE);
         QueryFilter filter = QueryFilter.getIdentityFilter(decorate(CURRENT_LOCAL_NODE_ID_KEY),
-                new QueryPath(NODE_ID_CF));
+                                                           new QueryPath(NODE_ID_CF));
         ColumnFamily cf = table.getColumnFamilyStore(NODE_ID_CF).getColumnFamily(filter);
+        // Even though gc_grace==0 on System table, we can have a race where we get back tombstones (see CASSANDRA-2824)
+        cf = ColumnFamilyStore.removeDeleted(cf, 0);
         if (cf != null)
         {
-            // Even though gc_grace==0 on System table, we can have a race where we get back tombstones (see CASSANDRA-2824)
-            cf = ColumnFamilyStore.removeDeleted(cf, 0);
             assert cf.getColumnCount() <= 1;
             if (cf.getColumnCount() > 0)
                 id = cf.iterator().next().name();
