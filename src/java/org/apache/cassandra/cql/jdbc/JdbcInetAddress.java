@@ -17,12 +17,14 @@
  */
 package org.apache.cassandra.cql.jdbc;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.sql.Types;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public class JdbcInetAddress extends AbstractJdbcType<Integer>
+public class JdbcInetAddress extends AbstractJdbcType<InetAddress>
 {
     public static final JdbcInetAddress instance = new JdbcInetAddress();
 
@@ -35,12 +37,12 @@ public class JdbcInetAddress extends AbstractJdbcType<Integer>
         return false;
     }
 
-    public int getScale(Integer obj)
+    public int getScale(InetAddress obj)
     {
         return 0;
     }
 
-    public int getPrecision(Integer obj)
+    public int getPrecision(InetAddress obj)
     {
         return obj.toString().length();
     }
@@ -55,9 +57,9 @@ public class JdbcInetAddress extends AbstractJdbcType<Integer>
         return true;
     }
 
-    public String toString(Integer obj)
+    public String toString(InetAddress obj)
     {
-        return obj.toString();
+        return obj.getHostAddress();
     }
 
     public boolean needsQuotes()
@@ -67,35 +69,33 @@ public class JdbcInetAddress extends AbstractJdbcType<Integer>
 
     public String getString(ByteBuffer bytes)
     {
-        if (bytes.remaining() == 0)
-        {
-            return "";
-        }
-        if (bytes.remaining() != 4)
-        {
-            throw new MarshalException("A int is exactly 4 bytes: " + bytes.remaining());
-        }
-
-        return String.valueOf(bytes.getInt(bytes.position()));
+        return compose(bytes).getHostAddress();
     }
 
-    public Class<Integer> getType()
+    public Class<InetAddress> getType()
     {
-        return Integer.class;
+        return InetAddress.class;
     }
 
     public int getJdbcType()
     {
-        return Types.INTEGER;
+        return Types.OTHER;
     }
 
-    public Integer compose(ByteBuffer bytes)
+    public InetAddress compose(ByteBuffer bytes)
     {
-        return ByteBufferUtil.toInt(bytes);
+        try
+        {
+            return InetAddress.getByAddress(ByteBufferUtil.getArray(bytes));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new AssertionError(e);
+        }
     }
 
-    public ByteBuffer decompose(Integer value)
+    public ByteBuffer decompose(InetAddress value)
     {
-        return ByteBufferUtil.bytes(value);
+        return ByteBuffer.wrap(value.getAddress());
     }
 }

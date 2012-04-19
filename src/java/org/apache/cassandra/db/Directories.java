@@ -410,7 +410,7 @@ public class Directories
         {
             File systemDir = new File(location, Table.SYSTEM_TABLE);
             hasSystemKeyspace |= (systemDir.exists() && systemDir.isDirectory());
-            File statusCFDir = new File(systemDir, SystemTable.STATUS_CF);
+            File statusCFDir = new File(systemDir, SystemTable.OLD_STATUS_CF);
             if (statusCFDir.exists())
                 return false;
         }

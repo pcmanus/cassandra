@@ -77,14 +77,14 @@ public final class CFMetaData
     // Note that this is the default only for user created tables
     public final static String DEFAULT_COMPRESSOR = SnappyCompressor.isAvailable() ? SnappyCompressor.class.getCanonicalName() : null;
 
-    public static final CFMetaData StatusCf = newSystemMetadata(SystemTable.STATUS_CF, 0, "persistent metadata for the local node", BytesType.instance, null);
-
     @Deprecated
-    public static final CFMetaData OldHintsCf = newSystemMetadata(SystemTable.OLD_HINTS_CF, 1, "hinted handoff data", BytesType.instance, BytesType.instance);
+    public static final CFMetaData OldStatusCf = newSystemMetadata(SystemTable.OLD_STATUS_CF, 0, "unused", BytesType.instance, null);
     @Deprecated
-    public static final CFMetaData MigrationsCf = newSystemMetadata(DefsTable.OLD_MIGRATIONS_CF, 2, "individual schema mutations", TimeUUIDType.instance, null);
+    public static final CFMetaData OldHintsCf = newSystemMetadata(SystemTable.OLD_HINTS_CF, 1, "unused", BytesType.instance, BytesType.instance);
     @Deprecated
-    public static final CFMetaData SchemaCf = newSystemMetadata(DefsTable.OLD_SCHEMA_CF, 3, "current state of the schema", UTF8Type.instance, null);
+    public static final CFMetaData MigrationsCf = newSystemMetadata(DefsTable.OLD_MIGRATIONS_CF, 2, "unused", TimeUUIDType.instance, null);
+    @Deprecated
+    public static final CFMetaData SchemaCf = newSystemMetadata(DefsTable.OLD_SCHEMA_CF, 3, "unused", UTF8Type.instance, null);
 
     public static final CFMetaData IndexCf = compile(5, "CREATE TABLE \"" + SystemTable.INDEX_CF + "\" ("
                                                         + "table_name text,"
@@ -101,9 +101,9 @@ public final class CFMetaData
                                                          + ") WITH COMPACT STORAGE AND COMMENT='counter node IDs'");
 
     public static final CFMetaData VersionCf = compile(7, "CREATE TABLE " + SystemTable.VERSION_CF + " ("
-                                                        + "component text PRIMARY KEY,"
-                                                        + "version text"
-                                                        + ") WITH COMMENT='server version information'");
+                                                          + "component text PRIMARY KEY,"
+                                                          + "version text"
+                                                          + ") WITH COMMENT='server version information'");
     // new-style schema
     public static final CFMetaData SchemaKeyspacesCf = compile(8, "CREATE TABLE " + SystemTable.SCHEMA_KEYSPACES_CF + "("
                                                                  + "keyspace_name text PRIMARY KEY,"
@@ -159,6 +159,11 @@ public final class CFMetaData
                                                          + "mutation blob,"
                                                          + "PRIMARY KEY (target_id, hint_id, message_version)"
                                                          + ") WITH COMPACT STORAGE AND COMMENT='hints awaiting delivery'");
+
+    public static final CFMetaData PeersCf = compile(12, "CREATE TABLE " + SystemTable.PEERS_CF + " ("
+                                                         + "token_bytes blob PRIMARY KEY,"
+                                                         + "peer inet"
+                                                       + ") WITH COMMENT='known peers in the cluster'");
 
     public enum Caching
     {
