@@ -77,11 +77,9 @@ public final class KSMetaData
                                                 CFMetaData.SchemaCf,
                                                 CFMetaData.IndexCf,
                                                 CFMetaData.NodeIdCf,
-                                                CFMetaData.VersionCf,
                                                 CFMetaData.SchemaKeyspacesCf,
                                                 CFMetaData.SchemaColumnFamiliesCf,
-                                                CFMetaData.SchemaColumnsCf,
-                                                CFMetaData.HostIdCf);
+                                                CFMetaData.SchemaColumnsCf);
         return new KSMetaData(Table.SYSTEM_TABLE, LocalStrategy.class, Collections.<String, String>emptyMap(), true, cfDefs);
     }
 

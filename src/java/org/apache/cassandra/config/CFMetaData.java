@@ -100,10 +100,6 @@ public final class CFMetaData
                                                          + "PRIMARY KEY (key, id)"
                                                          + ") WITH COMPACT STORAGE AND COMMENT='counter node IDs'");
 
-    public static final CFMetaData VersionCf = compile(7, "CREATE TABLE " + SystemTable.VERSION_CF + " ("
-                                                          + "component text PRIMARY KEY,"
-                                                          + "version text"
-                                                          + ") WITH COMMENT='server version information'");
     // new-style schema
     public static final CFMetaData SchemaKeyspacesCf = compile(8, "CREATE TABLE " + SystemTable.SCHEMA_KEYSPACES_CF + "("
                                                                  + "keyspace_name text PRIMARY KEY,"
@@ -150,8 +146,6 @@ public final class CFMetaData
                                                                + "PRIMARY KEY(keyspace_name, columnfamily_name, column_name)"
                                                                + ") WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640");
 
-    public static final CFMetaData HostIdCf = newSystemMetadata(SystemTable.HOST_ID_CF, 11, "Host Identifier", UUIDType.instance, null);
-
     public static final CFMetaData HintsCf = compile(11, "CREATE TABLE " + SystemTable.HINTS_CF + " ("
                                                          + "target_id uuid,"
                                                          + "hint_id timeuuid,"
@@ -163,7 +157,19 @@ public final class CFMetaData
     public static final CFMetaData PeersCf = compile(12, "CREATE TABLE " + SystemTable.PEERS_CF + " ("
                                                          + "token_bytes blob PRIMARY KEY,"
                                                          + "peer inet"
-                                                       + ") WITH COMMENT='known peers in the cluster'");
+                                                         + ") WITH COMMENT='known peers in the cluster'");
+
+    public static final CFMetaData LocalCf = compile(13, "CREATE TABLE " + SystemTable.LOCAL_CF + " ("
+                                                         + "key text PRIMARY KEY,"
+                                                         + "token_bytes blob,"
+                                                         + "cluster_name text,"
+                                                         + "gossip_generation int,"
+                                                         + "bootstrapped boolean,"
+                                                         + "ring_id uuid,"
+                                                         + "release_version text,"
+                                                         + "thrift_version text,"
+                                                         + "cql_version text"
+                                                         + ") WITH COMMENT='information about the local node'");
 
     public enum Caching
     {
