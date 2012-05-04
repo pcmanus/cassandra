@@ -35,6 +35,16 @@ pre.syntax {
   background-color: #fafaff;
 }
 
+p.banner {
+  padding: 1ex;
+  padding-left: 4ex;
+  border-top: 1px solid #faa;
+  border-bottom: 1px solid #faa;
+  background-color: #fffafa;
+  color: #b33;
+  text-align: center;
+}
+
 table {
   margin-left: 4ex;
   /* width: 80%; */
