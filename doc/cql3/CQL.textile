@@ -4,7 +4,6 @@ h1. Cassandra Query Language (CQL) v3.0.0
 
 p(banner). Please note that as of Cassandra 1.1, CQL v3.0.0 is considered beta and as such, and while the bulk of the language should be fixed by now, breaking changes may be introduced until CQL v3.0.0 is final (in Cassandra 1.2).
 
-
  <span id="tableOfContents">
 
 {toc:maxLevel=3}
