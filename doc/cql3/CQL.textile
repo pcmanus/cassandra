@@ -2,6 +2,9 @@
 
 h1. Cassandra Query Language (CQL) v3.0.0
 
+p(banner). Please note that as of Cassandra 1.1, CQL v3.0.0 is considered beta and as such, and while the bulk of the language should be fixed by now, breaking changes may be introduced until CQL v3.0.0 is final (in Cassandra 1.2).
+
+
  <span id="tableOfContents">
 
 {toc:maxLevel=3}
@@ -9,6 +12,13 @@ h1. Cassandra Query Language (CQL) v3.0.0
  </span>
 
 h2. CQL Syntax
+
+h3. Preamble
+
+This document describes the Cassandra Query Language (CQL) version 3. CQL v3 is not backward compatible with CQL v2 and differs from it in numerous ways.
+
+CQL v3 offers a model very close to SQL in the sense that data is put in _tables_ containing _rows_ of _columns_. For that reason, when used in this document, these terms (tables, rows and columns) have the same definition than they have in SQL. But please note that as such, they do *not* refer to the concept of rows and columns found in the internal implementation of Cassandra and in the thrift and CQL v2 API.
+
 
 h3. Conventions
 
@@ -246,27 +256,30 @@ The @CREATE TABLE@ statement supports a number of options that controls the conf
 
 The first of these option is @COMPACT STORAGE@. This option is meanly targeted towards backward compatibility with some table definition created before CQL3.  But it also provides a slightly more compact layout of data on disk, though at the price of flexibility and extensibility, and for that reason is not recommended unless for the backward compatibility reason. The restriction for table with @COMPACT STORAGE@ is that they support one and only one column outside of the ones part of the @PRIMARY KEY@. It also follows that columns cannot be added nor removed after creation. A table with @COMPACT STORAGE@ must also define at least one "clustering key":createTablepartitionClustering.
 
+Another option is @CLUSTERING ORDER@. It allows to define the ordering of rows on disk. It takes the list of the clustering key names with, for each of them, the on-disk order (Ascending or descending). Note that this option affects "what @ORDER BY@ are allowed during @SELECT@":#selectOrderBy.
+
 Table creation supports the following other options:
 
 |_. option                    |_. default                  |_. description|
-|@comment@                    |none                        |A free-form, human-readable comment.|
-|@read_repair_chance@         |0.1                         |The probability with which to query extra nodes (e.g. more nodes than required by the consistency level) for the purpose of read repairs.|
-|@dclocal_read_repair_chance@ |0                           |The probability with which to query extra nodes (e.g. more nodes than required by the consistency level) belonging to the same data center than the read coordinator for the purpose of read repairs.|
-|@gc_grace_seconds@           |864000                      |Time to wait before garbage collecting tombstones (deletion markers).|
-|@min_compaction_threshold@   |4                           |Minimum number of SSTables needed to start a minor compaction.|
-|@max_compaction_threshold@   |32                          |Maximum number of SSTables processed by one minor compaction.|
-|@bloom_filter_fp_chance@     |0.00075                     |The target probability of false positive of the sstable bloom filters. Said bloom filters will be sized to provide the provided probability (thus lowering this value impact the size of bloom filters in-memory and on-disk)|
-|@compaction_strategy_class@  |SizeTieredCompactionStrategy|The compaction strategy to use. Default value are 'SizeTieredCompactionStrategy' and 'LeveledCompactionStrategy'. Custom strategy can be provided by specifying the full class name as a "string constant":#constants.|
-|@compaction_strategy_options@|none                        |Options for the compaction strategy. If @opt@ is the name of an option to set, it can be set using @compression_strategy_options:opt = <value>@. See below for the default options.|
-|@compression_parameters@     |see below                   |Compression options. If @opt@ is the name of an option to set, it can be set using @compression_parameters:opt = <value>@. See below for the default options.|
+|@comment@                    |none                        | A free-form, human-readable comment.|
+|@read_repair_chance@         |0.1                         | The probability with which to query extra nodes (e.g. more nodes than required by the consistency level) for the purpose of read repairs.|
+|@dclocal_read_repair_chance@ |0                           | The probability with which to query extra nodes (e.g. more nodes than required by the consistency level) belonging to the same data center than the read coordinator for the purpose of read repairs.|
+|@gc_grace_seconds@           |864000                      | Time to wait before garbage collecting tombstones (deletion markers).|
+|@bloom_filter_fp_chance@     |0.00075                     | The target probability of false positive of the sstable bloom filters. Said bloom filters will be sized to provide the provided probability (thus lowering this value impact the size of bloom filters in-memory and on-disk)|
+|@compaction_strategy_class@  |SizeTieredCompactionStrategy| The compaction strategy to use. Default value are 'SizeTieredCompactionStrategy' and 'LeveledCompactionStrategy'. Custom strategy can be provided by specifying the full class name as a "string constant":#constants.|
+|@compaction_strategy_options@|none                        | Options for the compaction strategy. If @opt@ is the name of an option to set, it can be set using @compression_strategy_options:opt = <value>@. See below for the default options.|
+|@compression_parameters@     |see below                   | Compression options. If @opt@ is the name of an option to set, it can be set using @compression_parameters:opt = <value>@. See below for the default options.|
 |@replicate_on_write@         |true                        | Whether to replicate data on write. This can only be set to false for tables with counters values. Disabling this is dangerous and can result in random lose of counters, don't disable unless you are sure to know what you are doing|
+|@caching@                    |keys_only                   | Whether to cache keys ("key cache") and/or rows ("row cache") for this table. Valid values are: @all@, @keys_only@, @rows_only@ and @none@. |
 
 
 The following default sub-options are available for @compaction_strategy_options@:
 
-|_. option             |_. supported compaction strategy |_. default |_. description |
-| @min_sstable_size@   | SizeTieredCompactionStrategy  | 50MB | The size tiered strategy groups SSTables to compact in buckets. A bucket groups SSTables that differs from less than 50% in size.  However, for small sizes, this would result in a bucketing that is too fine grained. @min_sstable_size@ defines a size threshold (in bytes) below which all SSTables belong to one unique bucket|
-| @sstable_size_in_mb@ | LeveledCompactionStrategy     | 5MB  | The target size (in MB) for sstables in the leveled strategy. Note that while sstable sizes should stay less or equal to @sstable_size_in_mb@, it is possible to exceptionally have a larger sstable as during compaction, data for a given partition key are never split into 2 sstables|
+|_. option                     |_. supported compaction strategy |_. default |_. description |
+| @min_sstable_size@           | SizeTieredCompactionStrategy    | 50MB      | The size tiered strategy groups SSTables to compact in buckets. A bucket groups SSTables that differs from less than 50% in size.  However, for small sizes, this would result in a bucketing that is too fine grained. @min_sstable_size@ defines a size threshold (in bytes) below which all SSTables belong to one unique bucket|
+| @min_compaction_threshold@   | SizeTieredCompactionStrategy    | 4         | Minimum number of SSTables needed to start a minor compaction.|
+| @max_compaction_threshold@   | SizeTieredCompactionStrategy    | 32        | Maximum number of SSTables processed by one minor compaction.|
+| @sstable_size_in_mb@         | LeveledCompactionStrategy       | 5MB       | The target size (in MB) for sstables in the leveled strategy. Note that while sstable sizes should stay less or equal to @sstable_size_in_mb@, it is possible to exceptionally have a larger sstable as during compaction, data for a given partition key are never split into 2 sstables|
 
 For the @compression_parameters@ options, the following default sub-options are available:
 
@@ -531,7 +544,7 @@ bc(syntax)..
                   FROM <tablename>
                   ( USING CONSISTENCY <consistency-level> )?
                   ( WHERE <where-clause> )?
-                  ( ORDER BY <identifier> ( ASC | DESC )? )?
+                  ( ORDER BY <order-by> )?
                   ( LIMIT <integer> )?
 
 <select-clause> ::= <column-list>
@@ -544,6 +557,9 @@ bc(syntax)..
 
 <relation> ::= <identifier> ("=" | "<" | ">" | "<=" | ">=") <term>
              | <identifier> IN '(' <term> ( ',' <term>)* ')'
+
+<order-by> ::= <ordering> ( ',' <odering> )*
+<ordering> ::= <identifer> ( ASC | DESC )?
 p. 
 __Sample:__
 
@@ -594,6 +610,11 @@ bc(sample).
 // Needs a blog_title to be set to select ranges of posted_at
 SELECT entry_title, content FROM posts WHERE userid='john doe' AND posted_at >= 2012-01-01 AND posted_at < 2012-01-31
 
+h4(#selectOrderBy). @<order-by>@
+
+The @ORDER BY@ option allows to select the order of the returned results. It takes as argument a list of column names along with the order for the column (@ASC@ for ascendant and @DESC@ for descendant, omitting the order being equivalent to @ASC@). Currently the possible orderings are limited (which depends on the table "@CLUSTERING ORDER@":#createTableOptions):
+* if the table has been defined without any specific @CLUSTERING ORDER@, then then allowed orderings are the order induced by the clustering key and the reverse of that one.
+* otherwise, the orderings allowed are the order of the @CLUSTERING ORDER@ option and the reversed one.
 
 h4(#selectOther). Other options
 
@@ -601,12 +622,10 @@ The "consistency level":#consistency of a query can be set as for data manipulat
 
 The @LIMIT@ option to a @SELECT@ statement limits the number of rows returned by a query. @LIMIT@ defaults to 10,000 when left unset.
 
-The @ORDER BY@ option allows to select the order of the returned results. It takes a column on which to order the result as argument. Currently only the first of the clustering keys is allowed as argument to @ORDER BY@.
-
 
 h2(#types). Data Types
 
-CQL supports a rich set of native data types for columns defined in a table. On top of those native types, users can also provide custom types (through a JAVA class extending @AbstractType@ loadable by Cassandra). The syntax of types is thus:
+CQL supports a rich set of native data types for columns defined in a table.  On top of those native types, users can also provide custom types (through a JAVA class extending @AbstractType@ loadable by Cassandra). The syntax of types is thus:
 
 bc(syntax).. 
 <type> ::= <native_type>
@@ -623,35 +642,38 @@ bc(syntax)..
                 | int
                 | text
                 | timestamp
+                | timeuuid
                 | uuid
                 | varchar
                 | varint
-p. 
-The following table gives additional informations on the native data types:
+p. Note that the native types are keywords and as such are case-insensitive. They are however not reserved ones.
 
-|_. type  |_. description|
-|ascii    |ASCII character string|
-|bigint   |64-bit signed long|
-|blob     |Arbitrary bytes (no validation)|
-|boolean  |true or false|
-|counter  |Counter column (64-bit signed value). See "Counters":#counters for details|
-|decimal  |Variable-precision decimal|
-|double   |64-bit IEEE-754 floating point|
-|float    |32-bit IEEE-754 floating point|
-|int      |32-bit signed int|
-|text     |UTF8 encoded string|
-|timestamp|A timestamp. See "Working with dates":#usingdates below for more information.|
-|uuid     |Type 1 or type 4 UUID|
-|varchar  |UTF8 encoded string|
-|varint   |Arbitrary-precision integer|
+p. The following table gives additional informations on the native data types:
+
+|_. type    |_. description|
+|@ascii@    |ASCII character string|
+|@bigint@   |64-bit signed long|
+|@blob@     |Arbitrary bytes (no validation)|
+|@boolean@  |true or false|
+|@counter@  |Counter column (64-bit signed value). See "Counters":#counters for details|
+|@decimal@  |Variable-precision decimal|
+|@double@   |64-bit IEEE-754 floating point|
+|@float@    |32-bit IEEE-754 floating point|
+|@int@      |32-bit signed int|
+|@text@     |UTF8 encoded string|
+|@timestamp@|A timestamp. See "Working with dates":#usingdates below for more information.|
+|@timeuuid@ |Type 1 UUID. This is a "conflict-free" timestamp and as @timestamp@, it allows date notation: see "Working with dates":#usingdates below.|
+|@uuid@     |Type 1 or type 4 UUID|
+|@varchar@  |UTF8 encoded string|
+|@varint@   |Arbitrary-precision integer|
 
 h3(#usingdates). Working with dates
 
-Values of the @timestamp@ type are encoded as 64-bit signed integers representing a number of milliseconds since the standard base time known as "the epoch": January 1 1970 at 00:00:00 GMT.
+Values of the @timestamp@ type are encoded as 64-bit signed integers representing a number of milliseconds since the standard base time known as "the epoch": January 1 1970 at 00:00:00 GMT. Values of the @timeuuid@ type also include such timestamp and sort accordingly to said timestamp.
 
-Timestamp types can be input in CQL as simple long integers, giving the number of milliseconds since the epoch, as defined above.
+Timestamp and timeuuid types can be input in CQL as simple long integers, giving the number of milliseconds since the epoch, as defined above.
 
-Timestamp types can also be input as string literals in any of the following ISO 8601 formats, each representing the time and date Mar 2, 2011, at 04:05:00 AM, GMT.:
+They can also be input as string literals in any of the following ISO 8601 formats, each representing the time and date Mar 2, 2011, at 04:05:00 AM, GMT.:
 
 * @2011-02-03 04:05+0000@
 * @2011-02-03 04:05:00+0000@
@@ -687,58 +709,73 @@ h2(#appendixA). Appendix A: CQL Keywords
 
 CQL distinguishes between _reserved_ and _non-reserved_ keywords. Reserved keywords cannot be used as identifier, they are truly reserved for the language (but one can enclose a reserved keyword by double-quotes to use it as an identifier). Non-reserved keywords however only have a specific meaning in certain context but can used as identifer otherwise. The only _raison d'être_ of these non-reserved keywords is convenience: some keyword are non-reserved when it was always easy for the parser to decide whether they were used as keywords or not.
 
-|_. Keyword    |_. Reserved? |
-| ADD          | yes |
-| ALL          | yes |
-| ALTER        | yes |
-| AND          | yes |
-| ANY          | yes |
-| APPLY        | yes |
-| ASC          | yes |
-| BATCH        | yes |
-| BEGIN        | yes |
-| BY           | yes |
-| COLUMNFAMLY  | yes |
-| COMPACT      | yes |
-| CONSITENCY   | yes |
-| COUNT        | yes |
-| CREATE       | yes |
-| DELETE       | yes |
-| DESC         | yes |
-| DROP         | yes |
-| EACH_QUORUM  | yes |
-| FROM         | yes |
-| IN           | yes |
-| INDEX        | yes |
-| INSERT       | yes |
-| INTO         | yes |
-| KEY          | yes |
-| KEYSPACE     | yes |
-| LEVEL        | yes |
-| LIMIT        | yes |
-| LOCAL_QUORUM | yes |
-| ON           | yes |
-| ONE          | yes |
-| ORDER        | yes |
-| PRIMARY      | yes |
-| QUORUM       | yes |
-| SCHEMA       | yes |
-| SELECT       | yes |
-| SET          | yes |
-| STORAGE      | yes |
-| TABLE        | yes |
-| TIMESTAMP    | yes |
-| THREE        | yes |
-| TRUNCATE     | yes |
-| TTL          | yes |
-| TWO          | yes |
-| TYPE         | yes |
-| UPDATE       | yes |
-| USE          | yes |
-| USING        | yes |
-| VALUES       | yes |
-| WHERE        | yes |
-| WITH         | yes |
+|_. Keyword      |_. Reserved? |
+| @ADD@          | yes |
+| @ALL@          | yes |
+| @ALTER@        | yes |
+| @AND@          | yes |
+| @ANY@          | yes |
+| @APPLY@        | yes |
+| @ASC@          | yes |
+| @ASCII@        | no  |
+| @BATCH@        | yes |
+| @BEGIN@        | yes |
+| @BIGINT@       | no  |
+| @BLOB@         | no  |
+| @BOOLEAN@      | no  |
+| @BY@           | yes |
+| @CLUSTERING@   | no  |
+| @COLUMNFAMLY@  | yes |
+| @COMPACT@      | no  |
+| @CONSITENCY@   | no  |
+| @COUNT@        | no  |
+| @COUNTER@      | no  |
+| @CREATE@       | yes |
+| @DECIMAL@      | no  |
+| @DELETE@       | yes |
+| @DESC@         | yes |
+| @DOUBLE@       | no  |
+| @DROP@         | yes |
+| @EACH_QUORUM@  | yes |
+| @FLOAT@        | no  |
+| @FROM@         | yes |
+| @IN@           | yes |
+| @INDEX@        | yes |
+| @INSERT@       | yes |
+| @INT@          | no  |
+| @INTO@         | yes |
+| @KEY@          | no  |
+| @KEYSPACE@     | yes |
+| @LEVEL@        | no  |
+| @LIMIT@        | yes |
+| @LOCAL_QUORUM@ | yes |
+| @ON@           | yes |
+| @ONE@          | yes |
+| @ORDER@        | yes |
+| @PRIMARY@      | yes |
+| @QUORUM@       | yes |
+| @SCHEMA@       | yes |
+| @SELECT@       | yes |
+| @SET@          | yes |
+| @STORAGE@      | no  |
+| @TABLE@        | yes |
+| @TEXT@         | no  |
+| @TIMESTAMP@    | no  |
+| @TIMEUUID@     | no  |
+| @THREE@        | yes |
+| @TRUNCATE@     | yes |
+| @TTL@          | no  |
+| @TWO@          | yes |
+| @TYPE@         | no  |
+| @UPDATE@       | yes |
+| @USE@          | yes |
+| @USING@        | yes |
+| @UUID@         | no  |
+| @VALUES@       | no  |
+| @VARCHAR@      | no  |
+| @VARINT@       | no  |
+| @WHERE@        | yes |
+| @WITH@         | yes |
 
 
 h2. Versioning
