@@ -73,6 +73,8 @@ public class CassandraDaemon extends org.apache.cassandra.service.AbstractCassan
         {
             server = new ThriftServer(listenAddr, listenPort);
             server.start();
+            // TODO: We'll have to move that somewhere else
+            new org.apache.cassandra.cql3.transport.Server(6666).run();
         }
     }
 

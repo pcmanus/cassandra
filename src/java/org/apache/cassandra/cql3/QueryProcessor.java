@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.statements.*;
+import org.apache.cassandra.cql3.transport.messages.ResultMessage;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
@@ -100,22 +101,17 @@ public class QueryProcessor
             throw new InvalidRequestException("Range finish must come after start in traversal order");
     }
 
-    private static CqlResult processStatement(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
+    private static ResultMessage processStatement(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
     throws  UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         statement.checkAccess(clientState);
         statement.validate(clientState);
-        CqlResult result = statement.execute(clientState, variables);
-        if (result == null)
-        {
-            result = new CqlResult();
-            result.type = CqlResultType.VOID;
-        }
-        return result;
+        ResultMessage result = statement.execute(clientState, variables);
+        return result == null ? ResultMessage.Void.instance() : result;
     }
 
-    public static CqlResult process(String queryString, ClientState clientState)
-    throws RecognitionException, UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
+    public static ResultMessage process(String queryString, ClientState clientState)
+    throws UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         logger.trace("CQL QUERY: {}", queryString);
         return processStatement(getStatement(queryString, clientState).statement, clientState, Collections.<ByteBuffer>emptyList());
@@ -126,8 +122,10 @@ public class QueryProcessor
         try
         {
             ClientState state = new ClientState();
-            CqlResult result = processStatement(getStatement(query, state).statement, state, Collections.<ByteBuffer>emptyList());
-            return new UntypedResultSet(result.rows);
+            CQLStatement statement = getStatement(query, state).statement;
+            assert statement instanceof SelectStatement;
+            ResultSet result = ((SelectStatement)statement).executeInternal(state, Collections.<ByteBuffer>emptyList());
+            return new UntypedResultSet(result);
         }
         catch (UnavailableException e)
         {
@@ -137,15 +135,7 @@ public class QueryProcessor
         {
             throw new AssertionError(e);
         }
-        catch (RecognitionException e)
-        {
-            throw new AssertionError(e);
-        }
         catch (TimedOutException e)
-        {
-            throw new RuntimeException(e);
-        }
-        catch (SchemaDisagreementException e)
         {
             throw new RuntimeException(e);
         }
@@ -153,25 +143,20 @@ public class QueryProcessor
 
     public static UntypedResultSet resultify(String query, Row row)
     {
-        SelectStatement ss;
         try
         {
-            ss = (SelectStatement) getStatement(query, null).statement;
-            List<CqlRow> cqlRows = ss.process(Collections.singletonList(row));
+            SelectStatement ss = (SelectStatement) getStatement(query, null).statement;
+            ResultSet cqlRows = ss.process(Collections.singletonList(row));
             return new UntypedResultSet(cqlRows);
         }
         catch (InvalidRequestException e)
         {
             throw new AssertionError(e);
         }
-        catch (RecognitionException e)
-        {
-            throw new AssertionError(e);
-        }
     }
 
-    public static CqlPreparedResult prepare(String queryString, ClientState clientState)
-    throws RecognitionException, InvalidRequestException
+    public static ResultMessage.Prepared prepare(String queryString, ClientState clientState)
+    throws InvalidRequestException
     {
         logger.trace("CQL QUERY: {}", queryString);
 
@@ -183,21 +168,10 @@ public class QueryProcessor
                                    prepared.statement.getBoundsTerms()));
 
         assert prepared.statement.getBoundsTerms() == prepared.boundNames.size();
-        List<String> var_types = new ArrayList<String>(prepared.boundNames.size()) ;
-        List<String> var_names = new ArrayList<String>(prepared.boundNames.size());
-        for (CFDefinition.Name n : prepared.boundNames)
-        {
-            var_types.add(TypeParser.getShortName(n.type));
-            var_names.add(n.name.toString());
-        }
-
-        CqlPreparedResult result = new CqlPreparedResult(statementId, prepared.boundNames.size());
-        result.setVariable_types(var_types);
-        result.setVariable_names(var_names);
-        return result;
+        return new ResultMessage.Prepared(statementId, prepared.boundNames);
     }
 
-    public static CqlResult processPrepared(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
+    public static ResultMessage processPrepared(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
     throws UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         // Check to see if there are any bound variables to verify
@@ -224,7 +198,7 @@ public class QueryProcessor
         return cql.hashCode();
     }
 
-    private static ParsedStatement.Prepared getStatement(String queryStr, ClientState clientState) throws InvalidRequestException, RecognitionException
+    private static ParsedStatement.Prepared getStatement(String queryStr, ClientState clientState) throws InvalidRequestException
     {
         ParsedStatement statement = parseStatement(queryStr);
 
@@ -235,7 +209,7 @@ public class QueryProcessor
         return statement.prepare();
     }
 
-    public static ParsedStatement parseStatement(String queryStr) throws InvalidRequestException, RecognitionException
+    public static ParsedStatement parseStatement(String queryStr) throws InvalidRequestException
     {
         try
         {
@@ -259,6 +233,12 @@ public class QueryProcessor
         {
             InvalidRequestException ire = new InvalidRequestException("Failed parsing statement: [" + queryStr + "] reason: " + re.getClass().getSimpleName() + " " + re.getMessage());
             ire.initCause(re);
+            throw ire;
+        }
+        catch (RecognitionException e)
+        {
+            InvalidRequestException ire = new InvalidRequestException("Invalid or malformed CQL query string");
+            ire.initCause(e);
             throw ire;
         }
     }
