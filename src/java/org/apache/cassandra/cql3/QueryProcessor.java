@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.statements.*;
+import org.apache.cassandra.cql3.transport.messages.ResultMessage;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -99,21 +100,16 @@ public class QueryProcessor
             throw new InvalidRequestException("Range finish must come after start in traversal order");
     }
 
-    private static CqlResult processStatement(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
+    private static ResultMessage processStatement(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
     throws  UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         statement.checkAccess(clientState);
         statement.validate(clientState);
-        CqlResult result = statement.execute(clientState, variables);
-        if (result == null)
-        {
-            result = new CqlResult();
-            result.type = CqlResultType.VOID;
-        }
-        return result;
+        ResultMessage result = statement.execute(clientState, variables);
+        return result == null ? ResultMessage.Void.instance() : result;
     }
 
-    public static CqlResult process(String queryString, ClientState clientState)
+    public static ResultMessage process(String queryString, ClientState clientState)
     throws RecognitionException, UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         logger.trace("CQL QUERY: {}", queryString);
@@ -136,7 +132,7 @@ public class QueryProcessor
             throw new RuntimeException(e);
         }
 
-        List<CqlRow> cqlRows;
+        ResultMessage.Rows cqlRows;
         try
         {
             cqlRows = ss.process(Collections.singletonList(row));
@@ -149,7 +145,7 @@ public class QueryProcessor
         return new UntypedResultSet(cqlRows);
     }
 
-    public static CqlPreparedResult prepare(String queryString, ClientState clientState)
+    public static ResultMessage.Prepared prepare(String queryString, ClientState clientState)
     throws RecognitionException, InvalidRequestException
     {
         logger.trace("CQL QUERY: {}", queryString);
@@ -165,10 +161,10 @@ public class QueryProcessor
         List<String> types = new ArrayList<String>(prepared.boundTypes.size());
         for (AbstractType<?> t : prepared.boundTypes)
             types.add(TypeParser.getShortName(t));
-        return new CqlPreparedResult(statementId, types.size()).setVariable_types(types);
+        return new ResultMessage.Prepared(statementId, types);
     }
 
-    public static CqlResult processPrepared(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
+    public static ResultMessage processPrepared(CQLStatement statement, ClientState clientState, List<ByteBuffer> variables)
     throws UnavailableException, InvalidRequestException, TimedOutException, SchemaDisagreementException
     {
         // Check to see if there are any bound variables to verify

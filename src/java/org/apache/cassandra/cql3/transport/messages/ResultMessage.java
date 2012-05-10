@@ -18,11 +18,7 @@
 package org.apache.cassandra.cql3.transport.messages;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -31,9 +27,12 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.transport.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
+import org.apache.cassandra.thrift.Column;
+import org.apache.cassandra.thrift.CqlMetadata;
 import org.apache.cassandra.thrift.CqlPreparedResult;
 import org.apache.cassandra.thrift.CqlResult;
 import org.apache.cassandra.thrift.CqlResultType;
+import org.apache.cassandra.thrift.CqlRow;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
@@ -341,9 +340,34 @@ public abstract class ResultMessage extends Message.Response
 
         public CqlResult toThriftResult()
         {
-            throw new UnsupportedOperationException();
-            // See SelectStatement.addToSchema to respect compatibility
-            // And createSchema
+            String UTF8 = "UTF8Type";
+            CqlMetadata schema = new CqlMetadata(new HashMap<ByteBuffer, String>(),
+                                                 new HashMap<ByteBuffer, String>(),
+                                                 // The 2 following ones shouldn't be needed in CQL3
+                                                 UTF8, UTF8);
+
+            for (Pair<String, String> p : metadata)
+            {
+                schema.name_types.put(ByteBufferUtil.bytes(p.left), UTF8);
+                schema.value_types.put(ByteBufferUtil.bytes(p.left), p.right);
+            }
+
+            List<CqlRow> cqlRows = new ArrayList<CqlRow>(rows.size());
+            for (List<ByteBuffer> row : rows)
+            {
+                List<Column> thriftCols = new ArrayList<Column>(metadata.size());
+                for (int i = 0; i < metadata.size(); i++)
+                {
+                    Column col = new Column(ByteBufferUtil.bytes(metadata.get(i).left));
+                    col.setValue(row.get(i));
+                    thriftCols.add(col);
+                }
+                // The key of CqlRow shoudn't be needed in CQL3
+                cqlRows.add(new CqlRow(ByteBufferUtil.EMPTY_BYTE_BUFFER, thriftCols));
+            }
+            CqlResult res = new CqlResult(CqlResultType.ROWS);
+            res.setRows(cqlRows).setSchema(schema);
+            return res;
         }
 
         @Override

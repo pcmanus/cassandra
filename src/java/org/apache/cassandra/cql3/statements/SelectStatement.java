@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.transport.messages.ResultMessage;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.CounterColumn;
@@ -75,7 +76,6 @@ import org.apache.cassandra.utils.Pair;
 public class SelectStatement implements CQLStatement
 {
     private static final Logger logger = LoggerFactory.getLogger(SelectStatement.class);
-    private final static ByteBuffer countColumn = ByteBufferUtil.bytes("count");
 
     private final int boundTerms;
     public final CFDefinition cfDef;
@@ -123,7 +123,7 @@ public class SelectStatement implements CQLStatement
         // Nothing to do, all validation has been done by RawStatement.prepare()
     }
 
-    public CqlResult execute(ClientState state, List<ByteBuffer> variables) throws InvalidRequestException, UnavailableException, TimedOutException
+    public ResultMessage.Rows execute(ClientState state, List<ByteBuffer> variables) throws InvalidRequestException, UnavailableException, TimedOutException
     {
         List<Row> rows;
         if (isKeyRange())
@@ -135,45 +135,17 @@ public class SelectStatement implements CQLStatement
             rows = getSlice(variables);
         }
 
-        CqlResult result = new CqlResult();
-        result.type = CqlResultType.ROWS;
-
         // Even for count, we need to process the result as it'll group some column together in sparse column families
-        CqlMetadata schema = createSchema();
-        List<CqlRow> cqlRows = process(rows, schema, variables);
+        ResultMessage.Rows cqlRows = process(rows, variables);
 
         // count resultset is a single column named "count"
-        if (parameters.isCount)
-        {
-            result.schema = new CqlMetadata(Collections.<ByteBuffer, String>emptyMap(),
-                                            Collections.<ByteBuffer, String>emptyMap(),
-                                            "AsciiType",
-                                            "LongType");
-            List<Column> columns = Collections.singletonList(new Column(countColumn).setValue(ByteBufferUtil.bytes((long) cqlRows.size())));
-            result.rows = Collections.singletonList(new CqlRow(countColumn, columns));
-            return result;
-        }
-        else
-        {
-            // otherwise create resultset from query results
-            result.schema = schema;
-            result.rows = cqlRows;
-            return result;
-        }
+        return parameters.isCount ? cqlRows.makeCountResult() : cqlRows;
     }
 
-    public List<CqlRow> process(List<Row> rows) throws InvalidRequestException
+    public ResultMessage.Rows process(List<Row> rows) throws InvalidRequestException
     {
         assert !parameters.isCount; // not yet needed
-        return process(rows, createSchema(), Collections.<ByteBuffer>emptyList());
-    }
-
-    private CqlMetadata createSchema()
-    {
-        return new CqlMetadata(new HashMap<ByteBuffer, String>(),
-                               new HashMap<ByteBuffer, String>(),
-                               TypeParser.getShortName(cfDef.cfm.comparator),
-                               TypeParser.getShortName(cfDef.cfm.getDefaultValidator()));
+        return process(rows, Collections.<ByteBuffer>emptyList());
     }
 
     public String keyspace()
@@ -572,11 +544,12 @@ public class SelectStatement implements CQLStatement
              : c.value();
     }
 
-    private void addToSchema(CqlMetadata schema, Pair<CFDefinition.Name, ColumnIdentifier> p)
+    private ResultMessage.Rows createResult(List<Pair<CFDefinition.Name, ColumnIdentifier>> selection)
     {
-        ByteBuffer nameAsRequested = p.right.key;
-        schema.name_types.put(nameAsRequested, TypeParser.getShortName(cfDef.getNameComparatorForResultSet(p.left)));
-        schema.value_types.put(nameAsRequested, TypeParser.getShortName(p.left.type));
+        List<Pair<String, String>> header = new ArrayList<Pair<String, String>>(selection.size());
+        for (Pair<CFDefinition.Name, ColumnIdentifier> p : selection)
+            header.add(Pair.create(p.right.toString(), TypeParser.getShortName(p.left.type)));
+        return new ResultMessage.Rows(header);
     }
 
     private Iterable<IColumn> columnsInOrder(final ColumnFamily cf, final List<ByteBuffer> variables) throws InvalidRequestException
@@ -619,15 +592,10 @@ public class SelectStatement implements CQLStatement
         };
     }
 
-    private List<CqlRow> process(List<Row> rows, CqlMetadata schema, List<ByteBuffer> variables) throws InvalidRequestException
+    private ResultMessage.Rows process(List<Row> rows, List<ByteBuffer> variables) throws InvalidRequestException
     {
-        List<CqlRow> cqlRows = new ArrayList<CqlRow>();
         List<Pair<CFDefinition.Name, ColumnIdentifier>> selection = getExpandedSelection();
-        List<Column> thriftColumns = null;
-
-        // Add schema only once
-        for (Pair<CFDefinition.Name, ColumnIdentifier> p : selection)
-            addToSchema(schema, p);
+        ResultMessage.Rows cqlRows = createResult(selection);
 
         for (org.apache.cassandra.db.Row row : rows)
         {
@@ -642,8 +610,6 @@ public class SelectStatement implements CQLStatement
                 {
                     if (c.isMarkedForDelete())
                         continue;
-
-                    thriftColumns = new ArrayList<Column>(selection.size());
 
                     ByteBuffer[] components = null;
 
@@ -664,38 +630,32 @@ public class SelectStatement implements CQLStatement
                     for (Pair<CFDefinition.Name, ColumnIdentifier> p : selection)
                     {
                         CFDefinition.Name name = p.left;
-                        ByteBuffer nameAsRequested = p.right.key;
-
-                        Column col = new Column(nameAsRequested);
                         switch (name.kind)
                         {
                             case KEY_ALIAS:
-                                col.setValue(row.key.key).setTimestamp(-1L);
+                                cqlRows.addColumnValue(row.key.key);
                                 break;
                             case COLUMN_ALIAS:
-                                col.setTimestamp(c.timestamp());
                                 if (cfDef.isComposite)
                                 {
                                     if (name.position < components.length)
-                                        col.setValue(components[name.position]);
+                                        cqlRows.addColumnValue(components[name.position]);
                                     else
-                                        col.setValue(ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                                        cqlRows.addColumnValue(null);
                                 }
                                 else
                                 {
-                                    col.setValue(c.name());
+                                    cqlRows.addColumnValue(c.name());
                                 }
                                 break;
                             case VALUE_ALIAS:
-                                col.setValue(value(c)).setTimestamp(c.timestamp());
+                                cqlRows.addColumnValue(value(c));
                                 break;
                             case COLUMN_METADATA:
                                 // This should not happen for compact CF
                                 throw new AssertionError();
                         }
-                        thriftColumns.add(col);
                     }
-                    cqlRows.add(new CqlRow(row.key.key, thriftColumns));
                 }
             }
             else if (cfDef.isComposite)
@@ -715,7 +675,7 @@ public class SelectStatement implements CQLStatement
                     // If current differs from previous, we've just finished a group
                     if (previous != null && !isSameRow(previous, current))
                     {
-                        cqlRows.add(handleGroup(selection, row.key.key, previous, group, schema));
+                        handleGroup(selection, row.key.key, previous, group, cqlRows);
                         group = new HashMap<ByteBuffer, IColumn>();
                     }
 
@@ -725,7 +685,7 @@ public class SelectStatement implements CQLStatement
                 }
                 // Handle the last group
                 if (previous != null)
-                    cqlRows.add(handleGroup(selection, row.key.key, previous, group, schema));
+                    handleGroup(selection, row.key.key, previous, group, cqlRows);
             }
             else
             {
@@ -733,36 +693,31 @@ public class SelectStatement implements CQLStatement
                     continue;
 
                 // Static case: One cqlRow for all columns
-                thriftColumns = new ArrayList<Column>(selection.size());
-
                 // Respect selection order
                 for (Pair<CFDefinition.Name, ColumnIdentifier> p : selection)
                 {
                     CFDefinition.Name name = p.left;
-                    ByteBuffer nameAsRequested = p.right.key;
-
                     if (name.kind == CFDefinition.Name.Kind.KEY_ALIAS)
                     {
-                        thriftColumns.add(new Column(nameAsRequested).setValue(row.key.key).setTimestamp(-1L));
+                        cqlRows.addColumnValue(row.key.key);
                         continue;
                     }
 
                     IColumn c = row.cf.getColumn(name.name.key);
                     Column col = new Column(name.name.key);
-                    if (c != null && !c.isMarkedForDelete())
-                        col.setValue(value(c)).setTimestamp(c.timestamp());
-                    thriftColumns.add(col);
+                    if (c == null || c.isMarkedForDelete())
+                        cqlRows.addColumnValue(null);
+                    else
+                        cqlRows.addColumnValue(value(c));
                 }
-                cqlRows.add(new CqlRow(row.key.key, thriftColumns));
             }
         }
         // We don't allow reversed on range scan, but we do on multiget (IN (...)), so let's reverse the rows there too.
         if (isReversed)
-            Collections.reverse(cqlRows);
+            cqlRows.reverse();
 
         // Trim result if needed to respect the limit
-        cqlRows = cqlRows.size() > parameters.limit ? cqlRows.subList(0, parameters.limit) : cqlRows;
-
+        cqlRows.trim(parameters.limit);
         return cqlRows;
     }
 
@@ -788,25 +743,19 @@ public class SelectStatement implements CQLStatement
         return true;
     }
 
-    private CqlRow handleGroup(List<Pair<CFDefinition.Name, ColumnIdentifier>> selection, ByteBuffer key, ByteBuffer[] components, Map<ByteBuffer, IColumn> columns, CqlMetadata schema)
+    private void handleGroup(List<Pair<CFDefinition.Name, ColumnIdentifier>> selection, ByteBuffer key, ByteBuffer[] components, Map<ByteBuffer, IColumn> columns, ResultMessage.Rows cqlRows)
     {
-        List<Column> thriftColumns = new ArrayList<Column>(selection.size());
-
         // Respect requested order
         for (Pair<CFDefinition.Name, ColumnIdentifier> p : selection)
         {
             CFDefinition.Name name = p.left;
-            ByteBuffer nameAsRequested = p.right.key;
-
-            Column col = new Column(nameAsRequested);
             switch (name.kind)
             {
                 case KEY_ALIAS:
-                    col.setValue(key).setTimestamp(-1L);
+                    cqlRows.addColumnValue(key);
                     break;
                 case COLUMN_ALIAS:
-                    col.setValue(components[name.position]);
-                    col.setTimestamp(-1L);
+                    cqlRows.addColumnValue(components[name.position]);
                     break;
                 case VALUE_ALIAS:
                     // This should not happen for SPARSE
@@ -815,12 +764,12 @@ public class SelectStatement implements CQLStatement
                     IColumn c = columns.get(name.name.key);
                     // We already have excluded deleted columns
                     if (c != null)
-                        col.setValue(value(c)).setTimestamp(c.timestamp());
+                        cqlRows.addColumnValue(value(c));
+                    else
+                        cqlRows.addColumnValue(null);
                     break;
             }
-            thriftColumns.add(col);
         }
-        return new CqlRow(key, thriftColumns);
     }
 
     public static class RawStatement extends CFStatement

@@ -1233,7 +1233,7 @@ public class CassandraServer implements Cassandra.Iface
             if (cState.getCQLVersion().major == 2)
                 return QueryProcessor.process(queryString, state());
             else
-                return org.apache.cassandra.cql3.QueryProcessor.process(queryString, cState);
+                return org.apache.cassandra.cql3.QueryProcessor.process(queryString, cState).toThriftResult();
         }
         catch (RecognitionException e)
         {
@@ -1256,7 +1256,7 @@ public class CassandraServer implements Cassandra.Iface
             if (cState.getCQLVersion().major == 2)
                 return QueryProcessor.prepare(queryString, cState);
             else
-                return org.apache.cassandra.cql3.QueryProcessor.prepare(queryString, cState);
+                return org.apache.cassandra.cql3.QueryProcessor.prepare(queryString, cState).toThriftPreparedResult();
         }
         catch (RecognitionException e)
         {
@@ -1290,7 +1290,7 @@ public class CassandraServer implements Cassandra.Iface
                 throw new InvalidRequestException(String.format("Prepared query with ID %d not found", itemId));
             logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, statement.getBoundsTerms());
 
-            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement, cState, bindVariables);
+            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement, cState, bindVariables).toThriftResult();
         }
     }
 

@@ -30,38 +30,37 @@ import org.apache.cassandra.db.marshal.BooleanType;
 import org.apache.cassandra.db.marshal.DoubleType;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.UTF8Type;
-import org.apache.cassandra.thrift.Column;
-import org.apache.cassandra.thrift.CqlRow;
-import org.apache.hadoop.io.UTF8;
+import org.apache.cassandra.cql3.transport.messages.ResultMessage;
+import org.apache.cassandra.utils.Pair;
 
 /** a utility for doing internal cql-based queries */
 public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 {
-    private final List<CqlRow> cqlRows;
+    private final ResultMessage.Rows cqlRows;
 
-    public UntypedResultSet(List<CqlRow> cqlRows)
+    public UntypedResultSet(ResultMessage.Rows cqlRows)
     {
         this.cqlRows = cqlRows;
     }
 
     public Row one()
     {
-        if (cqlRows.size() != 1)
-            throw new IllegalStateException("One row required, " + cqlRows.size() + " found");
-        return new Row(cqlRows.get(0));
+        if (cqlRows.rows.size() != 1)
+            throw new IllegalStateException("One row required, " + cqlRows.rows.size() + " found");
+        return new Row(cqlRows.metadata, cqlRows.rows.get(0));
     }
 
     public Iterator<Row> iterator()
     {
         return new AbstractIterator<Row>()
         {
-            Iterator<CqlRow> iter = cqlRows.iterator();
+            Iterator<List<ByteBuffer>> iter = cqlRows.rows.iterator();
 
             protected Row computeNext()
             {
                 if (!iter.hasNext())
                     return endOfData();
-                return new Row(iter.next());
+                return new Row(cqlRows.metadata, iter.next());
             }
         };
     }
@@ -70,10 +69,10 @@ public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
     {
         Map<String, ByteBuffer> data = new HashMap<String, ByteBuffer>();
 
-        public Row(CqlRow cqlRow)
+        public Row(List<Pair<String, String>> header, List<ByteBuffer> columns)
         {
-            for (Column column : cqlRow.columns)
-                data.put(UTF8Type.instance.compose(column.name), column.value);
+            for (int i = 0; i < header.size(); i++)
+                data.put(header.get(i).left, columns.get(i));
         }
 
         public boolean has(String column)
