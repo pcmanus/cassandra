@@ -512,10 +512,8 @@ public class SystemTable
      */
     public static void writeCurrentLocalNodeId(NodeId oldNodeId, NodeId newNodeId, long now)
     {
-        ByteBuffer ip = ByteBuffer.wrap(FBUtilities.getBroadcastAddress().getAddress());
-
         ColumnFamily cf = ColumnFamily.create(Table.SYSTEM_TABLE, NODE_ID_CF);
-        cf.addColumn(new Column(newNodeId.bytes(), ip, now));
+        cf.addColumn(new Column(newNodeId.bytes(), ByteBufferUtil.EMPTY_BYTE_BUFFER, now));
         ColumnFamily cf2 = cf.cloneMe();
         if (oldNodeId != null)
         {
