@@ -71,15 +71,18 @@ public final class KSMetaData
 
     public static KSMetaData systemKeyspace()
     {
-        List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.OldStatusCf,
+        List<CFMetaData> cfDefs = Arrays.asList(CFMetaData.LocalCf,
+                                                CFMetaData.PeersCf,
                                                 CFMetaData.HintsCf,
-                                                CFMetaData.MigrationsCf,
-                                                CFMetaData.SchemaCf,
                                                 CFMetaData.IndexCf,
                                                 CFMetaData.NodeIdCf,
                                                 CFMetaData.SchemaKeyspacesCf,
                                                 CFMetaData.SchemaColumnFamiliesCf,
-                                                CFMetaData.SchemaColumnsCf);
+                                                CFMetaData.SchemaColumnsCf,
+                                                CFMetaData.OldStatusCf,
+                                                CFMetaData.OldHintsCf,
+                                                CFMetaData.MigrationsCf,
+                                                CFMetaData.SchemaCf);
         return new KSMetaData(Table.SYSTEM_TABLE, LocalStrategy.class, Collections.<String, String>emptyMap(), true, cfDefs);
     }
 
