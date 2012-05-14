@@ -67,7 +67,7 @@ class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIter
             ByteBufferUtil.skipShortLength(file);
             SSTableReader.readRowSize(file, sstable.descriptor);
 
-            if (!sstable.descriptor.hasPromotedIndexes)
+            if (!sstable.descriptor.version.hasPromotedIndexes)
             {
                 IndexHelper.skipBloomFilter(file);
                 IndexHelper.skipIndex(file);

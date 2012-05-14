@@ -70,7 +70,7 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
 
         try
         {
-            if (sstable.descriptor.hasPromotedIndexes)
+            if (sstable.descriptor.version.hasPromotedIndexes)
             {
                 this.indexes = indexEntry.columnsIndex();
                 if (indexes.isEmpty())

@@ -89,10 +89,10 @@ public class RowIndexEntry
             }
         }
 
-        public RowIndexEntry deserializePositionOnly(DataInput dis, Descriptor descriptor) throws IOException
+        public RowIndexEntry deserializePositionOnly(DataInput dis, Descriptor.Version version) throws IOException
         {
             long position = dis.readLong();
-            if (descriptor.hasPromotedIndexes)
+            if (version.hasPromotedIndexes)
             {
                 int size = dis.readInt();
                 if (size > 0)
@@ -101,10 +101,10 @@ public class RowIndexEntry
             return new RowIndexEntry(position);
         }
 
-        public RowIndexEntry deserialize(DataInput dis, Descriptor descriptor) throws IOException
+        public RowIndexEntry deserialize(DataInput dis, Descriptor.Version version) throws IOException
         {
             long position = dis.readLong();
-            if (descriptor.hasPromotedIndexes)
+            if (version.hasPromotedIndexes)
             {
                 int size = dis.readInt();
                 if (size > 0)
@@ -114,7 +114,7 @@ public class RowIndexEntry
                     List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                     for (int i = 0; i < entries; i++)
                         columnsIndex.add(IndexHelper.IndexInfo.deserialize(dis));
-                    Filter bf = FilterFactory.deserialize(dis, descriptor.filterType);
+                    Filter bf = FilterFactory.deserialize(dis, version.filterType);
                     return new IndexedEntry(position, delInfo, columnsIndex, bf);
                 }
                 else
@@ -128,10 +128,10 @@ public class RowIndexEntry
             }
         }
 
-        public void skip(DataInput dis, Descriptor descriptor) throws IOException
+        public void skip(DataInput dis, Descriptor.Version version) throws IOException
         {
             dis.readLong();
-            if (!descriptor.hasPromotedIndexes)
+            if (!version.hasPromotedIndexes)
                 return;
 
             int size = dis.readInt();

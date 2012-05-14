@@ -413,7 +413,7 @@ public class SSTableWriter extends SSTable
             // bloom filter
             FileOutputStream fos = new FileOutputStream(descriptor.filenameFor(SSTable.COMPONENT_FILTER));
             DataOutputStream stream = new DataOutputStream(fos);
-            FilterFactory.serialize(bf, stream, descriptor.filterType);
+            FilterFactory.serialize(bf, stream, descriptor.version.filterType);
             stream.flush();
             fos.getFD().sync();
             stream.close();

@@ -322,7 +322,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             Descriptor desc = entry.getKey();
             generations.add(desc.generation);
             if (!desc.isCompatible())
-                throw new RuntimeException(String.format("Can't open incompatible SSTable! Current version %s, found file: %s", Descriptor.CURRENT_VERSION, desc));
+                throw new RuntimeException(String.format("Can't open incompatible SSTable! Current version %s, found file: %s", Descriptor.Version.CURRENT, desc));
         }
         Collections.sort(generations);
         int value = (generations.size() > 0) ? (generations.get(generations.size() - 1)) : 0;
@@ -464,7 +464,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
             if (!descriptor.isCompatible())
                 throw new RuntimeException(String.format("Can't open incompatible SSTable! Current version %s, found file: %s",
-                                                         Descriptor.CURRENT_VERSION,
+                                                         Descriptor.Version.CURRENT,
                                                          descriptor));
 
             Descriptor newDescriptor = new Descriptor(descriptor.version,
@@ -556,7 +556,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      * When the sstable object is closed, it will be renamed to a non-temporary
      * format, so incomplete sstables can be recognized and removed on startup.
      */
-    public String getFlushPath(long estimatedSize, String version)
+    public String getFlushPath(long estimatedSize, Descriptor.Version version)
     {
         File location = directories.getDirectoryForNewSSTables(estimatedSize);
         if (location == null)
@@ -564,7 +564,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return getTempSSTablePath(location, version);
     }
 
-    public String getTempSSTablePath(File directory, String version)
+    public String getTempSSTablePath(File directory, Descriptor.Version version)
     {
         Descriptor desc = new Descriptor(version,
                                          directory,
@@ -577,7 +577,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public String getTempSSTablePath(File directory)
     {
-        return getTempSSTablePath(directory, Descriptor.CURRENT_VERSION);
+        return getTempSSTablePath(directory, Descriptor.Version.CURRENT);
     }
 
     /** flush the given memtable and swap in a new one for its CFS, if it hasn't been frozen already.  threadsafe. */
@@ -1889,7 +1889,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public SSTableWriter createFlushWriter(long estimatedRows, long estimatedSize, ReplayPosition context) throws IOException
     {
         SSTableMetadata.Collector sstableMetadataCollector = SSTableMetadata.createCollector().replayPosition(context);
-        return new SSTableWriter(getFlushPath(estimatedSize, Descriptor.CURRENT_VERSION),
+        return new SSTableWriter(getFlushPath(estimatedSize, Descriptor.Version.CURRENT),
                                  estimatedRows,
                                  metadata,
                                  partitioner,

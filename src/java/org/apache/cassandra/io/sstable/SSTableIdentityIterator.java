@@ -112,11 +112,11 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                 if (dataStart + dataSize > file.length())
                     throw new IOException(String.format("dataSize of %s starting at %s would be larger than file %s length %s",
                                           dataSize, dataStart, file.getPath(), file.length()));
-                if (checkData && !sstable.descriptor.hasPromotedIndexes)
+                if (checkData && !sstable.descriptor.version.hasPromotedIndexes)
                 {
                     try
                     {
-                        IndexHelper.defreezeBloomFilter(file, dataSize, sstable.descriptor.filterType);
+                        IndexHelper.defreezeBloomFilter(file, dataSize, sstable.descriptor.version.filterType);
                     }
                     catch (Exception e)
                     {
@@ -139,7 +139,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                 }
             }
 
-            if (sstable != null && !sstable.descriptor.hasPromotedIndexes)
+            if (sstable != null && !sstable.descriptor.version.hasPromotedIndexes)
             {
                 IndexHelper.skipBloomFilter(inputWithTracker);
                 IndexHelper.skipIndex(inputWithTracker);
