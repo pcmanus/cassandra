@@ -28,6 +28,7 @@ import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -76,7 +77,8 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
                 if (indexes.isEmpty())
                 {
                     setToRowStart(sstable, indexEntry, input);
-                    this.emptyColumnFamily = ColumnFamily.serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                    this.emptyColumnFamily = ColumnFamily.create(sstable.metadata);
+                    emptyColumnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(file, sstable.descriptor.version));
                     fetcher = new SimpleBlockFetcher();
                 }
                 else
@@ -91,7 +93,8 @@ class IndexedSliceReader extends AbstractIterator<IColumn> implements IColumnIte
                 setToRowStart(sstable, indexEntry, input);
                 IndexHelper.skipBloomFilter(file);
                 this.indexes = IndexHelper.deserializeIndex(file);
-                this.emptyColumnFamily = ColumnFamily.serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                this.emptyColumnFamily = ColumnFamily.create(sstable.metadata);
+                emptyColumnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(file, sstable.descriptor.version));
                 fetcher = indexes.isEmpty() ? new SimpleBlockFetcher() : new IndexedBlockFetcher();
             }
         }

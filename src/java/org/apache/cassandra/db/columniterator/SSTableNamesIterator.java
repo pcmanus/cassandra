@@ -29,6 +29,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilySerializer;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -143,7 +144,8 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
             ColumnFamilySerializer serializer = ColumnFamily.serializer;
             try
             {
-                cf = serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+                cf = ColumnFamily.create(sstable.metadata);
+                cf.delete(DeletionInfo.serializer().deserializeFromSSTable(file, sstable.descriptor.version));
             }
             catch (Exception e)
             {

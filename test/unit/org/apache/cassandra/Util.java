@@ -276,9 +276,16 @@ public class Util
 
     public static ByteBuffer serializeForSSTable(ColumnFamily cf)
     {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        DataOutputStream dos = new DataOutputStream(baos);
-        cf.serializer.serializeForSSTable(cf, dos);
-        return ByteBuffer.wrap(baos.toByteArray());
+        try
+        {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            DataOutputStream dos = new DataOutputStream(baos);
+            cf.serializer.serializeForSSTable(cf, dos);
+            return ByteBuffer.wrap(baos.toByteArray());
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 }

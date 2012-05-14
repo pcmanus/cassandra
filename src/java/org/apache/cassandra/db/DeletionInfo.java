@@ -24,7 +24,9 @@ import java.nio.ByteBuffer;
 
 import com.google.common.base.Objects;
 
-import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.ISSTableSerializer;
+import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.sstable.Descriptor;
 
 public class DeletionInfo
 {
@@ -46,7 +48,7 @@ public class DeletionInfo
         this.localDeletionTime = localDeletionTime;
     }
 
-    public static ISerializer<DeletionInfo> serializer()
+    public static DeletionInfoSerializer serializer()
     {
         return serializer;
     }
@@ -141,15 +143,15 @@ public class DeletionInfo
         return Objects.hashCode(markedForDeleteAt, localDeletionTime);
     }
 
-    private static class DeletionInfoSerializer implements ISerializer<DeletionInfo>
+    public static class DeletionInfoSerializer implements IVersionedSerializer<DeletionInfo>, ISSTableSerializer<DeletionInfo>
     {
-        public void serialize(DeletionInfo info, DataOutput out) throws IOException
+        public void serialize(DeletionInfo info, DataOutput out, int version) throws IOException
         {
             out.writeInt(info.localDeletionTime);
             out.writeLong(info.markedForDeleteAt);
         }
 
-        public DeletionInfo deserialize(DataInput in) throws IOException
+        public DeletionInfo deserialize(DataInput in, int version) throws IOException
         {
             int ldt = in.readInt();
             long mfda = in.readLong();
@@ -159,9 +161,29 @@ public class DeletionInfo
                 return new DeletionInfo(mfda, ldt);
         }
 
-        public long serializedSize(DeletionInfo info, TypeSizes typeSizes)
+        public long serializedSize(DeletionInfo info, TypeSizes typeSizes, int version)
         {
-            return typeSizes.sizeof(info.localDeletionTime) + typeSizes.sizeof(info.markedForDeleteAt);
+            return typeSizes.sizeof(0) + typeSizes.sizeof(0L);
+        }
+
+        public long serializedSize(DeletionInfo info, int version)
+        {
+            return serializedSize(info, TypeSizes.NATIVE, version);
+        }
+
+        public void serializeForSSTable(DeletionInfo info, DataOutput dos) throws IOException
+        {
+            serialize(info, dos, 0);
+        }
+
+        public DeletionInfo deserializeFromSSTable(DataInput dis, Descriptor.Version version) throws IOException
+        {
+            return deserialize(dis, 0);
+        }
+
+        public long serializedSizeForSSTable(DeletionInfo info)
+        {
+            return serializedSize(info, 0);
         }
     }
 }

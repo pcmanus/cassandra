@@ -145,7 +145,7 @@ public class PrecompactedRow extends AbstractCompactedRow
         DataOutputBuffer buffer = new DataOutputBuffer();
         try
         {
-            ColumnFamily.serializer.serializeCFInfo(compactedCf, buffer);
+            DeletionInfo.serializer().serializeForSSTable(compactedCf.deletionInfo(), buffer);
             buffer.writeInt(compactedCf.getColumnCount());
             digest.update(buffer.getData(), 0, buffer.getLength());
         }

@@ -44,6 +44,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     private final int columnCount;
     private final long columnPosition;
 
+    private final Descriptor.Version dataVersion;
     private final BytesReadTracker inputWithTracker; // tracks bytes read
 
     // Used by lazilyCompactedRow, so that we see the same things when deserializing the first and second time
@@ -102,6 +103,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         this.expireBefore = (int)(System.currentTimeMillis() / 1000);
         this.flag = flag;
         this.validateColumns = checkData;
+        this.dataVersion = sstable == null ? Descriptor.Version.CURRENT : sstable.descriptor.version;
 
         try
         {
@@ -145,7 +147,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                 IndexHelper.skipIndex(inputWithTracker);
             }
             columnFamily = ColumnFamily.create(metadata);
-            ColumnFamily.serializer.deserializeFromSSTableNoColumns(columnFamily, inputWithTracker);
+            columnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(inputWithTracker, dataVersion));
             columnCount = inputWithTracker.readInt();
 
             columnPosition = dataStart + inputWithTracker.getBytesRead();
@@ -232,7 +234,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         assert inputWithTracker.getBytesRead() == headerSize();
         ColumnFamily cf = columnFamily.cloneMeShallow(ArrayBackedSortedColumns.factory(), false);
         // since we already read column count, just pass that value and continue deserialization
-        ColumnFamily.serializer.deserializeColumns(inputWithTracker, cf, columnCount, flag);
+        ColumnFamily.serializer.deserializeColumnsFromSSTable(inputWithTracker, cf, columnCount, flag, expireBefore, dataVersion);
         if (validateColumns)
         {
             try

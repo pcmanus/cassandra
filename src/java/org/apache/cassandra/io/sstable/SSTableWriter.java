@@ -193,8 +193,8 @@ public class SSTableWriter extends SSTable
         dataFile.stream.writeLong(dataSize);
 
         // cf data
-        DeletionInfo deletionInfo = DeletionInfo.serializer().deserialize(in);
-        DeletionInfo.serializer().serialize(deletionInfo, dataFile.stream);
+        DeletionInfo deletionInfo = DeletionInfo.serializer().deserializeFromSSTable(in, descriptor.version);
+        DeletionInfo.serializer().serializeForSSTable(deletionInfo, dataFile.stream);
 
         // column size
         int columnCount = in.readInt();

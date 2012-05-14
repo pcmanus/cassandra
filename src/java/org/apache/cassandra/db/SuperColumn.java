@@ -34,6 +34,7 @@ import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.ColumnSortedMap;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.HeapAllocator;
@@ -100,19 +101,6 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
     }
 
     /**
-     * This calculates the exact size of the sub columns on the fly
-     */
-    public int size(TypeSizes typeSizes)
-    {
-        int size = 0;
-        for (IColumn subColumn : getSubColumns())
-        {
-            size += subColumn.serializedSize(typeSizes);
-        }
-        return size;
-    }
-
-    /**
      * This returns the size of the super-column when serialized.
      * @see org.apache.cassandra.db.IColumn#serializedSize()
     */
@@ -130,11 +118,14 @@ public class SuperColumn extends AbstractColumnContainer implements IColumn
          * size(constantSize) of subcolumns.
          */
         int nameSize = name.remaining();
-        int subColumnsSize = size(typeSizes);
-        return typeSizes.sizeof((short) nameSize) + nameSize
-                + typeSizes.sizeof(getLocalDeletionTime())
-                + typeSizes.sizeof(getMarkedForDeleteAt())
-                + typeSizes.sizeof(subColumnsSize) + subColumnsSize;
+        int subColumnsSize = 0;
+        for (IColumn subColumn : getSubColumns())
+            subColumnsSize += subColumn.serializedSize(typeSizes);
+        int size = typeSizes.sizeof((short) nameSize) + nameSize
+                 + typeSizes.sizeof(getLocalDeletionTime())
+                 + typeSizes.sizeof(getMarkedForDeleteAt())
+                 + typeSizes.sizeof(subColumnsSize) + subColumnsSize;
+        return size;
     }
 
     public long timestamp()
@@ -374,7 +365,7 @@ class SuperColumnSerializer implements IColumnSerializer
         ByteBufferUtil.writeWithShortLength(column.name(), dos);
         try
         {
-            DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos);
+            DeletionInfo.serializer().serialize(superColumn.deletionInfo(), dos, MessagingService.VERSION_10);
             Collection<IColumn> columns = column.getSubColumns();
             dos.writeInt(columns.size());
             for (IColumn subColumn : columns)
@@ -401,7 +392,7 @@ class SuperColumnSerializer implements IColumnSerializer
     public IColumn deserialize(DataInput dis, IColumnSerializer.Flag flag, int expireBefore) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
-        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis);
+        DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, MessagingService.VERSION_10);
 
         /* read the number of columns */
         int size = dis.readInt();

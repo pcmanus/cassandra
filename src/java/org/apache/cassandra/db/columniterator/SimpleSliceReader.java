@@ -25,6 +25,7 @@ import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -73,7 +74,8 @@ class SimpleSliceReader extends AbstractIterator<IColumn> implements IColumnIter
                 IndexHelper.skipIndex(file);
             }
 
-            emptyColumnFamily = ColumnFamily.serializer.deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+            emptyColumnFamily = ColumnFamily.create(sstable.metadata);
+            emptyColumnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(file, sstable.descriptor.version));
             columns = file.readInt();
             mark = file.mark();
         }

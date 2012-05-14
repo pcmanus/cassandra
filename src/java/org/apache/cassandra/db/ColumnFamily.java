@@ -246,16 +246,6 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         return null;
     }
 
-    int size(TypeSizes typeSizes)
-    {
-        int size = TypeSizes.NATIVE.sizeof(1L) + TypeSizes.NATIVE.sizeof(1); // tombstone tracking
-        for (IColumn column : columns)
-        {
-            size += column.size(typeSizes);
-        }
-        return size;
-    }
-
     public long maxTimestamp()
     {
         long maxTimestamp = deletionInfo().maxTimestamp();
