@@ -34,7 +34,9 @@ import org.jboss.netty.logging.Slf4JLoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class Server
+import org.apache.cassandra.service.CassandraDaemon;
+
+public class Server implements CassandraDaemon.Server
 {
     static
     {

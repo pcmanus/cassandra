@@ -23,6 +23,7 @@ import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
 import org.jboss.netty.util.DefaultObjectSizeEstimator;
 import org.jboss.netty.util.ObjectSizeEstimator;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 
 public class RequestThreadPoolExecutor extends OrderedMemoryAwareThreadPoolExecutor
@@ -31,9 +32,9 @@ public class RequestThreadPoolExecutor extends OrderedMemoryAwareThreadPoolExecu
 
     public RequestThreadPoolExecutor()
     {
-        super(16 * Runtime.getRuntime().availableProcessors(),
+        super(DatabaseDescriptor.getNativeTransportMaxThreads(),
               0, 0,
               CORE_THREAD_TIMEOUT_SEC, TimeUnit.SECONDS,
-              new NamedThreadFactory("Native-Transport-Executor"));
+              new NamedThreadFactory("Native-Transport-Requests"));
     }
 }
