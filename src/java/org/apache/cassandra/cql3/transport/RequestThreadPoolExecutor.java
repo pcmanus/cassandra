@@ -23,12 +23,12 @@ import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
 import org.jboss.netty.util.DefaultObjectSizeEstimator;
 import org.jboss.netty.util.ObjectSizeEstimator;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 
 public class RequestThreadPoolExecutor extends OrderedMemoryAwareThreadPoolExecutor
 {
     private final static int CORE_THREAD_TIMEOUT_SEC = 30;
-    private final static int MAXIMUM_IN_FLIGHT_REQUEST = 65535;
 
     // A trivial estimator that always return 1.
     // Estimating memory usage in C* is much more complex than just estimating
@@ -47,11 +47,11 @@ public class RequestThreadPoolExecutor extends OrderedMemoryAwareThreadPoolExecu
     public RequestThreadPoolExecutor()
     {
         // XXX: maybe we could make some of those configurable
-        super(16 * Runtime.getRuntime().availableProcessors(),
+        super(DatabaseDescriptor.getNativeTransportMaxThreads(),
               Integer.MAX_VALUE,
-              MAXIMUM_IN_FLIGHT_REQUEST,
+              Integer.MAX_VALUE,
               CORE_THREAD_TIMEOUT_SEC, TimeUnit.SECONDS,
               estimator,
-              new NamedThreadFactory("Native-Transport-Executor"));
+              new NamedThreadFactory("Native-Transport-Requests"));
     }
 }
