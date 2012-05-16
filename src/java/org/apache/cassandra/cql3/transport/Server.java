@@ -30,7 +30,9 @@ import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class Server
+import org.apache.cassandra.service.CassandraDaemon;
+
+public class Server implements CassandraDaemon.Server
 {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
