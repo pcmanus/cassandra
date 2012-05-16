@@ -117,7 +117,7 @@ public class SimpleClient
 
     public ResultMessage execute(String query)
     {
-        Message.Response msg = execute(new QueryMessage(query, Collections.<QueryMessage.Option, Object>emptyMap()));
+        Message.Response msg = execute(new QueryMessage(query));
         assert msg instanceof ResultMessage;
         return (ResultMessage)msg;
     }
@@ -131,7 +131,7 @@ public class SimpleClient
 
     public ResultMessage executePrepared(int statementId, List<ByteBuffer> values)
     {
-        Message.Response msg = execute(new ExecuteMessage(statementId, values, Collections.<QueryMessage.Option, Object>emptyMap()));
+        Message.Response msg = execute(new ExecuteMessage(statementId, values));
         assert msg instanceof ResultMessage;
         return (ResultMessage)msg;
     }
