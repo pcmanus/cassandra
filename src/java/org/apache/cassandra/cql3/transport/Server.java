@@ -27,6 +27,10 @@ import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.jboss.netty.handler.execution.ExecutionHandler;
+import org.jboss.netty.handler.logging.LoggingHandler;
+import org.jboss.netty.logging.InternalLoggerFactory;
+import org.jboss.netty.logging.Slf4JLoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +38,11 @@ import org.apache.cassandra.service.CassandraDaemon;
 
 public class Server implements CassandraDaemon.Server
 {
+    static
+    {
+        InternalLoggerFactory.setDefaultFactory(new Slf4JLoggerFactory());
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
     private final ConnectionTracker connectionTracker = new ConnectionTracker();
@@ -42,6 +51,7 @@ public class Server implements CassandraDaemon.Server
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     private ChannelFactory factory;
+    private ExecutionHandler executionHandler;
 
     public Server(InetSocketAddress socket)
     {
@@ -83,6 +93,7 @@ public class Server implements CassandraDaemon.Server
     public void run()
     {
         // Configure the server.
+        executionHandler = new ExecutionHandler(new RequestThreadPoolExecutor());
         factory = new NioServerSocketChannelFactory(Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
         ServerBootstrap bootstrap = new ServerBootstrap(factory);
 
@@ -101,6 +112,8 @@ public class Server implements CassandraDaemon.Server
         connectionTracker.closeAll();
         factory.releaseExternalResources();
         factory = null;
+        executionHandler.releaseExternalResources();
+        executionHandler = null;
     }
 
     private static class ConnectionTracker implements Connection.Tracker
@@ -141,7 +154,7 @@ public class Server implements CassandraDaemon.Server
         {
             ChannelPipeline pipeline = Channels.pipeline();
 
-            pipeline.addLast("debug", new DebugHandler());
+            //pipeline.addLast("debug", new LoggingHandler());
 
             pipeline.addLast("frameDecoder", new Frame.Decoder(server.connectionTracker, Connection.SERVER_FACTORY));
             pipeline.addLast("frameEncoder", frameEncoder);
@@ -151,6 +164,8 @@ public class Server implements CassandraDaemon.Server
 
             pipeline.addLast("messageDecoder", messageDecoder);
             pipeline.addLast("messageEncoder", messageEncoder);
+
+            pipeline.addLast("executor", server.executionHandler);
 
             pipeline.addLast("dispatcher", dispatcher);
 

@@ -61,10 +61,10 @@ public abstract class ResultMessage extends Message.Response
 
     private enum Kind
     {
-        VOID         (0, Void.subcodec),
-        ROWS         (1, Rows.subcodec),
-        SET_KEYSPACE (2, SetKeyspace.subcodec),
-        PREPARED     (3, Prepared.subcodec);
+        VOID         (1, Void.subcodec),
+        ROWS         (2, Rows.subcodec),
+        SET_KEYSPACE (3, SetKeyspace.subcodec),
+        PREPARED     (4, Prepared.subcodec);
 
         public final int id;
         public final Message.Codec<ResultMessage> subcodec;

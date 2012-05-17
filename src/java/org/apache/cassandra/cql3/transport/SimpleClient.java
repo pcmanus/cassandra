@@ -35,6 +35,8 @@ import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.logging.InternalLoggerFactory;
+import org.jboss.netty.logging.Slf4JLoggerFactory;
 
 import org.apache.cassandra.cql3.transport.messages.*;
 import org.apache.cassandra.db.marshal.*;
@@ -43,6 +45,11 @@ import org.apache.cassandra.utils.SimpleCondition;
 
 public class SimpleClient
 {
+    static
+    {
+        InternalLoggerFactory.setDefaultFactory(new Slf4JLoggerFactory());
+    }
+
     public final String host;
     public final int port;
 
@@ -191,7 +198,7 @@ public class SimpleClient
         {
             ChannelPipeline pipeline = Channels.pipeline();
 
-            //pipeline.addLast("debug", new DebugHandler());
+            //pipeline.addLast("debug", new LoggingHandler());
 
             pipeline.addLast("frameDecoder", new Frame.Decoder(tracker, connectionFactory));
             pipeline.addLast("frameEncoder", frameEncoder);

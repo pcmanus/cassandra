@@ -18,14 +18,13 @@
 package org.apache.cassandra.cql3.transport;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CharacterCodingException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
+import org.jboss.netty.util.CharsetUtil;
 
 /**
  * ChannelBuffer utility methods.
@@ -38,34 +37,16 @@ public abstract class CBUtil
 {
     private CBUtil() {}
 
-    private static final ThreadLocal<CharsetDecoder> charsetDecoders = new ThreadLocal<CharsetDecoder>()
-    {
-        @Override
-        protected CharsetDecoder initialValue()
-        {
-            return Charsets.UTF_8.newDecoder();
-        }
-    };
-
     public static String readString(ChannelBuffer cb)
     {
         try
         {
             int length = cb.readUnsignedShort();
-            ByteBuffer bb = ByteBuffer.allocate(length);
-            cb.readBytes(bb);
-            bb.flip();
-            CharsetDecoder decoder = charsetDecoders.get();
-            decoder.reset();
-            return decoder.decode(bb).toString();
+            return readString(cb, length);
         }
         catch (IndexOutOfBoundsException e)
         {
             throw new ProtocolException("Not enough bytes to read an UTF8 serialized string preceded by it's 2 bytes length");
-        }
-        catch (CharacterCodingException e)
-        {
-            throw new ProtocolException("Cannot decode string as UTF8");
         }
     }
 
@@ -74,26 +55,35 @@ public abstract class CBUtil
         try
         {
             int length = cb.readInt();
-            ByteBuffer bb = ByteBuffer.allocate(length);
-            cb.readBytes(bb);
-            bb.flip();
-            CharsetDecoder decoder = charsetDecoders.get();
-            decoder.reset();
-            return decoder.decode(bb).toString();
+            return readString(cb, length);
         }
         catch (IndexOutOfBoundsException e)
         {
-            throw new ProtocolException("Not enough bytes to read an UTF8 serialized string preceded by it's 2 bytes length");
+            throw new ProtocolException("Not enough bytes to read an UTF8 serialized string preceded by it's 4 bytes length");
         }
-        catch (CharacterCodingException e)
+    }
+
+    private static String readString(ChannelBuffer cb, int length)
+    {
+        try
         {
-            throw new ProtocolException("Cannot decode string as UTF8");
+            String str = cb.toString(cb.readerIndex(), length, CharsetUtil.UTF_8);
+            cb.readerIndex(cb.readerIndex() + length);
+            return str;
+        }
+        catch (IllegalStateException e)
+        {
+            // That's the way netty encapsulate a CCE
+            if (e.getCause() instanceof CharacterCodingException)
+                throw new ProtocolException("Cannot decode string as UTF8");
+            else
+                throw e;
         }
     }
 
     private static ChannelBuffer bytes(String str)
     {
-        return ChannelBuffers.wrappedBuffer(str.getBytes(Charsets.UTF_8));
+        return ChannelBuffers.wrappedBuffer(str.getBytes(CharsetUtil.UTF_8));
     }
 
     public static ChannelBuffer shortToCB(int s)
