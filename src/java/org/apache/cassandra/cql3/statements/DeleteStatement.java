@@ -109,7 +109,8 @@ public class DeleteStatement extends ModificationStatement
         }
         else
         {
-            boolean isRange = builder.componentCount() < cfDef.columns.size();
+            boolean fullKey = builder.componentCount() == cfDef.columns.size();
+            boolean isRange = cfDef.isCompact ? !fullKey : (!fullKey || columns.isEmpty());
 
             if (!columns.isEmpty())
             {
