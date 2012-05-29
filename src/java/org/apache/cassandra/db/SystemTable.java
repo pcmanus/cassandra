@@ -230,19 +230,12 @@ public class SystemTable
      */
     public static HashMap<Token, InetAddress> loadTokens()
     {
-        HashMap<Token, InetAddress> tokenMap = new HashMap<Token, InetAddress>();
         IPartitioner p = StorageService.getPartitioner();
-        Table table = Table.open(Table.SYSTEM_TABLE);
-        Range<RowPosition> range = new Range<RowPosition>(p.getMinimumToken().minKeyBound(), p.getMinimumToken().maxKeyBound());
-        List<Row> rows = table.getColumnFamilyStore(PEERS_CF).getRangeSlice(null, range, 100000, new IdentityQueryFilter(), Collections.<IndexExpression>emptyList());
-        for (Row row : rows)
-        {
-            ColumnFamily cf = ColumnFamilyStore.removeDeleted(row.cf, Integer.MAX_VALUE);
-            if (cf == null)
-                continue;
-            UntypedResultSet.Row cqlRow = QueryProcessor.resultify("SELECT * FROM peers", row).one();
-            tokenMap.put(p.getTokenFactory().fromByteArray(cqlRow.getBytes("token")), cqlRow.getInetAddress("peer"));
-        }
+
+        HashMap<Token, InetAddress> tokenMap = new HashMap<Token, InetAddress>();
+        for (UntypedResultSet.Row row : QueryProcessor.processInternal("SELECT * FROM system.peers"))
+            tokenMap.put(p.getTokenFactory().fromByteArray(row.getBytes("token")), row.getInetAddress("peer"));
+
         return tokenMap;
     }
 
