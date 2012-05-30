@@ -234,7 +234,7 @@ public class SystemTable
 
         HashMap<Token, InetAddress> tokenMap = new HashMap<Token, InetAddress>();
         for (UntypedResultSet.Row row : QueryProcessor.processInternal("SELECT * FROM system.peers"))
-            tokenMap.put(p.getTokenFactory().fromByteArray(row.getBytes("token")), row.getInetAddress("peer"));
+            tokenMap.put(p.getTokenFactory().fromByteArray(row.getBytes("token_bytes")), row.getInetAddress("peer"));
 
         return tokenMap;
     }
@@ -430,7 +430,7 @@ public class SystemTable
             cf = ColumnFamilyStore.removeDeleted(cf, 0);
             assert cf.getColumnCount() <= 1;
             if (cf.getColumnCount() > 0)
-                return UUIDGen.getUUID(cf.iterator().next().name());
+                return UUIDGen.getUUID(cf.iterator().next().value());
         }
 
         // ID not found, generate a new one, persist, and then return it.
