@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.collect.ImmutableList;
+
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.Relation;
@@ -77,7 +79,7 @@ public class CompositeType extends AbstractCompositeType
 
     private CompositeType(List<AbstractType<?>> types)
     {
-        this.types = types;
+        this.types = ImmutableList.copyOf(types);
     }
 
     protected AbstractType<?> getComparator(int i, ByteBuffer bb)
