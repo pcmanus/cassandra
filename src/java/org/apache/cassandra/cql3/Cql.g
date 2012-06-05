@@ -34,6 +34,8 @@ options {
     import java.util.Map;
 
     import org.apache.cassandra.cql3.statements.*;
+    import org.apache.cassandra.config.ConfigurationException;
+    import org.apache.cassandra.db.marshal.CollectionType;
     import org.apache.cassandra.utils.Pair;
     import org.apache.cassandra.thrift.ConsistencyLevel;
     import org.apache.cassandra.thrift.InvalidRequestException;
@@ -484,17 +486,42 @@ intTerm returns [Term integer]
 
 termPairWithOperation[Map<ColumnIdentifier, Operation> columns]
     : key=cident '='
-        ( value=term { columns.put(key, new Operation(value)); }
-        | c=cident ( '+'     v=intTerm { columns.put(key, new Operation(c, Operation.Type.PLUS, v)); }
-                   | op='-'? v=intTerm
-                     {
-                       validateMinusSupplied(op, v, input);
-                       if (op == null)
-                           v = new Term(-(Long.valueOf(v.getText())), v.getType());
-                       columns.put(key, new Operation(c, Operation.Type.MINUS, v));
-                     }
-                    )
+        ( value=term { columns.put(key, new Operation.Set(value)); }
+        | c=cident op=operation
+          {
+              if (!key.equals(c))
+                  addRecognitionError("Only expressions like X = X + <long> are supported.");
+              columns.put(key, op);
+          }
         )
+    ;
+
+
+operation returns [Operation op]
+    : '+' v=intTerm { $op = new Operation.Counter(v, false); }
+    | sign='-'? v=intTerm
+      {
+          validateMinusSupplied(sign, v, input);
+          if (sign == null)
+              v = new Term(-(Long.valueOf(v.getText())), v.getType());
+          $op = new Operation.Counter(v, true);
+      }
+    | '.' fname=functionName '(' { List<Term> args = new ArrayList<Term>(); }
+              ( t1=term { args.add(t1); } )? ( ',' tn=term { args.add(tn); } )*
+           ')' { $op = new Operation.Function(fname, args); }
+    ;
+
+functionName returns [CollectionType.Function name]
+    @init { String str = null; }
+    @after {
+        try {
+            $name = CollectionType.Function.fromString(str);
+        } catch (IllegalArgumentException e) {
+            addRecognitionError("Unknown method " + str);
+        }
+    }
+    : t=(IDENT | K_ADD)    { str = $t.text; }
+    | k=unreserved_keyword { str = k; }
     ;
 
 property returns [String str]
@@ -519,28 +546,44 @@ relation returns [Relation rel]
       '(' f1=term { $rel.addInValue(f1); } (',' fN=term { $rel.addInValue(fN); } )* ')'
     ;
 
-comparatorType returns [String str]
-    : c=native_type    { $str=c; }
-    | s=STRING_LITERAL { $str = $s.text; }
+comparatorType returns [ParsedType t]
+    : c=native_type     { $t = c; }
+    | c=collection_type { $t = c; }
+    | s=STRING_LITERAL
+      {
+        try {
+            $t = new ParsedType.Custom($s.text);
+        } catch (ConfigurationException e) {
+            addRecognitionError("Cannot parse type " + $s.text + ": " + e.getMessage());
+        }
+      }
     ;
 
-native_type returns [String str]
-    : c=( K_ASCII
-        | K_BIGINT
-        | K_BLOB
-        | K_BOOLEAN
-        | K_COUNTER
-        | K_DECIMAL
-        | K_DOUBLE
-        | K_FLOAT
-        | K_INT
-        | K_TEXT
-        | K_TIMESTAMP
-        | K_UUID
-        | K_VARCHAR
-        | K_VARINT
-        | K_TIMEUUID
-      ) { return $c.text; }
+native_type returns [ParsedType t]
+    : K_ASCII     { $t = ParsedType.Native.ASCII; }
+    | K_BIGINT    { $t = ParsedType.Native.BIGINT; }
+    | K_BLOB      { $t = ParsedType.Native.BLOB; }
+    | K_BOOLEAN   { $t = ParsedType.Native.BOOLEAN; }
+    | K_COUNTER   { $t = ParsedType.Native.COUNTER; }
+    | K_DECIMAL   { $t = ParsedType.Native.DECIMAL; }
+    | K_DOUBLE    { $t = ParsedType.Native.DOUBLE; }
+    | K_FLOAT     { $t = ParsedType.Native.FLOAT; }
+    | K_INT       { $t = ParsedType.Native.INT; }
+    | K_TEXT      { $t = ParsedType.Native.TEXT; }
+    | K_TIMESTAMP { $t = ParsedType.Native.TIMESTAMP; }
+    | K_UUID      { $t = ParsedType.Native.UUID; }
+    | K_VARCHAR   { $t = ParsedType.Native.VARCHAR; }
+    | K_VARINT    { $t = ParsedType.Native.VARINT; }
+    | K_TIMEUUID  { $t = ParsedType.Native.TIMEUUID; }
+    ;
+
+collection_type returns [ParsedType pt]
+    : K_MAP  '<' t1=comparatorType ',' t2=comparatorType '>'
+        { try { $pt = ParsedType.Collection.map(t1, t2); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); } }
+    | K_LIST '<' t=comparatorType '>'
+        { try { $pt = ParsedType.Collection.list(t); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); } }
+    | K_SET  '<' t=comparatorType '>'
+        { try { $pt = ParsedType.Collection.set(t); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); } }
     ;
 
 unreserved_keyword returns [String str]
@@ -555,8 +598,10 @@ unreserved_keyword returns [String str]
         | K_TYPE
         | K_VALUES
         | K_WRITETIME
+        | K_MAP
+        | K_LIST
         ) { $str = $k.text; }
-    | t=native_type { $str = t; }
+    | t=native_type { $str = t.toString(); }
     ;
 
 
@@ -631,6 +676,9 @@ K_VARINT:      V A R I N T;
 K_TIMEUUID:    T I M E U U I D;
 K_TOKEN:       T O K E N;
 K_WRITETIME:   W R I T E T I M E;
+
+K_MAP:         M A P;
+K_LIST:        L I S T;
 
 // Case-insensitive alpha characters
 fragment A: ('a'|'A');

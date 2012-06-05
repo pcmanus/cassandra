@@ -25,6 +25,7 @@ import com.google.common.collect.AbstractIterator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.ColumnToCollectionType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.thrift.InvalidRequestException;
@@ -51,6 +52,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
 
     public final boolean isComposite;
     public final boolean isCompact;
+    public final boolean hasCollections;
 
     public CFDefinition(CFMetaData cfm)
     {
@@ -64,6 +66,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
             {
                 // "dense" composite
                 this.isCompact = true;
+                this.hasCollections = false;
                 for (int i = 0; i < composite.types.size(); i++)
                 {
                     ColumnIdentifier id = getColumnId(cfm, i);
@@ -77,7 +80,20 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
                 this.isCompact = false;
                 this.value = null;
                 assert cfm.getValueAlias() == null;
-                for (int i = 0; i < composite.types.size() - 1; i++)
+                // check for collection type
+                int last = composite.types.size() - 1;
+                AbstractType<?> lastType = composite.types.get(last);
+                if (lastType instanceof ColumnToCollectionType)
+                {
+                    --last;
+                    this.hasCollections = true;
+                }
+                else
+                {
+                    this.hasCollections = false;
+                }
+
+                for (int i = 0; i < last; i++)
                 {
                     ColumnIdentifier id = getColumnId(cfm, i);
                     this.columns.put(id, new Name(id, Name.Kind.COLUMN_ALIAS, i, composite.types.get(i)));
@@ -93,6 +109,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         else
         {
             this.isComposite = false;
+            this.hasCollections = false;
             if (cfm.getColumn_metadata().isEmpty())
             {
                 // dynamic CF
@@ -139,6 +156,15 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         return cfm.getValueAlias() == null
              ? new ColumnIdentifier(DEFAULT_VALUE_ALIAS, false)
              : new ColumnIdentifier(cfm.getValueAlias(), definitionType);
+    }
+
+    public ColumnToCollectionType getCollectionType()
+    {
+        if (!hasCollections)
+            return null;
+
+        CompositeType composite = (CompositeType)cfm.comparator;
+        return (ColumnToCollectionType)composite.types.get(composite.types.size() - 1);
     }
 
     public Name get(ColumnIdentifier name)
