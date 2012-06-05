@@ -401,6 +401,10 @@ public class SelectStatement implements CQLStatement
         if (!cfDef.isCompact && !cfDef.isComposite)
             return false;
 
+        // However, collections always entails one
+        if (cfDef.hasCollections)
+            return true;
+
         // Otherwise, it is a range query if it has at least one the column alias
         // for which no relation is defined or is not EQ.
         for (Restriction r : columnRestrictions)
@@ -499,7 +503,7 @@ public class SelectStatement implements CQLStatement
             }
         }
         // Means no relation at all or everything was an equal
-        return builder.build();
+        return (b == Bound.END) ? builder.buildAsEndOfRange() : builder.build();
     }
 
     private List<IndexExpression> getIndexExpressions(List<ByteBuffer> variables) throws InvalidRequestException
@@ -742,10 +746,10 @@ public class SelectStatement implements CQLStatement
             {
                 // Sparse case: group column in cqlRow when composite prefix is equal
                 CompositeType composite = (CompositeType)cfDef.cfm.comparator;
-                int last = composite.types.size() - 1;
+                int last = composite.types.size() - (cfDef.hasCollections ? 2 : 1);
 
                 ByteBuffer[] previous = null;
-                Map<ByteBuffer, IColumn> group = new HashMap<ByteBuffer, IColumn>();
+                ColumnGroupMap group = new ColumnGroupMap();
                 for (IColumn c : row.cf)
                 {
                     if (c.isMarkedForDelete())
@@ -753,14 +757,14 @@ public class SelectStatement implements CQLStatement
 
                     ByteBuffer[] current = composite.split(c.name());
                     // If current differs from previous, we've just finished a group
-                    if (previous != null && !isSameRow(previous, current))
+                    if (previous != null && !isSameRow(previous, current, last))
                     {
                         cqlRows.add(handleGroup(selection, row.key.key, previous, group, schema));
-                        group = new HashMap<ByteBuffer, IColumn>();
+                        group = new ColumnGroupMap();
                     }
 
                     // Accumulate the current column
-                    group.put(current[last], c);
+                    group.add(current, last, c);
                     previous = current;
                 }
                 // Handle the last group
@@ -810,15 +814,15 @@ public class SelectStatement implements CQLStatement
      * Two columns do belong together if they differ only by the last
      * component.
      */
-    private static boolean isSameRow(ByteBuffer[] c1, ByteBuffer[] c2)
+    private static boolean isSameRow(ByteBuffer[] c1, ByteBuffer[] c2, int last)
     {
         // Cql don't allow to insert columns who doesn't have all component of
         // the composite set for sparse composite. Someone coming from thrift
         // could hit that though. But since we have no way to handle this
         // correctly, better fail here and tell whomever may hit that (if
         // someone ever do) to change the definition to a dense composite
-        assert c1.length == c2.length : "Sparse composite should not have partial column names";
-        for (int i = 0; i < c1.length - 1; i++)
+        assert c1.length >= last && c2.length >= last : "Sparse composite should not have partial column names";
+        for (int i = 0; i < last; i++)
         {
             if (!c1[i].equals(c2[i]))
                 return false;
@@ -826,7 +830,7 @@ public class SelectStatement implements CQLStatement
         return true;
     }
 
-    private CqlRow handleGroup(List<Pair<CFDefinition.Name, Selector>> selection, ByteBuffer key, ByteBuffer[] components, Map<ByteBuffer, IColumn> columns, CqlMetadata schema)
+    private CqlRow handleGroup(List<Pair<CFDefinition.Name, Selector>> selection, ByteBuffer key, ByteBuffer[] components, ColumnGroupMap columns, CqlMetadata schema)
     {
         List<Column> thriftColumns = new ArrayList<Column>(selection.size());
 
@@ -852,7 +856,15 @@ public class SelectStatement implements CQLStatement
                     // This should not happen for SPARSE
                     throw new AssertionError();
                 case COLUMN_METADATA:
-                    IColumn c = columns.get(name.name.key);
+                    if (name.type instanceof CollectionType)
+                    {
+                        col = new Column(name.name.key);
+                        ByteBuffer bb = columns.getCollectionForThrift((CollectionType)name.type, name.name.key);
+                        if (bb != null)
+                            col.setValue(bb);
+                        break;
+                    }
+                    IColumn c = columns.getSimple(name.name.key);
                     col = makeReturnColumn(selector, c);
                     break;
                 default:
