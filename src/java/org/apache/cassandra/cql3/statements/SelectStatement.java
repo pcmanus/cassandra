@@ -189,34 +189,26 @@ public class SelectStatement implements CQLStatement
         Collection<ByteBuffer> keys = getKeys(variables);
         List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
 
+        IFilter filter = makeFilter(variables);
         // ...a range (slice) of column names
         if (isColumnRange())
         {
-            ByteBuffer start = getRequestedBound(isReversed ? Bound.END : Bound.START, variables);
-            ByteBuffer finish = getRequestedBound(isReversed ? Bound.START : Bound.END, variables);
-
-            SliceQueryFilter filter = new SliceQueryFilter(start, finish, isReversed, getLimit());
-            QueryProcessor.validateSliceFilter(cfDef.cfm, filter);
-
             // Note that we use the total limit for every key. This is
             // potentially inefficient, but then again, IN + LIMIT is not a
             // very sensible choice
             for (ByteBuffer key : keys)
             {
                 QueryProcessor.validateKey(key);
-                commands.add(new SliceFromReadCommand(keyspace(), key, queryPath, filter));
+                commands.add(new SliceFromReadCommand(keyspace(), key, queryPath, (SliceQueryFilter)filter));
             }
         }
         // ...of a list of column names
         else
         {
-            Collection<ByteBuffer> columnNames = getRequestedColumns(variables);
-            QueryProcessor.validateColumnNames(columnNames);
-
             for (ByteBuffer key: keys)
             {
                 QueryProcessor.validateKey(key);
-                commands.add(new SliceByNamesReadCommand(keyspace(), key, queryPath, columnNames));
+                commands.add(new SliceByNamesReadCommand(keyspace(), key, queryPath, (NamesQueryFilter)filter));
             }
         }
 
@@ -237,10 +229,7 @@ public class SelectStatement implements CQLStatement
     private List<Row> multiRangeSlice(List<ByteBuffer> variables) throws InvalidRequestException, TimedOutException, UnavailableException
     {
         List<Row> rows;
-
-        IFilter filter =  makeFilter(variables);
-        QueryProcessor.validateFilter(cfDef.cfm, filter);
-
+        IFilter filter = makeFilter(variables);
         List<IndexExpression> expressions = getIndexExpressions(variables);
 
         try
@@ -316,14 +305,26 @@ public class SelectStatement implements CQLStatement
     {
         if (isColumnRange())
         {
-            return new SliceQueryFilter(getRequestedBound(isReversed ? Bound.END : Bound.START, variables),
-                                        getRequestedBound(isReversed ? Bound.START : Bound.END, variables),
-                                        isReversed,
-                                        -1); // We use this for range slices, where the count is ignored in favor of the global column count
+            // For sparse, we used to ask for 'defined columns' * 'asked limit' to account for the grouping of columns.
+            // Since that doesn't work for maps/sets/lists, we use the compositesToGroup option of SliceQueryFilter.
+            // But we must preserver backward compatibility too.
+            int multiplier = cfDef.isCompact ? 1 : cfDef.metadata.size();
+            int toGroup = cfDef.isCompact ? -1 : cfDef.columns.size();
+            ColumnSlice slice = new ColumnSlice(getRequestedBound(isReversed ? Bound.END : Bound.START, variables),
+                                                getRequestedBound(isReversed ? Bound.START : Bound.END, variables));
+            SliceQueryFilter filter = new SliceQueryFilter(new ColumnSlice[]{slice},
+                                                           isReversed,
+                                                           getLimit(),
+                                                           toGroup,
+                                                           multiplier);
+            QueryProcessor.validateSliceFilter(cfDef.cfm, filter);
+            return filter;
         }
         else
         {
-            return new NamesQueryFilter(getRequestedColumns(variables));
+            SortedSet<ByteBuffer> columnNames = getRequestedColumns(variables);
+            QueryProcessor.validateColumnNames(columnNames);
+            return new NamesQueryFilter(columnNames);
         }
     }
 
@@ -331,11 +332,7 @@ public class SelectStatement implements CQLStatement
     {
         // Internally, we don't support exclusive bounds for slices. Instead,
         // we query one more element if necessary and exclude
-        int limit = sliceRestriction != null && !sliceRestriction.isInclusive(Bound.START) ? parameters.limit + 1 : parameters.limit;
-        // For sparse, we'll end up merging all defined colums into the same CqlRow. Thus we should query up
-        // to 'defined columns' * 'asked limit' to be sure to have enough columns. We'll trim after query if
-        // this end being too much.
-        return cfDef.isCompact ? limit : cfDef.metadata.size() * limit;
+        return sliceRestriction != null && !sliceRestriction.isInclusive(Bound.START) ? parameters.limit + 1 : parameters.limit;
     }
 
     private boolean isKeyRange()
