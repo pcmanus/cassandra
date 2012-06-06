@@ -145,12 +145,6 @@ public class SystemTable
      */
     public static synchronized void updateToken(InetAddress ep, Token token)
     {
-        if (ep.equals(FBUtilities.getBroadcastAddress()))
-        {
-            removeToken(token);
-            return;
-        }
-
         IPartitioner p = StorageService.getPartitioner();
         ColumnFamily cf = ColumnFamily.create(Table.SYSTEM_TABLE, PEERS_CF);
         cf.addColumn(Column.create(ep, FBUtilities.timestampMicros(), "peer"));
@@ -206,6 +200,8 @@ public class SystemTable
         }
 
         forceBlockingFlush(LOCAL_CF);
+
+        updateToken(FBUtilities.getBroadcastAddress(), token);
     }
 
     private static void forceBlockingFlush(String cfname)
@@ -231,10 +227,17 @@ public class SystemTable
     public static HashMap<Token, InetAddress> loadTokens()
     {
         IPartitioner p = StorageService.getPartitioner();
+        // This shall not add the local token in the result
+        Token local = getSavedToken();
 
         HashMap<Token, InetAddress> tokenMap = new HashMap<Token, InetAddress>();
         for (UntypedResultSet.Row row : QueryProcessor.processInternal("SELECT * FROM system.peers"))
-            tokenMap.put(p.getTokenFactory().fromByteArray(row.getBytes("token_bytes")), row.getInetAddress("peer"));
+        {
+            Token tk = p.getTokenFactory().fromByteArray(row.getBytes("token_bytes"));
+            InetAddress inet = row.getInetAddress("peer");
+            if (!tk.equals(local) && !FBUtilities.getBroadcastAddress().equals(inet))
+                tokenMap.put(tk, inet);
+        }
 
         return tokenMap;
     }
