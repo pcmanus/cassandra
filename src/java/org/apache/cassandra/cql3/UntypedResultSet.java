@@ -109,5 +109,11 @@ public class UntypedResultSet implements Iterable<UntypedResultSet.Row>
         {
             return InetAddressType.instance.compose(data.get(column));
         }
+
+        @Override
+        public String toString()
+        {
+            return data.toString();
+        }
     }
 }

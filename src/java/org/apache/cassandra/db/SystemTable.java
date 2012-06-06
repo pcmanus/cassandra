@@ -122,7 +122,7 @@ public class SystemTable
 
             ColumnFamily cf = ColumnFamily.create(Table.SYSTEM_TABLE, LOCAL_CF);
             cf.addColumn(Column.create(oldColumns.next().value(), FBUtilities.timestampMicros(), "cluster_name"));
-            cf.addColumn(Column.create(oldColumns.next().value(), FBUtilities.timestampMicros(), "token"));
+            cf.addColumn(Column.create(oldColumns.next().value(), FBUtilities.timestampMicros(), "token_bytes"));
             // (assume that any node getting upgraded was bootstrapped, since that was stored in a separate row for no particular reason)
             cf.addColumn(Column.create(true, FBUtilities.timestampMicros(), "bootstrapped"));
             RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, LOCAL_KEY);
@@ -193,7 +193,7 @@ public class SystemTable
     {
         IPartitioner p = StorageService.getPartitioner();
         ColumnFamily cf = ColumnFamily.create(Table.SYSTEM_TABLE, LOCAL_CF);
-        cf.addColumn(Column.create(p.getTokenFactory().toByteArray(token), FBUtilities.timestampMicros(), "token"));
+        cf.addColumn(Column.create(p.getTokenFactory().toByteArray(token), FBUtilities.timestampMicros(), "token_bytes"));
         RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, LOCAL_KEY);
         rm.add(cf);
         try
@@ -293,7 +293,7 @@ public class SystemTable
     public static Token getSavedToken()
     {
         Table table = Table.open(Table.SYSTEM_TABLE);
-        QueryFilter filter = QueryFilter.getNamesFilter(decorate(LOCAL_KEY), new QueryPath(LOCAL_CF), ByteBufferUtil.bytes("token"));
+        QueryFilter filter = QueryFilter.getNamesFilter(decorate(LOCAL_KEY), new QueryPath(LOCAL_CF), ByteBufferUtil.bytes("token_bytes"));
         ColumnFamily cf = table.getColumnFamilyStore(LOCAL_CF).getColumnFamily(filter);
         return cf == null ? null : StorageService.getPartitioner().getTokenFactory().fromByteArray(cf.columns.iterator().next().value());
     }
@@ -301,7 +301,7 @@ public class SystemTable
     public static int incrementAndGetGeneration() throws IOException
     {
         Table table = Table.open(Table.SYSTEM_TABLE);
-        QueryFilter filter = QueryFilter.getNamesFilter(decorate(LOCAL_KEY), new QueryPath(LOCAL_CF), ByteBufferUtil.bytes("generation"));
+        QueryFilter filter = QueryFilter.getNamesFilter(decorate(LOCAL_KEY), new QueryPath(LOCAL_CF), ByteBufferUtil.bytes("gossip_generation"));
         ColumnFamily cf = table.getColumnFamilyStore(LOCAL_CF).getColumnFamily(filter);
 
         int generation;
@@ -331,7 +331,7 @@ public class SystemTable
 
         RowMutation rm = new RowMutation(Table.SYSTEM_TABLE, LOCAL_KEY);
         cf = ColumnFamily.create(Table.SYSTEM_TABLE, SystemTable.LOCAL_CF);
-        cf.addColumn(Column.create(generation, FBUtilities.timestampMicros(), "generation"));
+        cf.addColumn(Column.create(generation, FBUtilities.timestampMicros(), "gossip_generation"));
         rm.add(cf);
         rm.apply();
         forceBlockingFlush(LOCAL_CF);

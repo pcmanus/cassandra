@@ -142,7 +142,7 @@ public final class CFMetaData
                                                                + "index_type text,"
                                                                + "index_options text,"
                                                                + "index_name text,"
-                                                               + "componenent_index text,"
+                                                               + "component_index int,"
                                                                + "PRIMARY KEY(keyspace_name, columnfamily_name, column_name)"
                                                                + ") WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640");
 
