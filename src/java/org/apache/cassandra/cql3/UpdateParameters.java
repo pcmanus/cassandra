@@ -51,4 +51,9 @@ public class UpdateParameters
     {
         return new DeletedColumn(name, localDeletionTime, timestamp);
     }
+
+    public RangeTombstone makeTombstoneForOverwrite(ByteBuffer start, ByteBuffer end)
+    {
+        return new RangeTombstone(start, end, timestamp - 1, localDeletionTime);
+    }
 }

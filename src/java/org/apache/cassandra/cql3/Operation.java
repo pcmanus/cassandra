@@ -34,13 +34,13 @@ public abstract class Operation
         this.type = type;
     }
 
-    public abstract List<Term> allTerms();
+    public abstract Iterable<Term> allTerms();
 
     public static class Set extends Operation
     {
-        public final Term value;
+        public final Value value;
 
-        public Set(Term value)
+        public Set(Value value)
         {
             super(Type.SET);
             this.value = value;
@@ -52,9 +52,9 @@ public abstract class Operation
             return " = " + value;
         }
 
-        public List<Term> allTerms()
+        public Iterable<Term> allTerms()
         {
-            return Collections.singletonList(value);
+            return value;
         }
     }
 
@@ -76,7 +76,7 @@ public abstract class Operation
             return (isSubstraction ? "-" : "+") + "= " + value;
         }
 
-        public List<Term> allTerms()
+        public Iterable<Term> allTerms()
         {
             return Collections.singletonList(value);
         }
@@ -100,7 +100,7 @@ public abstract class Operation
             return "." + fct + arguments;
         }
 
-        public List<Term> allTerms()
+        public Iterable<Term> allTerms()
         {
             return arguments;
         }
