@@ -24,10 +24,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryPath;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.CollectionType;
-import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.db.marshal.LongType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -47,7 +44,7 @@ public class UpdateStatement extends ModificationStatement
     private CFDefinition cfDef;
     private final Map<ColumnIdentifier, Operation> columns;
     private final List<ColumnIdentifier> columnNames;
-    private final List<Term> columnValues;
+    private final List<Value> columnValues;
     private final List<Relation> whereClause;
 
     private final Map<ColumnIdentifier, Operation> processedColumns = new HashMap<ColumnIdentifier, Operation>();
@@ -87,7 +84,7 @@ public class UpdateStatement extends ModificationStatement
      */
     public UpdateStatement(CFName name,
                            List<ColumnIdentifier> columnNames,
-                           List<Term> columnValues,
+                           List<Value> columnValues,
                            Attributes attrs)
     {
         super(name, attrs);
@@ -199,10 +196,58 @@ public class UpdateStatement extends ModificationStatement
         switch (value.type)
         {
             case SET:
-                ByteBuffer colName = builder.build();
-                validateColumnName(colName);
-                ByteBuffer valueBytes = ((Operation.Set)value).value.getByteBuffer(valueDef.type, params.variables);
-                cf.addColumn(params.makeColumn(colName, valueBytes));
+                Value v = ((Operation.Set)value).value;
+                if (v instanceof Term)
+                {
+                    ByteBuffer colName = builder.build();
+                    validateColumnName(colName);
+                    ByteBuffer valueBytes = ((Term)v).getByteBuffer(valueDef.type, params.variables);
+                    cf.addColumn(params.makeColumn(colName, valueBytes));
+                }
+                else if (v instanceof Value.ListLiteral)
+                {
+                    if (!(valueDef.type instanceof ListType))
+                        throw new InvalidRequestException(String.format("Invalid value: %s is not a list", valueDef.name));
+                    Value.ListLiteral l = (Value.ListLiteral)v;
+
+                    // Remove previous
+                    cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
+
+                    if (!l.isEmpty())
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND_ALL, l), params);
+                }
+                else if (v instanceof Value.SetLiteral)
+                {
+                    Value.SetLiteral s = (Value.SetLiteral)v;
+                    // The parser don't distinguish between empty set and empty map and always return an empty set
+                    if (s.isEmpty() && (valueDef.type instanceof MapType))
+                        return false;
+                    else if (!(valueDef.type instanceof SetType))
+                        throw new InvalidRequestException(String.format("Invalid value: %s is not a set", valueDef.name));
+
+                    // Remove previous
+                    cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
+
+                    if (!s.isEmpty())
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD_ALL, new ArrayList<Term>(s)), params);
+                }
+                else
+                {
+                    assert v instanceof Value.MapLiteral;
+                    if (!(valueDef.type instanceof MapType))
+                        throw new InvalidRequestException(String.format("Invalid value: %s is not a map", valueDef.name));
+
+                    // Remove previous
+                    cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
+
+                    Value.MapLiteral m = (Value.MapLiteral)v;
+                    for (Map.Entry<Term, Term> entry : m.entrySet())
+                        addToMutation(cf,
+                                      builder.copy(),
+                                      valueDef,
+                                      new Operation.Function(CollectionType.Function.PUT, Arrays.<Term>asList(entry.getKey(), entry.getValue())),
+                                      params);
+                }
                 return false;
             case COUNTER:
                 Operation.Counter cOp = (Operation.Counter)value;
@@ -275,9 +320,10 @@ public class UpdateStatement extends ModificationStatement
                 if (name == null)
                     throw new InvalidRequestException(String.format("Unknown identifier %s", columnNames.get(i)));
 
-                Term value = columnValues.get(i);
-                if (value.isBindMarker())
-                    boundNames[value.bindIndex] = name;
+                Value value = columnValues.get(i);
+                for (Term t : value)
+                    if (t.isBindMarker())
+                        boundNames[t.bindIndex] = name;
 
                 switch (name.kind)
                 {
@@ -285,7 +331,9 @@ public class UpdateStatement extends ModificationStatement
                     case COLUMN_ALIAS:
                         if (processedKeys.containsKey(name.name))
                             throw new InvalidRequestException(String.format("Multiple definition found for PRIMARY KEY part %s", name));
-                        processedKeys.put(name.name, Collections.singletonList(value));
+                        if (!(value instanceof Term))
+                            throw new InvalidRequestException(String.format("Invalid definition for %s, not a collection type", name));
+                        processedKeys.put(name.name, Collections.singletonList((Term)value));
                         break;
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
