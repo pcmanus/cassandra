@@ -24,6 +24,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.Term;
 import org.apache.cassandra.cql3.UpdateParameters;
@@ -36,6 +39,8 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public class SetType extends CollectionType
 {
+    private static final Logger logger = LoggerFactory.getLogger(SetType.class);
+
     // interning instances
     private static final Map<AbstractType<?>, SetType> instances = new HashMap<AbstractType<?>, SetType>();
 
@@ -87,7 +92,8 @@ public class SetType extends CollectionType
         switch (fct)
         {
             case ADD:
-                doAdd(cf, fullPath, args.get(0), params);
+            case ADD_ALL:
+                doAddAll(cf, fullPath, args, params);
                 break;
             case DISCARD:
                 doDiscard(cf, fullPath, args.get(0), params);
@@ -97,10 +103,15 @@ public class SetType extends CollectionType
         }
     }
 
-    public void doAdd(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params) throws InvalidRequestException
+    public void doAddAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
-        ByteBuffer name = builder.add(value.getByteBuffer(elements, params.variables)).build();
-        cf.addColumn(params.makeColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER));
+        for (int i = 0; i < values.size(); ++i)
+        {
+            ColumnNameBuilder b = i == values.size() - 1 ? builder : builder.copy();
+            logger.info("adding " + values.get(i));
+            ByteBuffer name = b.add(values.get(i).getByteBuffer(elements, params.variables)).build();
+            cf.addColumn(params.makeColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER));
+        }
     }
 
     public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params) throws InvalidRequestException

@@ -44,10 +44,12 @@ public abstract class CollectionType extends AbstractType<ByteBuffer>
 
     public enum Function
     {
-        APPEND  (1, Kind.LIST),
-        ADD     (1, Kind.SET),
-        PUT     (2, Kind.MAP),
-        DISCARD (1, Kind.SET, Kind.MAP);
+        APPEND     (1, Kind.LIST),
+        APPEND_ALL (-1, Kind.LIST),
+        ADD        (1, Kind.SET),
+        ADD_ALL    (-1, Kind.SET),
+        PUT        (2, Kind.MAP),
+        DISCARD    (1, Kind.SET, Kind.MAP);
 
         public final int nbArgs;
         public final EnumSet<Kind> validReceivers;
@@ -77,7 +79,7 @@ public abstract class CollectionType extends AbstractType<ByteBuffer>
 
     public void execute(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params) throws InvalidRequestException
     {
-        if (args.size() != fct.nbArgs)
+        if (fct.nbArgs >= 0 && args.size() != fct.nbArgs)
             throw new InvalidRequestException(String.format("Wrong number of argument for %s, expecting %d, got %d", this, fct.nbArgs, args.size()));
 
         if (!fct.validReceivers.contains(kind))

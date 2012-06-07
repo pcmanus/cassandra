@@ -221,12 +221,12 @@ insertStatement returns [UpdateStatement expr]
     @init {
         Attributes attrs = new Attributes();
         List<ColumnIdentifier> columnNames  = new ArrayList<ColumnIdentifier>();
-        List<Term> columnValues = new ArrayList<Term>();
+        List<Value> columnValues = new ArrayList<Value>();
     }
     : K_INSERT K_INTO cf=columnFamilyName
           '(' c1=cident { columnNames.add(c1); }  ( ',' cn=cident { columnNames.add(cn); } )+ ')'
         K_VALUES
-          '(' v1=term { columnValues.add(v1); } ( ',' vn=term { columnValues.add(vn); } )+ ')'
+          '(' v1=value { columnValues.add(v1); } ( ',' vn=value { columnValues.add(vn); } )+ ')'
         ( usingClause[attrs] )?
       {
           $expr = new UpdateStatement(cf, columnNames, columnValues, attrs);
@@ -469,6 +469,15 @@ cidentList returns [List<ColumnIdentifier> items]
     ;
 
 // Values (includes prepared statement markers)
+value returns [Value value]
+    : t=term { $value = t; }
+    | '[' { Value.ListLiteral l = new Value.ListLiteral(); } ( t1=term { l.add(t1); } ( ',' tn=term { l.add(tn); } )* )? ']' { $value = l; }
+    | '{' { Value.SetLiteral s = new Value.SetLiteral(); } ( t1=term { s.add(t1); } ( ',' tn=term { s.add(tn); } )* )? '}'  { $value = s; }
+    // Note that we have an ambiguity between maps and set for "{}". So we force it to a set here, and deal with it later based on the type of the column
+    | '{' { Value.MapLiteral m = new Value.MapLiteral(); } k1=term ':' v1=term { m.put(k1, v1); } ( ',' kn=term ':' vn=term { m.put(kn, vn); } )* '}'
+       { $value = m; }
+    ;
+
 extendedTerm returns [Term term]
     : K_TOKEN '(' t=term ')' { $term = Term.tokenOf(t); }
     | t=term                 { $term = t; }
@@ -486,7 +495,7 @@ intTerm returns [Term integer]
 
 termPairWithOperation[Map<ColumnIdentifier, Operation> columns]
     : key=cident '='
-        ( value=term { columns.put(key, new Operation.Set(value)); }
+        ( v=value { columns.put(key, new Operation.Set(v)); }
         | c=cident op=operation
           {
               if (!key.equals(c))
@@ -507,7 +516,7 @@ operation returns [Operation op]
           $op = new Operation.Counter(v, true);
       }
     | '.' fname=functionName '(' { List<Term> args = new ArrayList<Term>(); }
-              ( t1=term { args.add(t1); } )? ( ',' tn=term { args.add(tn); } )*
+              ( t1=term { args.add(t1); } ( ',' tn=term { args.add(tn); } )* )?
            ')' { $op = new Operation.Function(fname, args); }
     ;
 

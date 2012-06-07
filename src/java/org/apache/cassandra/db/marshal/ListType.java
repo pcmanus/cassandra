@@ -85,14 +85,18 @@ public class ListType extends CollectionType
 
     public void executeFunction(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params) throws InvalidRequestException
     {
-        assert fct == Function.APPEND;
-        doAppend(cf, fullPath, args.get(0), params);
+        assert fct == Function.APPEND || fct == Function.APPEND_ALL;
+        doAppendAll(cf, fullPath, args, params);
     }
 
-    private void doAppend(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params) throws InvalidRequestException
+    private void doAppendAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
-        ByteBuffer name = builder.add(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())).build();
-        cf.addColumn(params.makeColumn(name, value.getByteBuffer(elements, params.variables)));
+        for (int i = 0; i < values.size(); i++)
+        {
+            ColumnNameBuilder b = i == values.size() - 1 ? builder : builder.copy();
+            ByteBuffer name = b.add(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())).build();
+            cf.addColumn(params.makeColumn(name, values.get(i).getByteBuffer(elements, params.variables)));
+        }
     }
 
     public ByteBuffer serializeForThrift(Map<ByteBuffer, IColumn> columns)
