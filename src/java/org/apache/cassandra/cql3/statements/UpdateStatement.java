@@ -17,8 +17,11 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.io.IOError;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.TimeoutException;
 
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
@@ -26,8 +29,11 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.service.ClientState;
+import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.thrift.InvalidRequestException;
+import org.apache.cassandra.thrift.UnavailableException;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.cql.QueryProcessor.validateColumnName;
 import static org.apache.cassandra.cql.QueryProcessor.validateKey;
@@ -96,7 +102,7 @@ public class UpdateStatement extends ModificationStatement
     }
 
     /** {@inheritDoc} */
-    public List<IMutation> getMutations(ClientState clientState, List<ByteBuffer> variables) throws InvalidRequestException
+    public List<IMutation> getMutations(ClientState clientState, List<ByteBuffer> variables) throws UnavailableException, TimeoutException, InvalidRequestException
     {
         // Check key
         List<Term> keys = processedKeys.get(cfDef.key.name);
@@ -126,14 +132,38 @@ public class UpdateStatement extends ModificationStatement
             }
         }
 
+        List<ByteBuffer> rawKeys = new ArrayList<ByteBuffer>(keys.size());
+        for (Term key: keys)
+            rawKeys.add(key.getByteBuffer(cfDef.key.type, variables));
+
+        // Lists SET and DISCARD operation incurs a read. Do that now. Note that currently,
+        // if there is at least one list, we just read the whole "row" (in the CQL sense of
+        // row) to simplify. Once #3885 is in, we can improve.
+        boolean needsReading = false;
+        for (CFDefinition.Name name : cfDef.metadata.values())
+        {
+            if (!(name.type instanceof ListType))
+                continue;
+
+            Operation value = processedColumns.get(name.name);
+            if (value == null || value.type != Operation.Type.FUNCTION)
+                continue;
+
+            Operation.Function fOp = (Operation.Function)value;
+            if (fOp.fct.needsReading)
+            {
+                needsReading = true;
+                break;
+            }
+        }
+
+        Map<ByteBuffer, ColumnGroupMap> rows = needsReading ? readRows(rawKeys, builder) : null;
+
         List<IMutation> rowMutations = new LinkedList<IMutation>();
         UpdateParameters params = new UpdateParameters(variables, getTimestamp(clientState), timeToLive);
 
-        for (Term key: keys)
-        {
-            ByteBuffer rawKey = key.getByteBuffer(cfDef.key.type, variables);
-            rowMutations.add(mutationForKey(cfDef, rawKey, builder, params));
-        }
+        for (ByteBuffer key: rawKeys)
+            rowMutations.add(mutationForKey(cfDef, key, builder, params, rows == null ? null : rows.get(key)));
 
         return rowMutations;
     }
@@ -151,7 +181,7 @@ public class UpdateStatement extends ModificationStatement
      *
      * @throws InvalidRequestException on the wrong request
      */
-    private IMutation mutationForKey(CFDefinition cfDef, ByteBuffer key, ColumnNameBuilder builder, UpdateParameters params)
+    private IMutation mutationForKey(CFDefinition cfDef, ByteBuffer key, ColumnNameBuilder builder, UpdateParameters params, ColumnGroupMap group)
     throws InvalidRequestException
     {
         validateKey(key);
@@ -170,7 +200,7 @@ public class UpdateStatement extends ModificationStatement
             Operation value = processedColumns.get(cfDef.value.name);
             if (value == null)
                 throw new InvalidRequestException(String.format("Missing mandatory column %s", cfDef.value));
-            hasCounterColumn = addToMutation(cf, builder, cfDef.value, value, params);
+            hasCounterColumn = addToMutation(cf, builder, cfDef.value, value, params, null);
         }
         else
         {
@@ -180,7 +210,7 @@ public class UpdateStatement extends ModificationStatement
                 if (value == null)
                     continue;
 
-                hasCounterColumn |= addToMutation(cf, builder.copy().add(name.name.key), name, value, params);
+                hasCounterColumn |= addToMutation(cf, builder.copy().add(name.name.key), name, value, params, group == null ? null : group.getCollection(name.name.key));
             }
         }
 
@@ -191,7 +221,8 @@ public class UpdateStatement extends ModificationStatement
                                   ColumnNameBuilder builder,
                                   CFDefinition.Name valueDef,
                                   Operation value,
-                                  UpdateParameters params) throws InvalidRequestException
+                                  UpdateParameters params,
+                                  List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
     {
         switch (value.type)
         {
@@ -214,7 +245,7 @@ public class UpdateStatement extends ModificationStatement
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     if (!l.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND_ALL, l), params);
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND_ALL, l), params, null);
                 }
                 else if (v instanceof Value.SetLiteral)
                 {
@@ -229,7 +260,7 @@ public class UpdateStatement extends ModificationStatement
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     if (!s.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD_ALL, new ArrayList<Term>(s)), params);
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD_ALL, new ArrayList<Term>(s)), params, null);
                 }
                 else
                 {
@@ -246,7 +277,8 @@ public class UpdateStatement extends ModificationStatement
                                       builder.copy(),
                                       valueDef,
                                       new Operation.Function(CollectionType.Function.PUT, Arrays.<Term>asList(entry.getKey(), entry.getValue())),
-                                      params);
+                                      params,
+                                      null);
                 }
                 return false;
             case COUNTER:
@@ -276,7 +308,11 @@ public class UpdateStatement extends ModificationStatement
                 if (!(valueDef.type instanceof CollectionType))
                     throw new InvalidRequestException(String.format("Invalid operation %s, %s is not a collection", fOp.fct, valueDef.name));
 
-                ((CollectionType)valueDef.type).execute(cf, builder, fOp.fct, fOp.arguments, params);
+                if ((valueDef.type instanceof ListType) && fOp.fct.needsReading)
+                    ((ListType)valueDef.type).execute(cf, builder, fOp.fct, fOp.arguments, params, list);
+                else
+                    ((CollectionType)valueDef.type).execute(cf, builder, fOp.fct, fOp.arguments, params);
+
                 return false;
         }
         throw new AssertionError();
@@ -414,6 +450,49 @@ public class UpdateStatement extends ModificationStatement
                 case COLUMN_METADATA:
                     throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", rel.getEntity()));
             }
+        }
+    }
+
+
+    private Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> keys, ColumnNameBuilder builder) throws UnavailableException, TimeoutException, InvalidRequestException
+    {
+        List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
+        for (ByteBuffer key : keys)
+        {
+            commands.add(new SliceFromReadCommand(keyspace(),
+                                                  key,
+                                                  new QueryPath(columnFamily()),
+                                                  builder.copy().build(),
+                                                  builder.copy().buildAsEndOfRange(),
+                                                  false,
+                                                  Integer.MAX_VALUE));
+        }
+
+        try
+        {
+            List<Row> rows = StorageProxy.read(commands, getConsistencyLevel());
+
+            CompositeType composite = (CompositeType)cfDef.cfm.comparator;
+            Map<ByteBuffer, ColumnGroupMap> map = new HashMap<ByteBuffer, ColumnGroupMap>();
+            for (Row row : rows)
+            {
+                if (row.cf == null || row.cf.isEmpty())
+                    continue;
+
+                ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
+                for (IColumn column : row.cf)
+                    groupBuilder.add(column);
+
+                List<ColumnGroupMap> groups = groupBuilder.groups();
+                assert groups.isEmpty() || groups.size() == 1;
+                if (!groups.isEmpty())
+                    map.put(row.key.key, groups.get(0));
+            }
+            return map;
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
         }
     }
 

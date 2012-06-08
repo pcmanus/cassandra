@@ -747,30 +747,14 @@ public class SelectStatement implements CQLStatement
             {
                 // Sparse case: group column in cqlRow when composite prefix is equal
                 CompositeType composite = (CompositeType)cfDef.cfm.comparator;
-                int last = composite.types.size() - (cfDef.hasCollections ? 2 : 1);
 
-                ByteBuffer[] previous = null;
-                ColumnGroupMap group = new ColumnGroupMap();
+                ColumnGroupMap.Builder builder = new ColumnGroupMap.Builder(composite, cfDef.hasCollections);
+
                 for (IColumn c : row.cf)
-                {
-                    if (c.isMarkedForDelete())
-                        continue;
+                    builder.add(c);
 
-                    ByteBuffer[] current = composite.split(c.name());
-                    // If current differs from previous, we've just finished a group
-                    if (previous != null && !isSameRow(previous, current, last))
-                    {
-                        cqlRows.add(handleGroup(selection, row.key.key, previous, group, schema));
-                        group = new ColumnGroupMap();
-                    }
-
-                    // Accumulate the current column
-                    group.add(current, last, c);
-                    previous = current;
-                }
-                // Handle the last group
-                if (previous != null)
-                    cqlRows.add(handleGroup(selection, row.key.key, previous, group, schema));
+                for (ColumnGroupMap group : builder.groups())
+                    cqlRows.add(handleGroup(selection, row.key.key, group, schema));
             }
             else
             {
@@ -809,29 +793,8 @@ public class SelectStatement implements CQLStatement
         return cqlRows;
     }
 
-    /**
-     * For sparse composite, returns wheter two columns belong to the same
-     * cqlRow base on the full list of component in the name.
-     * Two columns do belong together if they differ only by the last
-     * component.
-     */
-    private static boolean isSameRow(ByteBuffer[] c1, ByteBuffer[] c2, int last)
-    {
-        // Cql don't allow to insert columns who doesn't have all component of
-        // the composite set for sparse composite. Someone coming from thrift
-        // could hit that though. But since we have no way to handle this
-        // correctly, better fail here and tell whomever may hit that (if
-        // someone ever do) to change the definition to a dense composite
-        assert c1.length >= last && c2.length >= last : "Sparse composite should not have partial column names";
-        for (int i = 0; i < last; i++)
-        {
-            if (!c1[i].equals(c2[i]))
-                return false;
-        }
-        return true;
-    }
 
-    private CqlRow handleGroup(List<Pair<CFDefinition.Name, Selector>> selection, ByteBuffer key, ByteBuffer[] components, ColumnGroupMap columns, CqlMetadata schema)
+    private CqlRow handleGroup(List<Pair<CFDefinition.Name, Selector>> selection, ByteBuffer key, ColumnGroupMap columns, CqlMetadata schema)
     {
         List<Column> thriftColumns = new ArrayList<Column>(selection.size());
 
@@ -850,7 +813,7 @@ public class SelectStatement implements CQLStatement
                     break;
                 case COLUMN_ALIAS:
                     col = new Column(selector.id().key);
-                    col.setValue(components[name.position]);
+                    col.setValue(columns.getKeyComponent(name.position));
                     col.setTimestamp(-1L);
                     break;
                 case VALUE_ALIAS:
@@ -860,7 +823,7 @@ public class SelectStatement implements CQLStatement
                     if (name.type instanceof CollectionType)
                     {
                         col = new Column(name.name.key);
-                        ByteBuffer bb = columns.getCollectionForThrift((CollectionType)name.type, name.name.key);
+                        ByteBuffer bb = ((CollectionType)name.type).serializeForThrift(columns.getCollection(name.name.key));
                         if (bb != null)
                             col.setValue(bb);
                         break;

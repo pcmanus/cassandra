@@ -36,6 +36,7 @@ import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 public class SetType extends CollectionType
 {
@@ -120,12 +121,12 @@ public class SetType extends CollectionType
         cf.addColumn(params.makeTombstone(name));
     }
 
-    public ByteBuffer serializeForThrift(Map<ByteBuffer, IColumn> columns)
+    public ByteBuffer serializeForThrift(List<Pair<ByteBuffer, IColumn>> columns)
     {
         // We're using a list for now, since json doesn't have maps
         List<Object> l = new ArrayList<Object>(columns.size());
-        for (Map.Entry<ByteBuffer, IColumn> entry : columns.entrySet())
-            l.add(elements.compose(entry.getKey()));
+        for (Pair<ByteBuffer, IColumn> p : columns)
+            l.add(elements.compose(p.left));
         return ByteBufferUtil.bytes(FBUtilities.json(l));
     }
 }

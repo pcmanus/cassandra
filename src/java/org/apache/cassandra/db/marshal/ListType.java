@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.Term;
@@ -33,12 +34,52 @@ import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
 
 public class ListType extends CollectionType
 {
     // interning instances
     private static final Map<AbstractType<?>, ListType> instances = new HashMap<AbstractType<?>, ListType>();
+
+    // Our reference time (1 jan 2010, 00:00:00) in milliseconds.
+    private static final long REFERENCE_TIME = 1262304000000L;
+
+    /*
+     * For prepend, we need to be able to generate unique but decreasing time
+     * UUID, which is a bit challenging. To do that, given a time in milliseconds,
+     * we adds a number represening the 100-nanoseconds precision and make sure
+     * that within the same millisecond, that number is always increasing. We
+     * do rely on the fact that the user will only provide decreasing
+     * milliseconds timestamp for that purpose.
+     */
+    private static class PrecisionTime
+    {
+        public final long millis;
+        public final int nanos;
+
+        public PrecisionTime(long millis, int nanos)
+        {
+            this.millis = millis;
+            this.nanos = nanos;
+        }
+    }
+
+    private static final AtomicReference<PrecisionTime> last = new AtomicReference<PrecisionTime>(new PrecisionTime(Long.MAX_VALUE, 0));
+
+    private static PrecisionTime getNextTime(long millis)
+    {
+        while (true)
+        {
+            PrecisionTime current = last.get();
+            assert millis <= current.millis;
+            PrecisionTime next = millis < current.millis
+                               ? new PrecisionTime(millis, 0)
+                               : new PrecisionTime(millis, current.nanos + 1);
+            if (last.compareAndSet(current, next))
+                return next;
+        }
+    }
 
     public final AbstractType<?> elements;
 
@@ -85,8 +126,75 @@ public class ListType extends CollectionType
 
     public void executeFunction(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params) throws InvalidRequestException
     {
-        assert fct == Function.APPEND || fct == Function.APPEND_ALL;
-        doAppendAll(cf, fullPath, args, params);
+        switch (fct)
+        {
+            case APPEND:
+            case APPEND_ALL:
+                doAppendAll(cf, fullPath, args, params);
+                break;
+            case PREPEND:
+            case PREPEND_ALL:
+                doPrependAll(cf, fullPath, args, params);
+                break;
+            default:
+                throw new AssertionError();
+        }
+    }
+
+    public void execute(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    {
+        if (fct.nbArgs >= 0 && args.size() != fct.nbArgs)
+            throw new InvalidRequestException(String.format("Wrong number of argument for %s, expecting %d, got %d", fct, fct.nbArgs, args.size()));
+
+        switch (fct)
+        {
+            case SET:
+                doSet(cf, fullPath, validateIdx(fct, args.get(0), list), args.get(1), params, list);
+                break;
+            case DISCARD:
+                // If list is empty, do nothing
+                if (list != null)
+                    doDiscard(cf, fullPath, args.get(0), params, list);
+                break;
+            case DISCARD_IDX:
+                doDiscardIdx(cf, fullPath, validateIdx(fct, args.get(0), list), params, list);
+                break;
+            default:
+                throw new AssertionError();
+        }
+    }
+
+    private int validateIdx(Function fct, Term value, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    {
+        try
+        {
+            if (value.getType() != Term.Type.INTEGER)
+                throw new InvalidRequestException(String.format("Invalid argument %s for %s, must be an integer", value.getText(), fct));
+            int idx = Integer.parseInt(value.getText());
+            if (list == null || list.size() <= idx)
+                throw new InvalidRequestException(String.format("Invalid index %d, list has size %d", idx, list == null ? 0 : list.size()));
+            return idx;
+        }
+        catch (NumberFormatException e)
+        {
+            // This should not happen, unless we screwed up the parser
+            throw new RuntimeException();
+        }
+    }
+
+    private void doPrependAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
+    {
+        long time = REFERENCE_TIME - (System.currentTimeMillis() - REFERENCE_TIME);
+        // We do the loop in reverse order because getNext() will create increasing time but we want the last
+        // value in the prepended list to have the lower time
+        for (int i = values.size() - 1; i >= 0; i--)
+        {
+            ColumnNameBuilder b = i == 0 ? builder : builder.copy();
+            PrecisionTime pt = getNextTime(time);
+            ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes(pt.millis, pt.nanos));
+            ByteBuffer name = b.add(uuid).build();
+            cf.addColumn(params.makeColumn(name, values.get(i).getByteBuffer(elements, params.variables)));
+        }
     }
 
     private void doAppendAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
@@ -94,16 +202,47 @@ public class ListType extends CollectionType
         for (int i = 0; i < values.size(); i++)
         {
             ColumnNameBuilder b = i == values.size() - 1 ? builder : builder.copy();
-            ByteBuffer name = b.add(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())).build();
+            ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes());
+            ByteBuffer name = b.add(uuid).build();
             cf.addColumn(params.makeColumn(name, values.get(i).getByteBuffer(elements, params.variables)));
         }
     }
 
-    public ByteBuffer serializeForThrift(Map<ByteBuffer, IColumn> columns)
+    public void doSet(ColumnFamily cf, ColumnNameBuilder builder, int idx, Term value, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    {
+        ByteBuffer name = list.get(idx).right.name();
+        cf.addColumn(params.makeColumn(name, value.getByteBuffer(elements, params.variables)));
+    }
+
+    public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    {
+        ByteBuffer toFind = value.getByteBuffer(elements, params.variables);
+        ByteBuffer name = null;
+        for (Pair<ByteBuffer, IColumn> p : list)
+        {
+            IColumn c = p.right;
+            if (c.value().equals(toFind))
+            {
+                name = c.name();
+                break;
+            }
+        }
+
+        if (name != null)
+            cf.addColumn(params.makeTombstone(name));
+    }
+
+    public void doDiscardIdx(ColumnFamily cf, ColumnNameBuilder builder, int idx, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    {
+        ByteBuffer name = list.get(idx).right.name();
+        cf.addColumn(params.makeTombstone(name));
+    }
+
+    public ByteBuffer serializeForThrift(List<Pair<ByteBuffer, IColumn>> columns)
     {
         List<Object> l = new ArrayList<Object>(columns.size());
-        for (Map.Entry<ByteBuffer, IColumn> entry : columns.entrySet())
-            l.add(elements.compose(entry.getValue().value()));
+        for (Pair<ByteBuffer, IColumn> p : columns)
+            l.add(elements.compose(p.right.value()));
         return ByteBufferUtil.bytes(FBUtilities.json(l));
     }
 }
