@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.Term;
@@ -31,6 +30,7 @@ import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * The abstract validator that is the base for maps, sets and lists.
@@ -44,19 +44,25 @@ public abstract class CollectionType extends AbstractType<ByteBuffer>
 
     public enum Function
     {
-        APPEND     (1, Kind.LIST),
-        APPEND_ALL (-1, Kind.LIST),
-        ADD        (1, Kind.SET),
-        ADD_ALL    (-1, Kind.SET),
-        PUT        (2, Kind.MAP),
-        DISCARD    (1, Kind.SET, Kind.MAP);
+        APPEND      ( 1, false, Kind.LIST),
+        APPEND_ALL  (-1, false, Kind.LIST),
+        PREPEND     ( 1, false, Kind.LIST),
+        PREPEND_ALL (-1, false, Kind.LIST),
+        SET         ( 2,  true, Kind.LIST),
+        ADD         ( 1, false, Kind.SET),
+        ADD_ALL     (-1, false, Kind.SET),
+        PUT         ( 2, false, Kind.MAP),
+        DISCARD     ( 1,  true, Kind.LIST, Kind.SET, Kind.MAP),
+        DISCARD_IDX ( 1,  true, Kind.LIST);
 
+        public final boolean needsReading;
         public final int nbArgs;
         public final EnumSet<Kind> validReceivers;
 
-        private Function(int nbArgs, Kind ... validReceivers)
+        private Function(int nbArgs, boolean needsReading, Kind ... validReceivers)
         {
             this.nbArgs = nbArgs;
+            this.needsReading = needsReading;
             this.validReceivers = EnumSet.copyOf(Arrays.asList(validReceivers));
         }
 
@@ -80,7 +86,7 @@ public abstract class CollectionType extends AbstractType<ByteBuffer>
     public void execute(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params) throws InvalidRequestException
     {
         if (fct.nbArgs >= 0 && args.size() != fct.nbArgs)
-            throw new InvalidRequestException(String.format("Wrong number of argument for %s, expecting %d, got %d", this, fct.nbArgs, args.size()));
+            throw new InvalidRequestException(String.format("Wrong number of argument for %s, expecting %d, got %d", fct, fct.nbArgs, args.size()));
 
         if (!fct.validReceivers.contains(kind))
             throw new InvalidRequestException(String.format("Invalid operation %s for %s collection", fct, kind));
@@ -90,7 +96,7 @@ public abstract class CollectionType extends AbstractType<ByteBuffer>
 
     public abstract void executeFunction(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params) throws InvalidRequestException;
 
-    public abstract ByteBuffer serializeForThrift(Map<ByteBuffer, IColumn> columns);
+    public abstract ByteBuffer serializeForThrift(List<Pair<ByteBuffer, IColumn>> columns);
 
     @Override
     public String toString()

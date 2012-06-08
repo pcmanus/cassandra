@@ -113,11 +113,11 @@ public class MapType extends CollectionType
         cf.addColumn(params.makeTombstone(name));
     }
 
-    public ByteBuffer serializeForThrift(Map<ByteBuffer, IColumn> columns)
+    public ByteBuffer serializeForThrift(List<Pair<ByteBuffer, IColumn>> columns)
     {
         Map<String, Object> m = new LinkedHashMap<String, Object>();
-        for (Map.Entry<ByteBuffer, IColumn> entry : columns.entrySet())
-            m.put(keys.getString(entry.getKey()), values.compose(entry.getValue().value()));
+        for (Pair<ByteBuffer, IColumn> p : columns)
+            m.put(keys.getString(p.left), values.compose(p.right.value()));
         return ByteBufferUtil.bytes(FBUtilities.json(m));
     }
 }

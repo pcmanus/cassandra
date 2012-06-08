@@ -36,12 +36,34 @@ import org.apache.cassandra.thrift.InvalidRequestException;
 /** A term parsed from a CQL statement. */
 public class Term implements Value
 {
+    public enum Type
+    {
+        STRING, INTEGER, UUID, FLOAT, QMARK;
+
+        static Type forInt(int type)
+        {
+            if ((type == CqlParser.STRING_LITERAL) || (type == CqlParser.IDENT))
+                return STRING;
+            else if (type == CqlParser.INTEGER)
+                return INTEGER;
+            else if (type == CqlParser.UUID)
+                return UUID;
+            else if (type == CqlParser.FLOAT)
+                return FLOAT;
+            else if (type == CqlParser.QMARK)
+                return QMARK;
+
+            // FIXME: handled scenario that should never occur.
+            return null;
+        }
+    }
+
     private final String text;
-    private final TermType type;
+    private final Type type;
     public final int bindIndex;
     public final boolean isToken;
 
-    private Term(String text, TermType type, int bindIndex, boolean isToken)
+    private Term(String text, Type type, int bindIndex, boolean isToken)
     {
         this.text = text == null ? "" : text;
         this.type = type;
@@ -49,7 +71,7 @@ public class Term implements Value
         this.isToken = isToken;
     }
 
-    public Term(String text, TermType type)
+    public Term(String text, Type type)
     {
         this(text, type, -1, false);
     }
@@ -63,17 +85,17 @@ public class Term implements Value
      */
     public Term(String text, int type)
     {
-        this(text, TermType.forInt(type));
+        this(text, Type.forInt(type));
     }
 
-    public Term(long value, TermType type)
+    public Term(long value, Type type)
     {
         this(String.valueOf(value), type);
     }
 
     public Term(String text, int type, int index)
     {
-        this(text, TermType.forInt(type), index, false);
+        this(text, Type.forInt(type), index, false);
     }
 
     public static Term tokenOf(Term t)
@@ -121,7 +143,7 @@ public class Term implements Value
 
     public Token getAsToken(AbstractType<?> validator, List<ByteBuffer> variables, IPartitioner<?> p) throws InvalidRequestException
     {
-        if (!(isToken || type == TermType.STRING))
+        if (!(isToken || type == Type.STRING))
             throw new InvalidRequestException("Invalid value for token (use a string literal of the token value or the token() function)");
 
         try
@@ -148,14 +170,14 @@ public class Term implements Value
      *
      * @return the type
      */
-    public TermType getType()
+    public Type getType()
     {
         return type;
     }
 
     public boolean isBindMarker()
     {
-        return type == TermType.QMARK;
+        return type == Type.QMARK;
     }
 
     public Iterator<Term> iterator()
@@ -189,7 +211,7 @@ public class Term implements Value
         if (getClass() != obj.getClass())
             return false;
         Term other = (Term) obj;
-        if (type==TermType.QMARK) return false; // markers are never equal
+        if (type==Type.QMARK) return false; // markers are never equal
         if (text == null)
         {
             if (other.text != null)
@@ -201,27 +223,5 @@ public class Term implements Value
         if (isToken != other.isToken)
             return false;
         return true;
-    }
-}
-
-enum TermType
-{
-    STRING, INTEGER, UUID, FLOAT, QMARK;
-
-    static TermType forInt(int type)
-    {
-        if ((type == CqlParser.STRING_LITERAL) || (type == CqlParser.IDENT))
-            return STRING;
-        else if (type == CqlParser.INTEGER)
-            return INTEGER;
-        else if (type == CqlParser.UUID)
-          return UUID;
-        else if (type == CqlParser.FLOAT)
-            return FLOAT;
-        else if (type == CqlParser.QMARK)
-            return QMARK;
-
-        // FIXME: handled scenario that should never occur.
-        return null;
     }
 }
