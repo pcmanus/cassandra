@@ -23,6 +23,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
 
+import com.google.common.collect.ArrayListMultimap;
+
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
@@ -48,12 +50,12 @@ import static org.apache.cassandra.thrift.ThriftValidation.validateCommutativeFo
 public class UpdateStatement extends ModificationStatement
 {
     private CFDefinition cfDef;
-    private final Map<ColumnIdentifier, Operation> columns;
+    private final List<Pair<ColumnIdentifier, Operation>> columns;
     private final List<ColumnIdentifier> columnNames;
     private final List<Value> columnValues;
     private final List<Relation> whereClause;
 
-    private final Map<ColumnIdentifier, Operation> processedColumns = new HashMap<ColumnIdentifier, Operation>();
+    private final ArrayListMultimap<CFDefinition.Name, Operation> processedColumns = ArrayListMultimap.create();
     private final Map<ColumnIdentifier, List<Term>> processedKeys = new HashMap<ColumnIdentifier, List<Term>>();
 
     /**
@@ -66,7 +68,7 @@ public class UpdateStatement extends ModificationStatement
      * @param attrs additional attributes for statement (CL, timestamp, timeToLive)
      */
     public UpdateStatement(CFName name,
-                           Map<ColumnIdentifier, Operation> columns,
+                           List<Pair<ColumnIdentifier, Operation>> columns,
                            List<Relation> whereClause,
                            Attributes attrs)
     {
@@ -89,9 +91,9 @@ public class UpdateStatement extends ModificationStatement
      * @param attrs additional attributes for statement (CL, timestamp, timeToLive)
      */
     public UpdateStatement(CFName name,
+                           Attributes attrs,
                            List<ColumnIdentifier> columnNames,
-                           List<Value> columnValues,
-                           Attributes attrs)
+                           List<Value> columnValues)
     {
         super(name, attrs);
 
@@ -100,6 +102,7 @@ public class UpdateStatement extends ModificationStatement
         this.whereClause = null;
         this.columns = null;
     }
+
 
     /** {@inheritDoc} */
     public List<IMutation> getMutations(ClientState clientState, List<ByteBuffer> variables) throws UnavailableException, TimeoutException, InvalidRequestException
@@ -140,12 +143,15 @@ public class UpdateStatement extends ModificationStatement
         // if there is at least one list, we just read the whole "row" (in the CQL sense of
         // row) to simplify. Once #3885 is in, we can improve.
         boolean needsReading = false;
-        for (CFDefinition.Name name : cfDef.metadata.values())
+        outer:
+        for (Map.Entry<CFDefinition.Name, Operation> entry : processedColumns.entries())
         {
+            CFDefinition.Name name = entry.getKey();
+            Operation value = entry.getValue();
+
             if (!(name.type instanceof ListType))
                 continue;
 
-            Operation value = processedColumns.get(name.name);
             if (value == null || value.type != Operation.Type.FUNCTION)
                 continue;
 
@@ -197,18 +203,18 @@ public class UpdateStatement extends ModificationStatement
             if (builder.componentCount() == 0)
                 throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfDef.columns.values().iterator().next()));
 
-            Operation value = processedColumns.get(cfDef.value.name);
-            if (value == null)
+            List<Operation> value = processedColumns.get(cfDef.value);
+            if (value.isEmpty())
                 throw new InvalidRequestException(String.format("Missing mandatory column %s", cfDef.value));
-            hasCounterColumn = addToMutation(cf, builder, cfDef.value, value, params, null);
+            assert value.size() == 1;
+            hasCounterColumn = addToMutation(cf, builder, cfDef.value, value.get(0), params, null);
         }
         else
         {
-            for (CFDefinition.Name name : cfDef.metadata.values())
+            for (Map.Entry<CFDefinition.Name, Operation> entry : processedColumns.entries())
             {
-                Operation value = processedColumns.get(name.name);
-                if (value == null)
-                    continue;
+                CFDefinition.Name name = entry.getKey();
+                Operation value = entry.getValue();
 
                 hasCounterColumn |= addToMutation(cf, builder.copy().add(name.name.key), name, value, params, group == null ? null : group.getCollection(name.name.key));
             }
@@ -324,12 +330,12 @@ public class UpdateStatement extends ModificationStatement
 
         if (columns != null)
         {
-            for (Map.Entry<ColumnIdentifier, Operation> column : columns.entrySet())
+            for (Pair<ColumnIdentifier, Operation> column : columns)
             {
-                if (column.getValue().type == Operation.Type.COUNTER)
+                if (column.right.type == Operation.Type.COUNTER)
                     hasCommutativeOperation = true;
 
-                if (hasCommutativeOperation && column.getValue().type != Operation.Type.COUNTER)
+                if (hasCommutativeOperation && column.right.type != Operation.Type.COUNTER)
                     throw new InvalidRequestException("Mix of counter and non-counter operations is not allowed.");
             }
         }
@@ -373,9 +379,9 @@ public class UpdateStatement extends ModificationStatement
                         break;
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
-                        if (processedColumns.containsKey(name.name))
+                        if (processedColumns.containsKey(name))
                             throw new InvalidRequestException(String.format("Multiple definition found for column %s", name));
-                        processedColumns.put(name.name, new Operation.Set(value));
+                        processedColumns.put(name, new Operation.Set(value));
                         break;
                 }
             }
@@ -383,26 +389,28 @@ public class UpdateStatement extends ModificationStatement
         else
         {
             // Created from an UPDATE
-            for (Map.Entry<ColumnIdentifier, Operation> entry : columns.entrySet())
+            for (Pair<ColumnIdentifier, Operation> entry : columns)
             {
-                CFDefinition.Name name = cfDef.get(entry.getKey());
+                CFDefinition.Name name = cfDef.get(entry.left);
                 if (name == null)
-                    throw new InvalidRequestException(String.format("Unknown identifier %s", entry.getKey()));
+                    throw new InvalidRequestException(String.format("Unknown identifier %s", entry.left));
 
                 switch (name.kind)
                 {
                     case KEY_ALIAS:
                     case COLUMN_ALIAS:
-                        throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.getKey()));
+                        throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.left));
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
-                        if (processedColumns.containsKey(name.name))
-                            throw new InvalidRequestException(String.format("Multiple definition found for column %s", name));
-                        Operation op = entry.getValue();
+                        for (Operation op : processedColumns.get(name))
+                            if (op.type != Operation.Type.FUNCTION)
+                                throw new InvalidRequestException(String.format("Multiple definition found for column %s", name));
+
+                        Operation op = entry.right;
                         for (Term t : op.allTerms())
                             if (t.isBindMarker())
                                 boundNames[t.bindIndex] = name;
-                        processedColumns.put(name.name, op);
+                        processedColumns.put(name, op);
                         break;
                 }
             }

@@ -229,7 +229,7 @@ insertStatement returns [UpdateStatement expr]
           '(' v1=value { columnValues.add(v1); } ( ',' vn=value { columnValues.add(vn); } )+ ')'
         ( usingClause[attrs] )?
       {
-          $expr = new UpdateStatement(cf, columnNames, columnValues, attrs);
+          $expr = new UpdateStatement(cf, attrs, columnNames, columnValues);
       }
     ;
 
@@ -260,7 +260,7 @@ usingClauseObjective[Attributes attrs]
 updateStatement returns [UpdateStatement expr]
     @init {
         Attributes attrs = new Attributes();
-        Map<ColumnIdentifier, Operation> columns = new HashMap<ColumnIdentifier, Operation>();
+        List<Pair<ColumnIdentifier, Operation>> columns = new ArrayList<Pair<ColumnIdentifier, Operation>>();
     }
     : K_UPDATE cf=columnFamilyName
       ( usingClause[attrs] )?
@@ -493,14 +493,14 @@ intTerm returns [Term integer]
     | t=QMARK   { $integer = new Term($t.text, $t.type, ++currentBindMarkerIdx); }
     ;
 
-termPairWithOperation[Map<ColumnIdentifier, Operation> columns]
+termPairWithOperation[List<Pair<ColumnIdentifier, Operation>> columns]
     : key=cident '='
-        ( v=value { columns.put(key, new Operation.Set(v)); }
+        ( v=value { columns.add(Pair.<ColumnIdentifier, Operation>create(key, new Operation.Set(v))); }
         | c=cident op=operation
           {
               if (!key.equals(c))
                   addRecognitionError("Only expressions like X = X + <long> are supported.");
-              columns.put(key, op);
+              columns.add(Pair.<ColumnIdentifier, Operation>create(key, op));
           }
         )
     ;
