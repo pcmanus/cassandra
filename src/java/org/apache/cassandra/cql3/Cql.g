@@ -529,7 +529,7 @@ functionName returns [CollectionType.Function name]
             addRecognitionError("Unknown method " + str);
         }
     }
-    : t=(IDENT | K_ADD)    { str = $t.text; }
+    : t=(IDENT | K_ADD | K_SET)    { str = $t.text; }
     | k=unreserved_keyword { str = k; }
     ;
 
