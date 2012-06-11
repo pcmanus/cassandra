@@ -18,6 +18,7 @@
 package org.apache.cassandra.db.marshal;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -197,18 +198,29 @@ public class CompositeType extends AbstractCompositeType
         private final CompositeType composite;
         private int current;
 
-        private final DataOutputBuffer out = new DataOutputBuffer();
+        private final List<ByteBuffer> components;
+        private final byte[] endOfComponents;
+        private int serializedSize;
 
         public Builder(CompositeType composite)
         {
+            this(composite, new ArrayList<ByteBuffer>(composite.types.size()), new byte[composite.types.size()]);
+        }
+
+        public Builder(CompositeType composite, List<ByteBuffer> components, byte[] endOfComponents)
+        {
+            assert endOfComponents.length == composite.types.size();
+
             this.composite = composite;
+            this.components = components;
+            this.endOfComponents = endOfComponents;
         }
 
         private Builder(Builder b)
         {
-            this(b.composite);
+            this(b.composite, new ArrayList<ByteBuffer>(b.components), Arrays.copyOf(b.endOfComponents, b.endOfComponents.length));
             this.current = b.current;
-            out.write(b.out.getData(), 0, b.out.getLength());
+            this.serializedSize = b.serializedSize;
         }
 
         public Builder add(Term t, Relation.Type op, List<ByteBuffer> variables) throws InvalidRequestException
@@ -216,9 +228,9 @@ public class CompositeType extends AbstractCompositeType
             if (current >= composite.types.size())
                 throw new IllegalStateException("Composite column is already fully constructed");
 
-            AbstractType currentType = composite.types.get(current++);
+            AbstractType currentType = composite.types.get(current);
             ByteBuffer buffer = t.getByteBuffer(currentType, variables);
-            ByteBufferUtil.writeWithShortLength(buffer, out);
+            components.add(buffer);
 
             /*
              * Given the rules for eoc (end-of-component, see AbstractCompositeType.compare()),
@@ -232,16 +244,17 @@ public class CompositeType extends AbstractCompositeType
             switch (op)
             {
                 case LT:
-                    out.write((byte) -1);
+                    endOfComponents[current] = (byte) -1;
                     break;
                 case GT:
                 case LTE:
-                    out.write((byte) 1);
+                    endOfComponents[current] = (byte) 1;
                     break;
                 default:
-                    out.write((byte) 0);
+                    endOfComponents[current] = (byte) 0;
                     break;
             }
+            ++current;
             return this;
         }
 
@@ -250,8 +263,8 @@ public class CompositeType extends AbstractCompositeType
             if (current >= composite.types.size())
                 throw new IllegalStateException("Composite column is already fully constructed");
 
-            ByteBufferUtil.writeWithShortLength(bb, out);
-            out.write((byte) 0);
+            components.add(bb);
+            endOfComponents[current++] = (byte) 0;
             return this;
         }
 
@@ -262,7 +275,12 @@ public class CompositeType extends AbstractCompositeType
 
         public ByteBuffer build()
         {
-            // potentially slightly space-wasteful in favor of avoiding a copy
+            DataOutputBuffer out = new DataOutputBuffer(serializedSize);
+            for (int i = 0; i < components.size(); i++)
+            {
+                ByteBufferUtil.writeWithShortLength(components.get(i), out);
+                out.write(endOfComponents[i]);
+            }
             return ByteBuffer.wrap(out.getData(), 0, out.getLength());
         }
 
