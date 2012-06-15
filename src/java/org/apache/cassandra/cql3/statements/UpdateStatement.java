@@ -139,11 +139,10 @@ public class UpdateStatement extends ModificationStatement
         for (Term key: keys)
             rawKeys.add(key.getByteBuffer(cfDef.key.type, variables));
 
-        // Lists SET and DISCARD operation incurs a read. Do that now. Note that currently,
+        // Lists SET operation incurs a read. Do that now. Note that currently,
         // if there is at least one list, we just read the whole "row" (in the CQL sense of
         // row) to simplify. Once #3885 is in, we can improve.
         boolean needsReading = false;
-        outer:
         for (Map.Entry<CFDefinition.Name, Operation> entry : processedColumns.entries())
         {
             CFDefinition.Name name = entry.getKey();
@@ -163,7 +162,7 @@ public class UpdateStatement extends ModificationStatement
             }
         }
 
-        Map<ByteBuffer, ColumnGroupMap> rows = needsReading ? readRows(rawKeys, builder) : null;
+        Map<ByteBuffer, ColumnGroupMap> rows = needsReading ? readRows(rawKeys, builder, (CompositeType)cfDef.cfm.comparator) : null;
 
         List<IMutation> rowMutations = new LinkedList<IMutation>();
         UpdateParameters params = new UpdateParameters(variables, getTimestamp(clientState), timeToLive);
@@ -251,7 +250,7 @@ public class UpdateStatement extends ModificationStatement
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     if (!l.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND_ALL, l), params, null);
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND, l), params, null);
                 }
                 else if (v instanceof Value.SetLiteral)
                 {
@@ -266,7 +265,7 @@ public class UpdateStatement extends ModificationStatement
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     if (!s.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD_ALL, new ArrayList<Term>(s)), params, null);
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD, s.asList()), params, null);
                 }
                 else
                 {
@@ -278,13 +277,8 @@ public class UpdateStatement extends ModificationStatement
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     Value.MapLiteral m = (Value.MapLiteral)v;
-                    for (Map.Entry<Term, Term> entry : m.entrySet())
-                        addToMutation(cf,
-                                      builder.copy(),
-                                      valueDef,
-                                      new Operation.Function(CollectionType.Function.PUT, Arrays.<Term>asList(entry.getKey(), entry.getValue())),
-                                      params,
-                                      null);
+                    if (!m.isEmpty())
+                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.SET, m.asList()), params, null);
                 }
                 return false;
             case COUNTER:
@@ -363,7 +357,7 @@ public class UpdateStatement extends ModificationStatement
                     throw new InvalidRequestException(String.format("Unknown identifier %s", columnNames.get(i)));
 
                 Value value = columnValues.get(i);
-                for (Term t : value)
+                for (Term t : value.asList())
                     if (t.isBindMarker())
                         boundNames[t.bindIndex] = name;
 
@@ -458,49 +452,6 @@ public class UpdateStatement extends ModificationStatement
                 case COLUMN_METADATA:
                     throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", rel.getEntity()));
             }
-        }
-    }
-
-
-    private Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> keys, ColumnNameBuilder builder) throws UnavailableException, TimeoutException, InvalidRequestException
-    {
-        List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
-        for (ByteBuffer key : keys)
-        {
-            commands.add(new SliceFromReadCommand(keyspace(),
-                                                  key,
-                                                  new QueryPath(columnFamily()),
-                                                  builder.copy().build(),
-                                                  builder.copy().buildAsEndOfRange(),
-                                                  false,
-                                                  Integer.MAX_VALUE));
-        }
-
-        try
-        {
-            List<Row> rows = StorageProxy.read(commands, getConsistencyLevel());
-
-            CompositeType composite = (CompositeType)cfDef.cfm.comparator;
-            Map<ByteBuffer, ColumnGroupMap> map = new HashMap<ByteBuffer, ColumnGroupMap>();
-            for (Row row : rows)
-            {
-                if (row.cf == null || row.cf.isEmpty())
-                    continue;
-
-                ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
-                for (IColumn column : row.cf)
-                    groupBuilder.add(column);
-
-                List<ColumnGroupMap> groups = groupBuilder.groups();
-                assert groups.isEmpty() || groups.size() == 1;
-                if (!groups.isEmpty())
-                    map.put(row.key.key, groups.get(0));
-            }
-            return map;
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
         }
     }
 

@@ -19,6 +19,7 @@ package org.apache.cassandra.db.marshal;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -90,10 +91,10 @@ public class MapType extends CollectionType
     {
         switch (fct)
         {
-            case PUT:
-                doPut(cf, fullPath, args.get(0), args.get(1), params);
+            case SET:
+                doPut(cf, fullPath, args, params);
                 break;
-            case DISCARD:
+            case DISCARD_KEY:
                 doDiscard(cf, fullPath, args.get(0), params);
                 break;
             default:
@@ -101,10 +102,16 @@ public class MapType extends CollectionType
         }
     }
 
-    private void doPut(ColumnFamily cf, ColumnNameBuilder builder, Term key, Term value, UpdateParameters params) throws InvalidRequestException
+    private void doPut(ColumnFamily cf, ColumnNameBuilder builder, List<Term> args, UpdateParameters params) throws InvalidRequestException
     {
-        ByteBuffer name = builder.add(key.getByteBuffer(keys, params.variables)).build();
-        cf.addColumn(params.makeColumn(name, value.getByteBuffer(values, params.variables)));
+        assert args.size() % 2 == 0;
+        Iterator<Term> iter = args.iterator();
+        while (iter.hasNext())
+        {
+            ByteBuffer name = builder.copy().add(iter.next().getByteBuffer(keys, params.variables)).build();
+            ByteBuffer value = iter.next().getByteBuffer(values, params.variables);
+            cf.addColumn(params.makeColumn(name, value));
+        }
     }
 
     private void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params) throws InvalidRequestException
