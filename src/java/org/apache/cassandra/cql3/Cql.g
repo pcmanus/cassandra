@@ -27,6 +27,7 @@ options {
     package org.apache.cassandra.cql3;
 
     import java.util.ArrayList;
+    import java.util.Arrays;
     import java.util.Collections;
     import java.util.HashMap;
     import java.util.LinkedHashMap;
@@ -192,8 +193,7 @@ selector returns [Selector s]
     ;
 
 selectCountClause returns [List<Selector> expr]
-    : ids=cidentList { $expr = new ArrayList<Selector>(ids); }
-    | '\*'           { $expr = Collections.<Selector>emptyList();}
+    : '\*'           { $expr = Collections.<Selector>emptyList();}
     | i=INTEGER      { if (!i.getText().equals("1")) addRecognitionError("Only COUNT(1) is supported, got COUNT(" + i.getText() + ")"); $expr = Collections.<Selector>emptyList();}
     ;
 
@@ -280,9 +280,9 @@ updateStatement returns [UpdateStatement expr]
 deleteStatement returns [DeleteStatement expr]
     @init {
         Attributes attrs = new Attributes();
-        List<ColumnIdentifier> columnsList = Collections.emptyList();
+        List<Selector> columnsList = Collections.emptyList();
     }
-    : K_DELETE ( ids=cidentList { columnsList = ids; } )?
+    : K_DELETE ( ids=deleteSelection { columnsList = ids; } )?
       K_FROM cf=columnFamilyName
       ( usingClauseDelete[attrs] )?
       K_WHERE wclause=whereClause
@@ -291,6 +291,14 @@ deleteStatement returns [DeleteStatement expr]
       }
     ;
 
+deleteSelection returns [List<Selector> expr]
+    : t1=deleteSelector { $expr = new ArrayList<Selector>(); $expr.add(t1); } (',' tN=deleteSelector { $expr.add(tN); })*
+    ;
+
+deleteSelector returns [Selector s]
+    : c=cident                { $s = c; }
+    | c=cident '[' t=term ']' { $s = new Selector.WithKey(c, t); }
+    ;
 
 /**
  * BEGIN BATCH [USING CONSISTENCY <LVL>]
@@ -463,18 +471,29 @@ cfOrKsName[CFName name, boolean isKs]
     | k=unreserved_keyword { if (isKs) $name.setKeyspace(k, false); else $name.setColumnFamily(k, false); }
     ;
 
-cidentList returns [List<ColumnIdentifier> items]
-    @init{ $items = new ArrayList<ColumnIdentifier>(); }
-    :  t1=cident { $items.add(t1); } (',' tN=cident { $items.add(tN); })*
-    ;
-
 // Values (includes prepared statement markers)
 value returns [Value value]
-    : t=term { $value = t; }
-    | '[' { Value.ListLiteral l = new Value.ListLiteral(); } ( t1=term { l.add(t1); } ( ',' tn=term { l.add(tn); } )* )? ']' { $value = l; }
-    | '{' { Value.SetLiteral s = new Value.SetLiteral(); } ( t1=term { s.add(t1); } ( ',' tn=term { s.add(tn); } )* )? '}'  { $value = s; }
-    // Note that we have an ambiguity between maps and set for "{}". So we force it to a set here, and deal with it later based on the type of the column
-    | '{' { Value.MapLiteral m = new Value.MapLiteral(); } k1=term ':' v1=term { m.put(k1, v1); } ( ',' kn=term ':' vn=term { m.put(kn, vn); } )* '}'
+    : t=term               { $value = t; }
+    | c=collection_literal { $value = c; }
+    ;
+
+collection_literal returns [Value value]
+    : ll=list_literal { $value = ll; }
+    | sl=set_literal  { $value = sl; }
+    | ml=map_literal  { $value = ml; }
+    ;
+
+list_literal returns [Value.ListLiteral value]
+    : '[' { Value.ListLiteral l = new Value.ListLiteral(); } ( t1=term { l.add(t1); } ( ',' tn=term { l.add(tn); } )* )? ']' { $value = l; }
+    ;
+
+set_literal returns [Value.SetLiteral value]
+    : '{' { Value.SetLiteral s = new Value.SetLiteral(); } ( t1=term { s.add(t1); } ( ',' tn=term { s.add(tn); } )* )? '}'  { $value = s; }
+    ;
+
+map_literal returns [Value.MapLiteral value]
+    // Note that we have an ambiguity between maps and set for "{}". So we force it to a set, and deal with it later based on the type of the column
+    : '{' { Value.MapLiteral m = new Value.MapLiteral(); } k1=term ':' v1=term { m.put(k1, v1); } ( ',' kn=term ':' vn=term { m.put(kn, vn); } )* '}'
        { $value = m; }
     ;
 
@@ -499,12 +518,22 @@ termPairWithOperation[List<Pair<ColumnIdentifier, Operation>> columns]
         | c=cident op=operation
           {
               if (!key.equals(c))
-                  addRecognitionError("Only expressions like X = X + <long> are supported.");
+                  addRecognitionError("Only expressions like X = X <op> <value> are supported.");
               columns.add(Pair.<ColumnIdentifier, Operation>create(key, op));
           }
+        | ll=list_literal '+' c=cident
+          {
+              if (!key.equals(c))
+                  addRecognitionError("Only expressions like X = <value> + X are supported.");
+              columns.add(Pair.<ColumnIdentifier, Operation>create(key, new Operation.Function(CollectionType.Function.PREPEND, ll)));
+          }
         )
+    | key=cident '[' t=term ']' '=' vv=term
+      {
+          List<Term> args = Arrays.asList(t, vv);
+          columns.add(Pair.<ColumnIdentifier, Operation>create(key, new Operation.Function(CollectionType.Function.SET, args)));
+      }
     ;
-
 
 operation returns [Operation op]
     : '+' v=intTerm { $op = new Operation.Counter(v, false); }
@@ -515,22 +544,13 @@ operation returns [Operation op]
               v = new Term(-(Long.valueOf(v.getText())), v.getType());
           $op = new Operation.Counter(v, true);
       }
-    | '.' fname=functionName '(' { List<Term> args = new ArrayList<Term>(); }
-              ( t1=term { args.add(t1); } ( ',' tn=term { args.add(tn); } )* )?
-           ')' { $op = new Operation.Function(fname, args); }
-    ;
+    | '+' ll=list_literal { $op = new Operation.Function(CollectionType.Function.APPEND, ll); }
+    | '-' ll=list_literal { $op = new Operation.Function(CollectionType.Function.DISCARD_LIST, ll); }
 
-functionName returns [CollectionType.Function name]
-    @init { String str = null; }
-    @after {
-        try {
-            $name = CollectionType.Function.fromString(str);
-        } catch (IllegalArgumentException e) {
-            addRecognitionError("Unknown method " + str);
-        }
-    }
-    : t=(IDENT | K_ADD | K_SET)    { str = $t.text; }
-    | k=unreserved_keyword { str = k; }
+    | '+' sl=set_literal { $op = new Operation.Function(CollectionType.Function.ADD, sl.asList()); }
+    | '-' sl=set_literal { $op = new Operation.Function(CollectionType.Function.DISCARD_SET, sl.asList()); }
+
+    | '+' ml=map_literal { $op = new Operation.Function(CollectionType.Function.SET, ml.asList()); }
     ;
 
 property returns [String str]

@@ -18,11 +18,7 @@
 package org.apache.cassandra.db.marshal;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.cql3.ColumnNameBuilder;
@@ -129,12 +125,10 @@ public class ListType extends CollectionType
         switch (fct)
         {
             case APPEND:
-            case APPEND_ALL:
-                doAppendAll(cf, fullPath, args, params);
+                doAppend(cf, fullPath, args, params);
                 break;
             case PREPEND:
-            case PREPEND_ALL:
-                doPrependAll(cf, fullPath, args, params);
+                doPrepend(cf, fullPath, args, params);
                 break;
             default:
                 throw new AssertionError();
@@ -143,20 +137,17 @@ public class ListType extends CollectionType
 
     public void execute(ColumnFamily cf, ColumnNameBuilder fullPath, Function fct, List<Term> args, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
     {
-        if (fct.nbArgs >= 0 && args.size() != fct.nbArgs)
-            throw new InvalidRequestException(String.format("Wrong number of argument for %s, expecting %d, got %d", fct, fct.nbArgs, args.size()));
-
         switch (fct)
         {
             case SET:
                 doSet(cf, fullPath, validateIdx(fct, args.get(0), list), args.get(1), params, list);
                 break;
-            case DISCARD:
+            case DISCARD_LIST:
                 // If list is empty, do nothing
                 if (list != null)
-                    doDiscard(cf, fullPath, args.get(0), params, list);
+                    doDiscard(cf, fullPath, args, params, list);
                 break;
-            case DISCARD_IDX:
+            case DISCARD_KEY:
                 doDiscardIdx(cf, fullPath, validateIdx(fct, args.get(0), list), params, list);
                 break;
             default:
@@ -182,7 +173,7 @@ public class ListType extends CollectionType
         }
     }
 
-    private void doPrependAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
+    private void doPrepend(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
         long time = REFERENCE_TIME - (System.currentTimeMillis() - REFERENCE_TIME);
         // We do the loop in reverse order because getNext() will create increasing time but we want the last
@@ -197,7 +188,7 @@ public class ListType extends CollectionType
         }
     }
 
-    private void doAppendAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
+    private void doAppend(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
         for (int i = 0; i < values.size(); i++)
         {
@@ -214,22 +205,18 @@ public class ListType extends CollectionType
         cf.addColumn(params.makeColumn(name, value.getByteBuffer(elements, params.variables)));
     }
 
-    public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
+    public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException
     {
-        ByteBuffer toFind = value.getByteBuffer(elements, params.variables);
-        ByteBuffer name = null;
+        Set<ByteBuffer> toDiscard = new HashSet<ByteBuffer>();
+        for (Term value : values)
+            toDiscard.add(value.getByteBuffer(elements, params.variables));
+
         for (Pair<ByteBuffer, IColumn> p : list)
         {
             IColumn c = p.right;
-            if (c.value().equals(toFind))
-            {
-                name = c.name();
-                break;
-            }
+            if (toDiscard.contains(c.value()))
+                cf.addColumn(params.makeTombstone(c.name()));
         }
-
-        if (name != null)
-            cf.addColumn(params.makeTombstone(name));
     }
 
     public void doDiscardIdx(ColumnFamily cf, ColumnNameBuilder builder, int idx, UpdateParameters params, List<Pair<ByteBuffer, IColumn>> list) throws InvalidRequestException

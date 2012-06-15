@@ -93,32 +93,34 @@ public class SetType extends CollectionType
         switch (fct)
         {
             case ADD:
-            case ADD_ALL:
-                doAddAll(cf, fullPath, args, params);
+                doAdd(cf, fullPath, args, params);
                 break;
-            case DISCARD:
-                doDiscard(cf, fullPath, args.get(0), params);
+            case DISCARD_SET:
+                doDiscard(cf, fullPath, args, params);
                 break;
             default:
                 throw new AssertionError();
         }
     }
 
-    public void doAddAll(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
+    public void doAdd(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
         for (int i = 0; i < values.size(); ++i)
         {
             ColumnNameBuilder b = i == values.size() - 1 ? builder : builder.copy();
-            logger.info("adding " + values.get(i));
             ByteBuffer name = b.add(values.get(i).getByteBuffer(elements, params.variables)).build();
             cf.addColumn(params.makeColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER));
         }
     }
 
-    public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, Term value, UpdateParameters params) throws InvalidRequestException
+    public void doDiscard(ColumnFamily cf, ColumnNameBuilder builder, List<Term> values, UpdateParameters params) throws InvalidRequestException
     {
-        ByteBuffer name = builder.add(value.getByteBuffer(elements, params.variables)).build();
-        cf.addColumn(params.makeTombstone(name));
+        for (int i = 0; i < values.size(); ++i)
+        {
+            ColumnNameBuilder b = i == values.size() - 1 ? builder : builder.copy();
+            ByteBuffer name = b.add(values.get(i).getByteBuffer(elements, params.variables)).build();
+            cf.addColumn(params.makeTombstone(name));
+        }
     }
 
     public ByteBuffer serializeForThrift(List<Pair<ByteBuffer, IColumn>> columns)

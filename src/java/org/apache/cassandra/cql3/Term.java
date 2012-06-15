@@ -180,9 +180,9 @@ public class Term implements Value
         return type == Type.QMARK;
     }
 
-    public Iterator<Term> iterator()
+    public List<Term> asList()
     {
-        return Collections.singletonList(this).iterator();
+        return Collections.singletonList(this);
     }
 
     @Override

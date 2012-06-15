@@ -52,9 +52,9 @@ public abstract class Operation
             return " = " + value;
         }
 
-        public Iterable<Term> allTerms()
+        public List<Term> allTerms()
         {
-            return value;
+            return value.asList();
         }
     }
 

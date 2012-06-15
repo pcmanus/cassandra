@@ -28,9 +28,9 @@ import org.apache.cassandra.db.*;
 public class UpdateParameters
 {
     public final List<ByteBuffer> variables;
-    private final long timestamp;
+    public final long timestamp;
     private final int ttl;
-    private int localDeletionTime;
+    public final int localDeletionTime;
 
     public UpdateParameters(List<ByteBuffer> variables, long timestamp, int ttl)
     {
@@ -50,6 +50,11 @@ public class UpdateParameters
     public Column makeTombstone(ByteBuffer name)
     {
         return new DeletedColumn(name, localDeletionTime, timestamp);
+    }
+
+    public RangeTombstone makeRangeTombstone(ByteBuffer start, ByteBuffer end)
+    {
+        return new RangeTombstone(start, end, timestamp, localDeletionTime);
     }
 
     public RangeTombstone makeTombstoneForOverwrite(ByteBuffer start, ByteBuffer end)

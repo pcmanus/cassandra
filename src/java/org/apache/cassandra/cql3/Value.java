@@ -21,46 +21,40 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
-public interface Value extends Iterable<Term>
+public interface Value
 {
+    public List<Term> asList();
+
     public static class MapLiteral extends HashMap<Term, Term> implements Value
     {
-        public Iterator<Term> iterator()
+        public List<Term> asList()
         {
-            final Iterator<Map.Entry<Term, Term>> iter = entrySet().iterator();
-            return new Iterator<Term>()
+            List<Term> l = new ArrayList<Term>(2 * size());
+            for (Map.Entry<Term, Term> entry : entrySet())
             {
-                private Term buffer;
-
-                public boolean hasNext()
-                {
-                    return buffer != null || iter.hasNext();
-                }
-
-                public Term next()
-                {
-                    if (buffer != null)
-                    {
-                        Term tmp = buffer;
-                        buffer = null;
-                        return tmp;
-                    }
-
-                    Map.Entry<Term, Term> entry = iter.next();
-                    buffer = entry.getValue();
-                    return entry.getKey();
-                }
-
-                public void remove()
-                {
-                    throw new UnsupportedOperationException();
-                }
-            };
+                l.add(entry.getKey());
+                l.add(entry.getValue());
+            }
+            return l;
         }
     }
 
-    public static class ListLiteral extends ArrayList<Term> implements Value {}
-    public static class SetLiteral extends HashSet<Term> implements Value {}
+    public static class ListLiteral extends ArrayList<Term> implements Value
+    {
+        public List<Term> asList()
+        {
+            return this;
+        }
+    }
+
+    public static class SetLiteral extends HashSet<Term> implements Value
+    {
+        public List<Term> asList()
+        {
+            return new ArrayList<Term>(this);
+        }
+    }
 }

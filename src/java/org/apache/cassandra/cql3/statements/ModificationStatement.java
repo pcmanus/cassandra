@@ -17,14 +17,18 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.io.IOError;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
-import org.apache.cassandra.db.IMutation;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.thrift.ConsistencyLevel;
@@ -113,6 +117,46 @@ public abstract class ModificationStatement extends CFStatement implements CQLSt
     public int getTimeToLive()
     {
         return timeToLive;
+    }
+
+    public Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> keys, ColumnNameBuilder builder, CompositeType composite) throws UnavailableException, TimeoutException, InvalidRequestException
+    {
+        List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
+        for (ByteBuffer key : keys)
+        {
+            commands.add(new SliceFromReadCommand(keyspace(),
+                                                  key,
+                                                  new QueryPath(columnFamily()),
+                                                  builder.copy().build(),
+                                                  builder.copy().buildAsEndOfRange(),
+                                                  false,
+                                                  Integer.MAX_VALUE));
+        }
+
+        try
+        {
+            List<Row> rows = StorageProxy.read(commands, getConsistencyLevel());
+            Map<ByteBuffer, ColumnGroupMap> map = new HashMap<ByteBuffer, ColumnGroupMap>();
+            for (Row row : rows)
+            {
+                if (row.cf == null || row.cf.isEmpty())
+                    continue;
+
+                ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
+                for (IColumn column : row.cf)
+                    groupBuilder.add(column);
+
+                List<ColumnGroupMap> groups = groupBuilder.groups();
+                assert groups.isEmpty() || groups.size() == 1;
+                if (!groups.isEmpty())
+                    map.put(row.key.key, groups.get(0));
+            }
+            return map;
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 
     /**
