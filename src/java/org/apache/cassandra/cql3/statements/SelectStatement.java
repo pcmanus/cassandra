@@ -30,10 +30,13 @@ import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.index.SecondaryIndex;
+import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.service.ClientState;
@@ -200,6 +203,17 @@ public class SelectStatement implements CQLStatement
         List<Row> rows;
         IFilter filter = makeFilter(variables);
         List<IndexExpression> expressions = getIndexExpressions(variables);
+
+        // If there is index expressions and the comparator is composite, we
+        // must add column names constraint to the expressions
+        if (!expressions.isEmpty() && cfDef.isComposite)
+        {
+            for (CFDefinition.Name name : cfDef.columns.values())
+            {
+                if (columnRestrictions[name.position] != null)
+                    columnRestrictions[name.position].addToExpressions(name, expressions, variables);
+            }
+        }
 
         try
         {
@@ -1060,11 +1074,19 @@ public class SelectStatement implements CQLStatement
             {
                 stmt.isKeyRange = true;
                 boolean hasEq = false;
-                Set<ByteBuffer> indexed = Table.open(keyspace()).getColumnFamilyStore(columnFamily()).indexManager.getIndexedColumns();
+                SecondaryIndexManager idxManager = Table.open(keyspace()).getColumnFamilyStore(columnFamily()).indexManager;
+                Set<ByteBuffer> indexedNames = new HashSet<ByteBuffer>();
+                for (SecondaryIndex index : idxManager.getIndexes())
+                {
+                    for (ColumnDefinition cdef : index.getColumnDefs())
+                        indexedNames.add(cdef.name);
+                }
 
+                // Note: we cannot use idxManager.indexes() methods because we don't have a complete column name at this point, we only
+                // have the indexed component.
                 for (Map.Entry<CFDefinition.Name, Restriction> entry : stmt.metadataRestrictions.entrySet())
                 {
-                    if (entry.getValue().isEquality() && indexed.contains(entry.getKey().name.key))
+                    if (entry.getValue().isEquality() && indexedNames.contains(entry.getKey().name.key))
                     {
                         hasEq = true;
                         break;
@@ -1285,6 +1307,23 @@ public class SelectStatement implements CQLStatement
                 throw new InvalidRequestException(String.format("Invalid restrictions found on %s", name));
             bounds[b.idx] = t;
             boundInclusive[b.idx] = inclusive;
+        }
+
+        public void addToExpressions(CFDefinition.Name name, List<IndexExpression> expressions, List<ByteBuffer> variables) throws InvalidRequestException
+        {
+            if (eqValues != null)
+            {
+                for (Term t : eqValues)
+                    expressions.add(new IndexExpression(name.name.key, IndexOperator.EQ, t.getByteBuffer(name.type, variables)));
+            }
+            else
+            {
+                for (Bound b : new Bound[]{ Bound.START, Bound.END })
+                {
+                    if (bound(b) != null)
+                        expressions.add(new IndexExpression(name.name.key, getIndexOperator(b), bound(b).getByteBuffer(name.type, variables)));
+                }
+            }
         }
 
         @Override

@@ -18,6 +18,7 @@
 package org.apache.cassandra.db.filter;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -26,7 +27,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.cql3.CFDefinition;
+import org.apache.cassandra.cql3.ColumnNameBuilder;
+import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
@@ -55,7 +61,9 @@ public abstract class ExtendedFilter
         {
             if (isPaging)
                 throw new IllegalArgumentException("Cross-row paging is not supported along with index clauses");
-            return new FilterWithClauses(cfs, filter, clause, maxResults, maxIsColumns);
+            return cfs.getComparator() instanceof CompositeType
+                 ? new FilterWithCompositeClauses(cfs, filter, clause, maxResults, maxIsColumns)
+                 : new FilterWithClauses(cfs, filter, clause, maxResults, maxIsColumns);
         }
     }
 
@@ -112,6 +120,11 @@ public abstract class ExtendedFilter
     /** The initial filter we'll do our first slice with (either the original or a superset of it) */
     public abstract IFilter initialFilter();
 
+    public IFilter originalFilter()
+    {
+        return originalFilter;
+    }
+
     public abstract List<IndexExpression> getClause();
 
     /**
@@ -130,7 +143,7 @@ public abstract class ExtendedFilter
      * @return true if the provided data satisfies all the expressions from
      * the clause of this filter.
      */
-    public abstract boolean isSatisfiedBy(ColumnFamily data);
+    public abstract boolean isSatisfiedBy(ColumnFamily data, ColumnNameBuilder builder);
 
     public static boolean satisfies(int comparison, IndexOperator op)
     {
@@ -165,7 +178,7 @@ public abstract class ExtendedFilter
         }
 
         /** Sets up the initial filter. */
-        private IFilter computeInitialFilter()
+        protected IFilter computeInitialFilter()
         {
             if (originalFilter instanceof SliceQueryFilter)
             {
@@ -264,19 +277,82 @@ public abstract class ExtendedFilter
             return pruned;
         }
 
-        public boolean isSatisfiedBy(ColumnFamily data)
+        public boolean isSatisfiedBy(ColumnFamily data, ColumnNameBuilder builder)
         {
             // We enforces even the primary clause because reads are not synchronized with writes and it is thus possible to have a race
             // where the index returned a row which doesn't have the primary column when we actually read it
             for (IndexExpression expression : clause)
             {
-                // check column data vs expression
-                IColumn column = data.getColumn(expression.column_name);
-                if (column == null)
+                if (!isSatisfiedByExpression(data, builder, expression))
                     return false;
-                int v = data.metadata().getValueValidator(expression.column_name).compare(column.value(), expression.value);
-                if (!satisfies(v, expression.op))
-                    return false;
+            }
+            return true;
+        }
+
+        protected boolean isSatisfiedByExpression(ColumnFamily data, ColumnNameBuilder builder, IndexExpression expression)
+        {
+            // check column data vs expression
+            ByteBuffer colName = builder == null ? expression.column_name : builder.copy().add(expression.column_name).build();
+            IColumn column = data.getColumn(colName);
+            if (column == null)
+                return false;
+            int v = data.metadata().getValueValidator(expression.column_name).compare(column.value(), expression.value);
+            if (!satisfies(v, expression.op))
+                return false;
+
+            return true;
+        }
+    }
+
+    private static class FilterWithCompositeClauses extends FilterWithClauses
+    {
+        public FilterWithCompositeClauses(ColumnFamilyStore cfs, IFilter filter, List<IndexExpression> clause, int maxResults, boolean maxIsColumns)
+        {
+            super(cfs, filter, clause, maxResults, maxIsColumns);
+        }
+
+        /*
+         * For composites, the index name is not a valid column name (it's only
+         * one of the component), which means we should not do the
+         * NamesQueryFilter part of FilterWithClauses in particular.
+         * Besides, CompositesSearcher doesn't really use the initial filter
+         * expect to know the limit set by the user, so create a fake filter
+         * with only the count information.
+         */
+        protected IFilter computeInitialFilter()
+        {
+            int limit = originalFilter instanceof SliceQueryFilter
+                      ? ((SliceQueryFilter)originalFilter).count
+                      : Integer.MAX_VALUE;
+            return new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, false, limit);
+        }
+
+        @Override
+        public boolean isSatisfiedBy(ColumnFamily data, ColumnNameBuilder builder)
+        {
+            // We need to deal with the fact that some of the index clauses might
+            // be on components of the clustering key
+            CFDefinition cfDef = data.metadata().getCfDef();
+            for (IndexExpression expression : clause)
+            {
+                CFDefinition.Name name = cfDef.get(new ColumnIdentifier(expression.column_name, UTF8Type.instance));
+                if (name == null || name.kind != CFDefinition.Name.Kind.COLUMN_ALIAS)
+                {
+                    if (!isSatisfiedByExpression(data, builder, expression))
+                        return false;
+                }
+                else
+                {
+                    // We only check the first column, assuming all is part of the same CQL row
+                    Iterator<IColumn> iter = data.iterator();
+                    if (!iter.hasNext())
+                        return false;
+                    ByteBuffer first = iter.next().name();
+                    ByteBuffer value = ((CompositeType)data.getComparator()).split(first)[name.position];
+                    int v = name.type.compare(value, expression.value);
+                    if (!satisfies(v, expression.op))
+                        return false;
+                }
             }
             return true;
         }
@@ -309,7 +385,7 @@ public abstract class ExtendedFilter
             return data;
         }
 
-        public boolean isSatisfiedBy(ColumnFamily data)
+        public boolean isSatisfiedBy(ColumnFamily data, ColumnNameBuilder builder)
         {
             return true;
         }
