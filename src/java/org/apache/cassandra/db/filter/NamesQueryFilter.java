@@ -26,7 +26,10 @@ import java.util.TreeSet;
 
 import org.apache.commons.lang.StringUtils;
 
+import org.apache.cassandra.cache.CachedRow;
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.columniterator.CachedRowNamesIterator;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -60,6 +63,11 @@ public class NamesQueryFilter implements IFilter
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
     {
         return new SSTableNamesIterator(sstable, key, columns);
+    }
+
+    public OnDiskAtomIterator getRowCacheColumnIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, boolean noMergeNecessary)
+    {
+        return new CachedRowNamesIterator(metadata, cachedRow, key, columns);
     }
 
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)

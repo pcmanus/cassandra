@@ -30,7 +30,10 @@ import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.cache.CachedRow;
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.columniterator.CachedRowSliceIterator;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -38,7 +41,6 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class SliceQueryFilter implements IFilter
 {
@@ -73,6 +75,11 @@ public class SliceQueryFilter implements IFilter
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
     {
         return new SSTableSliceIterator(sstable, key, slices, reversed);
+    }
+
+    public OnDiskAtomIterator getRowCacheColumnIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, boolean noMergeNecessary)
+    {
+        return new CachedRowSliceIterator(metadata, cachedRow, key, slices, reversed);
     }
 
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)

@@ -24,6 +24,8 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.cache.CachedRow;
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
@@ -83,6 +85,12 @@ public class QueryFilter
         return superFilter.getSSTableColumnIterator(sstable, file, key, indexEntry);
     }
 
+    public OnDiskAtomIterator getRowCacheColumnIterator(CFMetaData metaData, CachedRow cachedRow, boolean noMergeNecessary) {
+        if (path.superColumnName == null)
+            return filter.getRowCacheColumnIterator(metaData, cachedRow, key, noMergeNecessary);
+        return superFilter.getRowCacheColumnIterator(metaData, cachedRow, key, noMergeNecessary);
+    }
+    
     public void collateOnDiskAtom(final ColumnFamily returnCF, List<? extends CloseableIterator<OnDiskAtom>> toCollate, final int gcBefore)
     {
         List<CloseableIterator<IColumn>> filteredIterators = new ArrayList<CloseableIterator<IColumn>>(toCollate.size());

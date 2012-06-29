@@ -21,6 +21,8 @@ import java.io.*;
 import java.util.Comparator;
 import java.util.Iterator;
 
+import org.apache.cassandra.cache.CachedRow;
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -57,6 +59,11 @@ public interface IFilter
      * matching the Filter criteria in sorted order.
      */
     public abstract OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key);
+
+    /**
+     * returns an iterator that returns columns for the given cached row. 
+     */
+    public abstract OnDiskAtomIterator getRowCacheColumnIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, boolean noMergeNecessary);
 
     /**
      * collects columns from reducedColumns into returnCF.  Termination is determined

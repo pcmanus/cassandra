@@ -337,11 +337,19 @@ public class CacheService implements CacheServiceMBean
         @Override
         public void load(Set<ByteBuffer> buffers, ColumnFamilyStore cfs)
         {
+            boolean isCounter = cfs.metadata.getDefaultValidator().isCommutative();
             for (ByteBuffer key : buffers)
             {
                 DecoratedKey dk = cfs.partitioner.decorateKey(key);
                 ColumnFamily data = cfs.getTopLevelColumns(QueryFilter.getIdentityFilter(dk, new QueryPath(cfs.columnFamily)), Integer.MIN_VALUE, true);
-                rowCache.put(new RowCacheKey(cfs.metadata.cfId, dk), data);
+                if (isCounter)
+                {
+                    rowCache.put(new RowCacheKey(cfs.metadata.cfId, dk), data);
+                }
+                else
+                {
+                    rowCache.put(new RowCacheKey(cfs.metadata.cfId, dk), new CachedRow(CachedRowSerializer.serialize(data)));
+                }
             }
         }
     }
