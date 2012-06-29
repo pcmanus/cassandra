@@ -53,11 +53,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.thrift.*;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Throttle;
-import org.apache.cassandra.utils.UUIDGen;
-import org.apache.cassandra.utils.WrappedRunnable;
+import org.apache.cassandra.utils.*;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 
 
@@ -339,7 +335,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
 
                 ByteBuffer[] components = comparator.split(hint.name());
                 int version = Int32Type.instance.compose(components[1]);
-                DataInputStream in = new DataInputStream(ByteBufferUtil.inputStream(hint.value()));
+                DataInputStream in = new ByteBufferDataInput(hint.value());
                 RowMutation rm;
                 try
                 {

@@ -397,6 +397,9 @@ public class ByteBufferUtil
         if (in instanceof FileDataInput)
             return ((FileDataInput) in).readBytes(length);
 
+        if (in instanceof ByteBufferDataInput)
+            return ((ByteBufferDataInput) in).readBytes(length);
+
         byte[] buff = new byte[length];
         in.readFully(buff);
         return ByteBuffer.wrap(buff);
@@ -447,39 +450,6 @@ public class ByteBufferUtil
     public static ByteBuffer bytes(double d)
     {
         return ByteBuffer.allocate(8).putDouble(0, d);
-    }
-
-    public static InputStream inputStream(ByteBuffer bytes)
-    {
-        final ByteBuffer copy = bytes.duplicate();
-
-        return new InputStream()
-        {
-            public int read() throws IOException
-            {
-                if (!copy.hasRemaining())
-                    return -1;
-
-                return copy.get() & 0xFF;
-            }
-
-            @Override
-            public int read(byte[] bytes, int off, int len) throws IOException
-            {
-                if (!copy.hasRemaining())
-                    return -1;
-
-                len = Math.min(len, copy.remaining());
-                copy.get(bytes, off, len);
-                return len;
-            }
-
-            @Override
-            public int available() throws IOException
-            {
-                return copy.remaining();
-            }
-        };
     }
 
     public static String bytesToHex(ByteBuffer bytes)

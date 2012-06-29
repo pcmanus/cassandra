@@ -35,16 +35,16 @@ public class CachedRowNamesIterator extends SimpleAbstractColumnIterator impleme
 {
     private static Logger logger = LoggerFactory.getLogger(CachedRowNamesIterator.class);
 
-    private ColumnFamily cf;
-    private Iterator<IColumn> iter;
-    public final DecoratedKey key;
+    private final ColumnFamily cf;
+    private final Iterator<IColumn> iter;
+    private final DecoratedKey key;
 
     public CachedRowNamesIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.key = key;
 
-        try                                                                    
+        try
         {
             this.cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
             read(cachedRow.getBuffer(), metadata, columns);
@@ -53,20 +53,23 @@ public class CachedRowNamesIterator extends SimpleAbstractColumnIterator impleme
         {
             throw new IOError(ioe);
         }
-    }
 
+        this.iter = cf.iterator();
+    }
 
     private void read(ByteBuffer row, CFMetaData metadata, SortedSet<ByteBuffer> columns)
             throws IOException
     {
         CachedRowSerializer.deserializeFromCachedRowNoColumns(row, cf);
-        for (ByteBuffer column : columns) {
-            IColumn col = CachedRowSerializer.deserializeColumn(row, column, metadata.comparator);
-            if (col != null) {
+        for (ByteBuffer column : columns)
+        {
+            IColumn col = CachedRowSerializer.deserializeColumn(row, column, metadata.comparator, cf.getColumnSerializer());
+            if (col != null)
+            {
                 // we are adding in sort order so this should be cheap
                 cf.addColumn(col);
             }
-        }        
+        }
     }
 
     public DecoratedKey getKey()
@@ -81,12 +84,6 @@ public class CachedRowNamesIterator extends SimpleAbstractColumnIterator impleme
 
     protected OnDiskAtom computeNext()
     {
-        if (iter == null) {
-            iter = cf.iterator();
-        }
-        if (!iter.hasNext())
-            return endOfData();
-        
-        return iter.next();
+        return iter.hasNext() ? iter.next() : endOfData();
     }
 }

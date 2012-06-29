@@ -34,7 +34,7 @@ public class CachedRow implements IRowCacheEntry
         return buffer.duplicate();
     }
 
-    public long getMaxTimestamp() 
+    public long getMaxTimestamp()
     {
         return CachedRowSerializer.getMaxTimestamp(buffer);
     }

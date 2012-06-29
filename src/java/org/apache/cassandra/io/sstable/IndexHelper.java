@@ -26,9 +26,7 @@ import java.util.List;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.io.util.FileDataInput;
-import org.apache.cassandra.io.util.FileMark;
-import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.utils.*;
 
 /**
@@ -129,7 +127,7 @@ public class IndexHelper
             throw new EOFException("bloom filter claims to be " + size + " bytes, longer than entire row size " + maxSize);
         ByteBuffer bytes = file.readBytes(size);
 
-        DataInputStream stream = new DataInputStream(ByteBufferUtil.inputStream(bytes));
+        DataInputStream stream = new ByteBufferDataInput(bytes);
         return FilterFactory.deserialize(stream, type);
     }
 

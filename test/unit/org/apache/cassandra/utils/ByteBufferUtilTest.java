@@ -190,7 +190,7 @@ public class ByteBufferUtilTest
         bb.putLong(42L);
         bb.clear();
 
-        DataInputStream in = new DataInputStream(ByteBufferUtil.inputStream(bb));
+        DataInputStream in = new ByteBufferDataInput(bb);
         assert in.readInt() == 255;
         assert in.readByte() == (byte)-3;
         assert in.readLong() == 42L;

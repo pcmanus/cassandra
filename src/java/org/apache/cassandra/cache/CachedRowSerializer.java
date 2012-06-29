@@ -17,16 +17,24 @@
  */
 package org.apache.cassandra.cache;
 
+import java.io.IOError;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Iterator;
+
+import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.cassandra.io.IColumnSerializer.Flag.LOCAL;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.db.filter.ColumnSlice;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.io.IColumnSerializer;
+import org.apache.cassandra.utils.*;
 
 /**
  * Format:
@@ -41,28 +49,9 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * ===========================
  * Column Index
  * ===========================
- * NameOffset:          int
- * ValueOffset:         int
- * ValueLength:         int
+ * Offset:              int[]
+ * Columns:          Column[]
  * ===========================
- * Column Data
- * ===========================
- * Name:                byte[]
- * Value:               byte[]
- * SerializationFlags:  byte
- * Misc:                ?
- * Timestamp:           long
- * ---------------------------
- * Misc Counter Column
- * ---------------------------
- * TSOfLastDelete:      long
- * ---------------------------
- * Misc Expiring Column
- * ---------------------------
- * TimeToLive:          int
- * LocalDeletionTime:   int
- * ===========================
- *
  */
 public class CachedRowSerializer
 {
@@ -72,14 +61,12 @@ public class CachedRowSerializer
     private static final int INT_SIZE = TypeSizes.NATIVE.sizeof(Integer.MAX_VALUE);
     private static final int SHORT_SIZE = TypeSizes.NATIVE.sizeof(Short.MAX_VALUE);
 
-    public static final int HEADER_SIZE = LONG_SIZE // max ts                
+    public static final int HEADER_SIZE = LONG_SIZE // max ts
             + INT_SIZE   // local deletion
             + LONG_SIZE  // marked for delete
             + INT_SIZE;  // num columns
 
-    public static final int COL_INDEX_SIZE = INT_SIZE // name offset
-            + INT_SIZE   // value offsets
-            + INT_SIZE;  // value length
+    public static final int COL_INDEX_SIZE = INT_SIZE; // name offset
 
     public static final int MAX_TIMESTAMP_POS = 0;
     public static final int LOCAL_DELETION_POS = LONG_SIZE;
@@ -88,82 +75,53 @@ public class CachedRowSerializer
 
     public static ByteBuffer serialize(ColumnFamily cf)
     {
-        Collection<IColumn> sortedColumns = cf.getSortedColumns();
-
         // this might be expensive
-        int numColumns = sortedColumns.size();
+        int numColumns = cf.getColumnCount();
 
-        int serializedSize = getSerializedSize(sortedColumns);
+        int serializedSize = getSerializedSize(cf);
         ByteBuffer row = ByteBuffer.allocate(serializedSize);
+        row.mark();
 
         serializeHeader(cf, numColumns, row);
 
-        int dataOffset = HEADER_SIZE + numColumns * COL_INDEX_SIZE;
+        ByteBufferDataOutput out = new ByteBufferDataOutput(row);
+        out.buffer().position(HEADER_SIZE + numColumns * COL_INDEX_SIZE);
 
-        serializeColumns(sortedColumns, dataOffset, row);
-        row.position(0);
-
-        return row;
+        try
+        {
+            serializeColumns(cf, row, out);
+            return (ByteBuffer)row.reset();
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 
-    private static int getSerializedSize(Collection<IColumn> columns)
+    private static int getSerializedSize(ColumnFamily cf)
     {
         int size = HEADER_SIZE;
 
-        for (IColumn column : columns)
+        for (IColumn column : cf)
         {
             size += column.serializedSize(TypeSizes.NATIVE)
-                    + SHORT_SIZE // instead of short name lenght we store an int offset
-                    + INT_SIZE;  // name offset                    
+                    + INT_SIZE;  // index entry
         }
 
         return size;
     }
 
-    private static void serializeColumns(Collection<IColumn> sortedColumns, int dataBaseOffset, ByteBuffer row)
+    private static void serializeColumns(ColumnFamily cf, ByteBuffer index, ByteBufferDataOutput out) throws IOException
     {
-        int dataOffset = dataBaseOffset;
-        int indexOffset = HEADER_SIZE;
-        for (IColumn column : sortedColumns)
+        IColumnSerializer serializer = cf.getColumnSerializer();
+        for (IColumn column : cf)
         {
-            ByteBuffer name = column.name();
-            int nameLength = name.remaining();
-            ByteBuffer value = column.value();
-            int valueLength = value.remaining();
+            // Index entry
+            index.putInt(out.buffer().position());
 
-            // write index entry
-            row.position(indexOffset);
-
-
-//            logger.info("Put dataoffset {} @ {}", dataOffset, row.position());
-            row.putInt(dataOffset);
-            row.putInt(dataOffset + nameLength);
-            row.putInt(valueLength);
-
-            indexOffset = row.position();
-
-            // write data
-            ByteBufferUtil.arrayCopy(name, name.position(), row, dataOffset, nameLength);
-            dataOffset += nameLength;
-            ByteBufferUtil.arrayCopy(value, value.position(), row, dataOffset, valueLength);
-            dataOffset += valueLength;
-
-            row.position(dataOffset);
-            row.put((byte) column.serializationFlags());
-            if (column instanceof CounterColumn)
-            {
-                row.putLong(((CounterColumn) column).timestampOfLastDelete());
-            }
-            else if (column instanceof ExpiringColumn)
-            {
-                row.putInt(((ExpiringColumn) column).getTimeToLive());
-                row.putInt(column.getLocalDeletionTime());
-            }
-            row.putLong(column.timestamp());
-            dataOffset = row.position();
+            // Data
+            serializer.serialize(column, out);
         }
-
-        assert row.remaining() == 0 : "Invalid row size: " + row.remaining(); 
     }
 
     private static void serializeHeader(ColumnFamily cf, int numColumns, ByteBuffer row)
@@ -180,59 +138,55 @@ public class CachedRowSerializer
         return row.getInt(NUM_COLUMNS_POS);
     }
 
-    public static ByteBuffer getFirstColumnName(ByteBuffer row)
+    private static int columnOffset(ByteBuffer row, int idx)
     {
-        return getName(row, 0);
-    }
-    
-    public static ByteBuffer getLastColumnName(ByteBuffer row)
-    {
-        int lastColumnIndex = row.getInt(NUM_COLUMNS_POS) - 1;
-        return getName(row, lastColumnIndex);
+        int indexOffset = HEADER_SIZE + idx * COL_INDEX_SIZE;
+        return row.getInt(indexOffset);
     }
 
-    public static ByteBuffer getName(ByteBuffer row, int columnIndex)
+    private static ByteBuffer getName(ByteBuffer row, int idx)
     {
-        int indexOffset = HEADER_SIZE + columnIndex * COL_INDEX_SIZE;
-        int valueOffset = row.getInt(indexOffset + INT_SIZE);
-        int nameOffset = row.getInt(indexOffset);
-        
+        return getColumnName(row, idx);
+    }
+
+    private static int getUnsignedShort(ByteBuffer row, int idx)
+    {
+        return row.getShort(idx) & 0xFFFF;
+    }
+
+    private static ByteBuffer getColumnName(ByteBuffer row, int idx)
+    {
+        int columnOffset = columnOffset(row, idx);
+        int nameLength = getUnsignedShort(row, columnOffset);
+
+        int nameOffset = columnOffset + 2;
         ByteBuffer name = row.duplicate();
-        name.limit(valueOffset);
         name.position(nameOffset);
-        
+        name.limit(nameOffset + nameLength);
         return name;
     }
-    
+
     public static int binarySearch(ByteBuffer row, ByteBuffer name, Comparator<ByteBuffer> comparator)
     {
-        int lastColumnIndex = row.getInt(NUM_COLUMNS_POS) - 1;
+        int lastColumnIndex = getColumnCount(row) - 1;
         return binarySearch(row, name, comparator, 0, lastColumnIndex);
     }
 
     private static int binarySearch(ByteBuffer row, ByteBuffer name, Comparator<ByteBuffer> comparator, int low, int high)
     {
-        ByteBuffer midKey = row.duplicate();
         while (low <= high)
         {
             int mid = (low + high) >>> 1;
-            int indexOffset = HEADER_SIZE + mid * COL_INDEX_SIZE;
-            int nameOffset = row.getInt(indexOffset);
-            int valueOffset = row.getInt(indexOffset + INT_SIZE);
-
-            midKey.limit(valueOffset);
-            midKey.position(nameOffset);
+            ByteBuffer midKey = getColumnName(row, mid);
 
             int compare = comparator.compare(midKey, name);
             if (compare < 0)
             {
                 low = mid + 1;
-
             }
             else if (compare > 0)
             {
                 high = mid - 1;
-
             }
             else
             {
@@ -242,142 +196,21 @@ public class CachedRowSerializer
         return -(low + 1);
     }
 
-    public static IColumn deserializeColumn(ByteBuffer row, ByteBuffer name, Comparator<ByteBuffer> comparator)
+    public static IColumn deserializeColumn(ByteBuffer row, ByteBuffer name, Comparator<ByteBuffer> comparator, IColumnSerializer serializer) throws IOException
     {
         int low = 0;
-        int high = row.getInt(NUM_COLUMNS_POS) - 1;
+        int high = getColumnCount(row) - 1;
 
-        ByteBuffer midKey = row.duplicate();
-        while (low <= high)
-        {
-            int mid = (low + high) >>> 1;
-            int indexOffset = HEADER_SIZE + mid * COL_INDEX_SIZE;
-            int nameOffset = row.getInt(indexOffset);
-            int valueOffset = row.getInt(indexOffset + INT_SIZE);
-
-            midKey.limit(valueOffset);
-            midKey.position(nameOffset);
-
-            int compare = comparator.compare(midKey, name);
-            if (compare < 0)
-            {
-                low = mid + 1;
-            }
-            else if (compare > 0)
-            {
-                high = mid - 1;
-            }
-            else
-            {
-                return createColumn(row, midKey, valueOffset, row.getInt(indexOffset + LONG_SIZE));
-            }
-        }
-
-        return null;
+        int idx = binarySearch(row, name, comparator, 0, getColumnCount(row) - 1);
+        return idx < 0 ? null : createColumn(row, idx, serializer);
     }
 
-    public static void appendRow(ByteBuffer row, ColumnFamily cf, ByteBuffer startColumn, ByteBuffer finishColumn, 
-                                 int limit, boolean reversed, Comparator<ByteBuffer> comparator)
+    public static IColumn createColumn(ByteBuffer row, int columnIndex, IColumnSerializer serializer) throws IOException
     {
-        int numColumns = row.getInt(NUM_COLUMNS_POS);
-
-        if (numColumns == 0)
-            return;
-
-        int startIndex, endIndex;
-        int step = reversed ? -1 : 1;      
-        if (startColumn.remaining() == 0 && finishColumn.remaining() == 0) 
-        {
-            if (reversed)
-            {
-                startIndex = numColumns - 1;
-                endIndex = ((limit > 0) ? Math.max(startIndex - limit + 1, 0) : 0);                
-            }
-            else 
-            {
-                startIndex = 0;
-                endIndex = ((limit > 0) ? Math.min(limit, numColumns) : numColumns) - 1;
-            }
-        }
-        else if (startColumn.remaining() == 0)
-        {
-            int i = binarySearch(row, finishColumn, comparator);
-            if (reversed)
-            {
-                startIndex = numColumns - 1;
-                endIndex = i < 0 ? (-i - 1) : i;
-                if (limit > 0)
-                    endIndex = Math.max(startIndex - limit + 1, endIndex); 
-            }
-            else 
-            {
-                startIndex = 0;
-                endIndex = i < 0 ? (-i - 2) : i;
-                if (limit > 0)
-                    endIndex = Math.min(limit - 1, endIndex); 
-            }
-        }
-        else if (finishColumn.remaining() == 0)
-        {
-            int i = binarySearch(row, startColumn, comparator);
-            if (reversed)
-            {
-                startIndex = i < 0 ? (-i - 2) : i;
-                endIndex = ((limit > 0) ? Math.max(startIndex - limit + 1, 0) : 0);
-            }
-            else 
-            {
-                startIndex = i < 0 ? (-i - 1) : i;
-                endIndex = ((limit > 0) ? Math.min(startIndex + limit, numColumns) : numColumns) - 1;
-            }
-        }
-        else 
-        {
-            int i = binarySearch(row, startColumn, comparator);
-            if (reversed)
-            {
-                startIndex = i < 0 ? (-i - 2) : i;
-                int j = binarySearch(row, finishColumn, comparator, 0, startIndex);
-                endIndex = j < 0 ? (-j - 1) : j;
-                if (limit > 0)
-                    endIndex = Math.max(startIndex - limit + 1, endIndex);
-            }
-            else 
-            {
-                startIndex = i < 0 ? (-i - 1) : i;
-                int j = binarySearch(row, finishColumn, comparator, startIndex, numColumns - 1);
-                endIndex = j < 0 ? (-j - 2) : j;
-                if (limit > 0)
-                    endIndex = Math.min(startIndex + limit - 1, endIndex);
-            }
-        }
-
-        if (reversed && startIndex < endIndex || 
-            !reversed && endIndex < startIndex )
-            return;
-
-        while (true)
-        {
-            Column column = createColumn(row, startIndex);
-            cf.addColumn(column);
-
-            if (startIndex == endIndex)
-                return;
-            
-            startIndex += step;           
-        }
-    }
-
-    public static Column createColumn(ByteBuffer row, int columnIndex)
-    {
-        int indexOffset = HEADER_SIZE + columnIndex * 3 * INT_SIZE;
-        int nameOffset = row.getInt(indexOffset);
-        indexOffset += INT_SIZE;
-        int valueOffset = row.getInt(indexOffset);
-        indexOffset += INT_SIZE;
-        int valueLength = row.getInt(indexOffset);
-        indexOffset += INT_SIZE;
-        return createColumn(row, nameOffset, valueOffset, valueLength);
+        int columnOffset = columnOffset(row, columnIndex);
+        ByteBufferDataInput in = new ByteBufferDataInput(row);
+        in.buffer().position(columnOffset);
+        return serializer.deserialize(in);
     }
 
     public static void deserializeFromCachedRowNoColumns(ByteBuffer row, ColumnFamily cf)
@@ -391,47 +224,52 @@ public class CachedRowSerializer
         return buffer.getLong(MAX_TIMESTAMP_POS);
     }
 
-    private static Column createColumn(ByteBuffer row, int nameOffset, int valueOffset, int valueLength)
+    public static Iterator<IColumn> iterator(final ByteBuffer row, ColumnSlice slice, boolean reversed, Comparator<ByteBuffer> comparator, final IColumnSerializer serializer)
     {
-        ByteBuffer name = row.duplicate();
-        name.position(nameOffset);
-        name.limit(valueOffset);
-        return createColumn(row, name, valueOffset, valueLength);
-    }
+        int numColumns = getColumnCount(row);
+        if (numColumns == 0)
+            return Iterators.<IColumn>emptyIterator();
 
-    private static Column createColumn(ByteBuffer row, ByteBuffer name, int valueOffset, int valueLength)
-    {
-        int flagsOffset = valueOffset + valueLength;
-        ByteBuffer value = row.duplicate();
-        value.position(valueOffset);
-        value.limit(flagsOffset);
+        ByteBuffer low = reversed ? slice.finish : slice.start;
+        ByteBuffer high = reversed ? slice.start : slice.finish;
 
-        row = row.duplicate();
+        // The first idx to include
+        int lowIdx = low.remaining() == 0 ? 0 : binarySearch(row, low, comparator);
+        if (lowIdx < 0)
+            lowIdx = -lowIdx - 1;
 
-        row.position(flagsOffset);
-        byte serializationFlags = row.get();
-        if ((serializationFlags & ColumnSerializer.COUNTER_MASK) != 0)
+        // The last idx to include
+        int highIdx = high.remaining() == 0 ? numColumns - 1 : binarySearch(row, high, comparator);
+        if (highIdx < 0)
+            highIdx = -highIdx - 2;
+
+        final ByteBufferDataInput in = new ByteBufferDataInput(row);
+        final int startIdx = reversed ? highIdx : lowIdx;
+        final int stopIdx = reversed ? lowIdx : highIdx;
+        final int step = reversed ? -1 : 1;
+
+        return new AbstractIterator<IColumn>()
         {
-            long timestampOfLastDelete = row.getLong();
-            long ts = row.getLong();
-            return (CounterColumn.create(name, value, ts, timestampOfLastDelete, LOCAL));
-        }
-        else if ((serializationFlags & ColumnSerializer.EXPIRATION_MASK) != 0)
-        {
-            int ttl = row.getInt();
-            int expiration = row.getInt();
-            long ts = row.getLong();
-            int expireBefore = (int) (System.currentTimeMillis() / 1000);
-            return (ExpiringColumn.create(name, value, ts, ttl, expiration, expireBefore, LOCAL));
-        }
-        else
-        {
-            long ts = row.getLong();
-            return ((serializationFlags & ColumnSerializer.COUNTER_UPDATE_MASK) != 0
-                    ? new CounterUpdateColumn(name, value, ts)
-                    : ((serializationFlags & ColumnSerializer.DELETION_MASK) == 0
-                    ? new Column(name, value, ts)
-                    : new DeletedColumn(name, value, ts)));
-        }
+            private int currentIdx = startIdx;
+
+            protected IColumn computeNext()
+            {
+                if (currentIdx == stopIdx + step)
+                    return endOfData();
+
+                int columnOffset = columnOffset(row, currentIdx);
+                in.buffer().position(columnOffset);
+                try
+                {
+                    IColumn col = serializer.deserialize(in);
+                    currentIdx += step;
+                    return col;
+                }
+                catch (IOException e)
+                {
+                    throw new IOError(e);
+                }
+            }
+        };
     }
 }

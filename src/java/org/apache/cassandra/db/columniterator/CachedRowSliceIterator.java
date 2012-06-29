@@ -34,13 +34,13 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
     private final CFMetaData metadata;
 
     private final DecoratedKey key;
-    private ColumnFamily cf;
-    
-    private int currentIndex = Integer.MIN_VALUE;
-    private int currentSliceIndex = Integer.MIN_VALUE;
-    
-    private ByteBuffer row;
-    private ColumnSlice[] slices;
+    private final ColumnFamily cf;
+
+    private final ByteBuffer row;
+    private final ColumnSlice[] slices;
+
+    private Iterator<IColumn> iter;
+    private int currentSlice;
 
     public CachedRowSliceIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, ColumnSlice[] slices, boolean reversed)
     {
@@ -53,7 +53,7 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
 
         try
         {
-            read(row);
+            this.cf = read(row);
         }
         catch (IOException e)
         {
@@ -66,31 +66,11 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
         this(metadata, cachedRow, key, new ColumnSlice[]{new ColumnSlice(startColumn, finishColumn)}, reversed);
     }
 
-    private void read(ByteBuffer row) throws IOException
+    private ColumnFamily read(ByteBuffer row) throws IOException
     {
-        cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory(), reversed);
+        ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory(), reversed);
         CachedRowSerializer.deserializeFromCachedRowNoColumns(row, cf);
-    }
-
-    private boolean isColumnNeeded(ColumnSlice currentSlice, IColumn column)
-    {
-        ByteBuffer startColumn = currentSlice.start;
-        ByteBuffer finishColumn = currentSlice.finish;
-
-        if (startColumn.remaining() == 0 && finishColumn.remaining() == 0)
-            return true;
-        else if (startColumn.remaining() == 0 && !reversed)
-            return metadata.comparator.compare(column.name(), finishColumn) <= 0;
-        else if (startColumn.remaining() == 0 && reversed)
-            return metadata.comparator.compare(column.name(), finishColumn) >= 0;
-        else if (finishColumn.remaining() == 0 && !reversed)
-            return metadata.comparator.compare(column.name(), startColumn) >= 0;
-        else if (finishColumn.remaining() == 0 && reversed)
-            return metadata.comparator.compare(column.name(), startColumn) <= 0;
-        else if (!reversed)
-            return metadata.comparator.compare(column.name(), startColumn) >= 0 && metadata.comparator.compare(column.name(), finishColumn) <= 0;
-        else // if reversed
-            return metadata.comparator.compare(column.name(), startColumn) <= 0 && metadata.comparator.compare(column.name(), finishColumn) >= 0;
+        return cf;
     }
 
     public ColumnFamily getColumnFamily()
@@ -103,93 +83,22 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
         return key;
     }
 
-    protected IColumn computeNext()
+    protected OnDiskAtom computeNext()
     {
-        if (reversed)
+        if (iter == null)
         {
-            if (currentSliceIndex == Integer.MIN_VALUE)
-                currentSliceIndex = slices.length - 1;
+            if (currentSlice >= slices.length)
+                return endOfData();
 
-            if (currentSliceIndex < 0)
-                return null;
-
-            for (int i = currentSliceIndex; i >= 0; i--)
-            {
-                ColumnSlice currentSlice = slices[i];
-                IColumn column = computeNextColumnInSlice(currentSlice);
-                if (column != null && isColumnNeeded(currentSlice, column))
-                    return column;
-
-                // lookahead: break early if the slice starts beyond the end of the row
-                if (i > 0 && metadata.comparator.compare(slices[i - 1].start, CachedRowSerializer.getFirstColumnName(row)) < 0)
-                    return (IColumn) endOfData();
-            }
-
-            return (IColumn) endOfData();
-        }
-        else 
-        {
-            if (currentSliceIndex == Integer.MIN_VALUE)
-                currentSliceIndex = 0;
-
-            if (currentSliceIndex >= slices.length) 
-                return null;
-            
-            for (int i = currentSliceIndex; i < slices.length; i++)
-            {
-                ColumnSlice currentSlice = slices[i];
-                IColumn column = computeNextColumnInSlice(currentSlice);
-                if (column != null && isColumnNeeded(currentSlice, column))
-                    return column;
-
-                // lookahead: break early if the slice starts beyond the end of the row
-                if (i < slices.length - 1 && metadata.comparator.compare(slices[i + 1].start, CachedRowSerializer.getLastColumnName(row)) > 0)
-                    return (IColumn) endOfData();
-            }
-
-            return (IColumn) endOfData();
-        }
-    }
-    
-    private IColumn computeNextColumnInSlice(ColumnSlice slice)
-    {
-        if (currentIndex == Integer.MIN_VALUE) {
-            ByteBuffer startColumn = slice.start;
-            if (startColumn.remaining() > 0)
-            {
-                int i = CachedRowSerializer.binarySearch(row, startColumn, metadata.comparator);
-                currentIndex = ((i < 0) ? reversed ? (-i - 2) : (-i - 1) : i);
-            }
-            else
-            {
-                currentIndex = reversed ? CachedRowSerializer.getColumnCount(row) - 1 : 0;
-            }
+            int c = currentSlice++;
+            ColumnSlice slice = slices[reversed ? slices.length - c - 1: c];
+            iter = CachedRowSerializer.iterator(row, slice, reversed, cf.getComparator(), cf.getColumnSerializer());
         }
 
-        int step;
-        if (reversed)
-        {
-            if (currentIndex < 0)
-            {
-                // reset index for a potential next slice
-                currentIndex = Integer.MIN_VALUE;
-                return null;
-            }
-            step = -1;
-        }
-        else
-        {
-            if (currentIndex > CachedRowSerializer.getColumnCount(row) - 1)
-            {
-                currentIndex = Integer.MIN_VALUE;
-                return null;
-            }
+        if (iter.hasNext())
+            return iter.next();
 
-            step = 1;
-        }
-
-        Column column = CachedRowSerializer.createColumn(row, currentIndex);
-        currentIndex += step;
-        return column;
+        iter = null;
+        return computeNext();
     }
 }
