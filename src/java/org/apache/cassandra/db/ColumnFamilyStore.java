@@ -701,8 +701,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         RowCacheKey cacheKey = new RowCacheKey(metadata.cfId, key);
 
         // always invalidate a copying cache value
-        // the default serializing row cache does not support direct updates but callers are 
-        // responsible for not calling updateRowCache if possible. 
+        // the default serializing row cache does not support direct updates but callers are
+        // responsible for not calling updateRowCache if possible.
         if (!metadata.getDefaultValidator().isCommutative() || CacheService.instance.rowCache.isPutCopying())
         {
             invalidateCachedRow(cacheKey);
@@ -740,7 +740,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         // default serializing row cache is not updated but merged in memtable flush
         if (metadata.getDefaultValidator().isCommutative())
             updateRowCache(key, columnFamily);
-        
+
         writeStats.addNano(System.nanoTime() - start);
 
         // recompute liveRatio, if we have doubled the number of ops since last calculated
@@ -963,23 +963,25 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     void replaceFlushed(Memtable memtable, SSTableReader sstable)
     {
-        if (isRowCacheEnabled() && !metadata.getDefaultValidator().isCommutative()) 
+        if (isRowCacheEnabled() && !metadata.getDefaultValidator().isCommutative())
             mergeRowCache(memtable);
-        
+
         data.replaceFlushed(memtable, sstable);
         CompactionManager.instance.submitBackground(this);
     }
 
-    private void mergeRowCache(Memtable memtable) {
+    private void mergeRowCache(Memtable memtable)
+    {
         UUID cfId = Schema.instance.getId(table.name, this.columnFamily);
-        
+
         Iterator<Map.Entry<DecoratedKey, ColumnFamily>> entryIterator = memtable.getEntryIterator();
-        while (entryIterator.hasNext()) {
+        while (entryIterator.hasNext())
+        {
             Map.Entry<DecoratedKey, ColumnFamily> entry = entryIterator.next();
             DecoratedKey decoratedKey = entry.getKey();
             RowCacheKey cacheKey = new RowCacheKey(cfId, decoratedKey);
             CachedRow cachedRow = (CachedRow) CacheService.instance.rowCache.get(cacheKey);
-            if (cachedRow != null) 
+            if (cachedRow != null)
             {
                 // Merge
                 ColumnFamily returnCF = ColumnFamily.create(metadata);
@@ -1004,7 +1006,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                 filter.collateOnDiskAtom(returnCF, iterators, gcBefore());
 
-                CacheService.instance.rowCache.put(cacheKey, new CachedRow(CachedRowSerializer.serialize(returnCF)));
+                CacheService.instance.rowCache.put(cacheKey, CachedRow.serialize(returnCF));
             }
         }
     }
@@ -1180,13 +1182,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             RowCacheCollationController collationController = new RowCacheCollationController(this, data.getView(), cachedRow, filter, gcBefore);
             return collationController.getColumns();
         }
-        else 
+        else
         {
             // for cache = false: we dont cache the cf itself
             ColumnFamily cf = getTopLevelColumns(QueryFilter.getIdentityFilter(filter.key, new QueryPath(columnFamily)), gcBefore, false);
             if (cf != null)
             {
-                cachedRow = new CachedRow(CachedRowSerializer.serialize(cf));
+                cachedRow = CachedRow.serialize(cf);
                 CacheService.instance.rowCache.put(key, cachedRow);
                 return filterColumnFamily(cf, filter, gcBefore);
             }
@@ -1202,7 +1204,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         RowCacheKey key = new RowCacheKey(cfId, filter.key);
         ColumnFamily data = null;
-        
+
         // attempt a sentinel-read-cache sequence.  if a write invalidates our sentinel, we'll return our
         // (now potentially obsolete) data, but won't cache it. see CASSANDRA-3862
         IRowCacheEntry cached = CacheService.instance.rowCache.get(key);
@@ -1213,25 +1215,23 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 // Some other read is trying to cache the value, just do a normal non-caching read
                 data = getTopLevelColumns(filter, Integer.MIN_VALUE, false);
             }
-            else 
+            else
             {
                 data = (ColumnFamily) cached;
             }
         }
-        else 
+        else
         {
             RowCacheSentinel sentinel = new RowCacheSentinel();
             boolean sentinelSuccess = CacheService.instance.rowCache.putIfAbsent(key, sentinel);
-    
+
             try
             {
-                
                 data = getTopLevelColumns(QueryFilter.getIdentityFilter(filter.key, new QueryPath(columnFamily)),
                                                        Integer.MIN_VALUE,
                                                        true);
                 if (sentinelSuccess && data != null)
                     CacheService.instance.rowCache.replace(key, sentinel, data);
-    
             }
             finally
             {
@@ -1239,10 +1239,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     CacheService.instance.rowCache.remove(key);
             }
         }
-        
+
         if (data != null)
             return filterColumnFamily(data, filter, gcBefore);
-        
+
         return null;
     }
 
@@ -1396,7 +1396,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             }
             return files;
         }
-        finally 
+        finally
         {
             SSTableReader.releaseReferences(view.sstables);
         }
@@ -1669,13 +1669,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     {
         if (metadata.cfId == null)
             return null; // secondary index
-        
+
         if (metadata.getDefaultValidator().isCommutative())
         {
             IRowCacheEntry cached = getCachedRowInternal(new RowCacheKey(metadata.cfId, key));
             return cached == null || cached instanceof RowCacheSentinel ? null : (ColumnFamily) cached;
         }
-        else 
+        else
         {
             CachedRow cachedRow = (CachedRow) getCachedRowInternal(new RowCacheKey(metadata.cfId, key));
             if (cachedRow == null)

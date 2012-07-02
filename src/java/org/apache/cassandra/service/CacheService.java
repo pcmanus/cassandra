@@ -348,7 +348,7 @@ public class CacheService implements CacheServiceMBean
                 }
                 else
                 {
-                    rowCache.put(new RowCacheKey(cfs.metadata.cfId, dk), new CachedRow(CachedRowSerializer.serialize(data)));
+                    rowCache.put(new RowCacheKey(cfs.metadata.cfId, dk), CachedRow.serialize(data));
                 }
             }
         }

@@ -73,7 +73,7 @@ public class RowCacheCollationController
 
         ColumnFamily container = ColumnFamily.create(cfs.metadata, TreeMapBackedSortedColumns.factory(), filter.filter.isReversed());
         List<OnDiskAtomIterator> iterators = new ArrayList<OnDiskAtomIterator>();
-        
+
         try
         {
             for (Memtable memtable : Iterables.concat(Collections.singleton(view.memtable), view.memtablesPendingFlush))

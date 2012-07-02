@@ -23,19 +23,18 @@ import static org.junit.Assert.assertNotNull;
  */
 public class CacheRowSerializerTest
 {
-
     public static final CFMetaData CF_META_DATA = new CFMetaData("Test", "Test", ColumnFamilyType.Standard, BytesType.instance, null);
 
     @Test
     public void testBinarySearch() throws IOException
     {
         ColumnFamily columnFamily = getColumnFamily(4);
-        ByteBuffer row = CachedRowSerializer.serialize(columnFamily);
+        CachedRow row = CachedRow.serialize(columnFamily);
 
-        int i = CachedRowSerializer.binarySearch(row, ByteBufferUtil.bytes(3), BytesType.instance);
+        int i = row.binarySearch(ByteBufferUtil.bytes(3), BytesType.instance);
         assertEquals(3, i);
 
-        IColumn column = CachedRowSerializer.deserializeColumn(row, ByteBufferUtil.bytes(3), BytesType.instance, Column.serializer());
+        IColumn column = row.getColumn(ByteBufferUtil.bytes(3), BytesType.instance, Column.serializer());
         assertNotNull(column);
         assertEquals(ByteBufferUtil.bytes(3), column.name());
     }

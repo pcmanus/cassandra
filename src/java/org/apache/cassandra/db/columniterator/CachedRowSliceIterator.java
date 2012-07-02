@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 
-import org.apache.cassandra.cache.CachedRowSerializer;
 import org.apache.cassandra.cache.CachedRow;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
@@ -36,7 +35,7 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
     private final DecoratedKey key;
     private final ColumnFamily cf;
 
-    private final ByteBuffer row;
+    private final CachedRow row;
     private final ColumnSlice[] slices;
 
     private Iterator<IColumn> iter;
@@ -49,28 +48,15 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
         this.reversed = reversed;
         this.metadata = metadata;
 
-        this.row = cachedRow.getBuffer();
+        this.row = cachedRow;
 
-        try
-        {
-            this.cf = read(row);
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
+        this.cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory(), reversed);
+        this.cf.delete(row.deletionInfo(metadata.comparator));
     }
 
     public CachedRowSliceIterator(CFMetaData metadata, CachedRow cachedRow, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this(metadata, cachedRow, key, new ColumnSlice[]{new ColumnSlice(startColumn, finishColumn)}, reversed);
-    }
-
-    private ColumnFamily read(ByteBuffer row) throws IOException
-    {
-        ColumnFamily cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory(), reversed);
-        CachedRowSerializer.deserializeFromCachedRowNoColumns(row, cf);
-        return cf;
     }
 
     public ColumnFamily getColumnFamily()
@@ -92,7 +78,7 @@ public class CachedRowSliceIterator extends SimpleAbstractColumnIterator impleme
 
             int c = currentSlice++;
             ColumnSlice slice = slices[reversed ? slices.length - c - 1: c];
-            iter = CachedRowSerializer.iterator(row, slice, reversed, cf.getComparator(), cf.getColumnSerializer());
+            iter = row.iterator(slice, reversed, cf.getComparator(), cf.getColumnSerializer());
         }
 
         if (iter.hasNext())

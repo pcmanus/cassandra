@@ -9,7 +9,6 @@ import org.junit.Test;
 import static org.apache.cassandra.utils.ByteBufferUtil.EMPTY_BYTE_BUFFER;
 import static org.apache.cassandra.utils.ByteBufferUtil.bytes;
 import static org.junit.Assert.*;
-import org.apache.cassandra.cache.CachedRowSerializer;
 import org.apache.cassandra.cache.CachedRow;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.ColumnFamily;
@@ -20,7 +19,6 @@ import org.apache.cassandra.db.marshal.BytesType;
 
 public class CachedRowSliceIteratorTest
 {
-
     public static final CFMetaData CF_META_DATA = new CFMetaData("Test", "Test", ColumnFamilyType.Standard, BytesType.instance, null);
 
     @Test
@@ -667,8 +665,7 @@ public class CachedRowSliceIteratorTest
     private CachedRow getRow(int numCols)
     {
         ColumnFamily columnFamily = getColumnFamily(numCols);
-        ByteBuffer buffer = CachedRowSerializer.serialize(columnFamily);
-        return new CachedRow(buffer);
+        return CachedRow.serialize(columnFamily);
     }
 
     private ColumnFamily getColumnFamily(int numCols)

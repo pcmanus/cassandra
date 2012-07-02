@@ -26,7 +26,6 @@ import java.util.SortedSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cache.CachedRowSerializer;
 import org.apache.cassandra.cache.CachedRow;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
@@ -47,7 +46,7 @@ public class CachedRowNamesIterator extends SimpleAbstractColumnIterator impleme
         try
         {
             this.cf = ColumnFamily.create(metadata, ArrayBackedSortedColumns.factory());
-            read(cachedRow.getBuffer(), metadata, columns);
+            read(cachedRow, metadata, columns);
         }
         catch (IOException ioe)
         {
@@ -57,18 +56,14 @@ public class CachedRowNamesIterator extends SimpleAbstractColumnIterator impleme
         this.iter = cf.iterator();
     }
 
-    private void read(ByteBuffer row, CFMetaData metadata, SortedSet<ByteBuffer> columns)
-            throws IOException
+    private void read(CachedRow row, CFMetaData metadata, SortedSet<ByteBuffer> columns) throws IOException
     {
-        CachedRowSerializer.deserializeFromCachedRowNoColumns(row, cf);
+        cf.delete(row.deletionInfo(metadata.comparator));
         for (ByteBuffer column : columns)
         {
-            IColumn col = CachedRowSerializer.deserializeColumn(row, column, metadata.comparator, cf.getColumnSerializer());
+            IColumn col = row.getColumn(column, metadata.comparator, cf.getColumnSerializer());
             if (col != null)
-            {
-                // we are adding in sort order so this should be cheap
                 cf.addColumn(col);
-            }
         }
     }
 

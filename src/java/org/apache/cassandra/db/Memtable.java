@@ -324,7 +324,7 @@ public class Memtable
                              cfs.getColumnFamilyName(), hashCode(), currentSize, getLiveSize(), currentOperations);
     }
 
-    private Iterator<Map.Entry<DecoratedKey, ColumnFamily>> createEntryIterator(final Iterator<Map.Entry<RowPosition, ColumnFamily>> iter) 
+    private Iterator<Map.Entry<DecoratedKey, ColumnFamily>> createEntryIterator(final Iterator<Map.Entry<RowPosition, ColumnFamily>> iter)
     {
         return new Iterator<Map.Entry<DecoratedKey, ColumnFamily>>()
         {
@@ -347,7 +347,7 @@ public class Memtable
             }
         };
     }
-    
+
     /**
      * @param startWith Include data in the result from and including this key and to the end of the memtable
      * @return An iterator of entries with the data from the start key
@@ -365,7 +365,7 @@ public class Memtable
     {
         return createEntryIterator(columnFamilies.entrySet().iterator());
     }
-    
+
     public boolean isClean()
     {
         return columnFamilies.isEmpty();
