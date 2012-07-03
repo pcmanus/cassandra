@@ -65,6 +65,7 @@ public class Config
     public String listen_address;
     public String broadcast_address;
 
+    public Boolean start_rpc = false;
     public String rpc_address;
     public Integer rpc_port = 9160;
     public String rpc_server_type = "sync";
@@ -74,6 +75,7 @@ public class Config
     public Integer rpc_send_buff_size_in_bytes;
     public Integer rpc_recv_buff_size_in_bytes;
 
+    public Boolean start_native_transport = false;
     public String native_transport_address;
     public Integer native_transport_port = 8000;
     public Integer native_transport_max_threads = Integer.MAX_VALUE;

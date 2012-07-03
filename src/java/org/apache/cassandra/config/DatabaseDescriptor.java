@@ -881,6 +881,11 @@ public class DatabaseDescriptor
         broadcastAddress = broadcastAdd;
     }
 
+    public static boolean startRpc()
+    {
+        return conf.start_rpc;
+    }
+
     public static InetAddress getRpcAddress()
     {
         return rpcAddress;
@@ -914,6 +919,11 @@ public class DatabaseDescriptor
     public static Integer getRpcRecvBufferSize()
     {
         return conf.rpc_recv_buff_size_in_bytes;
+    }
+
+    public static boolean startNativeTransport()
+    {
+        return conf.start_native_transport;
     }
 
     public static InetAddress getNativeTransportAddress()

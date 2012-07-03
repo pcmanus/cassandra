@@ -271,12 +271,14 @@ public class CassandraDaemon
      */
     public void start()
     {
-        if (Boolean.parseBoolean(System.getProperty("cassandra.start_rpc", "true")))
+        String rpcFlag = System.getProperty("cassandra.start_rpc");
+        if ((rpcFlag != null && Boolean.parseBoolean(rpcFlag)) || (rpcFlag == null && DatabaseDescriptor.startRpc()))
             thriftServer.start();
         else
             logger.info("Not starting RPC server as requested. Use JMX (StorageService->startRPCServer()) to start it");
 
-        if (Boolean.parseBoolean(System.getProperty("cassandra.start_native_transport", "true")))
+        String nativeFlag = System.getProperty("cassandra.start_native_transport");
+        if ((nativeFlag != null && Boolean.parseBoolean(nativeFlag)) || (nativeFlag == null && DatabaseDescriptor.startNativeTransport()))
             nativeServer.start();
         else
             logger.info("Not starting native transport as requested. Use JMX (StorageService->startNativeTransport()) to start it");
