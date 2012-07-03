@@ -64,7 +64,7 @@ public class CollationControllerTest extends SchemaLoader
         // A NamesQueryFilter goes down one code path (through collectTimeOrderedData())
         QueryFilter filter = QueryFilter.getNamesFilter(dk, path, ByteBufferUtil.bytes("Column1"));
         CollationController controller = new CollationController(store, false, filter, Integer.MIN_VALUE);
-        controller.getTopLevelColumns();
+        controller.getColumnFamily();
         assertEquals(1, controller.getSstablesIterated());
         
         // SliceQueryFilter goes down another path (through collectAllData())
@@ -77,7 +77,7 @@ public class CollationControllerTest extends SchemaLoader
         
         filter = QueryFilter.getIdentityFilter(dk, path);
         controller = new CollationController(store, false, filter, Integer.MIN_VALUE);
-        controller.getTopLevelColumns();
+        controller.getColumnFamily();
         assertEquals(2, controller.getSstablesIterated());
     }
 }

@@ -1179,8 +1179,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         CachedRow cachedRow = (CachedRow) CacheService.instance.rowCache.get(key);
         if (cachedRow != null)
         {
-            RowCacheCollationController collationController = new RowCacheCollationController(this, data.getView(), cachedRow, filter, gcBefore);
-            return collationController.getColumns();
+            RowCacheCollationController collationController = new RowCacheCollationController(this, memtables(), cachedRow, filter, gcBefore);
+            return collationController.getColumnFamily();
         }
         else
         {
@@ -1381,6 +1381,15 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return new ViewFragment(sstables, Iterables.concat(Collections.singleton(view.memtable), view.memtablesPendingFlush));
     }
 
+    /**
+     * @return a ViewFragment containing only the memtables.
+     */
+    public ViewFragment memtables()
+    {
+        DataTracker.View view = data.getView();
+        return new ViewFragment(Collections.<SSTableReader>emptyList(), Iterables.concat(Collections.singleton(view.memtable), view.memtablesPendingFlush));
+    }
+
     public List<String> getSSTablesForKey(String key)
     {
         DecoratedKey dk = new DecoratedKey(partitioner.getToken(ByteBuffer.wrap(key.getBytes())), ByteBuffer.wrap(key.getBytes()));
@@ -1405,7 +1414,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public ColumnFamily getTopLevelColumns(QueryFilter filter, int gcBefore, boolean forCache)
     {
         CollationController controller = new CollationController(this, forCache, filter, gcBefore);
-        ColumnFamily columns = controller.getTopLevelColumns();
+        ColumnFamily columns = controller.getColumnFamily();
         recentSSTablesPerRead.add(controller.getSstablesIterated());
         sstablesPerRead.add(controller.getSstablesIterated());
         return columns;
@@ -1684,14 +1693,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             }
             else
             {
-                RowCacheCollationController collationController = new RowCacheCollationController(
-                        this,
-                        data.getView(),
-                        cachedRow,
-                        QueryFilter.getIdentityFilter(key, new QueryPath(columnFamily)),
-                        gcBefore());
-
-                return collationController.getColumns();
+                QueryFilter filter = QueryFilter.getIdentityFilter(key, new QueryPath(columnFamily));
+                return new RowCacheCollationController(this, memtables(), cachedRow, filter, gcBefore()).getColumnFamily();
             }
         }
     }
