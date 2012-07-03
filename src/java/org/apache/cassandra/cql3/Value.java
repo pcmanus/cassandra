@@ -24,11 +24,36 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.db.marshal.CollectionType;
+import org.apache.cassandra.db.marshal.ListType;
+import org.apache.cassandra.db.marshal.MapType;
+import org.apache.cassandra.db.marshal.SetType;
+import org.apache.cassandra.thrift.InvalidRequestException;
+
 public interface Value
 {
     public List<Term> asList();
 
-    public static class MapLiteral extends HashMap<Term, Term> implements Value
+    public interface Literal extends Value
+    {
+        /**
+         * Validate that this literal is compatible with the provided column and
+         * throws an InvalidRequestException if not.
+         */
+        public void validateType(CFDefinition.Name value) throws InvalidRequestException;
+
+        /**
+         * Returns whether this litteral is empty or not.
+         */
+        public boolean isEmpty();
+
+        /**
+         * Returns the internal function to use to construct this literal.
+         */
+        public CollectionType.Function constructionFunction();
+    }
+
+    public static class MapLiteral extends HashMap<Term, Term> implements Literal
     {
         public List<Term> asList()
         {
@@ -40,21 +65,57 @@ public interface Value
             }
             return l;
         }
+
+        public void validateType(CFDefinition.Name value) throws InvalidRequestException
+        {
+            if (!(value.type instanceof MapType))
+                throw new InvalidRequestException(String.format("Invalid value: %s is not a map", value.name));
+        }
+
+        public CollectionType.Function constructionFunction()
+        {
+            return CollectionType.Function.SET;
+        }
     }
 
-    public static class ListLiteral extends ArrayList<Term> implements Value
+    public static class ListLiteral extends ArrayList<Term> implements Literal
     {
         public List<Term> asList()
         {
             return this;
         }
+
+        public void validateType(CFDefinition.Name value) throws InvalidRequestException
+        {
+            if (!(value.type instanceof ListType))
+                throw new InvalidRequestException(String.format("Invalid value: %s is not a list", value.name));
+        }
+
+        public CollectionType.Function constructionFunction()
+        {
+            return CollectionType.Function.APPEND;
+        }
     }
 
-    public static class SetLiteral extends HashSet<Term> implements Value
+    public static class SetLiteral extends HashSet<Term> implements Literal
     {
         public List<Term> asList()
         {
             return new ArrayList<Term>(this);
+        }
+
+        public void validateType(CFDefinition.Name value) throws InvalidRequestException
+        {
+            // The parser don't distinguish between empty set and empty map and always return an empty set
+            if ((value.type instanceof MapType) && !isEmpty())
+                throw new InvalidRequestException(String.format("Invalid value: %s is not a map", value.name));
+            else if (!(value.type instanceof SetType))
+                throw new InvalidRequestException(String.format("Invalid value: %s is not a set", value.name));
+        }
+
+        public CollectionType.Function constructionFunction()
+        {
+            return CollectionType.Function.ADD;
         }
     }
 }

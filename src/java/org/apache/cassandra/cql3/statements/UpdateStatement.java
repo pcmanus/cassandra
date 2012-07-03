@@ -240,45 +240,17 @@ public class UpdateStatement extends ModificationStatement
                     ByteBuffer valueBytes = ((Term)v).getByteBuffer(valueDef.type, params.variables);
                     cf.addColumn(params.makeColumn(colName, valueBytes));
                 }
-                else if (v instanceof Value.ListLiteral)
+                else
                 {
-                    if (!(valueDef.type instanceof ListType))
-                        throw new InvalidRequestException(String.format("Invalid value: %s is not a list", valueDef.name));
-                    Value.ListLiteral l = (Value.ListLiteral)v;
+                    assert v instanceof Value.Literal;
+                    Value.Literal l = (Value.Literal)v;
+                    l.validateType(valueDef);
 
                     // Remove previous
                     cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
 
                     if (!l.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.APPEND, l), params, null);
-                }
-                else if (v instanceof Value.SetLiteral)
-                {
-                    Value.SetLiteral s = (Value.SetLiteral)v;
-                    // The parser don't distinguish between empty set and empty map and always return an empty set
-                    if (s.isEmpty() && (valueDef.type instanceof MapType))
-                        return false;
-                    else if (!(valueDef.type instanceof SetType))
-                        throw new InvalidRequestException(String.format("Invalid value: %s is not a set", valueDef.name));
-
-                    // Remove previous
-                    cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
-
-                    if (!s.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.ADD, s.asList()), params, null);
-                }
-                else
-                {
-                    assert v instanceof Value.MapLiteral;
-                    if (!(valueDef.type instanceof MapType))
-                        throw new InvalidRequestException(String.format("Invalid value: %s is not a map", valueDef.name));
-
-                    // Remove previous
-                    cf.addAtom(params.makeTombstoneForOverwrite(builder.copy().build(), builder.copy().buildAsEndOfRange()));
-
-                    Value.MapLiteral m = (Value.MapLiteral)v;
-                    if (!m.isEmpty())
-                        addToMutation(cf, builder, valueDef, new Operation.Function(CollectionType.Function.SET, m.asList()), params, null);
+                        addToMutation(cf, builder, valueDef, new Operation.Function(l.constructionFunction(), l.asList()), params, null);
                 }
                 return false;
             case COUNTER:
@@ -442,7 +414,7 @@ public class UpdateStatement extends ModificationStatement
                         throw new InvalidRequestException(String.format("Invalid operator %s for key %s", rel.operator(), rel.getEntity()));
 
                     if (processed.containsKey(name.name))
-                        throw new InvalidRequestException(String.format("Multiple definition found for PRIMARY KEY part %s", name));
+                        throw new InvalidRequestException(String.format("Multiple definitions found for PRIMARY KEY part %s", name));
                     for (Term value : values)
                         if (value.isBindMarker())
                             names[value.bindIndex] = name;

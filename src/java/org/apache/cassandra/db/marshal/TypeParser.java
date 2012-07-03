@@ -501,17 +501,15 @@ public class TypeParser
     {
         StringBuilder sb = new StringBuilder();
         sb.append('(');
-        Iterator<Map.Entry<ByteBuffer, CollectionType>> iter = collections.entrySet().iterator();
-        if (iter.hasNext())
+        boolean first = true;
+        for (Map.Entry<ByteBuffer, CollectionType> entry : collections.entrySet())
         {
-            Map.Entry<ByteBuffer, CollectionType> entry = iter.next();
+            if (first)
+            {
+                sb.append(',');
+                first = false;
+            }
             sb.append(ByteBufferUtil.bytesToHex(entry.getKey())).append(":");
-            entry.getValue().appendToStringBuilder(sb);
-        }
-        while (iter.hasNext())
-        {
-            Map.Entry<ByteBuffer, CollectionType> entry = iter.next();
-            sb.append(',').append(ByteBufferUtil.bytesToHex(entry.getKey())).append(":");
             entry.getValue().appendToStringBuilder(sb);
         }
         sb.append(')');
