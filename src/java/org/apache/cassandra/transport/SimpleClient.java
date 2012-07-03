@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport;
+package org.apache.cassandra.transport;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -38,7 +38,7 @@ import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.logging.InternalLoggerFactory;
 import org.jboss.netty.logging.Slf4JLoggerFactory;
 
-import org.apache.cassandra.cql3.transport.messages.*;
+import org.apache.cassandra.transport.messages.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.utils.SimpleCondition;

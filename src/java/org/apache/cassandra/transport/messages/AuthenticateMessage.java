@@ -15,36 +15,41 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.transport.FrameCompressor;
-import org.apache.cassandra.cql3.transport.Message;
+import org.apache.cassandra.transport.CBUtil;
+import org.apache.cassandra.transport.FrameCompressor;
+import org.apache.cassandra.transport.Message;
 
 /**
  * Message to indicate that the server is ready to receive requests.
  */
-public class OptionsMessage extends Message.Request
+public class AuthenticateMessage extends Message.Response
 {
-    public static final Message.Codec<OptionsMessage> codec = new Message.Codec<OptionsMessage>()
+    public static final Message.Codec<AuthenticateMessage> codec = new Message.Codec<AuthenticateMessage>()
     {
-        public OptionsMessage decode(ChannelBuffer body)
+        public AuthenticateMessage decode(ChannelBuffer body)
         {
-            return new OptionsMessage();
+            String authenticator = CBUtil.readString(body);
+            return new AuthenticateMessage(authenticator);
         }
 
-        public ChannelBuffer encode(OptionsMessage msg)
+        public ChannelBuffer encode(AuthenticateMessage msg)
         {
-            return ChannelBuffers.EMPTY_BUFFER;
+            return CBUtil.stringToCB(msg.authenticator);
         }
     };
 
-    public OptionsMessage()
+    public final String authenticator;
+
+    public AuthenticateMessage(String authenticator)
     {
-        super(Message.Type.OPTIONS);
+        super(Message.Type.AUTHENTICATE);
+        this.authenticator = authenticator;
     }
 
     public ChannelBuffer encode()
@@ -52,18 +57,9 @@ public class OptionsMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute()
-    {
-        SupportedMessage supported = new SupportedMessage();
-        supported.cqlVersions.add(QueryProcessor.CQL_VERSION.toString());
-        if (FrameCompressor.SnappyCompressor.instance != null)
-            supported.compressions.add("snappy");
-        return supported;
-    }
-
     @Override
     public String toString()
     {
-        return "OPTIONS";
+        return "AUTHENTICATE " + authenticator;
     }
 }

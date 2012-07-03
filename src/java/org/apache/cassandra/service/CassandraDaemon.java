@@ -244,7 +244,7 @@ public class CassandraDaemon
         // Native transport
         InetAddress nativeAddr = DatabaseDescriptor.getNativeTransportAddress();
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
-        nativeServer = new org.apache.cassandra.cql3.transport.Server(nativeAddr, nativePort);
+        nativeServer = new org.apache.cassandra.transport.Server(nativeAddr, nativePort);
     }
 
     /**

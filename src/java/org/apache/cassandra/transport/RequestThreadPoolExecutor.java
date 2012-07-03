@@ -15,12 +15,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport;
+package org.apache.cassandra.transport;
 
-import org.jboss.netty.buffer.ChannelBuffer;
+import java.util.concurrent.TimeUnit;
 
-public interface CBCodec<T>
+import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
+import org.jboss.netty.util.DefaultObjectSizeEstimator;
+import org.jboss.netty.util.ObjectSizeEstimator;
+
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
+
+public class RequestThreadPoolExecutor extends OrderedMemoryAwareThreadPoolExecutor
 {
-    public T decode(ChannelBuffer body);
-    public ChannelBuffer encode(T t);
+    private final static int CORE_THREAD_TIMEOUT_SEC = 30;
+
+    public RequestThreadPoolExecutor()
+    {
+        super(DatabaseDescriptor.getNativeTransportMaxThreads(),
+              0, 0,
+              CORE_THREAD_TIMEOUT_SEC, TimeUnit.SECONDS,
+              new NamedThreadFactory("Native-Transport-Requests"));
+    }
 }

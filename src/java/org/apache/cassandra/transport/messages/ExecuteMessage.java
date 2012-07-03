@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -27,7 +27,7 @@ import org.jboss.netty.buffer.ChannelBuffers;
 
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.transport.*;
+import org.apache.cassandra.transport.*;
 import org.apache.cassandra.thrift.InvalidRequestException;
 
 public class ExecuteMessage extends Message.Request

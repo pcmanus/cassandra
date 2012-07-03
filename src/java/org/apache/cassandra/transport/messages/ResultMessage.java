@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -29,7 +29,7 @@ import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.ResultSet;
-import org.apache.cassandra.cql3.transport.*;
+import org.apache.cassandra.transport.*;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.thrift.CqlPreparedResult;
 import org.apache.cassandra.thrift.CqlResult;

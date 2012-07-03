@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -23,8 +23,8 @@ import java.util.Map;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
-import org.apache.cassandra.cql3.transport.CBUtil;
-import org.apache.cassandra.cql3.transport.Message;
+import org.apache.cassandra.transport.CBUtil;
+import org.apache.cassandra.transport.Message;
 import org.apache.cassandra.utils.SemanticVersion;
 import org.apache.cassandra.thrift.AuthenticationException;
 

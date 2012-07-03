@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -25,7 +25,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.transport.*;
+import org.apache.cassandra.transport.*;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.apache.cassandra.utils.SemanticVersion;
 

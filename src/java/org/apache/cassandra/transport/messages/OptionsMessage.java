@@ -15,40 +15,36 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
-
-import java.util.EnumMap;
-import java.util.Map;
+package org.apache.cassandra.transport.messages;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.transport.*;
-import org.apache.cassandra.thrift.InvalidRequestException;
+import org.apache.cassandra.transport.FrameCompressor;
+import org.apache.cassandra.transport.Message;
 
-public class PrepareMessage extends Message.Request
+/**
+ * Message to indicate that the server is ready to receive requests.
+ */
+public class OptionsMessage extends Message.Request
 {
-    public static final Message.Codec<PrepareMessage> codec = new Message.Codec<PrepareMessage>()
+    public static final Message.Codec<OptionsMessage> codec = new Message.Codec<OptionsMessage>()
     {
-        public PrepareMessage decode(ChannelBuffer body)
+        public OptionsMessage decode(ChannelBuffer body)
         {
-            String query = CBUtil.readLongString(body);
-            return new PrepareMessage(query);
+            return new OptionsMessage();
         }
 
-        public ChannelBuffer encode(PrepareMessage msg)
+        public ChannelBuffer encode(OptionsMessage msg)
         {
-            return CBUtil.longStringToCB(msg.query);
+            return ChannelBuffers.EMPTY_BUFFER;
         }
     };
 
-    private final String query;
-
-    public PrepareMessage(String query)
+    public OptionsMessage()
     {
-        super(Message.Type.PREPARE);
-        this.query = query;
+        super(Message.Type.OPTIONS);
     }
 
     public ChannelBuffer encode()
@@ -58,19 +54,16 @@ public class PrepareMessage extends Message.Request
 
     public Message.Response execute()
     {
-        try
-        {
-            return QueryProcessor.prepare(query, connection.clientState());
-        }
-        catch (Exception e)
-        {
-            return ErrorMessage.fromException(e);
-        }
+        SupportedMessage supported = new SupportedMessage();
+        supported.cqlVersions.add(QueryProcessor.CQL_VERSION.toString());
+        if (FrameCompressor.SnappyCompressor.instance != null)
+            supported.compressions.add("snappy");
+        return supported;
     }
 
     @Override
     public String toString()
     {
-        return "PREPARE " + query;
+        return "OPTIONS";
     }
 }

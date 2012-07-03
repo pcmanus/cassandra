@@ -15,41 +15,40 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.cql3.transport.messages;
+package org.apache.cassandra.transport.messages;
+
+import java.util.EnumMap;
+import java.util.Map;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.transport.CBUtil;
-import org.apache.cassandra.cql3.transport.FrameCompressor;
-import org.apache.cassandra.cql3.transport.Message;
+import org.apache.cassandra.transport.*;
+import org.apache.cassandra.thrift.InvalidRequestException;
 
-/**
- * Message to indicate that the server is ready to receive requests.
- */
-public class AuthenticateMessage extends Message.Response
+public class PrepareMessage extends Message.Request
 {
-    public static final Message.Codec<AuthenticateMessage> codec = new Message.Codec<AuthenticateMessage>()
+    public static final Message.Codec<PrepareMessage> codec = new Message.Codec<PrepareMessage>()
     {
-        public AuthenticateMessage decode(ChannelBuffer body)
+        public PrepareMessage decode(ChannelBuffer body)
         {
-            String authenticator = CBUtil.readString(body);
-            return new AuthenticateMessage(authenticator);
+            String query = CBUtil.readLongString(body);
+            return new PrepareMessage(query);
         }
 
-        public ChannelBuffer encode(AuthenticateMessage msg)
+        public ChannelBuffer encode(PrepareMessage msg)
         {
-            return CBUtil.stringToCB(msg.authenticator);
+            return CBUtil.longStringToCB(msg.query);
         }
     };
 
-    public final String authenticator;
+    private final String query;
 
-    public AuthenticateMessage(String authenticator)
+    public PrepareMessage(String query)
     {
-        super(Message.Type.AUTHENTICATE);
-        this.authenticator = authenticator;
+        super(Message.Type.PREPARE);
+        this.query = query;
     }
 
     public ChannelBuffer encode()
@@ -57,9 +56,21 @@ public class AuthenticateMessage extends Message.Response
         return codec.encode(this);
     }
 
+    public Message.Response execute()
+    {
+        try
+        {
+            return QueryProcessor.prepare(query, connection.clientState());
+        }
+        catch (Exception e)
+        {
+            return ErrorMessage.fromException(e);
+        }
+    }
+
     @Override
     public String toString()
     {
-        return "AUTHENTICATE " + authenticator;
+        return "PREPARE " + query;
     }
 }
