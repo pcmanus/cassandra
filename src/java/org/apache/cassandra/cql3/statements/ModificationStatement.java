@@ -45,8 +45,6 @@ import org.apache.cassandra.thrift.UnavailableException;
  */
 public abstract class ModificationStatement extends CFStatement implements CQLStatement
 {
-    public static final ConsistencyLevel defaultConsistency = ConsistencyLevel.ONE;
-
     protected final ConsistencyLevel cLevel;
     protected Long timestamp;
     protected final int timeToLive;
@@ -90,9 +88,9 @@ public abstract class ModificationStatement extends CFStatement implements CQLSt
         }
     }
 
-    public ConsistencyLevel getConsistencyLevel()
+    public ConsistencyLevel getConsistencyLevel(CFMetaData cfm)
     {
-        return (cLevel != null) ? cLevel : defaultConsistency;
+        return (cLevel != null) ? cLevel : cfm.getWriteConsistencyLevel();
     }
 
     /**

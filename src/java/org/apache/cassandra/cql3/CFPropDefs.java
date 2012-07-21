@@ -24,6 +24,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.SnappyCompressor;
+import org.apache.cassandra.thrift.ConsistencyLevel;
 import org.apache.cassandra.thrift.InvalidRequestException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,8 @@ public class CFPropDefs
     public static final String KW_COMPACTION_STRATEGY_CLASS = "compaction_strategy_class";
     public static final String KW_CACHING = "caching";
     public static final String KW_BF_FP_CHANCE = "bloom_filter_fp_chance";
+    public static final String KW_DEFAULT_R_CONSISTENCY = "default_read_consistency";
+    public static final String KW_DEFAULT_W_CONSISTENCY = "default_write_consistency";
 
     // Maps CQL short names to the respective Cassandra comparator/validator class names
     public static final Set<String> keywords = new HashSet<String>();
@@ -138,6 +141,20 @@ public class CFPropDefs
 
         if (!compressionParameters.isEmpty())
             cfm.compressionParameters(CompressionParameters.create(compressionParameters));
+
+        ConsistencyLevel readCL = getConsistencyLevel(KW_DEFAULT_R_CONSISTENCY);
+        if (readCL != null)
+        {
+            // TODO: validate consistency level, see ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
+            cfm.defaultReadCL(readCL);
+        }
+        ConsistencyLevel writeCL = getConsistencyLevel(KW_DEFAULT_W_CONSISTENCY);
+        if (writeCL != null)
+        {
+            // TODO: validate consistency level, see ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
+            cfm.defaultWriteCL(writeCL);
+        }
+
     }
 
     public String get(String name)
@@ -205,6 +222,22 @@ public class CFPropDefs
             }
         }
         return result;
+    }
+
+    public ConsistencyLevel getConsistencyLevel(String key) throws ConfigurationException
+    {
+        String value = properties.get(key);
+        if (value == null)
+            return null;
+
+        try
+        {
+            return Enum.valueOf(ConsistencyLevel.class, value);
+        }
+        catch (IllegalArgumentException e)
+        {
+            throw new ConfigurationException(String.format("Invalid consistency level value: %s", value));
+        }
     }
 
     @Override

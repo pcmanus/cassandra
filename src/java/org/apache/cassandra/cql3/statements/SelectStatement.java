@@ -845,7 +845,8 @@ public class SelectStatement implements CQLStatement
         public ParsedStatement.Prepared prepare() throws InvalidRequestException
         {
             CFMetaData cfm = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
-            ThriftValidation.validateConsistencyLevel(keyspace(), parameters.consistencyLevel, RequestType.READ);
+            if (parameters.consistencyLevel != null)
+                ThriftValidation.validateConsistencyLevel(keyspace(), parameters.consistencyLevel, RequestType.READ);
 
             if (parameters.limit <= 0)
                 throw new InvalidRequestException("LIMIT must be strictly positive");
