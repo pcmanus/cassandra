@@ -312,7 +312,7 @@ start_native_transport: false
 native_transport_port: 9042
 # The maximum of thread handling requests. The meaning is the same than
 # rpc_max_threads. The default is unlimited.
-#native_transport_max_threads: 2048
+native_transport_max_threads: 64
 
 
 # Whether to start the thrift rpc server.
