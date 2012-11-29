@@ -23,18 +23,20 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.*;
 import java.util.*;
 
-import org.jboss.netty.bootstrap.ClientBootstrap;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.Channels;
-import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.channel.ChannelPipeline;
-import org.jboss.netty.channel.ChannelPipelineFactory;
-import org.jboss.netty.channel.MessageEvent;
-import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.logging.InternalLoggerFactory;
-import org.jboss.netty.logging.Slf4JLoggerFactory;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandler.Sharable;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelInboundMessageHandlerAdapter;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.logging.InternalLoggerFactory;
+import io.netty.logging.Slf4JLoggerFactory;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.transport.messages.*;
@@ -52,7 +54,7 @@ public class SimpleClient
     protected final ResponseHandler responseHandler = new ResponseHandler();
     protected final Connection.Tracker tracker = new ConnectionTracker();
     protected final Connection connection = new Connection(tracker);
-    protected ClientBootstrap bootstrap;
+    protected Bootstrap bootstrap;
     protected Channel channel;
     protected ChannelFuture lastWriteFuture;
 
@@ -87,23 +89,22 @@ public class SimpleClient
     protected void establishConnection() throws IOException
     {
         // Configure the client.
-        bootstrap = new ClientBootstrap(
-                        new NioClientSocketChannelFactory(
-                            Executors.newCachedThreadPool(),
-                            Executors.newCachedThreadPool()));
+        bootstrap = new Bootstrap();
+        bootstrap.group(new NioEventLoopGroup())
+                 .channel(NioSocketChannel.class)
+                 .remoteAddress(host, port)
+                 .option(ChannelOption.TCP_NODELAY, true)
+                 .handler(new ClientInitializer());
 
-        bootstrap.setOption("tcpNoDelay", true);
-
-        // Configure the pipeline factory.
-        bootstrap.setPipelineFactory(new PipelineFactory());
-        ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+        // Make a new connection.
+        ChannelFuture future = bootstrap.connect();
 
         // Wait until the connection attempt succeeds or fails.
-        channel = future.awaitUninterruptibly().getChannel();
+        channel = future.awaitUninterruptibly().channel();
         if (!future.isSuccess())
         {
-            bootstrap.releaseExternalResources();
-            throw new IOException("Connection Error", future.getCause());
+            bootstrap.shutdown();
+            throw new IOException("Connection Error", future.cause());
         }
     }
 
@@ -146,7 +147,7 @@ public class SimpleClient
         channel.close().awaitUninterruptibly();
 
         // Shut down all thread pools to exit.
-        bootstrap.releaseExternalResources();
+        bootstrap.shutdown();
     }
 
     protected Message.Response execute(Message.Request request)
@@ -179,11 +180,12 @@ public class SimpleClient
         public void closeAll() {}
     }
 
-    private class PipelineFactory implements ChannelPipelineFactory
+    private class ClientInitializer extends ChannelInitializer<SocketChannel>
     {
-        public ChannelPipeline getPipeline() throws Exception
+        @Override
+        public void initChannel(SocketChannel ch) throws Exception
         {
-            ChannelPipeline pipeline = Channels.pipeline();
+            ChannelPipeline pipeline = ch.pipeline();
 
             //pipeline.addLast("debug", new LoggingHandler());
 
@@ -197,22 +199,20 @@ public class SimpleClient
             pipeline.addLast("messageEncoder", messageEncoder);
 
             pipeline.addLast("handler", responseHandler);
-
-            return pipeline;
         }
     }
 
-    private static class ResponseHandler extends SimpleChannelUpstreamHandler
+    @Sharable
+    private static class ResponseHandler extends ChannelInboundMessageHandlerAdapter<Message.Response>
     {
         public final BlockingQueue<Message.Response> responses = new SynchronousQueue<Message.Response>(true);
 
         @Override
-        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e)
+        public void messageReceived(ChannelHandlerContext ctx, Message.Response response)
         {
-            assert e.getMessage() instanceof Message.Response;
             try
             {
-                responses.put((Message.Response)e.getMessage());
+                responses.put(response);
             }
             catch (InterruptedException ie)
             {

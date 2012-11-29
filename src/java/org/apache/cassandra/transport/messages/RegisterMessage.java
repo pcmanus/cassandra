@@ -20,8 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.*;
@@ -30,7 +30,7 @@ public class RegisterMessage extends Message.Request
 {
     public static final Message.Codec<RegisterMessage> codec = new Message.Codec<RegisterMessage>()
     {
-        public RegisterMessage decode(ChannelBuffer body)
+        public RegisterMessage decode(ByteBuf body)
         {
             int length = body.readUnsignedShort();
             List<Event.Type> eventTypes = new ArrayList<Event.Type>(length);
@@ -39,9 +39,9 @@ public class RegisterMessage extends Message.Request
             return new RegisterMessage(eventTypes);
         }
 
-        public ChannelBuffer encode(RegisterMessage msg)
+        public ByteBuf encode(RegisterMessage msg)
         {
-            ChannelBuffer cb = ChannelBuffers.dynamicBuffer();
+            ByteBuf cb = Unpooled.buffer();
             cb.writeShort(msg.eventTypes.size());
             for (Event.Type type : msg.eventTypes)
                 cb.writeBytes(CBUtil.enumValueToCB(type));
@@ -67,7 +67,7 @@ public class RegisterMessage extends Message.Request
         return new ReadyMessage();
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

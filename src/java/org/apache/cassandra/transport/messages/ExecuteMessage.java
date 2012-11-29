@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -40,7 +40,7 @@ public class ExecuteMessage extends Message.Request
 {
     public static final Message.Codec<ExecuteMessage> codec = new Message.Codec<ExecuteMessage>()
     {
-        public ExecuteMessage decode(ChannelBuffer body)
+        public ExecuteMessage decode(ByteBuf body)
         {
             byte[] id = CBUtil.readBytes(body);
 
@@ -53,7 +53,7 @@ public class ExecuteMessage extends Message.Request
             return new ExecuteMessage(id, values, consistency);
         }
 
-        public ChannelBuffer encode(ExecuteMessage msg)
+        public ByteBuf encode(ExecuteMessage msg)
         {
             // We have:
             //   - statementId
@@ -91,7 +91,7 @@ public class ExecuteMessage extends Message.Request
         this.consistency = consistency;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

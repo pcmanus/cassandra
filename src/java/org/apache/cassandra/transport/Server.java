@@ -24,14 +24,15 @@ import java.util.EnumMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.jboss.netty.bootstrap.ServerBootstrap;
-import org.jboss.netty.channel.*;
-import org.jboss.netty.channel.group.ChannelGroup;
-import org.jboss.netty.channel.group.DefaultChannelGroup;
-import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
-import org.jboss.netty.handler.execution.ExecutionHandler;
-import org.jboss.netty.logging.InternalLoggerFactory;
-import org.jboss.netty.logging.Slf4JLoggerFactory;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.*;
+import io.netty.channel.group.ChannelGroup;
+import io.netty.channel.group.DefaultChannelGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.logging.InternalLoggerFactory;
+import io.netty.logging.Slf4JLoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,8 +57,7 @@ public class Server implements CassandraDaemon.Server
     public final InetSocketAddress socket;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    private ChannelFactory factory;
-    private ExecutionHandler executionHandler;
+    private ServerBootstrap bootstrap;
 
     public Server(InetSocketAddress socket)
     {
@@ -102,18 +102,17 @@ public class Server implements CassandraDaemon.Server
     public void run()
     {
         // Configure the server.
-        executionHandler = new ExecutionHandler(new RequestThreadPoolExecutor());
-        factory = new NioServerSocketChannelFactory(Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
-        ServerBootstrap bootstrap = new ServerBootstrap(factory);
-
-        bootstrap.setOption("child.tcpNoDelay", true);
-
-        // Set up the event pipeline factory.
-        bootstrap.setPipelineFactory(new PipelineFactory(this));
+        bootstrap = new ServerBootstrap();
+        bootstrap.group(new NioEventLoopGroup(), new NioEventLoopGroup())
+                 .channel(NioServerSocketChannel.class)
+                 .localAddress(socket)
+                 .childOption(ChannelOption.TCP_NODELAY, true)
+                 .childHandler(new ServerInitializer(this));
 
         // Bind and start to accept incoming connections.
         logger.info("Starting listening for CQL clients on " + socket + "...");
-        Channel channel = bootstrap.bind(socket);
+        Channel channel = bootstrap.bind().channel();
+
         connectionTracker.allChannels.add(channel);
     }
 
@@ -121,10 +120,8 @@ public class Server implements CassandraDaemon.Server
     {
         // Close opened connections
         connectionTracker.closeAll();
-        factory.releaseExternalResources();
-        factory = null;
-        executionHandler.releaseExternalResources();
-        executionHandler = null;
+        bootstrap.shutdown();
+        bootstrap = null;
     }
 
     public static class ConnectionTracker implements Connection.Tracker
@@ -165,7 +162,7 @@ public class Server implements CassandraDaemon.Server
         }
     }
 
-    private static class PipelineFactory implements ChannelPipelineFactory
+    private static class ServerInitializer extends ChannelInitializer<SocketChannel>
     {
         // Stateless handlers
         private static final Message.ProtocolDecoder messageDecoder = new Message.ProtocolDecoder();
@@ -177,14 +174,15 @@ public class Server implements CassandraDaemon.Server
 
         private final Server server;
 
-        public PipelineFactory(Server server)
+        public ServerInitializer(Server server)
         {
             this.server = server;
         }
 
-        public ChannelPipeline getPipeline() throws Exception
+        @Override
+        public void initChannel(SocketChannel ch) throws Exception
         {
-            ChannelPipeline pipeline = Channels.pipeline();
+            ChannelPipeline pipeline = ch.pipeline();
 
             //pipeline.addLast("debug", new LoggingHandler());
 
@@ -197,12 +195,10 @@ public class Server implements CassandraDaemon.Server
             pipeline.addLast("messageDecoder", messageDecoder);
             pipeline.addLast("messageEncoder", messageEncoder);
 
-            pipeline.addLast("executor", server.executionHandler);
+            //pipeline.addLast("executor", server.executionHandler);
 
-            pipeline.addLast("dispatcher", dispatcher);
-
-            return pipeline;
-      }
+            pipeline.addLast(new DefaultEventExecutorGroup(64), "dispatcher", dispatcher);
+        }
     }
 
     private static class EventNotifier implements IEndpointLifecycleSubscriber, IMigrationListener

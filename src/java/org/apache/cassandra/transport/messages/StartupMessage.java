@@ -19,8 +19,8 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.Map;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -40,14 +40,14 @@ public class StartupMessage extends Message.Request
 
     public static final Message.Codec<StartupMessage> codec = new Message.Codec<StartupMessage>()
     {
-        public StartupMessage decode(ChannelBuffer body)
+        public StartupMessage decode(ByteBuf body)
         {
             return new StartupMessage(CBUtil.readStringMap(body));
         }
 
-        public ChannelBuffer encode(StartupMessage msg)
+        public ByteBuf encode(StartupMessage msg)
         {
-            ChannelBuffer cb = ChannelBuffers.dynamicBuffer();
+            ByteBuf cb = Unpooled.buffer();
             CBUtil.writeStringMap(cb, msg.options);
             return cb;
         }
@@ -61,7 +61,7 @@ public class StartupMessage extends Message.Request
         this.options = options;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

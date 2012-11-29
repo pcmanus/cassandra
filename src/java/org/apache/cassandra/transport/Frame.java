@@ -21,19 +21,23 @@ package org.apache.cassandra.transport;
 import java.io.IOException;
 import java.util.EnumSet;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.*;
-import org.jboss.netty.handler.codec.oneone.OneToOneDecoder;
-import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
-import org.jboss.netty.handler.codec.frame.*;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.*;
+import io.netty.channel.ChannelHandler.Sharable;
+import io.netty.handler.codec.CorruptedFrameException;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.MessageToMessageDecoder;
+import io.netty.handler.codec.MessageToMessageEncoder;
+import io.netty.handler.codec.MessageToByteEncoder;
+import io.netty.handler.codec.TooLongFrameException;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class Frame
 {
     public final Header header;
-    public final ChannelBuffer body;
+    public final ByteBuf body;
     public final Connection connection;
 
     /**
@@ -47,18 +51,16 @@ public class Frame
      *   |                length                 |
      *   +---------+---------+---------+---------+
      */
-    private Frame(Header header, ChannelBuffer body, Connection connection)
+    private Frame(Header header, ByteBuf body, Connection connection)
     {
         this.header = header;
         this.body = body;
         this.connection = connection;
     }
 
-    public static Frame create(ChannelBuffer fullFrame, Connection connection)
+    public static Frame create(ByteBuf fullFrame, Connection connection)
     {
-        assert fullFrame.readableBytes() >= Header.LENGTH : String.format("Frame too short (%d bytes = %s)",
-                                                                          fullFrame.readableBytes(),
-                                                                          ByteBufferUtil.bytesToHex(fullFrame.toByteBuffer()));
+        assert fullFrame.readableBytes() >= Header.LENGTH : String.format("Frame too short (%d bytes)", fullFrame.readableBytes());
 
         int version = fullFrame.readByte();
         int flags = fullFrame.readByte();
@@ -75,7 +77,7 @@ public class Frame
         return new Frame(header, fullFrame, connection);
     }
 
-    public static Frame create(Message.Type type, int streamId, EnumSet<Header.Flag> flags, ChannelBuffer body, Connection connection)
+    public static Frame create(Message.Type type, int streamId, EnumSet<Header.Flag> flags, ByteBuf body, Connection connection)
     {
         Header header = new Header(Header.CURRENT_VERSION, flags, streamId, type);
         return new Frame(header, body, connection);
@@ -132,7 +134,7 @@ public class Frame
         }
     }
 
-    public Frame with(ChannelBuffer newBody)
+    public Frame with(ByteBuf newBody)
     {
         return new Frame(header, newBody, connection);
     }
@@ -149,14 +151,14 @@ public class Frame
         }
 
         @Override
-        public void channelOpen(ChannelHandlerContext ctx, ChannelStateEvent e)
+        public void channelRegistered(ChannelHandlerContext ctx)
         throws Exception
         {
-            connection.registerChannel(e.getChannel());
+            connection.registerChannel(ctx.channel());
         }
 
         @Override
-        protected Object decode(ChannelHandlerContext ctx, Channel channel, ChannelBuffer buffer)
+        public Object decode(ChannelHandlerContext ctx, ByteBuf buffer)
         throws Exception
         {
             try
@@ -178,7 +180,7 @@ public class Frame
                 if (buffer.readableBytes() >= 4)
                     Message.Type.fromOpcode(buffer.getByte(3), direction);
 
-                ChannelBuffer frame = (ChannelBuffer) super.decode(ctx, channel, buffer);
+                ByteBuf frame = (ByteBuf) super.decode(ctx, buffer);
                 if (frame == null)
                 {
                     return null;
@@ -196,36 +198,29 @@ public class Frame
         }
     }
 
-    public static class Encoder extends OneToOneEncoder
+    @Sharable
+    public static class Encoder extends MessageToByteEncoder<Frame>
     {
-        public Object encode(ChannelHandlerContext ctx, Channel channel, Object msg)
+        public void encode(ChannelHandlerContext ctx, Frame frame, ByteBuf out)
         throws IOException
         {
-            assert msg instanceof Frame : "Expecting frame, got " + msg;
-
-            Frame frame = (Frame)msg;
-
-            ChannelBuffer header = ChannelBuffers.buffer(Frame.Header.LENGTH);
             Message.Type type = frame.header.type;
-            header.writeByte(type.direction.addToVersion(frame.header.version));
-            header.writeByte(Header.Flag.serialize(frame.header.flags));
-            header.writeByte(frame.header.streamId);
-            header.writeByte(type.opcode);
-            header.writeInt(frame.body.readableBytes());
+            out.writeByte(type.direction.addToVersion(frame.header.version));
+            out.writeByte(Header.Flag.serialize(frame.header.flags));
+            out.writeByte(frame.header.streamId);
+            out.writeByte(type.opcode);
+            out.writeInt(frame.body.readableBytes());
 
-            return ChannelBuffers.wrappedBuffer(header, frame.body);
+            out.writeBytes(frame.body, frame.body.readerIndex(), frame.body.readableBytes());
         }
     }
 
-    public static class Decompressor extends OneToOneDecoder
+    @Sharable
+    public static class Decompressor extends MessageToMessageDecoder<Frame, Frame>
     {
-        public Object decode(ChannelHandlerContext ctx, Channel channel, Object msg)
+        public Frame decode(ChannelHandlerContext ctx, Frame frame)
         throws IOException
         {
-            assert msg instanceof Frame : "Expecting frame, got " + msg;
-
-            Frame frame = (Frame)msg;
-
             if (!frame.header.flags.contains(Header.Flag.COMPRESSED))
                 return frame;
 
@@ -237,15 +232,12 @@ public class Frame
         }
     }
 
-    public static class Compressor extends OneToOneEncoder
+    @Sharable
+    public static class Compressor extends MessageToMessageEncoder<Frame, Frame>
     {
-        public Object encode(ChannelHandlerContext ctx, Channel channel, Object msg)
+        public Frame encode(ChannelHandlerContext ctx, Frame frame)
         throws IOException
         {
-            assert msg instanceof Frame : "Expecting frame, got " + msg;
-
-            Frame frame = (Frame)msg;
-
             // Never compress STARTUP messages
             if (frame.header.type == Message.Type.STARTUP || frame.connection == null)
                 return frame;

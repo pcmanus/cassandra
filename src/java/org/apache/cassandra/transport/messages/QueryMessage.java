@@ -20,8 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -39,17 +39,17 @@ public class QueryMessage extends Message.Request
 {
     public static final Message.Codec<QueryMessage> codec = new Message.Codec<QueryMessage>()
     {
-        public QueryMessage decode(ChannelBuffer body)
+        public QueryMessage decode(ByteBuf body)
         {
             String query = CBUtil.readLongString(body);
             ConsistencyLevel consistency = CBUtil.readConsistencyLevel(body);
             return new QueryMessage(query, consistency);
         }
 
-        public ChannelBuffer encode(QueryMessage msg)
+        public ByteBuf encode(QueryMessage msg)
         {
 
-            return ChannelBuffers.wrappedBuffer(CBUtil.longStringToCB(msg.query), CBUtil.consistencyLevelToCB(msg.consistency));
+            return Unpooled.wrappedBuffer(CBUtil.longStringToCB(msg.query), CBUtil.consistencyLevelToCB(msg.consistency));
         }
     };
 
@@ -63,7 +63,7 @@ public class QueryMessage extends Message.Request
         this.consistency = consistency;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

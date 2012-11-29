@@ -20,8 +20,8 @@ package org.apache.cassandra.transport;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 public abstract class Event
 {
@@ -34,7 +34,7 @@ public abstract class Event
         this.type = type;
     }
 
-    public static Event deserialize(ChannelBuffer cb)
+    public static Event deserialize(ByteBuf cb)
     {
         switch (CBUtil.readEnumValue(Type.class, cb))
         {
@@ -48,12 +48,12 @@ public abstract class Event
         throw new AssertionError();
     }
 
-    public ChannelBuffer serialize()
+    public ByteBuf serialize()
     {
-        return ChannelBuffers.wrappedBuffer(CBUtil.enumValueToCB(type), serializeEvent());
+        return Unpooled.wrappedBuffer(CBUtil.enumValueToCB(type), serializeEvent());
     }
 
-    protected abstract ChannelBuffer serializeEvent();
+    protected abstract ByteBuf serializeEvent();
 
     public static class TopologyChange extends Event
     {
@@ -85,16 +85,16 @@ public abstract class Event
         }
 
         // Assumes the type has already by been deserialized
-        private static TopologyChange deserializeEvent(ChannelBuffer cb)
+        private static TopologyChange deserializeEvent(ByteBuf cb)
         {
             Change change = CBUtil.readEnumValue(Change.class, cb);
             InetSocketAddress node = CBUtil.readInet(cb);
             return new TopologyChange(change, node);
         }
 
-        protected ChannelBuffer serializeEvent()
+        protected ByteBuf serializeEvent()
         {
-            return ChannelBuffers.wrappedBuffer(CBUtil.enumValueToCB(change), CBUtil.inetToCB(node));
+            return Unpooled.wrappedBuffer(CBUtil.enumValueToCB(change), CBUtil.inetToCB(node));
         }
 
         @Override
@@ -129,16 +129,16 @@ public abstract class Event
         }
 
         // Assumes the type has already by been deserialized
-        private static StatusChange deserializeEvent(ChannelBuffer cb)
+        private static StatusChange deserializeEvent(ByteBuf cb)
         {
             Status status = CBUtil.readEnumValue(Status.class, cb);
             InetSocketAddress node = CBUtil.readInet(cb);
             return new StatusChange(status, node);
         }
 
-        protected ChannelBuffer serializeEvent()
+        protected ByteBuf serializeEvent()
         {
-            return ChannelBuffers.wrappedBuffer(CBUtil.enumValueToCB(status), CBUtil.inetToCB(node));
+            return Unpooled.wrappedBuffer(CBUtil.enumValueToCB(status), CBUtil.inetToCB(node));
         }
 
         @Override
@@ -170,7 +170,7 @@ public abstract class Event
         }
 
         // Assumes the type has already by been deserialized
-        private static SchemaChange deserializeEvent(ChannelBuffer cb)
+        private static SchemaChange deserializeEvent(ByteBuf cb)
         {
             Change change = CBUtil.readEnumValue(Change.class, cb);
             String keyspace = CBUtil.readString(cb);
@@ -178,9 +178,9 @@ public abstract class Event
             return new SchemaChange(change, keyspace, table);
         }
 
-        protected ChannelBuffer serializeEvent()
+        protected ByteBuf serializeEvent()
         {
-            return ChannelBuffers.wrappedBuffer(CBUtil.enumValueToCB(change),
+            return Unpooled.wrappedBuffer(CBUtil.enumValueToCB(change),
                                                 CBUtil.stringToCB(keyspace),
                                                 CBUtil.stringToCB(table));
         }

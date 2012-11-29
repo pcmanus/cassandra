@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.transport;
 
-import org.jboss.netty.channel.Channel;
+import io.netty.channel.Channel;
 
 public class Connection
 {

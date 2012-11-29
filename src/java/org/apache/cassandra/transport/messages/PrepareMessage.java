@@ -20,7 +20,7 @@ package org.apache.cassandra.transport.messages;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.service.QueryState;
@@ -33,13 +33,13 @@ public class PrepareMessage extends Message.Request
 {
     public static final Message.Codec<PrepareMessage> codec = new Message.Codec<PrepareMessage>()
     {
-        public PrepareMessage decode(ChannelBuffer body)
+        public PrepareMessage decode(ByteBuf body)
         {
             String query = CBUtil.readLongString(body);
             return new PrepareMessage(query);
         }
 
-        public ChannelBuffer encode(PrepareMessage msg)
+        public ByteBuf encode(PrepareMessage msg)
         {
             return CBUtil.longStringToCB(msg.query);
         }
@@ -53,7 +53,7 @@ public class PrepareMessage extends Message.Request
         this.query = query;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

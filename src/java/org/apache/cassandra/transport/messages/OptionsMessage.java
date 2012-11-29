@@ -22,8 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.service.QueryState;
@@ -37,14 +37,14 @@ public class OptionsMessage extends Message.Request
 {
     public static final Message.Codec<OptionsMessage> codec = new Message.Codec<OptionsMessage>()
     {
-        public OptionsMessage decode(ChannelBuffer body)
+        public OptionsMessage decode(ByteBuf body)
         {
             return new OptionsMessage();
         }
 
-        public ChannelBuffer encode(OptionsMessage msg)
+        public ByteBuf encode(OptionsMessage msg)
         {
-            return ChannelBuffers.EMPTY_BUFFER;
+            return Unpooled.EMPTY_BUFFER;
         }
     };
 
@@ -53,7 +53,7 @@ public class OptionsMessage extends Message.Request
         super(Message.Type.OPTIONS);
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

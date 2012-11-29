@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.transport.messages;
 
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
@@ -29,13 +29,13 @@ public class AuthenticateMessage extends Message.Response
 {
     public static final Message.Codec<AuthenticateMessage> codec = new Message.Codec<AuthenticateMessage>()
     {
-        public AuthenticateMessage decode(ChannelBuffer body)
+        public AuthenticateMessage decode(ByteBuf body)
         {
             String authenticator = CBUtil.readString(body);
             return new AuthenticateMessage(authenticator);
         }
 
-        public ChannelBuffer encode(AuthenticateMessage msg)
+        public ByteBuf encode(AuthenticateMessage msg)
         {
             return CBUtil.stringToCB(msg.authenticator);
         }
@@ -49,7 +49,7 @@ public class AuthenticateMessage extends Message.Response
         this.authenticator = authenticator;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

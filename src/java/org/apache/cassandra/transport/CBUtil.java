@@ -28,30 +28,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.util.CharsetUtil;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.util.CharsetUtil;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
- * ChannelBuffer utility methods.
+ * ByteBuf utility methods.
  * Note that contrarily to ByteBufferUtil, these method do "read" the
- * ChannelBuffer advancing it's (read) position. They also write by
+ * ByteBuf advancing it's (read) position. They also write by
  * advancing the write position. Functions are also provided to create
- * ChannelBuffer while avoiding copies.
+ * ByteBuf while avoiding copies.
  */
 public abstract class CBUtil
 {
     private CBUtil() {}
 
-    public static String readString(ChannelBuffer cb)
+    public static String readString(ByteBuf buf)
     {
         try
         {
-            int length = cb.readUnsignedShort();
-            return readString(cb, length);
+            int length = buf.readUnsignedShort();
+            return readString(buf, length);
         }
         catch (IndexOutOfBoundsException e)
         {
@@ -59,12 +59,12 @@ public abstract class CBUtil
         }
     }
 
-    public static String readLongString(ChannelBuffer cb)
+    public static String readLongString(ByteBuf buf)
     {
         try
         {
-            int length = cb.readInt();
-            return readString(cb, length);
+            int length = buf.readInt();
+            return readString(buf, length);
         }
         catch (IndexOutOfBoundsException e)
         {
@@ -72,12 +72,12 @@ public abstract class CBUtil
         }
     }
 
-    private static String readString(ChannelBuffer cb, int length)
+    private static String readString(ByteBuf buf, int length)
     {
         try
         {
-            String str = cb.toString(cb.readerIndex(), length, CharsetUtil.UTF_8);
-            cb.readerIndex(cb.readerIndex() + length);
+            String str = buf.toString(buf.readerIndex(), length, CharsetUtil.UTF_8);
+            buf.readerIndex(buf.readerIndex() + length);
             return str;
         }
         catch (IllegalStateException e)
@@ -90,43 +90,43 @@ public abstract class CBUtil
         }
     }
 
-    private static ChannelBuffer bytes(String str)
+    private static ByteBuf bytes(String str)
     {
-        return ChannelBuffers.wrappedBuffer(str.getBytes(CharsetUtil.UTF_8));
+        return Unpooled.wrappedBuffer(str.getBytes(CharsetUtil.UTF_8));
     }
 
-    public static ChannelBuffer shortToCB(int s)
+    public static ByteBuf shortToCB(int s)
     {
-        ChannelBuffer cb = ChannelBuffers.buffer(2);
-        cb.writeShort(s);
-        return cb;
+        ByteBuf buf = Unpooled.buffer(2);
+        buf.writeShort(s);
+        return buf;
     }
 
-    public static ChannelBuffer intToCB(int i)
+    public static ByteBuf intToCB(int i)
     {
-        ChannelBuffer cb = ChannelBuffers.buffer(4);
-        cb.writeInt(i);
-        return cb;
+        ByteBuf buf = Unpooled.buffer(4);
+        buf.writeInt(i);
+        return buf;
     }
 
-    public static ChannelBuffer stringToCB(String str)
+    public static ByteBuf stringToCB(String str)
     {
-        ChannelBuffer bytes = bytes(str);
-        return ChannelBuffers.wrappedBuffer(shortToCB(bytes.readableBytes()), bytes);
+        ByteBuf bytes = bytes(str);
+        return Unpooled.wrappedBuffer(shortToCB(bytes.readableBytes()), bytes);
     }
 
-    public static ChannelBuffer bytesToCB(byte[] bytes)
+    public static ByteBuf bytesToCB(byte[] bytes)
     {
-        return ChannelBuffers.wrappedBuffer(shortToCB(bytes.length), ChannelBuffers.wrappedBuffer(bytes));
+        return Unpooled.wrappedBuffer(shortToCB(bytes.length), Unpooled.wrappedBuffer(bytes));
     }
 
-    public static byte[] readBytes(ChannelBuffer cb)
+    public static byte[] readBytes(ByteBuf buf)
     {
         try
         {
-            int length = cb.readUnsignedShort();
+            int length = buf.readUnsignedShort();
             byte[] bytes = new byte[length];
-            cb.readBytes(bytes);
+            buf.readBytes(bytes);
             return bytes;
         }
         catch (IndexOutOfBoundsException e)
@@ -135,19 +135,19 @@ public abstract class CBUtil
         }
     }
 
-    public static ChannelBuffer consistencyLevelToCB(ConsistencyLevel consistency)
+    public static ByteBuf consistencyLevelToCB(ConsistencyLevel consistency)
     {
         return shortToCB(consistency.code);
     }
 
-    public static ConsistencyLevel readConsistencyLevel(ChannelBuffer cb)
+    public static ConsistencyLevel readConsistencyLevel(ByteBuf buf)
     {
-        return ConsistencyLevel.fromCode(cb.readUnsignedShort());
+        return ConsistencyLevel.fromCode(buf.readUnsignedShort());
     }
 
-    public static <T extends Enum<T>> T readEnumValue(Class<T> enumType, ChannelBuffer cb)
+    public static <T extends Enum<T>> T readEnumValue(Class<T> enumType, ByteBuf buf)
     {
-        String value = CBUtil.readString(cb);
+        String value = CBUtil.readString(buf);
         try
         {
             return Enum.valueOf(enumType, value.toUpperCase());
@@ -158,103 +158,110 @@ public abstract class CBUtil
         }
     }
 
-    public static <T extends Enum<T>> ChannelBuffer enumValueToCB(T enumValue)
+    public static <T extends Enum<T>> ByteBuf enumValueToCB(T enumValue)
     {
         return stringToCB(enumValue.toString());
     }
 
-    public static ChannelBuffer uuidToCB(UUID uuid)
+    public static ByteBuf uuidToCB(UUID uuid)
     {
-        return ChannelBuffers.wrappedBuffer(UUIDGen.decompose(uuid));
+        return Unpooled.wrappedBuffer(UUIDGen.decompose(uuid));
     }
 
-    public static UUID readUuid(ChannelBuffer cb)
+    public static UUID readUuid(ByteBuf buf)
     {
         byte[] bytes = new byte[16];
-        cb.readBytes(bytes);
+        buf.readBytes(bytes);
         return UUIDGen.getUUID(ByteBuffer.wrap(bytes));
     }
 
-    public static ChannelBuffer longStringToCB(String str)
+    public static ByteBuf longStringToCB(String str)
     {
-        ChannelBuffer bytes = bytes(str);
-        return ChannelBuffers.wrappedBuffer(intToCB(bytes.readableBytes()), bytes);
+        ByteBuf bytes = bytes(str);
+        return Unpooled.wrappedBuffer(intToCB(bytes.readableBytes()), bytes);
     }
 
-    public static List<String> readStringList(ChannelBuffer cb)
+    public static List<String> readStringList(ByteBuf buf)
     {
-        int length = cb.readUnsignedShort();
+        int length = buf.readUnsignedShort();
         List<String> l = new ArrayList<String>(length);
         for (int i = 0; i < length; i++)
-            l.add(readString(cb));
+            l.add(readString(buf));
         return l;
     }
 
-    public static void writeStringList(ChannelBuffer cb, List<String> l)
+    public static void writeStringList(ByteBuf buf, List<String> l)
     {
-        cb.writeShort(l.size());
+        buf.writeShort(l.size());
         for (String str : l)
-            cb.writeBytes(stringToCB(str));
+            buf.writeBytes(stringToCB(str));
     }
 
-    public static Map<String, String> readStringMap(ChannelBuffer cb)
+    public static Map<String, String> readStringMap(ByteBuf buf)
     {
-        int length = cb.readUnsignedShort();
+        int length = buf.readUnsignedShort();
         Map<String, String> m = new HashMap<String, String>(length);
         for (int i = 0; i < length; i++)
         {
-            String k = readString(cb).toUpperCase();
-            String v = readString(cb);
+            String k = readString(buf).toUpperCase();
+            String v = readString(buf);
             m.put(k, v);
         }
         return m;
     }
 
-    public static void writeStringMap(ChannelBuffer cb, Map<String, String> m)
+    public static void writeStringMap(ByteBuf buf, Map<String, String> m)
     {
-        cb.writeShort(m.size());
+        buf.writeShort(m.size());
         for (Map.Entry<String, String> entry : m.entrySet())
         {
-            cb.writeBytes(stringToCB(entry.getKey()));
-            cb.writeBytes(stringToCB(entry.getValue()));
+            buf.writeBytes(stringToCB(entry.getKey()));
+            buf.writeBytes(stringToCB(entry.getValue()));
         }
     }
 
-    public static Map<String, List<String>> readStringToStringListMap(ChannelBuffer cb)
+    public static Map<String, List<String>> readStringToStringListMap(ByteBuf buf)
     {
-        int length = cb.readUnsignedShort();
+        int length = buf.readUnsignedShort();
         Map<String, List<String>> m = new HashMap<String, List<String>>(length);
         for (int i = 0; i < length; i++)
         {
-            String k = readString(cb).toUpperCase();
-            List<String> v = readStringList(cb);
+            String k = readString(buf).toUpperCase();
+            List<String> v = readStringList(buf);
             m.put(k, v);
         }
         return m;
     }
 
-    public static void writeStringToStringListMap(ChannelBuffer cb, Map<String, List<String>> m)
+    public static void writeStringToStringListMap(ByteBuf buf, Map<String, List<String>> m)
     {
-        cb.writeShort(m.size());
+        buf.writeShort(m.size());
         for (Map.Entry<String, List<String>> entry : m.entrySet())
         {
-            cb.writeBytes(stringToCB(entry.getKey()));
-            writeStringList(cb, entry.getValue());
+            buf.writeBytes(stringToCB(entry.getKey()));
+            writeStringList(buf, entry.getValue());
         }
     }
 
-    public static ByteBuffer readValue(ChannelBuffer cb)
+    public static ByteBuffer readValue(ByteBuf buf)
     {
-        int length = cb.readInt();
-        return length < 0 ? null : cb.readSlice(length).toByteBuffer();
+        int length = buf.readInt();
+        if (length < 0)
+            return null;
+
+        ByteBuf slice = buf.readSlice(length);
+        if (slice.hasNioBuffer())
+            return slice.nioBuffer();
+        else
+            return slice.copy().nioBuffer();
     }
 
-    public static InetSocketAddress readInet(ChannelBuffer cb)
+    public static InetSocketAddress readInet(ByteBuf buf)
     {
-        int addrSize = cb.readByte();
+        int addrSize = buf.readByte();
         byte[] address = new byte[addrSize];
-        cb.readBytes(address);
-        int port = cb.readInt();
+        buf.readBytes(address);
+        int port = buf.readInt();
         try
         {
             return new InetSocketAddress(InetAddress.getByAddress(address), port);
@@ -265,37 +272,37 @@ public abstract class CBUtil
         }
     }
 
-    public static ChannelBuffer inetToCB(InetSocketAddress inet)
+    public static ByteBuf inetToCB(InetSocketAddress inet)
     {
         byte[] address = inet.getAddress().getAddress();
-        ChannelBuffer cb = ChannelBuffers.buffer(1 + address.length + 4);
-        cb.writeByte(address.length);
-        cb.writeBytes(address);
-        cb.writeInt(inet.getPort());
-        return cb;
+        ByteBuf buf = Unpooled.buffer(1 + address.length + 4);
+        buf.writeByte(address.length);
+        buf.writeBytes(address);
+        buf.writeInt(inet.getPort());
+        return buf;
     }
 
     public static class BufferBuilder
     {
         private final int size;
-        private final ChannelBuffer[] buffers;
+        private final ByteBuf[] buffers;
         private int i;
 
         public BufferBuilder(int simpleBuffers, int stringBuffers, int valueBuffers)
         {
             this.size = simpleBuffers + 2 * stringBuffers + 2 * valueBuffers;
-            this.buffers = new ChannelBuffer[size];
+            this.buffers = new ByteBuf[size];
         }
 
-        public BufferBuilder add(ChannelBuffer cb)
+        public BufferBuilder add(ByteBuf buf)
         {
-            buffers[i++] = cb;
+            buffers[i++] = buf;
             return this;
         }
 
         public BufferBuilder addString(String str)
         {
-            ChannelBuffer bytes = bytes(str);
+            ByteBuf bytes = bytes(str);
             add(shortToCB(bytes.readableBytes()));
             return add(bytes);
         }
@@ -303,12 +310,12 @@ public abstract class CBUtil
         public BufferBuilder addValue(ByteBuffer bb)
         {
             add(intToCB(bb == null ? -1 : bb.remaining()));
-            return add(bb == null ? ChannelBuffers.EMPTY_BUFFER : ChannelBuffers.wrappedBuffer(bb));
+            return add(bb == null ? Unpooled.EMPTY_BUFFER : Unpooled.wrappedBuffer(bb));
         }
 
-        public ChannelBuffer build()
+        public ByteBuf build()
         {
-            return ChannelBuffers.wrappedBuffer(buffers);
+            return Unpooled.wrappedBuffer(buffers);
         }
     }
 }

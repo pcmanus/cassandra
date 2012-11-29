@@ -20,8 +20,8 @@ package org.apache.cassandra.cql3;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.transport.*;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -170,7 +170,7 @@ public class ResultSet
          *   - rows count (4 bytes)
          *   - rows
          */
-        public ResultSet decode(ChannelBuffer body)
+        public ResultSet decode(ByteBuf body)
         {
             Metadata m = Metadata.codec.decode(body);
             int rowCount = body.readInt();
@@ -184,7 +184,7 @@ public class ResultSet
             return rs;
         }
 
-        public ChannelBuffer encode(ResultSet rs)
+        public ByteBuf encode(ResultSet rs)
         {
             CBUtil.BufferBuilder builder = new CBUtil.BufferBuilder(2, 0, rs.metadata.names.size() * rs.rows.size());
             builder.add(Metadata.codec.encode(rs.metadata));
@@ -250,7 +250,7 @@ public class ResultSet
 
         private static class Codec implements CBCodec<Metadata>
         {
-            public Metadata decode(ChannelBuffer body)
+            public Metadata decode(ByteBuf body)
             {
                 // flags & column count
                 int iflags = body.readInt();
@@ -280,14 +280,14 @@ public class ResultSet
                 return new Metadata(flags, names);
             }
 
-            public ChannelBuffer encode(Metadata m)
+            public ByteBuf encode(Metadata m)
             {
                 boolean globalTablesSpec = m.flags.contains(Flag.GLOBAL_TABLES_SPEC);
 
                 int stringCount = globalTablesSpec ? 2 + m.names.size() : 3* m.names.size();
                 CBUtil.BufferBuilder builder = new CBUtil.BufferBuilder(1 + m.names.size(), stringCount, 0);
 
-                ChannelBuffer header = ChannelBuffers.buffer(8);
+                ByteBuf header = Unpooled.buffer(8);
                 header.writeInt(Flag.serialize(m.flags));
                 header.writeInt(m.names.size());
                 builder.add(header);

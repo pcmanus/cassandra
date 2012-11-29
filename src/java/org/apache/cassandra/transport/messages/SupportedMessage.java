@@ -20,8 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.List;
 import java.util.Map;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Message;
@@ -33,14 +33,14 @@ public class SupportedMessage extends Message.Response
 {
     public static final Message.Codec<SupportedMessage> codec = new Message.Codec<SupportedMessage>()
     {
-        public SupportedMessage decode(ChannelBuffer body)
+        public SupportedMessage decode(ByteBuf body)
         {
             return new SupportedMessage(CBUtil.readStringToStringListMap(body));
         }
 
-        public ChannelBuffer encode(SupportedMessage msg)
+        public ByteBuf encode(SupportedMessage msg)
         {
-            ChannelBuffer cb = ChannelBuffers.dynamicBuffer();
+            ByteBuf cb = Unpooled.buffer();
             CBUtil.writeStringToStringListMap(cb, msg.supported);
             return cb;
         }
@@ -54,7 +54,7 @@ public class SupportedMessage extends Message.Response
         this.supported = supported;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

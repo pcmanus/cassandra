@@ -19,8 +19,8 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.*;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.ResultSet;
@@ -35,19 +35,19 @@ public abstract class ResultMessage extends Message.Response
 {
     public static final Message.Codec<ResultMessage> codec = new Message.Codec<ResultMessage>()
     {
-        public ResultMessage decode(ChannelBuffer body)
+        public ResultMessage decode(ByteBuf body)
         {
             Kind kind = Kind.fromId(body.readInt());
             return kind.subcodec.decode(body);
         }
 
-        public ChannelBuffer encode(ResultMessage msg)
+        public ByteBuf encode(ResultMessage msg)
         {
-            ChannelBuffer kcb = ChannelBuffers.buffer(4);
+            ByteBuf kcb = Unpooled.buffer(4);
             kcb.writeInt(msg.kind.id);
 
-            ChannelBuffer body = msg.encodeBody();
-            return ChannelBuffers.wrappedBuffer(kcb, body);
+            ByteBuf body = msg.encodeBody();
+            return Unpooled.wrappedBuffer(kcb, body);
         }
     };
 
@@ -100,12 +100,12 @@ public abstract class ResultMessage extends Message.Response
         this.kind = kind;
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }
 
-    protected abstract ChannelBuffer encodeBody();
+    protected abstract ByteBuf encodeBody();
 
     public abstract CqlResult toThriftResult();
 
@@ -120,19 +120,19 @@ public abstract class ResultMessage extends Message.Response
 
         public static final Message.Codec<ResultMessage> subcodec = new Message.Codec<ResultMessage>()
         {
-            public ResultMessage decode(ChannelBuffer body)
+            public ResultMessage decode(ByteBuf body)
             {
                 return new Void();
             }
 
-            public ChannelBuffer encode(ResultMessage msg)
+            public ByteBuf encode(ResultMessage msg)
             {
                 assert msg instanceof Void;
-                return ChannelBuffers.EMPTY_BUFFER;
+                return Unpooled.EMPTY_BUFFER;
             }
         };
 
-        protected ChannelBuffer encodeBody()
+        protected ByteBuf encodeBody()
         {
             return subcodec.encode(this);
         }
@@ -161,20 +161,20 @@ public abstract class ResultMessage extends Message.Response
 
         public static final Message.Codec<ResultMessage> subcodec = new Message.Codec<ResultMessage>()
         {
-            public ResultMessage decode(ChannelBuffer body)
+            public ResultMessage decode(ByteBuf body)
             {
                 String keyspace = CBUtil.readString(body);
                 return new SetKeyspace(keyspace);
             }
 
-            public ChannelBuffer encode(ResultMessage msg)
+            public ByteBuf encode(ResultMessage msg)
             {
                 assert msg instanceof SetKeyspace;
                 return CBUtil.stringToCB(((SetKeyspace)msg).keyspace);
             }
         };
 
-        protected ChannelBuffer encodeBody()
+        protected ByteBuf encodeBody()
         {
             return subcodec.encode(this);
         }
@@ -195,12 +195,12 @@ public abstract class ResultMessage extends Message.Response
     {
         public static final Message.Codec<ResultMessage> subcodec = new Message.Codec<ResultMessage>()
         {
-            public ResultMessage decode(ChannelBuffer body)
+            public ResultMessage decode(ByteBuf body)
             {
                 return new Rows(ResultSet.codec.decode(body));
             }
 
-            public ChannelBuffer encode(ResultMessage msg)
+            public ByteBuf encode(ResultMessage msg)
             {
                 assert msg instanceof Rows;
                 Rows rowMsg = (Rows)msg;
@@ -216,7 +216,7 @@ public abstract class ResultMessage extends Message.Response
             this.result = result;
         }
 
-        protected ChannelBuffer encodeBody()
+        protected ByteBuf encodeBody()
         {
             return subcodec.encode(this);
         }
@@ -238,18 +238,18 @@ public abstract class ResultMessage extends Message.Response
     {
         public static final Message.Codec<ResultMessage> subcodec = new Message.Codec<ResultMessage>()
         {
-            public ResultMessage decode(ChannelBuffer body)
+            public ResultMessage decode(ByteBuf body)
             {
                 MD5Digest id = MD5Digest.wrap(CBUtil.readBytes(body));
                 return new Prepared(id, -1, ResultSet.Metadata.codec.decode(body));
             }
 
-            public ChannelBuffer encode(ResultMessage msg)
+            public ByteBuf encode(ResultMessage msg)
             {
                 assert msg instanceof Prepared;
                 Prepared prepared = (Prepared)msg;
                 assert prepared.statementId != null;
-                return ChannelBuffers.wrappedBuffer(CBUtil.bytesToCB(prepared.statementId.bytes), ResultSet.Metadata.codec.encode(prepared.metadata));
+                return Unpooled.wrappedBuffer(CBUtil.bytesToCB(prepared.statementId.bytes), ResultSet.Metadata.codec.encode(prepared.metadata));
             }
         };
 
@@ -277,7 +277,7 @@ public abstract class ResultMessage extends Message.Response
             this.metadata = metadata;
         }
 
-        protected ChannelBuffer encodeBody()
+        protected ByteBuf encodeBody()
         {
             return subcodec.encode(this);
         }
@@ -329,7 +329,7 @@ public abstract class ResultMessage extends Message.Response
 
         public static final Message.Codec<ResultMessage> subcodec = new Message.Codec<ResultMessage>()
         {
-            public ResultMessage decode(ChannelBuffer body)
+            public ResultMessage decode(ByteBuf body)
             {
                 String cStr = CBUtil.readString(body);
                 Change change = null;
@@ -348,19 +348,19 @@ public abstract class ResultMessage extends Message.Response
 
             }
 
-            public ChannelBuffer encode(ResultMessage msg)
+            public ByteBuf encode(ResultMessage msg)
             {
                 assert msg instanceof SchemaChange;
                 SchemaChange scm = (SchemaChange)msg;
 
-                ChannelBuffer a = CBUtil.stringToCB(scm.change.toString());
-                ChannelBuffer k = CBUtil.stringToCB(scm.keyspace);
-                ChannelBuffer c = CBUtil.stringToCB(scm.columnFamily);
-                return ChannelBuffers.wrappedBuffer(a, k, c);
+                ByteBuf a = CBUtil.stringToCB(scm.change.toString());
+                ByteBuf k = CBUtil.stringToCB(scm.keyspace);
+                ByteBuf c = CBUtil.stringToCB(scm.columnFamily);
+                return Unpooled.wrappedBuffer(a, k, c);
             }
         };
 
-        protected ChannelBuffer encodeBody()
+        protected ByteBuf encodeBody()
         {
             return subcodec.encode(this);
         }

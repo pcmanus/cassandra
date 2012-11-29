@@ -19,8 +19,8 @@ package org.apache.cassandra.transport.messages;
 
 import java.nio.ByteBuffer;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +43,7 @@ public class ErrorMessage extends Message.Response
 
     public static final Message.Codec<ErrorMessage> codec = new Message.Codec<ErrorMessage>()
     {
-        public ErrorMessage decode(ChannelBuffer body)
+        public ErrorMessage decode(ByteBuf body)
         {
             ExceptionCode code = ExceptionCode.fromValue(body.readInt());
             String msg = CBUtil.readString(body);
@@ -120,18 +120,18 @@ public class ErrorMessage extends Message.Response
             return new ErrorMessage(te);
         }
 
-        public ChannelBuffer encode(ErrorMessage msg)
+        public ByteBuf encode(ErrorMessage msg)
         {
-            ChannelBuffer ccb = CBUtil.intToCB(msg.error.code().value);
-            ChannelBuffer mcb = CBUtil.stringToCB(msg.error.getMessage());
+            ByteBuf ccb = CBUtil.intToCB(msg.error.code().value);
+            ByteBuf mcb = CBUtil.stringToCB(msg.error.getMessage());
 
-            ChannelBuffer acb = ChannelBuffers.EMPTY_BUFFER;
+            ByteBuf acb = Unpooled.EMPTY_BUFFER;
             switch (msg.error.code())
             {
                 case UNAVAILABLE:
                     UnavailableException ue = (UnavailableException)msg.error;
-                    ChannelBuffer ueCl = CBUtil.consistencyLevelToCB(ue.consistency);
-                    acb = ChannelBuffers.buffer(ueCl.readableBytes() + 8);
+                    ByteBuf ueCl = CBUtil.consistencyLevelToCB(ue.consistency);
+                    acb = Unpooled.buffer(ueCl.readableBytes() + 8);
                     acb.writeBytes(ueCl);
                     acb.writeInt(ue.required);
                     acb.writeInt(ue.alive);
@@ -141,13 +141,13 @@ public class ErrorMessage extends Message.Response
                     RequestTimeoutException rte = (RequestTimeoutException)msg.error;
                     boolean isWrite = msg.error.code() == ExceptionCode.WRITE_TIMEOUT;
 
-                    ChannelBuffer rteCl = CBUtil.consistencyLevelToCB(rte.consistency);
+                    ByteBuf rteCl = CBUtil.consistencyLevelToCB(rte.consistency);
                     ByteBuffer writeType = isWrite
                                          ? ByteBufferUtil.bytes(((WriteTimeoutException)rte).writeType.toString())
                                          : null;
 
                     int extraSize = isWrite  ? 2 + writeType.remaining() : 1;
-                    acb = ChannelBuffers.buffer(rteCl.readableBytes() + 8 + extraSize);
+                    acb = Unpooled.buffer(rteCl.readableBytes() + 8 + extraSize);
 
                     acb.writeBytes(rteCl);
                     acb.writeInt(rte.received);
@@ -168,11 +168,11 @@ public class ErrorMessage extends Message.Response
                     break;
                 case ALREADY_EXISTS:
                     AlreadyExistsException aee = (AlreadyExistsException)msg.error;
-                    acb = ChannelBuffers.wrappedBuffer(CBUtil.stringToCB(aee.ksName),
+                    acb = Unpooled.wrappedBuffer(CBUtil.stringToCB(aee.ksName),
                                                        CBUtil.stringToCB(aee.cfName));
                     break;
             }
-            return ChannelBuffers.wrappedBuffer(ccb, mcb, acb);
+            return Unpooled.wrappedBuffer(ccb, mcb, acb);
         }
     };
 
@@ -195,7 +195,7 @@ public class ErrorMessage extends Message.Response
         return new ErrorMessage(new ServerError(e));
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

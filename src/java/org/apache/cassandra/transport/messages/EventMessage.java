@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.transport.messages;
 
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.transport.Message;
@@ -26,12 +26,12 @@ public class EventMessage extends Message.Response
 {
     public static final Message.Codec<EventMessage> codec = new Message.Codec<EventMessage>()
     {
-        public EventMessage decode(ChannelBuffer body)
+        public EventMessage decode(ByteBuf body)
         {
             return new EventMessage(Event.deserialize(body));
         }
 
-        public ChannelBuffer encode(EventMessage msg)
+        public ByteBuf encode(EventMessage msg)
         {
             return msg.event.serialize();
         }
@@ -46,7 +46,7 @@ public class EventMessage extends Message.Response
         this.setStreamId(-1);
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }

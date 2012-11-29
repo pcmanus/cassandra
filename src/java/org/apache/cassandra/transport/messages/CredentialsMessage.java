@@ -20,8 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.CBUtil;
@@ -36,7 +36,7 @@ public class CredentialsMessage extends Message.Request
 {
     public static final Message.Codec<CredentialsMessage> codec = new Message.Codec<CredentialsMessage>()
     {
-        public CredentialsMessage decode(ChannelBuffer body)
+        public CredentialsMessage decode(ByteBuf body)
         {
             CredentialsMessage msg = new CredentialsMessage();
             int count = body.readUnsignedShort();
@@ -49,9 +49,9 @@ public class CredentialsMessage extends Message.Request
             return msg;
         }
 
-        public ChannelBuffer encode(CredentialsMessage msg)
+        public ByteBuf encode(CredentialsMessage msg)
         {
-            ChannelBuffer cb = ChannelBuffers.dynamicBuffer();
+            ByteBuf cb = Unpooled.buffer();
 
             cb.writeShort(msg.credentials.size());
             for (Map.Entry<String, String> entry : msg.credentials.entrySet())
@@ -70,7 +70,7 @@ public class CredentialsMessage extends Message.Request
         super(Message.Type.CREDENTIALS);
     }
 
-    public ChannelBuffer encode()
+    public ByteBuf encode()
     {
         return codec.encode(this);
     }
