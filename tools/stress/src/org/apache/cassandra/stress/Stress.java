@@ -24,8 +24,22 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.Random;
 
+import org.apache.log4j.ConsoleAppender;
+import org.apache.log4j.Level;
+import org.apache.log4j.PatternLayout;
+
 public final class Stress
 {
+    static
+    {
+        org.apache.log4j.Logger rootLogger = org.apache.log4j.Logger.getRootLogger();
+        if (!rootLogger.getAllAppenders().hasMoreElements())
+        {
+            rootLogger.setLevel(Level.INFO);
+            rootLogger.addAppender(new ConsoleAppender(new PatternLayout("%-5p [%t]: %m%n")));
+        }
+    }
+
     public static enum Operations
     {
         INSERT, READ, RANGE_SLICE, INDEXED_RANGE_SLICE, MULTI_GET, COUNTER_ADD, COUNTER_GET
