@@ -240,7 +240,7 @@ public class SSTableWriter extends SSTable
         cf.delete(deletionInfo);
 
         ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf, key.key, columnCount, dataFile.stream);
-        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
+        OnDiskAtom.Serializer atomSerializer = Column.onDiskSerializer();
         for (int i = 0; i < columnCount; i++)
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the

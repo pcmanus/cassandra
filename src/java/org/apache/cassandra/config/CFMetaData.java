@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.config;
 
+import java.io.DataInput;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.ByteBuffer;
@@ -50,6 +51,7 @@ import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.SnappyCompressor;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.thrift.IndexType;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -1039,18 +1041,16 @@ public final class CFMetaData
         return (cfName + "_" + comparator.getString(columnName) + "_idx").replaceAll("\\W", "");
     }
 
-    public IColumnSerializer getColumnSerializer()
+    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput dis, int count, Descriptor.Version version)
     {
-        if (cfType == ColumnFamilyType.Standard)
-            return Column.serializer();
-        return SuperColumn.serializer(subcolumnComparator);
+        return getOnDiskIterator(dis, count, IColumnSerializer.Flag.LOCAL, (int) (System.currentTimeMillis() / 1000), version);
     }
 
-    public OnDiskAtom.Serializer getOnDiskSerializer()
+    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput dis, int count, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
     {
-        if (cfType == ColumnFamilyType.Standard)
-            return Column.onDiskSerializer();
-        return SuperColumn.onDiskSerializer(subcolumnComparator);
+        if (version.hasSuperColumns && cfType == ColumnFamilyType.Super)
+            return SuperColumns.onDiskIterator(dis, count, flag, expireBefore);
+        return Column.onDiskIterator(dis, count, flag, expireBefore, version);
     }
 
     public static boolean isNameValid(String name)

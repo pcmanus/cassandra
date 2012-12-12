@@ -38,6 +38,12 @@ public class DeletedColumn extends Column
     }
 
     @Override
+    public Column withUpdatedName(ByteBuffer newName)
+    {
+        return new DeletedColumn(newName, value, timestamp);
+    }
+
+    @Override
     public boolean isMarkedForDelete()
     {
         // We don't rely on the column implementation because it could mistakenly return false if

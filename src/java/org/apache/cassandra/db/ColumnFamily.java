@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.DataInput;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.UUID;
@@ -32,7 +33,7 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
-import org.apache.cassandra.io.IColumnSerializer;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.ColumnStats;
 
 public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEntry
@@ -92,8 +93,7 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
 
     public AbstractType<?> getSubComparator()
     {
-        IColumnSerializer s = getColumnSerializer();
-        return (s instanceof SuperColumnSerializer) ? ((SuperColumnSerializer) s).getComparator() : null;
+        return isSuper() ? cfm.subcolumnComparator : null;
     }
 
     public ColumnFamilyType getType()
@@ -119,16 +119,6 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
     public CFMetaData metadata()
     {
         return cfm;
-    }
-
-    public IColumnSerializer getColumnSerializer()
-    {
-        return cfm.getColumnSerializer();
-    }
-
-    public OnDiskAtom.Serializer getOnDiskSerializer()
-    {
-        return cfm.getOnDiskSerializer();
     }
 
     public boolean isSuper()

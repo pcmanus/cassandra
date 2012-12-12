@@ -47,7 +47,7 @@ public class Descriptor
     public static class Version
     {
         // This needs to be at the begining for initialization sake
-        private static final String current_version = "ia";
+        private static final String current_version = "ib";
 
         public static final Version LEGACY = new Version("a"); // "pre-history"
         // b (0.7.0): added version to sstable filenames
@@ -65,6 +65,9 @@ public class Descriptor
         // ia (1.2.0): column indexes are promoted to the index file
         //             records estimated histogram of deletion times in tombstones
         //             bloom filter (keys and columns) upgraded to Murmur3
+        // ib (1.3.0): super columns are now serialized as composites (note that this version bump is just a
+        //             marker so we know if we should expecte super columns or not, but the format didn't really
+        //             changed, hence only a minor version bump)
 
         public static final Version CURRENT = new Version(current_version);
 
@@ -83,6 +86,7 @@ public class Descriptor
         public final boolean hasPromotedIndexes;
         public final FilterFactory.Type filterType;
         public final boolean hasAncestors;
+        public final boolean hasSuperColumns;
 
         public Version(String version)
         {
@@ -105,6 +109,7 @@ public class Descriptor
                 filterType = FilterFactory.Type.MURMUR2;
             else
                 filterType = FilterFactory.Type.MURMUR3;
+            hasSuperColumns = version.compareTo("ib") < 0;
         }
 
         /**

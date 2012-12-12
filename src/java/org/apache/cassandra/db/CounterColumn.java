@@ -84,6 +84,12 @@ public class CounterColumn extends Column
         return new CounterColumn(name, value, timestamp, timestampOfLastDelete);
     }
 
+    @Override
+    public Column withUpdatedName(ByteBuffer newName)
+    {
+        return new CounterColumn(newName, value, timestamp, timestampOfLastDelete);
+    }
+
     public long timestampOfLastDelete()
     {
         return timestampOfLastDelete;

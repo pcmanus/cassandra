@@ -20,6 +20,7 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.UUID;
 
 import org.apache.cassandra.config.Schema;
@@ -62,9 +63,14 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
             dos.writeBoolean(true);
             serializeCfId(cf.id(), dos, version);
 
-            DeletionInfo.serializer().serialize(cf.deletionInfo(), dos, version);
+            if (cf.isSuper() && version < MessagingService.VERSION_20)
+            {
+                SuperColumns.serializeSuperColumnFamily(cf, dos, version);
+                return;
+            }
 
-            IColumnSerializer columnSerializer = cf.getColumnSerializer();
+            DeletionInfo.serializer().serialize(cf.deletionInfo(), dos, version);
+            IColumnSerializer columnSerializer = Column.serializer();
             int count = cf.getColumnCount();
             dos.writeInt(count);
             int written = 0;
@@ -92,23 +98,41 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
             return null;
 
         ColumnFamily cf = ColumnFamily.create(deserializeCfId(dis, version), factory);
-        IColumnSerializer columnSerializer = cf.getColumnSerializer();
-        cf.delete(DeletionInfo.serializer().deserialize(dis, version, cf.getComparator()));
         int expireBefore = (int) (System.currentTimeMillis() / 1000);
-        int size = dis.readInt();
-        for (int i = 0; i < size; ++i)
+
+        if (cf.isSuper() && version < MessagingService.VERSION_20)
         {
-            cf.addColumn(columnSerializer.deserialize(dis, flag, expireBefore));
+            SuperColumns.deserializerSuperColumnFamily(dis, cf, flag, expireBefore, version);
+        }
+        else
+        {
+            cf.delete(DeletionInfo.serializer().deserialize(dis, version, cf.getComparator()));
+
+            IColumnSerializer columnSerializer = Column.serializer();
+            int size = dis.readInt();
+            for (int i = 0; i < size; ++i)
+            {
+                cf.addColumn(columnSerializer.deserialize(dis, flag, expireBefore));
+            }
         }
         return cf;
     }
 
     public long contentSerializedSize(ColumnFamily cf, TypeSizes typeSizes, int version)
     {
-        long size = DeletionInfo.serializer().serializedSize(cf.deletionInfo(), typeSizes, version);
-        size += typeSizes.sizeof(cf.getColumnCount());
-        for (IColumn column : cf)
-            size += column.serializedSize(typeSizes);
+        long size = 0L;
+
+        if (cf.isSuper() && version < MessagingService.VERSION_20)
+        {
+            size += SuperColumns.serializedSize(cf, typeSizes, version);
+        }
+        else
+        {
+            size += DeletionInfo.serializer().serializedSize(cf.deletionInfo(), typeSizes, version);
+            size += typeSizes.sizeof(cf.getColumnCount());
+            for (IColumn column : cf)
+                size += column.serializedSize(typeSizes);
+        }
         return size;
     }
 
@@ -144,9 +168,9 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
 
     public void deserializeColumnsFromSSTable(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
     {
-        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
-        for (int i = 0; i < size; ++i)
-            cf.addAtom(atomSerializer.deserializeFromSSTable(dis, flag, expireBefore, version));
+        Iterator<OnDiskAtom> iter = cf.metadata().getOnDiskIterator(dis, size, flag, expireBefore, version);
+        while (iter.hasNext())
+            cf.addAtom(iter.next());
     }
 
     public void deserializeFromSSTable(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag, Descriptor.Version version) throws IOException

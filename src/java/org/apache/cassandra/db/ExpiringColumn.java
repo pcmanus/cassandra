@@ -76,6 +76,12 @@ public class ExpiringColumn extends Column
     }
 
     @Override
+    public Column withUpdatedName(ByteBuffer newName)
+    {
+        return new ExpiringColumn(newName, value, timestamp, timeToLive, localExpirationTime);
+    }
+
+    @Override
     public int dataSize()
     {
         return super.dataSize() + TypeSizes.NATIVE.sizeof(localExpirationTime) + TypeSizes.NATIVE.sizeof(timeToLive);

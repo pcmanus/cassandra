@@ -196,12 +196,11 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
 
     private void readSimpleColumns(FileDataInput file, SortedSet<ByteBuffer> columnNames, List<ByteBuffer> filteredColumnNames, List<OnDiskAtom> result) throws IOException
     {
-        OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
-        int columns = file.readInt();
+        Iterator<OnDiskAtom> atomIterator = cf.metadata().getOnDiskIterator(file, file.readInt(), sstable.descriptor.version);
         int n = 0;
-        for (int i = 0; i < columns; i++)
+        while (atomIterator.hasNext())
         {
-            OnDiskAtom column = atomSerializer.deserializeFromSSTable(file, sstable.descriptor.version);
+            OnDiskAtom column = atomIterator.next();
             if (column instanceof IColumn)
             {
                 if (columnNames.contains(column.name()))
@@ -255,13 +254,14 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
             if (file == null)
                 file = createFileDataInput(positionToSeek);
 
-            OnDiskAtom.Serializer atomSerializer = cf.getOnDiskSerializer();
+            // We'll read as much atom as there is in the index block, so provide a bogus atom count
+            Iterator<OnDiskAtom> atomIterator = cf.metadata().getOnDiskIterator(file, Integer.MAX_VALUE, sstable.descriptor.version);
             file.seek(positionToSeek);
             FileMark mark = file.mark();
             // TODO only completely deserialize columns we are interested in
             while (file.bytesPastMark(mark) < indexInfo.width)
             {
-                OnDiskAtom column = atomSerializer.deserializeFromSSTable(file, sstable.descriptor.version);
+                OnDiskAtom column = atomIterator.next();
                 // we check vs the original Set, not the filtered List, for efficiency
                 if (!(column instanceof IColumn) || columnNames.contains(column.name()))
                     result.add(column);

@@ -17,16 +17,21 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.DataInput;
+import java.io.IOError;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.io.IColumnSerializer;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -53,6 +58,37 @@ public class Column implements IColumn
         return onDiskSerializer;
     }
 
+    public static Iterator<OnDiskAtom> onDiskIterator(final DataInput dis, final int count, final IColumnSerializer.Flag flag, final int expireBefore, final Descriptor.Version version)
+    {
+        return new Iterator<OnDiskAtom>()
+        {
+            int i = 0;
+
+            public boolean hasNext()
+            {
+                return i < count;
+            }
+
+            public OnDiskAtom next()
+            {
+                ++i;
+                try
+                {
+                    return onDiskSerializer.deserializeFromSSTable(dis, flag, expireBefore, version);
+                }
+                catch (IOException e)
+                {
+                    throw new IOError(e);
+                }
+            }
+
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+
     protected final ByteBuffer name;
     protected final ByteBuffer value;
     protected final long timestamp;
@@ -75,6 +111,11 @@ public class Column implements IColumn
         this.name = name;
         this.value = value;
         this.timestamp = timestamp;
+    }
+
+    public Column withUpdatedName(ByteBuffer newName)
+    {
+        return new Column(newName, value, timestamp);
     }
 
     public ByteBuffer name()

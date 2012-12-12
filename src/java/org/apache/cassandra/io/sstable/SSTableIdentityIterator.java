@@ -18,6 +18,7 @@
 package org.apache.cassandra.io.sstable;
 
 import java.io.*;
+import java.util.Iterator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +45,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     private final int columnCount;
     private final long columnPosition;
 
-    private final OnDiskAtom.Serializer atomSerializer;
+    private final Iterator<OnDiskAtom> atomIterator;
     private final Descriptor.Version dataVersion;
 
     private final BytesReadTracker inputWithTracker; // tracks bytes read
@@ -157,8 +158,9 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
             }
             columnFamily = ColumnFamily.create(metadata);
             columnFamily.delete(DeletionInfo.serializer().deserializeFromSSTable(inputWithTracker, dataVersion));
-            atomSerializer = columnFamily.getOnDiskSerializer();
+
             columnCount = inputWithTracker.readInt();
+            atomIterator = columnFamily.metadata().getOnDiskIterator(inputWithTracker, columnCount, dataVersion);
             columnPosition = dataStart + inputWithTracker.getBytesRead();
         }
         catch (IOException e)
@@ -188,14 +190,17 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     {
         try
         {
-            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(inputWithTracker, flag, expireBefore, dataVersion);
+            OnDiskAtom atom = atomIterator.next();
             if (validateColumns)
                 atom.validateFields(columnFamily.metadata());
             return atom;
         }
-        catch (IOException e)
+        catch (IOError e)
         {
-            throw new CorruptSSTableException(e, filename);
+            if (e.getCause() instanceof IOException)
+                throw new CorruptSSTableException((IOException)e.getCause(), filename);
+            else
+                throw e;
         }
         catch (MarshalException me)
         {
