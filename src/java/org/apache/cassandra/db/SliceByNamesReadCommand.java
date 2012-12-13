@@ -37,14 +37,6 @@ public class SliceByNamesReadCommand extends ReadCommand
 
     public final NamesQueryFilter filter;
 
-    public SliceByNamesReadCommand(String table, ByteBuffer key, String cfName, Collection<ByteBuffer> columnNames)
-    {
-        super(table, key, cfName, Type.GET_BY_NAMES);
-        SortedSet s = new TreeSet<ByteBuffer>(getComparator());
-        s.addAll(columnNames);
-        this.filter = new NamesQueryFilter(s);
-    }
-
     public SliceByNamesReadCommand(String table, ByteBuffer key, String cfName, NamesQueryFilter filter)
     {
         super(table, key, cfName, Type.GET_BY_NAMES);

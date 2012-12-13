@@ -287,7 +287,7 @@ class RangeSliceCommandSerializer implements IVersionedSerializer<RangeSliceComm
             {
                 SlicePredicate pred = new SlicePredicate();
                 FBUtilities.deserialize(new TDeserializer(new TBinaryProtocol.Factory()), pred, dis);
-                predicate = ThriftValidation.asIFilter(pred, comparator);
+                predicate = ThriftValidation.asIFilter(pred, metadata, superColumn);
             }
             else
             {

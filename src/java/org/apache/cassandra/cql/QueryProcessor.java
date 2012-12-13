@@ -81,7 +81,7 @@ public class QueryProcessor
         // ...of a list of column names
         if (!select.isColumnRange())
         {
-            Collection<ByteBuffer> columnNames = getColumnNames(select, metadata, variables);
+            SortedSet<ByteBuffer> columnNames = getColumnNames(select, metadata, variables);
             validateColumnNames(columnNames);
 
             for (Term rawKey: select.getKeys())
@@ -89,7 +89,7 @@ public class QueryProcessor
                 ByteBuffer key = rawKey.getByteBuffer(metadata.getKeyValidator(),variables);
 
                 validateKey(key);
-                commands.add(new SliceByNamesReadCommand(metadata.ksName, key, select.getColumnFamily(), columnNames));
+                commands.add(new SliceByNamesReadCommand(metadata.ksName, key, select.getColumnFamily(), new NamesQueryFilter(columnNames)));
             }
         }
         // ...a range (slice) of column names
@@ -108,10 +108,7 @@ public class QueryProcessor
                 commands.add(new SliceFromReadCommand(metadata.ksName,
                                                       key,
                                                       select.getColumnFamily(),
-                                                      start,
-                                                      finish,
-                                                      select.isColumnsReversed(),
-                                                      select.getColumnsLimit()));
+                                                      new SliceQueryFilter(start, finish, select.isColumnsReversed(), select.getColumnsLimit())));
             }
         }
 

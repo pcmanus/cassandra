@@ -24,8 +24,11 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 
+import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.net.MessageOut;
@@ -101,7 +104,9 @@ public class CounterMutation implements IMutation
 
     private void addReadCommandFromColumnFamily(String table, ByteBuffer key, ColumnFamily columnFamily, List<ReadCommand> commands)
     {
-        commands.add(new SliceByNamesReadCommand(table, key, columnFamily.metadata().cfName, columnFamily.getColumnNames()));
+        SortedSet s = new TreeSet<ByteBuffer>(columnFamily.metadata().comparator);
+        s.addAll(columnFamily.getColumnNames());
+        commands.add(new SliceByNamesReadCommand(table, key, columnFamily.metadata().cfName, new NamesQueryFilter(s)));
     }
 
     public MessageOut<CounterMutation> makeMutationMessage() throws IOException

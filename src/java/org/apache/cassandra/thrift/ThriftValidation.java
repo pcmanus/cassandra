@@ -30,6 +30,7 @@ import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner;
@@ -577,18 +578,26 @@ public class ThriftValidation
             throw new org.apache.cassandra.exceptions.InvalidRequestException("system keyspace is not user-modifiable");
     }
 
-    public static IDiskAtomFilter asIFilter(SlicePredicate sp, AbstractType<?> comparator)
+    public static IDiskAtomFilter asIFilter(SlicePredicate sp, CFMetaData metadata, ByteBuffer superColumn)
     {
+        AbstractType<?> comparator = metadata.isSuper()
+                                   ? ((CompositeType)metadata.comparator).types.get(superColumn == null ? 0 : 1)
+                                   : metadata.comparator;
         SliceRange sr = sp.slice_range;
+        IDiskAtomFilter filter;
         if (sr == null)
         {
             SortedSet<ByteBuffer> ss = new TreeSet<ByteBuffer>(comparator);
             ss.addAll(sp.column_names);
-            return new NamesQueryFilter(ss);
+            filter = new NamesQueryFilter(ss);
         }
         else
         {
-            return new SliceQueryFilter(sr.start, sr.finish, sr.reversed, sr.count);
+            filter = new SliceQueryFilter(sr.start, sr.finish, sr.reversed, sr.count);
         }
+
+        if (metadata.isSuper())
+            filter = SuperColumns.fromSCFilter((CompositeType)metadata.comparator, superColumn, filter);
+        return filter;
     }
 }

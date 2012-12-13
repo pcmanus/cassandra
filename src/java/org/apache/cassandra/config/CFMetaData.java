@@ -470,6 +470,11 @@ public final class CFMetaData
         return comment;
     }
 
+    public boolean isSuper()
+    {
+        return cfType == ColumnFamilyType.Super;
+    }
+
     public double getReadRepairChance()
     {
         return readRepairChance;

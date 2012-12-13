@@ -109,11 +109,6 @@ public abstract class ReadCommand implements IReadCommand
 
     public abstract IDiskAtomFilter filter();
 
-    protected AbstractType<?> getComparator()
-    {
-        return Schema.instance.getComparator(table, cfName);
-    }
-
     public String getKeyspace()
     {
         return table;

@@ -206,8 +206,20 @@ public class SuperColumns
         }
     }
 
+    // Extract the first component of a columnName, i.e. the super column name
+    public static ByteBuffer scName(ByteBuffer columnName)
+    {
+        return CompositeType.extractComponent(columnName, 0);
+    }
+
+    // Extract the 2nd component of a columnName, i.e. the sub-column name
+    public static ByteBuffer subName(ByteBuffer columnName)
+    {
+        return CompositeType.extractComponent(columnName, 1);
+    }
+
     // We don't use CompositeType.Builder mostly because we want to avoid having to provide the comparator.
-    private static ByteBuffer startOf(ByteBuffer scName)
+    public static ByteBuffer startOf(ByteBuffer scName)
     {
         int length = scName.remaining();
         ByteBuffer bb = ByteBuffer.allocate(2 + length + 1);
@@ -220,7 +232,7 @@ public class SuperColumns
         return bb;
     }
 
-    private static ByteBuffer endOf(ByteBuffer scName)
+    public static ByteBuffer endOf(ByteBuffer scName)
     {
         ByteBuffer bb = startOf(scName);
         bb.put(bb.remaining() - 1, (byte)1);
@@ -241,20 +253,19 @@ public class SuperColumns
         SortedSet<ByteBuffer> newColumns = new TreeSet<ByteBuffer>(filter.columns.comparator());
         for (ByteBuffer name : filter.columns)
         {
-            ByteBuffer[] components = type.split(name);
-            assert components.length == 2;
+            ByteBuffer newScName = scName(name);
 
             if (scName == null)
             {
-                scName = components[0];
+                scName = newScName;
             }
-            else if (type.types.get(0).compare(scName, components[0]) != 0)
+            else if (type.types.get(0).compare(scName, newScName) != 0)
             {
                 // If we're selecting column across multiple SC, it's not something we can translate for an old node
                 throw new RuntimeException("Cannot convert filter to old super column format. Update all nodes to Cassandra 2.0 first.");
             }
 
-            newColumns.add(components[1]);
+            newColumns.add(subName(name));
         }
         return new SCFilter(scName, new NamesQueryFilter(newColumns));
     }

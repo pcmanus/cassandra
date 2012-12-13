@@ -47,11 +47,6 @@ public class SliceFromReadCommand extends ReadCommand
 
     public final SliceQueryFilter filter;
 
-    public SliceFromReadCommand(String table, ByteBuffer key, String cfName, ByteBuffer start, ByteBuffer finish, boolean reversed, int count)
-    {
-        this(table, key, cfName, new SliceQueryFilter(start, finish, reversed, count));
-    }
-
     public SliceFromReadCommand(String table, ByteBuffer key, String cfName, SliceQueryFilter filter)
     {
         super(table, key, cfName, Type.GET_SLICES);
