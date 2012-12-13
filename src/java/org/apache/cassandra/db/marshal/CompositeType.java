@@ -190,7 +190,7 @@ public class CompositeType extends AbstractCompositeType
         return new Builder(this);
     }
 
-    public ByteBuffer build(ByteBuffer... buffers)
+    public static ByteBuffer build(ByteBuffer... buffers)
     {
         int totalLength = 0;
         for (ByteBuffer bb : buffers)

@@ -47,9 +47,9 @@ import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.SuperColumn;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.sstable.SSTableWriter;
@@ -69,12 +69,14 @@ public class SSTableImport
     private static final String COLUMN_FAMILY_OPTION = "c";
     private static final String KEY_COUNT_OPTION = "n";
     private static final String IS_SORTED_OPTION = "s";
+    private static final String OLD_SC_FORMAT_OPTION = "S";
 
     private static final Options options = new Options();
     private static CommandLine cmd;
 
     private Integer keyCountToImport;
     private final boolean isSorted;
+    private final boolean oldSCFormat;
 
     private static final JsonFactory factory = new MappingJsonFactory().configure(
             JsonParser.Feature.INTERN_FIELD_NAMES, false);
@@ -91,6 +93,7 @@ public class SSTableImport
 
         options.addOption(new Option(KEY_COUNT_OPTION, true, "Number of keys to import (Optional)."));
         options.addOption(new Option(IS_SORTED_OPTION, false, "Assume JSON file as already sorted (e.g. created by sstable2json tool) (Optional)."));
+        options.addOption(new Option(OLD_SC_FORMAT_OPTION, false, "Assume JSON file use legacy super column format (Optional)."));
     }
 
     private static class JsonColumn<T>
@@ -193,18 +196,19 @@ public class SSTableImport
 
     public SSTableImport()
     {
-        this(null, false);
+        this(null, false, false);
     }
 
     public SSTableImport(boolean isSorted)
     {
-        this(null, isSorted);
+        this(null, isSorted, false);
     }
 
-    public SSTableImport(Integer keyCountToImport, boolean isSorted)
+    public SSTableImport(Integer keyCountToImport, boolean isSorted, boolean oldSCFormat)
     {
         this.keyCountToImport = keyCountToImport;
         this.isSorted = isSorted;
+        this.oldSCFormat = oldSCFormat;
     }
 
     private void addToStandardCF(List<?> row, ColumnFamily cfamily)
@@ -227,27 +231,28 @@ public class SSTableImport
         for (Object c : row)
         {
             JsonColumn col = new JsonColumn<List>((List) c, cfm, (superName != null));
-            QueryPath path = new QueryPath(cfm.cfName, superName, col.getName());
+            ByteBuffer cname = superName == null ? col.getName() : CompositeType.build(superName, col.getName());
 
             if (col.isExpiring())
             {
-                cfamily.addColumn(null, new ExpiringColumn(col.getName(), col.getValue(), col.timestamp, col.ttl, col.localExpirationTime));
+                cfamily.addColumn(new ExpiringColumn(cname, col.getValue(), col.timestamp, col.ttl, col.localExpirationTime));
             }
             else if (col.isCounter())
             {
-                cfamily.addColumn(null, new CounterColumn(col.getName(), col.getValue(), col.timestamp, col.timestampOfLastDelete));
+                cfamily.addColumn(new CounterColumn(cname, col.getValue(), col.timestamp, col.timestampOfLastDelete));
             }
             else if (col.isDeleted())
             {
-                cfamily.addTombstone(path, col.getValue(), col.timestamp);
+                cfamily.addTombstone(cname, col.getValue(), col.timestamp);
             }
             else if (col.isRangeTombstone())
             {
-                cfamily.addAtom(new RangeTombstone(col.getName(), col.getValue(), col.timestamp, col.localExpirationTime));
+                ByteBuffer end = superName == null ? col.getValue() : CompositeType.build(superName, col.getValue());
+                cfamily.addAtom(new RangeTombstone(cname, end, col.timestamp, col.localExpirationTime));
             }
             else
             {
-                cfamily.addColumn(path, col.getValue(), col.timestamp);
+                cfamily.addColumn(cname, col.getValue(), col.timestamp);
             }
         }
     }
@@ -350,7 +355,7 @@ public class SSTableImport
             }
 
             Object columns = row.getValue().get("columns");
-            if (columnFamily.getType() == ColumnFamilyType.Super)
+            if (columnFamily.getType() == ColumnFamilyType.Super && oldSCFormat)
                 addToSuperCF((Map<?, ?>) columns, columnFamily);
             else
                 addToStandardCF((List<?>) columns, columnFamily);
@@ -424,7 +429,7 @@ public class SSTableImport
                 parseMeta((Map<?, ?>) row.get("metadata"), columnFamily);
 
 
-            if (columnFamily.getType() == ColumnFamilyType.Super)
+            if (columnFamily.getType() == ColumnFamilyType.Super && oldSCFormat)
                 addToSuperCF((Map<?, ?>)row.get("columns"), columnFamily);
             else
                 addToStandardCF((List<?>)row.get("columns"), columnFamily);
@@ -511,6 +516,7 @@ public class SSTableImport
 
         Integer keyCountToImport = null;
         boolean isSorted = false;
+        boolean oldSCFormat = false;
 
         if (cmd.hasOption(KEY_COUNT_OPTION))
         {
@@ -520,6 +526,11 @@ public class SSTableImport
         if (cmd.hasOption(IS_SORTED_OPTION))
         {
             isSorted = true;
+        }
+
+        if (cmd.hasOption(OLD_SC_FORMAT_OPTION))
+        {
+            oldSCFormat = true;
         }
 
         DatabaseDescriptor.loadSchemas();
@@ -532,7 +543,7 @@ public class SSTableImport
 
         try
         {
-           new SSTableImport(keyCountToImport,isSorted).importJson(json, keyspace, cfamily, ssTable);
+           new SSTableImport(keyCountToImport, isSorted, oldSCFormat).importJson(json, keyspace, cfamily, ssTable);
         }
         catch (Exception e)
         {

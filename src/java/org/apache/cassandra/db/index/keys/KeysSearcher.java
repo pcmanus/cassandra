@@ -109,7 +109,6 @@ public class KeysSearcher extends SecondaryIndexSearcher
         {
             private ByteBuffer lastSeenKey = startKey;
             private Iterator<IColumn> indexColumns;
-            private final QueryPath path = new QueryPath(baseCfs.name);
             private int columnsRead = Integer.MAX_VALUE;
 
             protected Row computeNext()
@@ -132,7 +131,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                                          ((AbstractSimplePerColumnSecondaryIndex)index).expressionString(primary), index.getBaseCfs().metadata.getKeyValidator().getString(startKey));
 
                         QueryFilter indexFilter = QueryFilter.getSliceFilter(indexKey,
-                                                                             new QueryPath(index.getIndexCfs().name),
+                                                                             index.getIndexCfs().name,
                                                                              lastSeenKey,
                                                                              endKey,
                                                                              false,
@@ -188,7 +187,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         }
 
                         logger.trace("Returning index hit for {}", dk);
-                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, path, filter.initialFilter()));
+                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, filter.initialFilter()));
                         // While the column family we'll get in the end should contains the primary clause column, the initialFilter may not have found it and can thus be null
                         if (data == null)
                             data = ColumnFamily.create(baseCfs.metadata);
@@ -198,7 +197,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         IDiskAtomFilter extraFilter = filter.getExtraFilter(data);
                         if (extraFilter != null)
                         {
-                            ColumnFamily cf = baseCfs.getColumnFamily(new QueryFilter(dk, path, extraFilter));
+                            ColumnFamily cf = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, extraFilter));
                             if (cf != null)
                                 data.addAll(cf, HeapAllocator.instance);
                         }

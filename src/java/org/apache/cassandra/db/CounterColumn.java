@@ -305,52 +305,25 @@ public class CounterColumn extends Column
     public static void mergeAndRemoveOldShards(DecoratedKey key, ColumnFamily cf, int gcBefore, int mergeBefore, boolean sendToOtherReplica)
     {
         ColumnFamily remoteMerger = null;
-        if (!cf.isSuper())
+
+        for (IColumn c : cf)
         {
-            for (IColumn c : cf)
+            if (!(c instanceof CounterColumn))
+                continue;
+            CounterColumn cc = (CounterColumn) c;
+            CounterColumn shardMerger = cc.computeOldShardMerger(mergeBefore);
+            CounterColumn merged = cc;
+            if (shardMerger != null)
             {
-                if (!(c instanceof CounterColumn))
-                    continue;
-                CounterColumn cc = (CounterColumn) c;
-                CounterColumn shardMerger = cc.computeOldShardMerger(mergeBefore);
-                CounterColumn merged = cc;
-                if (shardMerger != null)
-                {
-                    merged = (CounterColumn) cc.reconcile(shardMerger);
-                    if (remoteMerger == null)
-                        remoteMerger = cf.cloneMeShallow();
-                    remoteMerger.addColumn(merged);
-                }
-                CounterColumn cleaned = merged.removeOldShards(gcBefore);
-                if (cleaned != cc)
-                {
-                    cf.replace(cc, cleaned);
-                }
+                merged = (CounterColumn) cc.reconcile(shardMerger);
+                if (remoteMerger == null)
+                    remoteMerger = cf.cloneMeShallow();
+                remoteMerger.addColumn(merged);
             }
-        }
-        else
-        {
-            for (IColumn col : cf)
+            CounterColumn cleaned = merged.removeOldShards(gcBefore);
+            if (cleaned != cc)
             {
-                SuperColumn c = (SuperColumn)col;
-                for (IColumn subColumn : c.getSubColumns())
-                {
-                    if (!(subColumn instanceof CounterColumn))
-                        continue;
-                    CounterColumn cc = (CounterColumn) subColumn;
-                    CounterColumn shardMerger = cc.computeOldShardMerger(mergeBefore);
-                    CounterColumn merged = cc;
-                    if (shardMerger != null)
-                    {
-                        merged = (CounterColumn) cc.reconcile(shardMerger);
-                        if (remoteMerger == null)
-                            remoteMerger = cf.cloneMeShallow();
-                        remoteMerger.addColumn(c.name(), merged);
-                    }
-                    CounterColumn cleaned = merged.removeOldShards(gcBefore);
-                    if (cleaned != subColumn)
-                        c.replace(subColumn, cleaned);
-                }
+                cf.replace(cc, cleaned);
             }
         }
 

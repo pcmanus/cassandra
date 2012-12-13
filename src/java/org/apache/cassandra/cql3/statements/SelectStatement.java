@@ -198,7 +198,6 @@ public class SelectStatement implements CQLStatement
 
     private List<ReadCommand> getSliceCommands(List<ByteBuffer> variables) throws RequestValidationException
     {
-        QueryPath queryPath = new QueryPath(columnFamily());
         Collection<ByteBuffer> keys = getKeys(variables);
         List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
 
@@ -214,7 +213,7 @@ public class SelectStatement implements CQLStatement
                 // Note that we should not share the slice filter amongst the command, due to SliceQueryFilter not
                 // being immutable due to its columnCounter used by the lastCounted() method
                 // (this is fairly ugly and we should change that but that's probably not a tiny refactor to do that cleanly)
-                commands.add(new SliceFromReadCommand(keyspace(), key, queryPath, (SliceQueryFilter)makeFilter(variables)));
+                commands.add(new SliceFromReadCommand(keyspace(), key, columnFamily(), (SliceQueryFilter)makeFilter(variables)));
             }
         }
         // ...of a list of column names
@@ -225,7 +224,7 @@ public class SelectStatement implements CQLStatement
             for (ByteBuffer key: keys)
             {
                 QueryProcessor.validateKey(key);
-                commands.add(new SliceByNamesReadCommand(keyspace(), key, queryPath, (NamesQueryFilter)filter));
+                commands.add(new SliceByNamesReadCommand(keyspace(), key, columnFamily(), (NamesQueryFilter)filter));
             }
         }
         return commands;
@@ -239,7 +238,6 @@ public class SelectStatement implements CQLStatement
         // We want to have getRangeSlice to count the number of columns, not the number of keys.
         return new RangeSliceCommand(keyspace(),
                                      columnFamily(),
-                                     null,
                                      filter,
                                      getKeyBounds(variables),
                                      expressions,

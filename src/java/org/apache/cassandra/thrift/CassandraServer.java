@@ -728,6 +728,50 @@ public class CassandraServer implements Cassandra.Iface
         return rowMutations;
     }
 
+    private void addColumnOrSuperColumn(RowMutation rm, String cfName, ColumnOrSuperColumn cosc)
+    {
+        if (cosc.super_column != null)
+        {
+            for (Column column : cosc.super_column.columns)
+            {
+                rm.add(new QueryPath(cfName, cosc.super_column.name, column.name), column.value, column.timestamp, column.ttl);
+            }
+        }
+        else if (cosc.column != null)
+        {
+            rm.add(new QueryPath(cfName, null, cosc.column.name), cosc.column.value, cosc.column.timestamp, cosc.column.ttl);
+        }
+        else if (cosc.counter_super_column != null)
+        {
+            for (CounterColumn column : cosc.counter_super_column.columns)
+            {
+                rm.addCounter(new QueryPath(cfName, cosc.counter_super_column.name, column.name), column.value);
+            }
+        }
+        else // cosc.counter_column != null
+        {
+            rm.addCounter(new QueryPath(cfName, null, cosc.counter_column.name), cosc.counter_column.value);
+        }
+    }
+
+    private void deleteColumnOrSuperColumn(RowMutation rm, String cfName, Deletion del)
+    {
+        if (del.predicate != null && del.predicate.column_names != null)
+        {
+            for(ByteBuffer c : del.predicate.column_names)
+            {
+                if (del.super_column == null && Schema.instance.getColumnFamilyType(table, cfName) == ColumnFamilyType.Super)
+                    rm.delete(new QueryPath(cfName, c), del.timestamp);
+                else
+                    rm.delete(new QueryPath(cfName, del.super_column, c), del.timestamp);
+            }
+        }
+        else
+        {
+            rm.delete(new QueryPath(cfName, del.super_column), del.timestamp);
+        }
+    }
+
     public void batch_mutate(Map<ByteBuffer,Map<String,List<Mutation>>> mutation_map, ConsistencyLevel consistency_level)
     throws InvalidRequestException, UnavailableException, TimedOutException
     {

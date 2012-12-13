@@ -27,7 +27,10 @@ import java.util.Iterator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
+import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -222,5 +225,170 @@ public class SuperColumns
         ByteBuffer bb = startOf(scName);
         bb.put(bb.remaining() - 1, (byte)1);
         return bb;
+    }
+
+    public static SCFilter filterToSC(CompositeType type, IDiskAtomFilter filter)
+    {
+        if (filter instanceof NamesQueryFilter)
+            return namesFilterToSC(type, (NamesQueryFilter)filter);
+        else
+            return sliceFilterToSC(type, (SliceQueryFilter)filter);
+    }
+
+    public static SCFilter namesFilterToSC(CompositeType type, NamesQueryFilter filter)
+    {
+        ByteBuffer scName = null;
+        SortedSet<ByteBuffer> newColumns = new TreeSet<ByteBuffer>(filter.columns.comparator());
+        for (ByteBuffer name : filter.columns)
+        {
+            ByteBuffer[] components = type.split(name);
+            assert components.length == 2;
+
+            if (scName == null)
+            {
+                scName = components[0];
+            }
+            else if (type.types.get(0).compare(scName, components[0]) != 0)
+            {
+                // If we're selecting column across multiple SC, it's not something we can translate for an old node
+                throw new RuntimeException("Cannot convert filter to old super column format. Update all nodes to Cassandra 2.0 first.");
+            }
+
+            newColumns.add(components[1]);
+        }
+        return new SCFilter(scName, new NamesQueryFilter(newColumns));
+    }
+
+    public static SCFilter sliceFilterToSC(CompositeType type, SliceQueryFilter filter)
+    {
+        /*
+         * There is 3 cases that we can translate back into super column
+         * queries:
+         *  1) if we have only one slice where the first component of start
+         *  and finish is the same, we translate as a slice query on one SC.
+         *  2) if we have only one slice, neither the start and finish have a 2nd
+         *  component, and end has the 'end of component' set, we translate
+         *  as a slice of SCs.
+         *  3) if each slice have the same first component for start and
+         *  finish, no 2nd component and each finish has the 'end of
+         *  component' set, we translate as a names query of SCs.
+         * Otherwise, we can't do much.
+         */
+
+        if (filter.slices.length == 1)
+        {
+            ColumnSlice slice = filter.slices[0];
+            ByteBuffer[] startComponents = type.split(slice.start);
+            ByteBuffer[] finishComponents = type.split(slice.finish);
+
+            if (startComponents.length == 0)
+            {
+                if (startComponents.length == 0)
+                    return new SCFilter(null, filter);
+
+                if (finishComponents.length == 1 && firstEndOfComponent(slice.finish))
+                    return new SCFilter(null, filter.withUpdatedSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, finishComponents[0]));
+            }
+            else if (finishComponents.length == 0)
+            {
+                if (startComponents.length == 1 && !firstEndOfComponent(slice.start))
+                    return new SCFilter(null, filter.withUpdatedSlice(startComponents[0], ByteBufferUtil.EMPTY_BYTE_BUFFER));
+            }
+            else if (startComponents.length == 1 && finishComponents.length == 1)
+            {
+                if (!firstEndOfComponent(slice.start) && firstEndOfComponent(slice.finish))
+                    return new SCFilter(null, filter.withUpdatedSlice(startComponents[0], finishComponents[0]));
+            }
+            else if (type.types.get(0).compare(startComponents[0], finishComponents[0]) == 0)
+            {
+                return new SCFilter(startComponents[0], filter.withUpdatedSlice(startComponents[1], finishComponents[1]));
+            }
+        }
+        else if (!filter.reversed)
+        {
+            SortedSet<ByteBuffer> columns = new TreeSet<ByteBuffer>(type.types.get(0));
+            for (int i = 0; i < filter.slices.length; ++i)
+            {
+                ColumnSlice slice = filter.slices[i];
+                ByteBuffer[] startComponents = type.split(slice.start);
+                ByteBuffer[] finishComponents = type.split(slice.finish);
+
+                if (startComponents.length != 1 || finishComponents.length != 1
+                        || type.types.get(0).compare(startComponents[0], finishComponents[0]) != 0
+                        || firstEndOfComponent(slice.start) || !firstEndOfComponent(slice.finish))
+                    throw new RuntimeException("Cannot convert filter to old super column format. Update all nodes to Cassandra 2.0 first.");
+
+                columns.add(startComponents[0]);
+            }
+            return new SCFilter(null, new NamesQueryFilter(columns));
+        }
+        throw new RuntimeException("Cannot convert filter to old super column format. Update all nodes to Cassandra 2.0 first.");
+    }
+
+    public static IDiskAtomFilter fromSCFilter(CompositeType type, ByteBuffer scName, IDiskAtomFilter filter)
+    {
+        if (filter instanceof NamesQueryFilter)
+            return fromSCNamesFilter(type, scName, (NamesQueryFilter)filter);
+        else
+            return fromSCSliceFilter(type, scName, (SliceQueryFilter)filter);
+    }
+
+    public static IDiskAtomFilter fromSCNamesFilter(CompositeType type, ByteBuffer scName, NamesQueryFilter filter)
+    {
+        if (scName == null)
+        {
+            ColumnSlice[] slices = new ColumnSlice[filter.columns.size()];
+            int i = 0;
+            for (ByteBuffer bb : filter.columns)
+            {
+                CompositeType.Builder builder = type.builder().add(bb);
+                slices[i++] = new ColumnSlice(builder.build(), builder.buildAsEndOfRange());
+            }
+            return new SliceQueryFilter(slices, false, Integer.MAX_VALUE);
+        }
+        else
+        {
+            SortedSet<ByteBuffer> newColumns = new TreeSet<ByteBuffer>(type);
+            for (ByteBuffer c : filter.columns)
+                newColumns.add(CompositeType.build(scName, c));
+            return filter.withUpdatedColumns(newColumns);
+        }
+    }
+
+    public static SliceQueryFilter fromSCSliceFilter(CompositeType type, ByteBuffer scName, SliceQueryFilter filter)
+    {
+        assert filter.slices.length == 1;
+        if (scName == null)
+        {
+            ByteBuffer start = type.builder().add(filter.start()).build();
+            ByteBuffer finish = type.builder().add(filter.finish()).buildAsEndOfRange();
+            return new SliceQueryFilter(start, finish, filter.reversed, filter.count, 1);
+        }
+        else
+        {
+            CompositeType.Builder builder = type.builder().add(scName);
+            return filter.withUpdatedSlice(builder.copy().add(filter.start()).build(), builder.add(filter.finish()).buildAsEndOfRange());
+        }
+    }
+
+    private static boolean firstEndOfComponent(ByteBuffer bb)
+    {
+        bb = bb.duplicate();
+        int length = (bb.get() & 0xFF) << 8;
+        length |= (bb.get() & 0xFF);
+
+        return bb.get(length + 2) == 1;
+    }
+
+    public static class SCFilter
+    {
+        public final ByteBuffer scName;
+        public final IDiskAtomFilter updatedFilter;
+
+        public SCFilter(ByteBuffer scName, IDiskAtomFilter updatedFilter)
+        {
+            this.scName = scName;
+            this.updatedFilter = updatedFilter;
+        }
     }
 }

@@ -101,8 +101,7 @@ public class CounterMutation implements IMutation
 
     private void addReadCommandFromColumnFamily(String table, ByteBuffer key, ColumnFamily columnFamily, List<ReadCommand> commands)
     {
-        QueryPath queryPath = new QueryPath(columnFamily.metadata().cfName);
-        commands.add(new SliceByNamesReadCommand(table, key, queryPath, columnFamily.getColumnNames()));
+        commands.add(new SliceByNamesReadCommand(table, key, columnFamily.metadata().cfName, columnFamily.getColumnNames()));
     }
 
     public MessageOut<CounterMutation> makeMutationMessage() throws IOException

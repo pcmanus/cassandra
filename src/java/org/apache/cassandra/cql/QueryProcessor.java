@@ -76,7 +76,6 @@ public class QueryProcessor
     private static List<org.apache.cassandra.db.Row> getSlice(CFMetaData metadata, SelectStatement select, List<ByteBuffer> variables)
     throws InvalidRequestException, ReadTimeoutException, UnavailableException, IsBootstrappingException
     {
-        QueryPath queryPath = new QueryPath(select.getColumnFamily());
         List<ReadCommand> commands = new ArrayList<ReadCommand>();
 
         // ...of a list of column names
@@ -90,7 +89,7 @@ public class QueryProcessor
                 ByteBuffer key = rawKey.getByteBuffer(metadata.getKeyValidator(),variables);
 
                 validateKey(key);
-                commands.add(new SliceByNamesReadCommand(metadata.ksName, key, queryPath, columnNames));
+                commands.add(new SliceByNamesReadCommand(metadata.ksName, key, select.getColumnFamily(), columnNames));
             }
         }
         // ...a range (slice) of column names
@@ -108,7 +107,7 @@ public class QueryProcessor
                 validateSliceFilter(metadata, start, finish, select.isColumnsReversed());
                 commands.add(new SliceFromReadCommand(metadata.ksName,
                                                       key,
-                                                      queryPath,
+                                                      select.getColumnFamily(),
                                                       start,
                                                       finish,
                                                       select.isColumnsReversed(),
@@ -191,7 +190,6 @@ public class QueryProcessor
         {
             rows = StorageProxy.getRangeSlice(new RangeSliceCommand(metadata.ksName,
                                                                     select.getColumnFamily(),
-                                                                    null,
                                                                     columnFilter,
                                                                     bounds,
                                                                     expressions,

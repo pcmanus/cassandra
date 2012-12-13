@@ -30,7 +30,6 @@ import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.cassandra.cache.IRowCacheEntry;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -146,56 +145,31 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         }
     }
 
-    public void addColumn(QueryPath path, ByteBuffer value, long timestamp)
+    public void addColumn(ByteBuffer name, ByteBuffer value, long timestamp)
     {
-        addColumn(path, value, timestamp, 0);
+        addColumn(name, value, timestamp, 0);
     }
 
-    public void addColumn(QueryPath path, ByteBuffer value, long timestamp, int timeToLive)
+    public void addColumn(ByteBuffer name, ByteBuffer value, long timestamp, int timeToLive)
     {
-        assert path.columnName != null : path;
         assert !metadata().getDefaultValidator().isCommutative();
-        Column column = Column.create(path.columnName, value, timestamp, timeToLive, metadata());
-        addColumn(path.superColumnName, column);
+        Column column = Column.create(name, value, timestamp, timeToLive, metadata());
+        addColumn(column);
     }
 
-    public void addCounter(QueryPath path, long value)
+    public void addCounter(ByteBuffer name, long value)
     {
-        assert path.columnName != null : path;
-        addColumn(path.superColumnName, new CounterUpdateColumn(path.columnName, value, System.currentTimeMillis()));
+        addColumn(new CounterUpdateColumn(name, value, System.currentTimeMillis()));
     }
 
-    public void addTombstone(QueryPath path, ByteBuffer localDeletionTime, long timestamp)
+    public void addTombstone(ByteBuffer name, ByteBuffer localDeletionTime, long timestamp)
     {
-        assert path.columnName != null : path;
-        addColumn(path.superColumnName, new DeletedColumn(path.columnName, localDeletionTime, timestamp));
-    }
-
-    public void addTombstone(QueryPath path, int localDeletionTime, long timestamp)
-    {
-        assert path.columnName != null : path;
-        addColumn(path.superColumnName, new DeletedColumn(path.columnName, localDeletionTime, timestamp));
+        addColumn(new DeletedColumn(name, localDeletionTime, timestamp));
     }
 
     public void addTombstone(ByteBuffer name, int localDeletionTime, long timestamp)
     {
-        addColumn(null, new DeletedColumn(name, localDeletionTime, timestamp));
-    }
-
-    public void addColumn(ByteBuffer superColumnName, Column column)
-    {
-        IColumn c;
-        if (superColumnName == null)
-        {
-            c = column;
-        }
-        else
-        {
-            assert isSuper();
-            c = new SuperColumn(superColumnName, getSubComparator());
-            c.addColumn(column); // checks subcolumn name
-        }
-        addColumn(c);
+        addColumn(new DeletedColumn(name, localDeletionTime, timestamp));
     }
 
     public void addAtom(OnDiskAtom atom)

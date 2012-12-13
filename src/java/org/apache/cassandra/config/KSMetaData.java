@@ -234,9 +234,9 @@ public final class KSMetaData
     public RowMutation dropFromSchema(long timestamp)
     {
         RowMutation rm = new RowMutation(Table.SYSTEM_KS, SystemTable.getSchemaKSKey(name));
-        rm.delete(new QueryPath(SystemTable.SCHEMA_KEYSPACES_CF), timestamp);
-        rm.delete(new QueryPath(SystemTable.SCHEMA_COLUMNFAMILIES_CF), timestamp);
-        rm.delete(new QueryPath(SystemTable.SCHEMA_COLUMNS_CF), timestamp);
+        rm.delete(SystemTable.SCHEMA_KEYSPACES_CF, timestamp);
+        rm.delete(SystemTable.SCHEMA_COLUMNFAMILIES_CF, timestamp);
+        rm.delete(SystemTable.SCHEMA_COLUMNS_CF, timestamp);
 
         return rm;
     }

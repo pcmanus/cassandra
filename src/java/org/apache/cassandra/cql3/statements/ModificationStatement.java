@@ -26,7 +26,6 @@ import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnSlice;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.exceptions.*;
@@ -165,7 +164,7 @@ public abstract class ModificationStatement extends CFStatement implements CQLSt
         for (ByteBuffer key : keys)
             commands.add(new SliceFromReadCommand(keyspace(),
                                                   key,
-                                                  new QueryPath(columnFamily()),
+                                                  columnFamily(),
                                                   new SliceQueryFilter(slices, false, Integer.MAX_VALUE)));
 
         try

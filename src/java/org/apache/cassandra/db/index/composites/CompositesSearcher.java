@@ -161,7 +161,6 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         {
             private ByteBuffer lastSeenPrefix = startPrefix;
             private Deque<IColumn> indexColumns;
-            private final QueryPath path = new QueryPath(baseCfs.name);
             private int columnsRead = Integer.MAX_VALUE;
 
             private final int meanColumns = Math.max(index.getIndexCfs().getMeanColumns(), 1);
@@ -218,7 +217,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                                          ((AbstractSimplePerColumnSecondaryIndex)index).expressionString(primary), indexComparator.getString(startPrefix));
 
                         QueryFilter indexFilter = QueryFilter.getSliceFilter(indexKey,
-                                                                             new QueryPath(index.getIndexCfs().name),
+                                                                             index.getIndexCfs().name,
                                                                              lastSeenPrefix,
                                                                              endPrefix,
                                                                              false,
@@ -302,7 +301,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                             continue;
 
                         SliceQueryFilter dataFilter = new SliceQueryFilter(start, builder.copy().buildAsEndOfRange(), false, Integer.MAX_VALUE, prefixSize);
-                        ColumnFamily newData = baseCfs.getColumnFamily(new QueryFilter(dk, path, dataFilter));
+                        ColumnFamily newData = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, dataFilter));
                         if (newData != null)
                         {
                             ByteBuffer baseColumnName = builder.copy().add(primary.column_name).build();

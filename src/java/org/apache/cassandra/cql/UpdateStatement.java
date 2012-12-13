@@ -197,7 +197,8 @@ public class UpdateStatement extends AbstractModification
                 ByteBuffer colValue = op.a.getByteBuffer(getValueValidator(keyspace, colName),variables);
 
                 validateColumn(metadata, colName, colValue);
-                rm.add(new QueryPath(columnFamily, null, colName),
+                rm.add(columnFamily,
+                       colName,
                        colValue,
                        (timestamp == null) ? getTimestamp(clientState) : timestamp,
                        getTimeToLive());
@@ -221,7 +222,7 @@ public class UpdateStatement extends AbstractModification
                                                       op.b.getText()));
                 }
 
-                rm.addCounter(new QueryPath(columnFamily, null, colName), value);
+                rm.addCounter(columnFamily, colName, value);
             }
         }
 

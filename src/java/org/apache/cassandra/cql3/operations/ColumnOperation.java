@@ -109,7 +109,7 @@ public class ColumnOperation implements Operation
                 val = -val;
         }
 
-        cf.addCounter(new QueryPath(cf.metadata().cfName, null, builder.build()), val);
+        cf.addCounter(builder.build(), val);
     }
 
     public void addBoundNames(ColumnSpecification column, ColumnSpecification[] boundNames) throws InvalidRequestException

@@ -63,7 +63,6 @@ public class CollationController
     public ColumnFamily getTopLevelColumns()
     {
         return filter.filter instanceof NamesQueryFilter
-               && (cfs.metadata.cfType == ColumnFamilyType.Standard || filter.path.superColumnName != null)
                && cfs.metadata.getDefaultValidator() != CounterColumnType.instance
                ? collectTimeOrderedData()
                : collectAllData();
@@ -110,7 +109,7 @@ public class CollationController
             // (reduceNameFilter removes columns that are known to be irrelevant)
             NamesQueryFilter namesFilter = (NamesQueryFilter) filter.filter;
             TreeSet<ByteBuffer> filterColumns = new TreeSet<ByteBuffer>(namesFilter.columns);
-            QueryFilter reducedFilter = new QueryFilter(filter.key, filter.path, namesFilter.withUpdatedColumns(filterColumns));
+            QueryFilter reducedFilter = new QueryFilter(filter.key, filter.cfName, namesFilter.withUpdatedColumns(filterColumns));
 
             /* add the SSTables on disk */
             Collections.sort(view.sstables, SSTable.maxTimestampComparator);
@@ -205,13 +204,10 @@ public class CollationController
     }
 
     /**
-     * remove columns from @param filter where we already have data in @param returnCF newer than @param sstableTimestamp
+     * remove columns from @param filter where we already have data in @param container newer than @param sstableTimestamp
      */
-    private void reduceNameFilter(QueryFilter filter, ColumnFamily returnCF, long sstableTimestamp)
+    private void reduceNameFilter(QueryFilter filter, ColumnFamily container, long sstableTimestamp)
     {
-        AbstractColumnContainer container = filter.path.superColumnName == null
-                                          ? returnCF
-                                          : (SuperColumn) returnCF.getColumn(filter.path.superColumnName);
         // MIN_VALUE means we don't know any information
         if (container == null || sstableTimestamp == Long.MIN_VALUE)
             return;

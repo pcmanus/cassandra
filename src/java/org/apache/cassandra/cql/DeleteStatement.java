@@ -26,7 +26,6 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.IMutation;
 import org.apache.cassandra.db.RowMutation;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
@@ -98,7 +97,7 @@ public class DeleteStatement extends AbstractModification
         if (columns.size() < 1)
         {
             // No columns, delete the row
-            rm.delete(new QueryPath(columnFamily), (timestamp == null) ? getTimestamp(clientState) : timestamp);
+            rm.delete(columnFamily, (timestamp == null) ? getTimestamp(clientState) : timestamp);
         }
         else
         {
@@ -107,7 +106,7 @@ public class DeleteStatement extends AbstractModification
             {
                 ByteBuffer columnName = column.getByteBuffer(comparator, variables);
                 validateColumnName(columnName);
-                rm.delete(new QueryPath(columnFamily, null, columnName), (timestamp == null) ? getTimestamp(clientState) : timestamp);
+                rm.delete(columnFamily, columnName, (timestamp == null) ? getTimestamp(clientState) : timestamp);
             }
         }
 

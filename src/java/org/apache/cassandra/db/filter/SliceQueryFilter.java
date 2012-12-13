@@ -91,6 +91,11 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return new SliceQueryFilter(newSlices, reversed, count, compositesToGroup, countMutliplierForCompatibility);
     }
 
+    public SliceQueryFilter withUpdatedSlice(ByteBuffer start, ByteBuffer finish)
+    {
+        return new SliceQueryFilter(new ColumnSlice[]{ new ColumnSlice(start, finish) }, reversed, count, compositesToGroup, countMutliplierForCompatibility);
+    }
+
     public OnDiskAtomIterator getMemtableColumnIterator(ColumnFamily cf, DecoratedKey key)
     {
         return Memtable.getSliceIterator(key, cf, this);
