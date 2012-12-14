@@ -54,9 +54,8 @@ public class CollationController
         this.filter = filter;
         this.gcBefore = gcBefore;
 
-        // AtomicSortedColumns doesn't work for super columns (see #3821)
         this.factory = mutableColumns
-                     ? cfs.metadata.cfType == ColumnFamilyType.Super ? ThreadSafeSortedColumns.factory() : AtomicSortedColumns.factory()
+                     ? AtomicSortedColumns.factory()
                      : ArrayBackedSortedColumns.factory();
     }
 

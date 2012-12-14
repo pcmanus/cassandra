@@ -111,45 +111,6 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return new SSTableSliceIterator(sstable, file, key, slices, reversed, indexEntry);
     }
 
-    public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)
-    {
-        // we clone shallow, then add, under the theory that generally we're interested in a relatively small number of subcolumns.
-        // this may be a poor assumption.
-        SuperColumn scFiltered = superColumn.cloneMeShallow();
-        final Iterator<IColumn> subcolumns;
-        if (reversed)
-        {
-            List<IColumn> columnsAsList = new ArrayList<IColumn>(superColumn.getSubColumns());
-            subcolumns = Lists.reverse(columnsAsList).iterator();
-        }
-        else
-        {
-            subcolumns = superColumn.getSubColumns().iterator();
-        }
-        final Comparator<ByteBuffer> comparator = reversed ? superColumn.getComparator().reverseComparator : superColumn.getComparator();
-        Iterator<IColumn> results = new AbstractIterator<IColumn>()
-        {
-            protected IColumn computeNext()
-            {
-                while (subcolumns.hasNext())
-                {
-                    IColumn subcolumn = subcolumns.next();
-                    // iterate until we get to the "real" start column
-                    if (comparator.compare(subcolumn.name(), start()) < 0)
-                        continue;
-                    // exit loop when columns are out of the range.
-                    if (finish().remaining() > 0 && comparator.compare(subcolumn.name(), finish()) > 0)
-                        break;
-                    return subcolumn;
-                }
-                return endOfData();
-            }
-        };
-        // subcolumns is either empty now, or has been redefined in the loop above. either is ok.
-        collectReducedColumns(scFiltered, results, gcBefore);
-        return scFiltered;
-    }
-
     public Comparator<IColumn> getColumnComparator(AbstractType<?> comparator)
     {
         return reversed ? comparator.columnReverseComparator : comparator.columnComparator;

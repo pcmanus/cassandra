@@ -222,7 +222,7 @@ public class CompositeType extends AbstractCompositeType
         for (ByteBuffer bb : buffers)
         {
             putShortLength(out, bb.remaining());
-            out.put(bb);
+            out.put(bb.duplicate());
             out.put((byte) 0);
         }
         out.flip();

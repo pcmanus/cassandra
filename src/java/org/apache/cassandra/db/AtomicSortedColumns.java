@@ -348,29 +348,19 @@ public class AtomicSortedColumns implements ISortedColumns
                     return column.dataSize();
                 }
 
-                if (oldColumn instanceof SuperColumn)
+                IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
+                if (map.replace(name, oldColumn, reconciledColumn))
                 {
-                    assert column instanceof SuperColumn;
-                    long previousSize = oldColumn.dataSize();
-                    ((SuperColumn) oldColumn).putColumn((SuperColumn)column, allocator);
-                    return oldColumn.dataSize() - previousSize;
+                    // for memtable updates we only care about oldcolumn, reconciledcolumn, but when compacting
+                    // we need to make sure we update indexes no matter the order we merge
+                    if (reconciledColumn == column)
+                        indexer.update(oldColumn, reconciledColumn);
+                    else
+                        indexer.update(column, reconciledColumn);
+                    return reconciledColumn.dataSize() - oldColumn.dataSize();
                 }
-                else
-                {
-                    IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
-                    if (map.replace(name, oldColumn, reconciledColumn))
-                    {
-                        // for memtable updates we only care about oldcolumn, reconciledcolumn, but when compacting
-                        // we need to make sure we update indexes no matter the order we merge
-                        if (reconciledColumn == column)
-                            indexer.update(oldColumn, reconciledColumn);
-                        else
-                            indexer.update(column, reconciledColumn);
-                        return reconciledColumn.dataSize() - oldColumn.dataSize();
-                    }
-                    // We failed to replace column due to a concurrent update or a concurrent removal. Keep trying.
-                    // (Currently, concurrent removal should not happen (only updates), but let us support that anyway.)
-                }
+                // We failed to replace column due to a concurrent update or a concurrent removal. Keep trying.
+                // (Currently, concurrent removal should not happen (only updates), but let us support that anyway.)
             }
         }
 
@@ -386,11 +376,6 @@ public class AtomicSortedColumns implements ISortedColumns
                 int c = comparator.compare(current.name(), retain.name());
                 if (c == 0)
                 {
-                    if (current instanceof SuperColumn)
-                    {
-                        assert retain instanceof SuperColumn;
-                        ((SuperColumn)current).retainAll((SuperColumn)retain);
-                    }
                     current = iter.hasNext() ? iter.next() : null;
                     retain = toRetain.hasNext() ? toRetain.next() : null;
                 }

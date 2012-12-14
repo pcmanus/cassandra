@@ -739,7 +739,7 @@ public final class CFMetaData
                           .replicateOnWrite(cf_def.replicate_on_write)
                           .defaultValidator(TypeParser.parse(cf_def.default_validation_class))
                           .keyValidator(TypeParser.parse(cf_def.key_validation_class))
-                          .columnMetadata(ColumnDefinition.fromThrift(cf_def.column_metadata))
+                          .columnMetadata(ColumnDefinition.fromThrift(cf_def.column_metadata, newCFMD.isSuper()))
                           .compressionParameters(cp);
         }
         catch (SyntaxException e)
@@ -1508,7 +1508,7 @@ public final class CFMetaData
      */
     public boolean isThriftIncompatible()
     {
-        if (!cqlCfDef.isComposite)
+        if (isSuper() || !cqlCfDef.isComposite)
             return false;
 
         for (ColumnDefinition columnDef : column_metadata.values())

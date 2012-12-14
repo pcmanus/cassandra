@@ -226,7 +226,7 @@ public class Memtable
         if (previous == null)
         {
             // AtomicSortedColumns doesn't work for super columns (see #3821)
-            ColumnFamily empty = cf.cloneMeShallow(cf.isSuper() ? ThreadSafeSortedColumns.factory() : AtomicSortedColumns.factory(), false);
+            ColumnFamily empty = cf.cloneMeShallow(AtomicSortedColumns.factory(), false);
             // We'll add the columns later. This avoids wasting works if we get beaten in the putIfAbsent
             previous = columnFamilies.putIfAbsent(new DecoratedKey(key.token, allocator.clone(key.key)), empty);
             if (previous == null)
@@ -345,7 +345,6 @@ public class Memtable
     public static OnDiskAtomIterator getNamesIterator(final DecoratedKey key, final ColumnFamily cf, final NamesQueryFilter filter)
     {
         assert cf != null;
-        final boolean isStandard = !cf.isSuper();
 
         return new SimpleAbstractColumnIterator()
         {
@@ -368,8 +367,7 @@ public class Memtable
                     ByteBuffer current = iter.next();
                     IColumn column = cf.getColumn(current);
                     if (column != null)
-                        // clone supercolumns so caller can freely removeDeleted or otherwise mutate it
-                        return isStandard ? column : ((SuperColumn)column).cloneMe();
+                        return column;
                 }
                 return endOfData();
             }

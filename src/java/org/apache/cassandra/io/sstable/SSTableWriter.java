@@ -247,21 +247,7 @@ public class SSTableWriter extends SSTable
             // data size received, so we must reserialize the exact same data
             OnDiskAtom atom = atomSerializer.deserializeFromSSTable(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Descriptor.Version.CURRENT);
             if (atom instanceof CounterColumn)
-            {
                 atom = ((CounterColumn) atom).markDeltaToBeCleared();
-            }
-            else if (atom instanceof SuperColumn)
-            {
-                SuperColumn sc = (SuperColumn) atom;
-                for (IColumn subColumn : sc.getSubColumns())
-                {
-                    if (subColumn instanceof CounterColumn)
-                    {
-                        IColumn marked = ((CounterColumn) subColumn).markDeltaToBeCleared();
-                        sc.replace(subColumn, marked);
-                    }
-                }
-            }
 
             int deletionTime = atom.getLocalDeletionTime();
             if (deletionTime < Integer.MAX_VALUE)

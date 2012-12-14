@@ -232,6 +232,8 @@ public class CassandraServer implements Cassandra.Iface
 
                 thriftSuperColumns.add(thriftifyColumnWithName(column, SuperColumns.subName(column.name())));
             }
+            if (reverseOrder)
+                Collections.reverse(thriftSuperColumns);
             return thriftSuperColumns;
         }
         else
@@ -312,7 +314,7 @@ public class CassandraServer implements Cassandra.Iface
         if (cf == null || cf.isEmpty())
             return EMPTY_COLUMNS;
 
-        if (cf.isSuper())
+        if (cf.metadata().isSuper())
         {
             boolean isCounterCF = cf.metadata().getDefaultValidator().isCommutative();
             return thriftifySuperColumns(cf.getSortedColumns(), reverseOrder, subcolumnsOnly, isCounterCF);
@@ -455,9 +457,9 @@ public class CassandraServer implements Cassandra.Iface
         if (metadata.isSuper())
         {
             CompositeType type = (CompositeType)metadata.comparator;
-            SortedSet names = new TreeSet<ByteBuffer>(column_path.isSetSuper_column() ? type.types.get(1) : type.types.get(0));
+            SortedSet names = new TreeSet<ByteBuffer>(column_path.column == null ? type.types.get(0) : type.types.get(1));
             names.add(column_path.column == null ? column_path.super_column : column_path.column);
-            filter = SuperColumns.fromSCNamesFilter(type, column_path.bufferForSuper_column(), new NamesQueryFilter(names));
+            filter = SuperColumns.fromSCNamesFilter(type, column_path.column == null ? null : column_path.bufferForSuper_column(), new NamesQueryFilter(names));
         }
         else
         {
@@ -474,7 +476,7 @@ public class CassandraServer implements Cassandra.Iface
 
         if (cf == null)
             throw new NotFoundException();
-        List<ColumnOrSuperColumn> tcolumns = thriftifyColumnFamily(cf, column_path.isSetSuper_column(), false);
+        List<ColumnOrSuperColumn> tcolumns = thriftifyColumnFamily(cf, metadata.isSuper() && column_path.column != null, false);
         if (tcolumns.isEmpty())
             throw new NotFoundException();
         assert tcolumns.size() == 1;

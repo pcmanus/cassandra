@@ -63,7 +63,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
             dos.writeBoolean(true);
             serializeCfId(cf.id(), dos, version);
 
-            if (cf.isSuper() && version < MessagingService.VERSION_20)
+            if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
             {
                 SuperColumns.serializeSuperColumnFamily(cf, dos, version);
                 return;
@@ -100,7 +100,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         ColumnFamily cf = ColumnFamily.create(deserializeCfId(dis, version), factory);
         int expireBefore = (int) (System.currentTimeMillis() / 1000);
 
-        if (cf.isSuper() && version < MessagingService.VERSION_20)
+        if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
         {
             SuperColumns.deserializerSuperColumnFamily(dis, cf, flag, expireBefore, version);
         }
@@ -122,7 +122,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
     {
         long size = 0L;
 
-        if (cf.isSuper() && version < MessagingService.VERSION_20)
+        if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
         {
             size += SuperColumns.serializedSize(cf, typeSizes, version);
         }

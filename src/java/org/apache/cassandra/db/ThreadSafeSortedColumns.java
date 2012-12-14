@@ -101,23 +101,13 @@ public class ThreadSafeSortedColumns extends AbstractThreadUnsafeSortedColumns i
             if (oldColumn == null)
                 return column.dataSize();
 
-            if (oldColumn instanceof SuperColumn)
-            {
-                assert column instanceof SuperColumn;
-                long previousSize = oldColumn.dataSize();
-                ((SuperColumn) oldColumn).putColumn((SuperColumn)column, allocator);
-                return oldColumn.dataSize() - previousSize;
-            }
-            else
-            {
-                // calculate reconciled col from old (existing) col and new col
-                IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
-                if (map.replace(name, oldColumn, reconciledColumn))
-                    return reconciledColumn.dataSize() - oldColumn.dataSize();
+            // calculate reconciled col from old (existing) col and new col
+            IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
+            if (map.replace(name, oldColumn, reconciledColumn))
+                return reconciledColumn.dataSize() - oldColumn.dataSize();
 
-                // We failed to replace column due to a concurrent update or a concurrent removal. Keep trying.
-                // (Currently, concurrent removal should not happen (only updates), but let us support that anyway.)
-            }
+            // We failed to replace column due to a concurrent update or a concurrent removal. Keep trying.
+            // (Currently, concurrent removal should not happen (only updates), but let us support that anyway.)
         }
     }
 

@@ -751,10 +751,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (cachedRow instanceof RowCacheSentinel)
                 invalidateCachedRow(cacheKey);
             else
-                // columnFamily is what is written in the commit log. Because of the PeriodicCommitLog, this can be done in concurrency
-                // with this. So columnFamily shouldn't be modified and if it contains super columns, neither should they. So for super
-                // columns, we must make sure to clone them when adding to the cache. That's what addAllWithSCCopy does (see #3957)
-                ((ColumnFamily) cachedRow).addAllWithSCCopy(columnFamily, HeapAllocator.instance);
+                ((ColumnFamily) cachedRow).addAll(columnFamily, HeapAllocator.instance);
         }
     }
 
@@ -819,19 +816,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     private static void removeDeletedColumnsOnly(ColumnFamily cf, int gcBefore, SecondaryIndexManager.Updater indexer)
     {
-        if (cf.isSuper())
-            removeDeletedSuper(cf, gcBefore);
-        else
-            removeDeletedStandard(cf, gcBefore, indexer);
-    }
-
-    public static void removeDeletedColumnsOnly(ColumnFamily cf, int gcBefore)
-    {
-        removeDeletedColumnsOnly(cf, gcBefore, SecondaryIndexManager.nullUpdater);
-    }
-
-    private static void removeDeletedStandard(ColumnFamily cf, int gcBefore, SecondaryIndexManager.Updater indexer)
-    {
         Iterator<IColumn> iter = cf.iterator();
         while (iter.hasNext())
         {
@@ -847,36 +831,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
     }
 
-    private static void removeDeletedSuper(ColumnFamily cf, int gcBefore)
+    public static void removeDeletedColumnsOnly(ColumnFamily cf, int gcBefore)
     {
-        // TODO assume deletion means "most are deleted?" and add to clone, instead of remove from original?
-        // this could be improved by having compaction, or possibly even removeDeleted, r/m the tombstone
-        // once gcBefore has passed, so if new stuff is added in it doesn't used the wrong algorithm forever
-        Iterator<IColumn> iter = cf.iterator();
-        while (iter.hasNext())
-        {
-            SuperColumn c = (SuperColumn)iter.next();
-            Iterator<IColumn> subIter = c.getSubColumns().iterator();
-            while (subIter.hasNext())
-            {
-                IColumn subColumn = subIter.next();
-                // remove subcolumns if
-                // (a) the subcolumn itself is gcable or
-                // (b) the supercolumn is shadowed by the CF and the column is not newer
-                // (b) the subcolumn is shadowed by the supercolumn
-                if (subColumn.getLocalDeletionTime() < gcBefore
-                    || cf.deletionInfo().isDeleted(c.name(), subColumn.timestamp())
-                    || c.deletionInfo().isDeleted(subColumn))
-                {
-                    subIter.remove();
-                }
-            }
-            c.maybeResetDeletionTimes(gcBefore);
-            if (c.getSubColumns().isEmpty() && !c.isMarkedForDelete())
-            {
-                iter.remove();
-            }
-        }
+        removeDeletedColumnsOnly(cf, gcBefore, SecondaryIndexManager.nullUpdater);
     }
 
     /**
@@ -1243,9 +1200,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 if (cf == null)
                     return null;
 
-                // TODO this is necessary because when we collate supercolumns together, we don't check
-                // their subcolumns for relevance, so we need to do a second prune post facto here.
-                result = cf.isSuper() ? removeDeleted(cf, gcBefore) : removeDeletedCF(cf, gcBefore);
+                result = removeDeletedCF(cf, gcBefore);
 
             }
         }
@@ -1267,9 +1222,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         ColumnFamily cf = cached.cloneMeShallow(ArrayBackedSortedColumns.factory(), filter.filter.isReversed());
         OnDiskAtomIterator ci = filter.getMemtableColumnIterator(cached, null);
         filter.collateOnDiskAtom(cf, Collections.singletonList(ci), gcBefore);
-        // TODO this is necessary because when we collate supercolumns together, we don't check
-        // their subcolumns for relevance, so we need to do a second prune post facto here.
-        return cf.isSuper() ? removeDeleted(cf, gcBefore) : removeDeletedCF(cf, gcBefore);
+        return removeDeletedCF(cf, gcBefore);
     }
 
     /**
@@ -1438,11 +1391,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                     logger.trace("scanned {}", key);
 
-                    // TODO this is necessary because when we collate supercolumns together, we don't check
-                    // their subcolumns for relevance, so we need to do a second prune post facto here.
-                    return current.cf != null && current.cf.isSuper()
-                        ? new Row(current.key, removeDeleted(current.cf, gcBefore))
-                        : current;
+                    return current;
                 }
 
                 public void close() throws IOException

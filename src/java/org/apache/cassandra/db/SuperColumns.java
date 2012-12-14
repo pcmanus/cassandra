@@ -369,7 +369,7 @@ public class SuperColumns
                 CompositeType.Builder builder = type.builder().add(bb);
                 slices[i++] = new ColumnSlice(builder.build(), builder.buildAsEndOfRange());
             }
-            return new SliceQueryFilter(slices, false, Integer.MAX_VALUE);
+            return new SliceQueryFilter(slices, false, slices.length, 1, 1000);
         }
         else
         {
@@ -385,20 +385,26 @@ public class SuperColumns
         assert filter.slices.length == 1;
         if (scName == null)
         {
-            ByteBuffer start = type.builder().add(filter.start()).build();
-            ByteBuffer finish = type.builder().add(filter.finish()).buildAsEndOfRange();
+            ByteBuffer start = filter.start().remaining() == 0
+                             ? filter.start()
+                             : (filter.reversed ? type.builder().add(filter.start()).buildAsEndOfRange()
+                                                : type.builder().add(filter.start()).build());
+            ByteBuffer finish = filter.finish().remaining() == 0
+                              ? filter.finish()
+                              : (filter.reversed ? type.builder().add(filter.finish()).build()
+                                                 : type.builder().add(filter.finish()).buildAsEndOfRange());
             return new SliceQueryFilter(start, finish, filter.reversed, filter.count, 1);
         }
         else
         {
             CompositeType.Builder builder = type.builder().add(scName);
             ByteBuffer start = filter.start().remaining() == 0
-                             ? builder.build()
+                             ? filter.reversed ? builder.buildAsEndOfRange() : builder.build()
                              : builder.copy().add(filter.start()).build();
             ByteBuffer end = filter.finish().remaining() == 0
-                             ? builder.buildAsEndOfRange()
+                             ? filter.reversed ? builder.build() : builder.buildAsEndOfRange()
                              : builder.add(filter.finish()).build();
-            return filter.withUpdatedSlice(start, end);
+            return new SliceQueryFilter(start, end, filter.reversed, filter.count);
         }
     }
 

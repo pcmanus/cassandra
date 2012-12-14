@@ -32,6 +32,7 @@ import org.apache.cassandra.auth.IAuthenticator;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.thrift.*;
@@ -223,6 +224,7 @@ public class ColumnFamilyRecordReader extends RecordReader<ByteBuffer, SortedMap
     {
         protected List<KeySlice> rows;
         protected int totalRead = 0;
+        protected final boolean isSuper;
         protected final AbstractType<?> comparator;
         protected final AbstractType<?> subComparator;
         protected final IPartitioner partitioner;
@@ -242,6 +244,7 @@ public class ColumnFamilyRecordReader extends RecordReader<ByteBuffer, SortedMap
                 int idx = cfnames.indexOf(cfName);
                 CfDef cf_def = ks_def.cf_defs.get(idx);
 
+                isSuper = cf_def.column_type.equals("Super");
                 comparator = TypeParser.parse(cf_def.comparator_type);
                 subComparator = cf_def.subcomparator_type == null ? null : TypeParser.parse(cf_def.subcomparator_type);
             }
@@ -267,46 +270,50 @@ public class ColumnFamilyRecordReader extends RecordReader<ByteBuffer, SortedMap
             return totalRead;
         }
 
-        protected IColumn unthriftify(ColumnOrSuperColumn cosc)
+        protected List<IColumn> unthriftify(ColumnOrSuperColumn cosc)
         {
             if (cosc.counter_column != null)
-                return unthriftifyCounter(cosc.counter_column);
+                return Collections.<IColumn>singletonList(unthriftifyCounter(cosc.counter_column));
             if (cosc.counter_super_column != null)
                 return unthriftifySuperCounter(cosc.counter_super_column);
             if (cosc.super_column != null)
                 return unthriftifySuper(cosc.super_column);
             assert cosc.column != null;
-            return unthriftifySimple(cosc.column);
+            return Collections.<IColumn>singletonList(unthriftifySimple(cosc.column));
         }
 
-        private IColumn unthriftifySuper(SuperColumn super_column)
+        private List<IColumn> unthriftifySuper(SuperColumn super_column)
         {
-            org.apache.cassandra.db.SuperColumn sc = new org.apache.cassandra.db.SuperColumn(super_column.name, subComparator);
+            List<IColumn> columns = new ArrayList<IColumn>(super_column.columns.size());
             for (Column column : super_column.columns)
             {
-                sc.addColumn(unthriftifySimple(column));
+                org.apache.cassandra.db.Column c = unthriftifySimple(column);
+                columns.add(c.withUpdatedName(CompositeType.build(super_column.name, c.name())));
             }
-            return sc;
+            return columns;
         }
 
-        protected IColumn unthriftifySimple(Column column)
+        protected org.apache.cassandra.db.Column unthriftifySimple(Column column)
         {
             return new org.apache.cassandra.db.Column(column.name, column.value, column.timestamp);
         }
 
-        private IColumn unthriftifyCounter(CounterColumn column)
+        private org.apache.cassandra.db.Column unthriftifyCounter(CounterColumn column)
         {
             //CounterColumns read the counterID from the System table, so need the StorageService running and access
             //to cassandra.yaml. To avoid a Hadoop needing access to yaml return a regular Column.
             return new org.apache.cassandra.db.Column(column.name, ByteBufferUtil.bytes(column.value), 0);
         }
 
-        private IColumn unthriftifySuperCounter(CounterSuperColumn superColumn)
+        private List<IColumn> unthriftifySuperCounter(CounterSuperColumn super_column)
         {
-            org.apache.cassandra.db.SuperColumn sc = new org.apache.cassandra.db.SuperColumn(superColumn.name, subComparator);
-            for (CounterColumn column : superColumn.columns)
-                sc.addColumn(unthriftifyCounter(column));
-            return sc;
+            List<IColumn> columns = new ArrayList<IColumn>(super_column.columns.size());
+            for (CounterColumn column : super_column.columns)
+            {
+                org.apache.cassandra.db.Column c = unthriftifyCounter(column);
+                columns.add(c.withUpdatedName(CompositeType.build(super_column.name, c.name())));
+            }
+            return columns;
         }
     }
 
@@ -396,8 +403,9 @@ public class ColumnFamilyRecordReader extends RecordReader<ByteBuffer, SortedMap
             SortedMap<ByteBuffer, IColumn> map = new TreeMap<ByteBuffer, IColumn>(comparator);
             for (ColumnOrSuperColumn cosc : ks.columns)
             {
-                IColumn column = unthriftify(cosc);
-                map.put(column.name(), column);
+                List<IColumn> columns = unthriftify(cosc);
+                for (IColumn column : columns)
+                    map.put(column.name(), column);
             }
             return Pair.create(ks.key, map);
         }
@@ -510,8 +518,19 @@ public class ColumnFamilyRecordReader extends RecordReader<ByteBuffer, SortedMap
                     if (columns.hasNext())
                     {
                         ColumnOrSuperColumn cosc = columns.next();
-                        IColumn column = unthriftify(cosc);
-                        ImmutableSortedMap<ByteBuffer, IColumn> map = ImmutableSortedMap.of(column.name(), column);
+                        SortedMap<ByteBuffer, IColumn> map;
+                        List<IColumn> columns = unthriftify(cosc);
+                        if (columns.size() == 1)
+                        {
+                            map = ImmutableSortedMap.of(columns.get(0).name(), columns.get(0));
+                        }
+                        else
+                        {
+                            assert isSuper;
+                            map = new TreeMap<ByteBuffer, IColumn>(CompositeType.getInstance(comparator, subComparator));
+                            for (IColumn column : columns)
+                                map.put(column.name(), column);
+                        }
                         return Pair.<ByteBuffer, SortedMap<ByteBuffer, IColumn>>create(currentRow.key, map);
                     }
 

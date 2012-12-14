@@ -103,7 +103,7 @@ public abstract class AbstractSSTableSimpleWriter
      */
     public void newSuperColumn(ByteBuffer name)
     {
-        if (!columnFamily.isSuper())
+        if (!columnFamily.metadata().isSuper())
             throw new IllegalStateException("Cannot add a super column to a standard column family");
 
         currentSuperColumn = name;
@@ -111,7 +111,7 @@ public abstract class AbstractSSTableSimpleWriter
 
     private void addColumn(Column column)
     {
-        if (columnFamily.isSuper())
+        if (columnFamily.metadata().isSuper())
         {
             if (currentSuperColumn == null)
                 throw new IllegalStateException("Trying to add a column to a super column family, but no super column has been started.");

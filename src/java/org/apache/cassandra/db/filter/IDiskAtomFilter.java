@@ -68,12 +68,6 @@ public interface IDiskAtomFilter
      */
     public void collectReducedColumns(IColumnContainer container, Iterator<IColumn> reducedColumns, int gcBefore);
 
-    /**
-     * subcolumns of a supercolumn are unindexed, so to pick out parts of those we operate in-memory.
-     * @param superColumn may be modified by filtering op.
-     */
-    public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore);
-
     public Comparator<IColumn> getColumnComparator(AbstractType<?> comparator);
 
     public boolean isReversed();

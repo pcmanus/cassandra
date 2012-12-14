@@ -74,22 +74,15 @@ public interface OnDiskAtom
 
         public OnDiskAtom deserializeFromSSTable(DataInput dis, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
         {
-            if (columnSerializer instanceof SuperColumnSerializer)
-            {
-                return columnSerializer.deserialize(dis, flag, expireBefore);
-            }
-            else
-            {
-                ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
-                if (name.remaining() <= 0)
-                    throw ColumnSerializer.CorruptColumnException.create(dis, name);
+            ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
+            if (name.remaining() <= 0)
+                throw ColumnSerializer.CorruptColumnException.create(dis, name);
 
-                int b = dis.readUnsignedByte();
-                if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
-                    return RangeTombstone.serializer.deserializeBody(dis, name, version);
-                else
-                    return ((ColumnSerializer)columnSerializer).deserializeColumnBody(dis, name, b, flag, expireBefore);
-            }
+            int b = dis.readUnsignedByte();
+            if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
+                return RangeTombstone.serializer.deserializeBody(dis, name, version);
+            else
+                return ((ColumnSerializer)columnSerializer).deserializeColumnBody(dis, name, b, flag, expireBefore);
         }
     }
 }

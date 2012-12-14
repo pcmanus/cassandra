@@ -54,7 +54,6 @@ import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
-import org.apache.cassandra.db.SuperColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -132,20 +131,6 @@ public class SSTableExport
                 // begin meta
                 writeKey(out, "metadata");
                 writeDeletionInfo(out, columnFamily.deletionInfo().getTopLevelDeletion());
-                out.print(",");
-            }
-            return;
-        }
-
-        if (columnContainer instanceof SuperColumn)
-        {
-            SuperColumn superColumn = (SuperColumn) columnContainer;
-            DeletionInfo deletionInfo = new DeletionInfo(superColumn.getMarkedForDeleteAt(),
-                    superColumn.getLocalDeletionTime());
-            if (!deletionInfo.equals(DeletionInfo.LIVE))
-            {
-                writeKey(out, "metadata");
-                writeDeletionInfo(out, deletionInfo.getTopLevelDeletion());
                 out.print(",");
             }
             return;

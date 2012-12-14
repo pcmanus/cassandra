@@ -86,18 +86,6 @@ public class NamesQueryFilter implements IDiskAtomFilter
         return new SSTableNamesIterator(sstable, file, key, columns, indexEntry);
     }
 
-    public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)
-    {
-        for (IColumn column : superColumn.getSubColumns())
-        {
-            if (!columns.contains(column.name()) || !QueryFilter.isRelevant(column, superColumn, gcBefore))
-            {
-                superColumn.remove(column.name());
-            }
-        }
-        return superColumn;
-    }
-
     public void collectReducedColumns(IColumnContainer container, Iterator<IColumn> reducedColumns, int gcBefore)
     {
         while (reducedColumns.hasNext())

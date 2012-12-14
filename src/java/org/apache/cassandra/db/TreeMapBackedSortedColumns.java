@@ -103,30 +103,16 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
         if (oldColumn == null)
             return column.dataSize();
 
-        if (oldColumn instanceof SuperColumn)
-        {
-            assert column instanceof SuperColumn;
-            long previousSize = oldColumn.dataSize();
-            // since oldColumn is where we've been accumulating results, it's usually going to be faster to
-            // add the new one to the old, then place old back in the Map, rather than copy the old contents
-            // into the new Map entry.
-            ((SuperColumn) oldColumn).putColumn((SuperColumn)column, allocator);
-            map.put(name, oldColumn);
-            return oldColumn.dataSize() - previousSize;
-        }
+        // calculate reconciled col from old (existing) col and new col
+        IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
+        map.put(name, reconciledColumn);
+        // for memtable updates we only care about oldcolumn, reconciledcolumn, but when compacting
+        // we need to make sure we update indexes no matter the order we merge
+        if (reconciledColumn == column)
+            indexer.update(oldColumn, reconciledColumn);
         else
-        {
-            // calculate reconciled col from old (existing) col and new col
-            IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
-            map.put(name, reconciledColumn);
-            // for memtable updates we only care about oldcolumn, reconciledcolumn, but when compacting
-            // we need to make sure we update indexes no matter the order we merge
-            if (reconciledColumn == column)
-                indexer.update(oldColumn, reconciledColumn);
-            else
-                indexer.update(column, reconciledColumn);
-            return reconciledColumn.dataSize() - oldColumn.dataSize();
-        }
+            indexer.update(column, reconciledColumn);
+        return reconciledColumn.dataSize() - oldColumn.dataSize();
     }
 
     public long addAllWithSizeDelta(ISortedColumns cm, Allocator allocator, Function<IColumn, IColumn> transformation, SecondaryIndexManager.Updater indexer)

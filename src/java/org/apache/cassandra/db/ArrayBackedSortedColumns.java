@@ -157,18 +157,10 @@ public class ArrayBackedSortedColumns extends AbstractThreadUnsafeSortedColumns 
     private void resolveAgainst(int i, IColumn column, Allocator allocator)
     {
         IColumn oldColumn = columns.get(i);
-        if (oldColumn instanceof SuperColumn)
-        {
-            // Delegated to SuperColumn
-            assert column instanceof SuperColumn;
-            ((SuperColumn) oldColumn).putColumn((SuperColumn)column, allocator);
-        }
-        else
-        {
-            // calculate reconciled col from old (existing) col and new col
-            IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
-            columns.set(i, reconciledColumn);
-        }
+
+        // calculate reconciled col from old (existing) col and new col
+        IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
+        columns.set(i, reconciledColumn);
     }
 
     private int binarySearch(ByteBuffer name)

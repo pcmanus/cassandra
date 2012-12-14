@@ -95,8 +95,6 @@ public class CounterMutation implements IMutation
                 continue;
 
             ColumnFamily cf = row.cf;
-            if (cf.isSuper())
-                cf.retainAll(rowMutation.getColumnFamily(cf.metadata().cfId));
             replicationMutation.add(cf);
         }
         return replicationMutation;

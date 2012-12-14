@@ -62,11 +62,6 @@ public abstract class AbstractThreadUnsafeSortedColumns implements ISortedColumn
             int c = comparator.compare(current.name(), retain.name());
             if (c == 0)
             {
-                if (current instanceof SuperColumn)
-                {
-                    assert retain instanceof SuperColumn;
-                    ((SuperColumn)current).retainAll((SuperColumn)retain);
-                }
                 current = iter.hasNext() ? iter.next() : null;
                 retain = toRetain.hasNext() ? toRetain.next() : null;
             }
