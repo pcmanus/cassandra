@@ -253,7 +253,6 @@ public final class CFMetaData
     public final String cfName;                       // name of this column family
     public final ColumnFamilyType cfType;             // standard, super
     public volatile AbstractType<?> comparator;          // bytes, long, timeuuid, utf8, etc.
-    public volatile AbstractType<?> subcolumnComparator; // like comparator, for supercolumns
 
     //OPTIONAL
     private volatile String comment = "";
@@ -310,17 +309,16 @@ public final class CFMetaData
 
     public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc)
     {
-        this(keyspace, name, type, comp, subcc, getId(keyspace, name));
+        this(keyspace, name, type,  makeComparator(type, comp, subcc), getId(keyspace, name));
     }
 
-    CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc, UUID id)
+    private CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp,  UUID id)
     {
         // Final fields must be set in constructor
         ksName = keyspace;
         cfName = name;
         cfType = type;
         comparator = comp;
-        subcolumnComparator = enforceSubccDefault(type, subcc);
         cfId = id;
 
         updateCfDef(); // init cqlCfDef
@@ -346,9 +344,11 @@ public final class CFMetaData
         return compile(id, cql, Table.SYSTEM_KS);
     }
 
-    private AbstractType<?> enforceSubccDefault(ColumnFamilyType cftype, AbstractType<?> subcc)
+    private static AbstractType<?> makeComparator(ColumnFamilyType cftype, AbstractType<?> comp, AbstractType<?> subcc)
     {
-        return (subcc == null) && (cftype == ColumnFamilyType.Super) ? BytesType.instance : subcc;
+        return cftype == ColumnFamilyType.Super
+             ? CompositeType.getInstance(comp, subcc == null ? BytesType.instance : subcc)
+             : comp;
     }
 
     private static String enforceCommentNotNull (CharSequence comment)
@@ -388,7 +388,7 @@ public final class CFMetaData
                              ? Caching.KEYS_ONLY
                              : Caching.NONE;
 
-        return new CFMetaData(parent.ksName, parent.indexColumnFamilyName(info), ColumnFamilyType.Standard, columnComparator, null)
+        return new CFMetaData(parent.ksName, parent.indexColumnFamilyName(info), ColumnFamilyType.Standard, columnComparator, (AbstractType)null)
                              .keyValidator(info.getValidator())
                              .readRepairChance(0.0)
                              .dcLocalReadRepairChance(0.0)
@@ -411,13 +411,13 @@ public final class CFMetaData
 
     public CFMetaData clone()
     {
-        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, subcolumnComparator, cfId), this);
+        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, cfId), this);
     }
 
     // Create a new CFMD by changing just the cfName
     public static CFMetaData rename(CFMetaData cfm, String newName)
     {
-        return copyOpts(new CFMetaData(cfm.ksName, newName, cfm.cfType, cfm.comparator, cfm.subcolumnComparator, cfm.cfId), cfm);
+        return copyOpts(new CFMetaData(cfm.ksName, newName, cfm.cfType, cfm.comparator, cfm.cfId), cfm);
     }
 
     static CFMetaData copyOpts(CFMetaData newCFMD, CFMetaData oldCFMD)
@@ -549,11 +549,6 @@ public final class CFMetaData
         return Collections.unmodifiableMap(column_metadata);
     }
 
-    public AbstractType<?> getComparatorFor(ByteBuffer superColumnName)
-    {
-        return superColumnName == null ? comparator : subcolumnComparator;
-    }
-
     public double getBloomFilterFpChance()
     {
         return bloomFilterFpChance == null
@@ -598,7 +593,6 @@ public final class CFMetaData
             .append(cfName, rhs.cfName)
             .append(cfType, rhs.cfType)
             .append(comparator, rhs.comparator)
-            .append(subcolumnComparator, rhs.subcolumnComparator)
             .append(comment, rhs.comment)
             .append(readRepairChance, rhs.readRepairChance)
             .append(dcLocalReadRepairChance, rhs.dcLocalReadRepairChance)
@@ -631,7 +625,6 @@ public final class CFMetaData
             .append(cfName)
             .append(cfType)
             .append(comparator)
-            .append(subcolumnComparator)
             .append(comment)
             .append(readRepairChance)
             .append(dcLocalReadRepairChance)
@@ -790,10 +783,9 @@ public final class CFMetaData
         validateCompatility(cfm);
 
         // TODO: this method should probably return a new CFMetaData so that
-        // 1) we can keep comparator and subcolumnComparator final
+        // 1) we can keep comparator final
         // 2) updates are applied atomically
         comparator = cfm.comparator;
-        subcolumnComparator = cfm.subcolumnComparator;
 
         // compaction thresholds are checked by ThriftValidation. We shouldn't be doing
         // validation on the apply path; it's too late for that.
@@ -866,14 +858,6 @@ public final class CFMetaData
 
         if (!cfm.comparator.isCompatibleWith(comparator))
             throw new ConfigurationException("comparators do not match or are not compatible.");
-        if (cfm.subcolumnComparator == null)
-        {
-            if (subcolumnComparator != null)
-                throw new ConfigurationException("subcolumncomparators do not match.");
-            // else, it's null and we're good.
-        }
-        else if (!cfm.subcolumnComparator.isCompatibleWith(subcolumnComparator))
-            throw new ConfigurationException("subcolumncomparators do not match or are note compatible.");
     }
 
     public static Class<? extends AbstractCompactionStrategy> createCompactionStrategy(String className) throws ConfigurationException
@@ -915,13 +899,18 @@ public final class CFMetaData
     {
         org.apache.cassandra.thrift.CfDef def = new org.apache.cassandra.thrift.CfDef(ksName, cfName);
         def.setColumn_type(cfType.name());
-        def.setComparator_type(comparator.toString());
-        if (subcolumnComparator != null)
+
+        if (isSuper())
         {
-            assert cfType == ColumnFamilyType.Super
-                   : String.format("%s CF %s should not have subcomparator %s defined", cfType, cfName, subcolumnComparator);
-            def.setSubcomparator_type(subcolumnComparator.toString());
+            CompositeType ct = (CompositeType)comparator;
+            def.setComparator_type(ct.types.get(0).toString());
+            def.setSubcomparator_type(ct.types.get(1).toString());
         }
+        else
+        {
+            def.setComparator_type(comparator.toString());
+        }
+
         def.setComment(enforceCommentNotNull(comment));
         def.setRead_repair_chance(readRepairChance);
         def.setDclocal_read_repair_chance(dcLocalReadRepairChance);
@@ -968,7 +957,7 @@ public final class CFMetaData
      */
     public ColumnDefinition getColumnDefinitionFromColumnName(ByteBuffer columnName)
     {
-        if (comparator instanceof CompositeType)
+        if (!isSuper() && (comparator instanceof CompositeType))
         {
             CompositeType composite = (CompositeType)comparator;
             ByteBuffer[] components = composite.split(columnName);
@@ -1078,22 +1067,9 @@ public final class CFMetaData
         if (cfType == null)
             throw new ConfigurationException(String.format("Invalid column family type for %s", cfName));
 
-        if (cfType == ColumnFamilyType.Super)
-        {
-            if (subcolumnComparator == null)
-                throw new ConfigurationException(String.format("Missing subcolumn comparator for super column family %s", cfName));
-        }
-        else
-        {
-            if (subcolumnComparator != null)
-                throw new ConfigurationException(String.format("Subcolumn comparator (%s) is invalid for standard column family %s", subcolumnComparator, cfName));
-        }
-
 
         if (comparator instanceof CounterColumnType)
             throw new ConfigurationException("CounterColumnType is not a valid comparator");
-        if (subcolumnComparator instanceof CounterColumnType)
-            throw new ConfigurationException("CounterColumnType is not a valid sub-column comparator");
         if (keyValidator instanceof CounterColumnType)
             throw new ConfigurationException("CounterColumnType is not a valid key validator");
 
@@ -1320,9 +1296,21 @@ public final class CFMetaData
             cf.addColumn(Column.create(oldId, timestamp, cfName, "id"));
 
         cf.addColumn(Column.create(cfType.toString(), timestamp, cfName, "type"));
-        cf.addColumn(Column.create(comparator.toString(), timestamp, cfName, "comparator"));
-        if (subcolumnComparator != null)
-            cf.addColumn(Column.create(subcolumnComparator.toString(), timestamp, cfName, "subcomparator"));
+
+        if (isSuper())
+        {
+            // We need to continue saving the comparator and subcomparator separatly, otherwise
+            // we won't know at deserialization if the subcomparator should be taken into account
+            // TODO: we should implement an on-start migration if we want to get rid of that.
+            CompositeType ct = (CompositeType)comparator;
+            cf.addColumn(Column.create(ct.types.get(0).toString(), timestamp, cfName, "comparator"));
+            cf.addColumn(Column.create(ct.types.get(1).toString(), timestamp, cfName, "subcomparator"));
+        }
+        else
+        {
+            cf.addColumn(Column.create(comparator.toString(), timestamp, cfName, "comparator"));
+        }
+
         cf.addColumn(comment == null ? DeletedColumn.create(ldt, timestamp, cfName, "comment")
                                      : Column.create(comment, timestamp, cfName, "comment"));
         cf.addColumn(Column.create(readRepairChance, timestamp, cfName, "read_repair_chance"));
@@ -1467,7 +1455,7 @@ public final class CFMetaData
 
     public AbstractType<?> getColumnDefinitionComparator(Integer componentIndex)
     {
-        AbstractType<?> cfComparator = cfType == ColumnFamilyType.Super ? subcolumnComparator : comparator;
+        AbstractType<?> cfComparator = cfType == ColumnFamilyType.Super ? ((CompositeType)comparator).types.get(1) : comparator;
         if (cfComparator instanceof CompositeType)
         {
             if (componentIndex == null)
@@ -1540,7 +1528,6 @@ public final class CFMetaData
             .append("cfName", cfName)
             .append("cfType", cfType)
             .append("comparator", comparator)
-            .append("subcolumncomparator", subcolumnComparator)
             .append("comment", comment)
             .append("readRepairChance", readRepairChance)
             .append("dclocalReadRepairChance", dcLocalReadRepairChance)

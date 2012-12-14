@@ -114,8 +114,7 @@ public class QueryProcessor
     {
         try
         {
-            AbstractType<?> comparator = metadata.getComparatorFor(null);
-            ColumnSlice.validate(range.slices, comparator, range.reversed);
+            ColumnSlice.validate(range.slices, metadata.comparator, range.reversed);
         }
         catch (IllegalArgumentException e)
         {

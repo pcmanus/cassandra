@@ -78,9 +78,8 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
 
     public void validateFields(CFMetaData metadata) throws MarshalException
     {
-        AbstractType<?> nameValidator = metadata.cfType == ColumnFamilyType.Super ? metadata.subcolumnComparator : metadata.comparator;
-        nameValidator.validate(min);
-        nameValidator.validate(max);
+        metadata.comparator.validate(min);
+        metadata.comparator.validate(max);
     }
 
     public void updateDigest(MessageDigest digest)

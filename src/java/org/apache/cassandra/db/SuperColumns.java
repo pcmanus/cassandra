@@ -30,7 +30,9 @@ import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -206,6 +208,18 @@ public class SuperColumns
         }
     }
 
+    public static AbstractType<?> getComparatorFor(CFMetaData metadata, ByteBuffer superColumn)
+    {
+        return getComparatorFor(metadata, superColumn != null);
+    }
+
+    public static AbstractType<?> getComparatorFor(CFMetaData metadata, boolean subColumn)
+    {
+        return metadata.isSuper()
+             ? ((CompositeType)metadata.comparator).types.get(subColumn ? 1 : 0)
+             : metadata.comparator;
+    }
+
     // Extract the first component of a columnName, i.e. the super column name
     public static ByteBuffer scName(ByteBuffer columnName)
     {
@@ -378,7 +392,13 @@ public class SuperColumns
         else
         {
             CompositeType.Builder builder = type.builder().add(scName);
-            return filter.withUpdatedSlice(builder.copy().add(filter.start()).build(), builder.add(filter.finish()).buildAsEndOfRange());
+            ByteBuffer start = filter.start().remaining() == 0
+                             ? builder.build()
+                             : builder.copy().add(filter.start()).build();
+            ByteBuffer end = filter.finish().remaining() == 0
+                             ? builder.buildAsEndOfRange()
+                             : builder.add(filter.finish()).build();
+            return filter.withUpdatedSlice(start, end);
         }
     }
 

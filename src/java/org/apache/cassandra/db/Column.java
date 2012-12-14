@@ -316,8 +316,7 @@ public class Column implements IColumn
 
     protected void validateName(CFMetaData metadata) throws MarshalException
     {
-        AbstractType<?> nameValidator = metadata.cfType == ColumnFamilyType.Super ? metadata.subcolumnComparator : metadata.comparator;
-        nameValidator.validate(name());
+        metadata.comparator.validate(name());
     }
 
     public void validateFields(CFMetaData metadata) throws MarshalException

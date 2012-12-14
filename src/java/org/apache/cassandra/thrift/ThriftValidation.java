@@ -205,7 +205,7 @@ public class ThriftValidation
             if (metadata.cfType == ColumnFamilyType.Standard)
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("supercolumn specified to ColumnFamily " + metadata.cfName + " containing normal columns");
         }
-        AbstractType<?> comparator = metadata.getComparatorFor(superColumnName);
+        AbstractType<?> comparator = SuperColumns.getComparatorFor(metadata, superColumnName);
         for (ByteBuffer name : column_names)
         {
             if (name.remaining() > IColumn.MAX_NAME_LENGTH)
@@ -230,7 +230,7 @@ public class ThriftValidation
 
     public static void validateRange(CFMetaData metadata, ColumnParent column_parent, SliceRange range) throws org.apache.cassandra.exceptions.InvalidRequestException
     {
-        AbstractType<?> comparator = metadata.getComparatorFor(column_parent.super_column);
+        AbstractType<?> comparator = SuperColumns.getComparatorFor(metadata, column_parent.super_column);
         try
         {
             comparator.validate(range.start);
@@ -413,11 +413,12 @@ public class ThriftValidation
         {
             if (logger.isDebugEnabled())
                 logger.debug("rejecting invalid value " + ByteBufferUtil.bytesToHex(summarize(column.value)));
+
             throw new org.apache.cassandra.exceptions.InvalidRequestException(String.format("(%s) [%s][%s][%s] failed validation",
                                                                       me.getMessage(),
                                                                       metadata.ksName,
                                                                       metadata.cfName,
-                                                                      (isSubColumn ? metadata.subcolumnComparator : metadata.comparator).getString(column.name)));
+                                                                      (SuperColumns.getComparatorFor(metadata, isSubColumn)).getString(column.name)));
         }
 
         // Indexed column values cannot be larger than 64K.  See CASSANDRA-3057/4240 for more details
@@ -519,7 +520,7 @@ public class ThriftValidation
             return false;
 
         SecondaryIndexManager idxManager = Table.open(metadata.ksName).getColumnFamilyStore(metadata.cfName).indexManager;
-        AbstractType<?> nameValidator =  ColumnFamily.getComparatorFor(metadata.ksName, metadata.cfName, null);
+        AbstractType<?> nameValidator = SuperColumns.getComparatorFor(metadata, null);
 
         boolean isIndexed = false;
         for (IndexExpression expression : index_clause)

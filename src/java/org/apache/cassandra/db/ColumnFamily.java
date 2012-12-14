@@ -90,11 +90,6 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
         return cloneMeShallow(columns.getFactory(), columns.isInsertReversed());
     }
 
-    public AbstractType<?> getSubComparator()
-    {
-        return isSuper() ? cfm.subcolumnComparator : null;
-    }
-
     public ColumnFamilyType getType()
     {
         return cfm.cfType;
@@ -295,13 +290,6 @@ public class ColumnFamily extends AbstractColumnContainer implements IRowCacheEn
     {
         for (IColumn column : columns)
             column.updateDigest(digest);
-    }
-
-    public static AbstractType<?> getComparatorFor(String table, String columnFamilyName, ByteBuffer superColumnName)
-    {
-        return superColumnName == null
-               ? Schema.instance.getComparator(table, columnFamilyName)
-               : Schema.instance.getSubComparator(table, columnFamilyName);
     }
 
     public static ColumnFamily diff(ColumnFamily cf1, ColumnFamily cf2)

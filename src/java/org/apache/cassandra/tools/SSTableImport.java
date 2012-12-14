@@ -46,7 +46,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.RangeTombstone;
-import org.apache.cassandra.db.SuperColumn;
+import org.apache.cassandra.db.SuperColumns;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.CompositeType;
@@ -110,11 +110,11 @@ public class SSTableImport
         // Counter columns
         private long timestampOfLastDelete;
 
-        public JsonColumn(T json, CFMetaData meta, boolean isSubColumn)
+        public JsonColumn(T json, CFMetaData meta, boolean oldSCFormat, boolean isSubColumn)
         {
             if (json instanceof List)
             {
-                AbstractType<?> comparator = (isSubColumn) ? meta.subcolumnComparator : meta.comparator;
+                AbstractType<?> comparator = oldSCFormat ? SuperColumns.getComparatorFor(meta, isSubColumn) : meta.comparator;
                 List fields = (List<?>) json;
 
                 assert fields.size() >= 3 : "Column definition should have at least 3";
@@ -230,7 +230,7 @@ public class SSTableImport
 
         for (Object c : row)
         {
-            JsonColumn col = new JsonColumn<List>((List) c, cfm, (superName != null));
+            JsonColumn col = new JsonColumn<List>((List) c, cfm, oldSCFormat, (superName != null));
             ByteBuffer cname = superName == null ? col.getName() : CompositeType.build(superName, col.getName());
 
             if (col.isExpiring())
@@ -257,7 +257,7 @@ public class SSTableImport
         }
     }
 
-    private void parseMeta(Map<?, ?> map, AbstractColumnContainer columnContainer)
+    private void parseMeta(Map<?, ?> map, ColumnFamily cf, ByteBuffer superColumnName)
     {
 
         // deletionInfo is the only metadata we store for now
@@ -267,7 +267,10 @@ public class SSTableImport
             Number number = (Number) unparsedDeletionInfo.get("markedForDeleteAt");
             long markedForDeleteAt = number instanceof Long ? (Long) number : ((Integer) number).longValue();
             int localDeletionTime = (Integer) unparsedDeletionInfo.get("localDeletionTime");
-            columnContainer.setDeletionInfo(new DeletionInfo(markedForDeleteAt, localDeletionTime));
+            if (superColumnName == null)
+                cf.setDeletionInfo(new DeletionInfo(markedForDeleteAt, localDeletionTime));
+            else
+                cf.addAtom(new RangeTombstone(SuperColumns.startOf(superColumnName), SuperColumns.endOf(superColumnName), markedForDeleteAt, localDeletionTime));
         }
     }
 
@@ -295,7 +298,7 @@ public class SSTableImport
 
             if (data.containsKey("metadata"))
             {
-                parseMeta((Map<?, ?>) data.get("metadata"), (SuperColumn) cfamily.getColumn(superName));
+                parseMeta((Map<?, ?>) data.get("metadata"), cfamily, superName);
             }
         }
     }
@@ -351,7 +354,7 @@ public class SSTableImport
         {
             if (row.getValue().containsKey("metadata"))
             {
-                parseMeta((Map<?, ?>) row.getValue().get("metadata"), columnFamily);
+                parseMeta((Map<?, ?>) row.getValue().get("metadata"), columnFamily, null);
             }
 
             Object columns = row.getValue().get("columns");
@@ -426,7 +429,7 @@ public class SSTableImport
             DecoratedKey currentKey = partitioner.decorateKey(hexToBytes((String) row.get("key")));
 
             if (row.containsKey("metadata"))
-                parseMeta((Map<?, ?>) row.get("metadata"), columnFamily);
+                parseMeta((Map<?, ?>) row.get("metadata"), columnFamily, null);
 
 
             if (columnFamily.getType() == ColumnFamilyType.Super && oldSCFormat)

@@ -267,7 +267,6 @@ public class SSTableExport
     private static void serializeRow(SSTableIdentityIterator row, DecoratedKey key, PrintStream out)
     {
         ColumnFamily columnFamily = row.getColumnFamily();
-        boolean isSuperCF = columnFamily.isSuper();
         CFMetaData cfMetaData = columnFamily.metadata();
         AbstractType<?> comparator = columnFamily.getComparator();
 
@@ -279,34 +278,11 @@ public class SSTableExport
         writeMeta(out, columnFamily);
 
         writeKey(out, "columns");
-        out.print(isSuperCF ? "{" : "[");
+        out.print("[");
 
-        if (isSuperCF)
-        {
-            while (row.hasNext())
-            {
-                SuperColumn scol = (SuperColumn)row.next();
-                assert scol instanceof IColumn;
-                IColumn column = (IColumn)scol;
-                writeKey(out, comparator.getString(column.name()));
-                out.print("{");
-                writeMeta(out, scol);
-                writeKey(out, "subColumns");
-                out.print("[");
-                serializeIColumns(column.getSubColumns().iterator(), out, columnFamily.getSubComparator(), cfMetaData);
-                out.print("]");
-                out.print("}");
+        serializeColumns(row, out, comparator, cfMetaData);
 
-                if (row.hasNext())
-                    out.print(", ");
-            }
-        }
-        else
-        {
-            serializeColumns(row, out, comparator, cfMetaData);
-        }
-
-        out.print(isSuperCF ? "}" : "]");
+        out.print("]");
         out.print("}");
     }
 

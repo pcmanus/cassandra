@@ -347,7 +347,7 @@ public class QueryProcessor
     private static void validateSliceFilter(CFMetaData metadata, ByteBuffer start, ByteBuffer finish, boolean reversed)
     throws InvalidRequestException
     {
-        AbstractType<?> comparator = metadata.getComparatorFor(null);
+        AbstractType<?> comparator = metadata.comparator;
         Comparator<ByteBuffer> orderedComparator = reversed ? comparator.reverseComparator: comparator;
         if (start.remaining() > 0 && finish.remaining() > 0 && orderedComparator.compare(start, finish) > 0)
             throw new InvalidRequestException("range finish must come after start in traversal order");

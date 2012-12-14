@@ -68,6 +68,11 @@ public class CompositeType extends AbstractCompositeType
         return getInstance(parser.getTypeParameters());
     }
 
+    public static CompositeType getInstance(AbstractType... types)
+    {
+        return getInstance(Arrays.<AbstractType<?>>asList(types));
+    }
+
     public static synchronized CompositeType getInstance(List<AbstractType<?>> types)
     {
         assert types != null && !types.isEmpty();

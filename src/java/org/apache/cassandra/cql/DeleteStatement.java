@@ -92,8 +92,6 @@ public class DeleteStatement extends AbstractModification
 
         QueryProcessor.validateKeyAlias(metadata, keyName);
 
-        AbstractType<?> comparator = metadata.getComparatorFor(null);
-
         if (columns.size() < 1)
         {
             // No columns, delete the row
@@ -104,7 +102,7 @@ public class DeleteStatement extends AbstractModification
             // Delete specific columns
             for (Term column : columns)
             {
-                ByteBuffer columnName = column.getByteBuffer(comparator, variables);
+                ByteBuffer columnName = column.getByteBuffer(metadata.comparator, variables);
                 validateColumnName(columnName);
                 rm.delete(columnFamily, columnName, (timestamp == null) ? getTimestamp(clientState) : timestamp);
             }
