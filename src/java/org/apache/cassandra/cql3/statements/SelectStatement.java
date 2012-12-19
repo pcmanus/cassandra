@@ -604,14 +604,14 @@ public class SelectStatement implements CQLStatement
         }
     }
 
-    private ByteBuffer value(IColumn c)
+    private ByteBuffer value(Column c)
     {
         return (c instanceof CounterColumn)
              ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
              : c.value();
     }
 
-    private void addReturnValue(ResultSet cqlRows, Selector s, IColumn c)
+    private void addReturnValue(ResultSet cqlRows, Selector s, Column c)
     {
         if (c == null || c.isMarkedForDelete())
         {
@@ -670,7 +670,7 @@ public class SelectStatement implements CQLStatement
         return new ResultSet(names);
     }
 
-    private Iterable<IColumn> columnsInOrder(final ColumnFamily cf, final List<ByteBuffer> variables) throws InvalidRequestException
+    private Iterable<Column> columnsInOrder(final ColumnFamily cf, final List<ByteBuffer> variables) throws InvalidRequestException
     {
         // If the restriction for the last column alias is an IN, respect
         // requested order
@@ -691,18 +691,18 @@ public class SelectStatement implements CQLStatement
             requested.add(b.add(t, Relation.Type.EQ, variables).build());
         }
 
-        return new Iterable<IColumn>()
+        return new Iterable<Column>()
         {
-            public Iterator<IColumn> iterator()
+            public Iterator<Column> iterator()
             {
-                return new AbstractIterator<IColumn>()
+                return new AbstractIterator<Column>()
                 {
                     Iterator<ByteBuffer> iter = requested.iterator();
-                    public IColumn computeNext()
+                    public Column computeNext()
                     {
                         if (!iter.hasNext())
                             return endOfData();
-                        IColumn column = cf.getColumn(iter.next());
+                        Column column = cf.getColumn(iter.next());
                         return column == null ? computeNext() : column;
                     }
                 };
@@ -734,7 +734,7 @@ public class SelectStatement implements CQLStatement
             if (cfDef.isCompact)
             {
                 // One cqlRow per column
-                for (IColumn c : columnsInOrder(row.cf, variables))
+                for (Column c : columnsInOrder(row.cf, variables))
                 {
                     if (c.isMarkedForDelete())
                         continue;
@@ -795,7 +795,7 @@ public class SelectStatement implements CQLStatement
 
                 ColumnGroupMap.Builder builder = new ColumnGroupMap.Builder(composite, cfDef.hasCollections);
 
-                for (IColumn c : row.cf)
+                for (Column c : row.cf)
                 {
                     if (c.isMarkedForDelete())
                         continue;
@@ -823,7 +823,7 @@ public class SelectStatement implements CQLStatement
                         continue;
                     }
 
-                    IColumn c = row.cf.getColumn(name.name.key);
+                    Column c = row.cf.getColumn(name.name.key);
                     addReturnValue(cqlRows, selector, c);
                 }
             }
@@ -934,14 +934,14 @@ public class SelectStatement implements CQLStatement
                 case COLUMN_METADATA:
                     if (name.type.isCollection())
                     {
-                        List<Pair<ByteBuffer, IColumn>> collection = columns.getCollection(name.name.key);
+                        List<Pair<ByteBuffer, Column>> collection = columns.getCollection(name.name.key);
                         if (collection == null)
                             cqlRows.addColumnValue(null);
                         else
                             cqlRows.addColumnValue(((CollectionType)name.type).serialize(collection));
                         break;
                     }
-                    IColumn c = columns.getSimple(name.name.key);
+                    Column c = columns.getSimple(name.name.key);
                     addReturnValue(cqlRows, selector, c);
                     break;
                 default:

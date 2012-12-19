@@ -46,7 +46,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
     public final ColumnSlice[] slices;
     public final boolean reversed;
     public volatile int count;
-    private final int compositesToGroup;
+    public final int compositesToGroup;
     // This is a hack to allow rolling upgrade with pre-1.2 nodes
     private final int countMutliplierForCompatibility;
 
@@ -111,18 +111,18 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return new SSTableSliceIterator(sstable, file, key, slices, reversed, indexEntry);
     }
 
-    public Comparator<IColumn> getColumnComparator(AbstractType<?> comparator)
+    public Comparator<Column> getColumnComparator(AbstractType<?> comparator)
     {
         return reversed ? comparator.columnReverseComparator : comparator.columnComparator;
     }
 
-    public void collectReducedColumns(IColumnContainer container, Iterator<IColumn> reducedColumns, int gcBefore)
+    public void collectReducedColumns(IColumnContainer container, Iterator<Column> reducedColumns, int gcBefore)
     {
         columnCounter = getColumnCounter(container);
 
         while (reducedColumns.hasNext())
         {
-            IColumn column = reducedColumns.next();
+            Column column = reducedColumns.next();
             if (logger.isTraceEnabled())
                 logger.trace(String.format("collecting %s of %s: %s",
                                            columnCounter.live(), count, column.getString(container.getComparator())));
@@ -143,7 +143,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
     public int getLiveCount(ColumnFamily cf)
     {
         ColumnCounter counter = getColumnCounter(cf);
-        for (IColumn column : cf)
+        for (Column column : cf)
             counter.count(column, cf);
         return counter.live();
     }
@@ -166,11 +166,11 @@ public class SliceQueryFilter implements IDiskAtomFilter
         Collection<ByteBuffer> toRemove = null;
         boolean trimRemaining = false;
 
-        Collection<IColumn> columns = reversed
-                                    ? cf.getReverseSortedColumns()
-                                    : cf.getSortedColumns();
+        Collection<Column> columns = reversed
+                                   ? cf.getReverseSortedColumns()
+                                   : cf.getSortedColumns();
 
-        for (IColumn column : columns)
+        for (Column column : columns)
         {
             if (trimRemaining)
             {

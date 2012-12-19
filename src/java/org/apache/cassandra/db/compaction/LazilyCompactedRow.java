@@ -247,7 +247,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
             }
             else
             {
-                IColumn column = (IColumn) current;
+                Column column = (Column) current;
                 container.addColumn(column);
                 if (container.getColumn(column.name()) != column)
                     indexer.remove(column);
@@ -279,7 +279,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements Iterable
                     container.clear();
                     return null;
                 }
-                IColumn reduced = purged.iterator().next();
+                Column reduced = purged.iterator().next();
                 container.clear();
 
                 // PrecompactedRow.removeDeletedAndOldShards have only checked the top-level CF deletion times,

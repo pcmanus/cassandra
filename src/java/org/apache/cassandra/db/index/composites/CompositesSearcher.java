@@ -160,7 +160,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
         return new ColumnFamilyStore.AbstractScanIterator()
         {
             private ByteBuffer lastSeenPrefix = startPrefix;
-            private Deque<IColumn> indexColumns;
+            private Deque<Column> indexColumns;
             private int columnsRead = Integer.MAX_VALUE;
 
             private final int meanColumns = Math.max(index.getIndexCfs().getMeanColumns(), 1);
@@ -226,10 +226,10 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         if (indexRow == null)
                             return makeReturn(currentKey, data);
 
-                        Collection<IColumn> sortedColumns = indexRow.getSortedColumns();
+                        Collection<Column> sortedColumns = indexRow.getSortedColumns();
                         columnsRead = sortedColumns.size();
                         indexColumns = new ArrayDeque(sortedColumns);
-                        IColumn firstColumn = sortedColumns.iterator().next();
+                        Column firstColumn = sortedColumns.iterator().next();
 
                         // Paging is racy, so it is possible the first column of a page is not the last seen one.
                         if (lastSeenPrefix != startPrefix && lastSeenPrefix.equals(firstColumn.name()))
@@ -248,7 +248,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
 
                     while (!indexColumns.isEmpty() && columnsCount <= limit)
                     {
-                        IColumn column = indexColumns.poll();
+                        Column column = indexColumns.poll();
                         lastSeenPrefix = column.name();
                         if (column.isMarkedForDelete())
                         {
@@ -310,7 +310,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                             if (isIndexValueStale(newData, baseColumnName, indexedValue))
                             {
                                 // delete the index entry w/ its own timestamp
-                                IColumn dummyColumn = new Column(baseColumnName, indexedValue, column.timestamp());
+                                Column dummyColumn = new Column(baseColumnName, indexedValue, column.timestamp());
                                 ((PerColumnSecondaryIndex) index).delete(dk.key, dummyColumn);
                                 continue;
                             }

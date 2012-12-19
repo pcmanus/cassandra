@@ -157,7 +157,7 @@ public class SystemTable
             cols.add(ByteBufferUtil.bytes("Token"));
             QueryFilter filter = QueryFilter.getNamesFilter(decorate(ByteBufferUtil.bytes("L")), OLD_STATUS_CF, cols);
             ColumnFamily oldCf = oldStatusCfs.getColumnFamily(filter);
-            Iterator<IColumn> oldColumns = oldCf.columns.iterator();
+            Iterator<Column> oldColumns = oldCf.columns.iterator();
 
             String clusterName = null;
             try
@@ -614,7 +614,7 @@ public class SystemTable
         ColumnFamily cf = table.getColumnFamilyStore(COUNTER_ID_CF).getColumnFamily(filter);
 
         CounterId previous = null;
-        for (IColumn c : cf)
+        for (Column c : cf)
         {
             if (previous != null)
                 l.add(new CounterId.CounterIdRecord(previous, c.timestamp()));

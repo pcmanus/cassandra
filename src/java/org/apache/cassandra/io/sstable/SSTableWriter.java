@@ -33,7 +33,6 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.*;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.service.StorageService;
@@ -245,7 +244,7 @@ public class SSTableWriter extends SSTable
         {
             // deserialize column with PRESERVE_SIZE because we've written the dataSize based on the
             // data size received, so we must reserialize the exact same data
-            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(in, IColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Descriptor.Version.CURRENT);
+            OnDiskAtom atom = atomSerializer.deserializeFromSSTable(in, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Descriptor.Version.CURRENT);
             if (atom instanceof CounterColumn)
                 atom = ((CounterColumn) atom).markDeltaToBeCleared();
 

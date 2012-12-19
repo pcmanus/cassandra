@@ -24,7 +24,6 @@ import java.util.Iterator;
 import java.util.UUID;
 
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -70,11 +69,11 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
             }
 
             DeletionInfo.serializer().serialize(cf.deletionInfo(), dos, version);
-            IColumnSerializer columnSerializer = Column.serializer();
+            ColumnSerializer columnSerializer = Column.serializer();
             int count = cf.getColumnCount();
             dos.writeInt(count);
             int written = 0;
-            for (IColumn column : cf)
+            for (Column column : cf)
             {
                 columnSerializer.serialize(column, dos);
                 written++;
@@ -89,10 +88,10 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
 
     public ColumnFamily deserialize(DataInput dis, int version) throws IOException
     {
-        return deserialize(dis, IColumnSerializer.Flag.LOCAL, TreeMapBackedSortedColumns.factory(), version);
+        return deserialize(dis, ColumnSerializer.Flag.LOCAL, TreeMapBackedSortedColumns.factory(), version);
     }
 
-    public ColumnFamily deserialize(DataInput dis, IColumnSerializer.Flag flag, ISortedColumns.Factory factory, int version) throws IOException
+    public ColumnFamily deserialize(DataInput dis, ColumnSerializer.Flag flag, ISortedColumns.Factory factory, int version) throws IOException
     {
         if (!dis.readBoolean())
             return null;
@@ -108,7 +107,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         {
             cf.delete(DeletionInfo.serializer().deserialize(dis, version, cf.getComparator()));
 
-            IColumnSerializer columnSerializer = Column.serializer();
+            ColumnSerializer columnSerializer = Column.serializer();
             int size = dis.readInt();
             for (int i = 0; i < size; ++i)
             {
@@ -130,7 +129,7 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         {
             size += DeletionInfo.serializer().serializedSize(cf.deletionInfo(), typeSizes, version);
             size += typeSizes.sizeof(cf.getColumnCount());
-            for (IColumn column : cf)
+            for (Column column : cf)
                 size += column.serializedSize(typeSizes);
         }
         return size;
@@ -166,14 +165,14 @@ public class ColumnFamilySerializer implements IVersionedSerializer<ColumnFamily
         throw new UnsupportedOperationException();
     }
 
-    public void deserializeColumnsFromSSTable(DataInput dis, ColumnFamily cf, int size, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
+    public void deserializeColumnsFromSSTable(DataInput dis, ColumnFamily cf, int size, ColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version) throws IOException
     {
         Iterator<OnDiskAtom> iter = cf.metadata().getOnDiskIterator(dis, size, flag, expireBefore, version);
         while (iter.hasNext())
             cf.addAtom(iter.next());
     }
 
-    public void deserializeFromSSTable(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag, Descriptor.Version version) throws IOException
+    public void deserializeFromSSTable(DataInput dis, ColumnFamily cf, ColumnSerializer.Flag flag, Descriptor.Version version) throws IOException
     {
         cf.delete(DeletionInfo.serializer().deserializeFromSSTable(dis, version));
         int size = dis.readInt();

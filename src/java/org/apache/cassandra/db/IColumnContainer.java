@@ -25,8 +25,8 @@ import org.apache.cassandra.utils.Allocator;
 
 public interface IColumnContainer
 {
-    public void addColumn(IColumn column);
-    public void addColumn(IColumn column, Allocator allocator);
+    public void addColumn(Column column);
+    public void addColumn(Column column, Allocator allocator);
     public void remove(ByteBuffer columnName);
 
     /**
@@ -37,7 +37,7 @@ public interface IColumnContainer
      * add a column such that it use the usual column resolution rules in a
      * thread safe manner, use addColumn.
      */
-    public boolean replace(IColumn oldColumn, IColumn newColumn);
+    public boolean replace(Column oldColumn, Column newColumn);
 
     public boolean isMarkedForDelete();
     public DeletionInfo deletionInfo();
@@ -45,5 +45,5 @@ public interface IColumnContainer
 
     public AbstractType<?> getComparator();
 
-    public Collection<IColumn> getSortedColumns();
+    public Collection<Column> getSortedColumns();
 }

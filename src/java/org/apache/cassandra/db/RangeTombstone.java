@@ -186,7 +186,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
 
         /**
          * Update this tracker given an {@code atom}.
-         * If column is a IColumn, check if any tracked range is useless and
+         * If column is a Column, check if any tracked range is useless and
          * can be removed. If it is a RangeTombstone, add it to this tracker.
          */
         public void update(OnDiskAtom atom)
@@ -213,7 +213,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
             }
             else
             {
-                assert atom instanceof IColumn;
+                assert atom instanceof Column;
                 Iterator<RangeTombstone> iter = maxOrderingSet.iterator();
                 while (iter.hasNext())
                 {
@@ -234,7 +234,7 @@ public class RangeTombstone extends Interval<ByteBuffer, DeletionTime> implement
             }
         }
 
-        public boolean isDeleted(IColumn column)
+        public boolean isDeleted(Column column)
         {
             for (RangeTombstone tombstone : ranges)
             {

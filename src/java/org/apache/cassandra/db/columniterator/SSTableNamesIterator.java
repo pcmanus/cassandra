@@ -26,7 +26,7 @@ import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilySerializer;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
-import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -201,7 +201,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         while (atomIterator.hasNext())
         {
             OnDiskAtom column = atomIterator.next();
-            if (column instanceof IColumn)
+            if (column instanceof Column)
             {
                 if (columnNames.contains(column.name()))
                 {
@@ -263,7 +263,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
             {
                 OnDiskAtom column = atomIterator.next();
                 // we check vs the original Set, not the filtered List, for efficiency
-                if (!(column instanceof IColumn) || columnNames.contains(column.name()))
+                if (!(column instanceof Column) || columnNames.contains(column.name()))
                     result.add(column);
             }
         }

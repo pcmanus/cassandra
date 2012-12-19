@@ -69,34 +69,34 @@ public class QueryFilter
 
     public void collateOnDiskAtom(final ColumnFamily returnCF, List<? extends CloseableIterator<OnDiskAtom>> toCollate, final int gcBefore)
     {
-        List<CloseableIterator<IColumn>> filteredIterators = new ArrayList<CloseableIterator<IColumn>>(toCollate.size());
+        List<CloseableIterator<Column>> filteredIterators = new ArrayList<CloseableIterator<Column>>(toCollate.size());
         for (CloseableIterator<OnDiskAtom> iter : toCollate)
             filteredIterators.add(gatherTombstones(returnCF, iter));
         collateColumns(returnCF, filteredIterators, gcBefore);
     }
 
-    public void collateColumns(final ColumnFamily returnCF, List<? extends CloseableIterator<IColumn>> toCollate, final int gcBefore)
+    public void collateColumns(final ColumnFamily returnCF, List<? extends CloseableIterator<Column>> toCollate, final int gcBefore)
     {
-        Comparator<IColumn> fcomp = filter.getColumnComparator(returnCF.getComparator());
+        Comparator<Column> fcomp = filter.getColumnComparator(returnCF.getComparator());
         // define a 'reduced' iterator that merges columns w/ the same name, which
         // greatly simplifies computing liveColumns in the presence of tombstones.
-        MergeIterator.Reducer<IColumn, IColumn> reducer = new MergeIterator.Reducer<IColumn, IColumn>()
+        MergeIterator.Reducer<Column, Column> reducer = new MergeIterator.Reducer<Column, Column>()
         {
             ColumnFamily curCF = returnCF.cloneMeShallow();
 
-            public void reduce(IColumn current)
+            public void reduce(Column current)
             {
                 curCF.addColumn(current);
             }
 
-            protected IColumn getReduced()
+            protected Column getReduced()
             {
-                IColumn c = curCF.iterator().next();
+                Column c = curCF.iterator().next();
                 curCF.clear();
                 return c;
             }
         };
-        Iterator<IColumn> reduced = MergeIterator.get(toCollate, fcomp, reducer);
+        Iterator<Column> reduced = MergeIterator.get(toCollate, fcomp, reducer);
 
         filter.collectReducedColumns(returnCF, reduced, gcBefore);
     }
@@ -105,11 +105,11 @@ public class QueryFilter
      * Given an iterator of on disk atom, returns an iterator that filters the tombstone range
      * markers adding them to {@code returnCF} and returns the normal column.
      */
-    public static CloseableIterator<IColumn> gatherTombstones(final ColumnFamily returnCF, final CloseableIterator<OnDiskAtom> iter)
+    public static CloseableIterator<Column> gatherTombstones(final ColumnFamily returnCF, final CloseableIterator<OnDiskAtom> iter)
     {
-        return new CloseableIterator<IColumn>()
+        return new CloseableIterator<Column>()
         {
-            private IColumn next;
+            private Column next;
 
             public boolean hasNext()
             {
@@ -120,13 +120,13 @@ public class QueryFilter
                 return next != null;
             }
 
-            public IColumn next()
+            public Column next()
             {
                 if (next == null)
                     getNext();
 
                 assert next != null;
-                IColumn toReturn = next;
+                Column toReturn = next;
                 next = null;
                 return toReturn;
             }
@@ -137,9 +137,9 @@ public class QueryFilter
                 {
                     OnDiskAtom atom = iter.next();
 
-                    if (atom instanceof IColumn)
+                    if (atom instanceof Column)
                     {
-                        next = (IColumn)atom;
+                        next = (Column)atom;
                         break;
                     }
                     else
@@ -166,7 +166,7 @@ public class QueryFilter
         return cfName;
     }
 
-    public static boolean isRelevant(IColumn column, IColumnContainer container, int gcBefore)
+    public static boolean isRelevant(Column column, IColumnContainer container, int gcBefore)
     {
         // the column itself must be not gc-able (it is live, or a still relevant tombstone, or has live subcolumns), (1)
         // and if its container is deleted, the column must be changed more recently than the container tombstone (2)

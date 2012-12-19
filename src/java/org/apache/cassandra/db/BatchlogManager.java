@@ -176,7 +176,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                 if (row.cf == null || row.cf.isMarkedForDelete())
                     continue;
 
-                IColumn writtenAt = row.cf.getColumn(WRITTEN_AT);
+                Column writtenAt = row.cf.getColumn(WRITTEN_AT);
                 if (writtenAt == null || System.currentTimeMillis() > LongType.instance.compose(writtenAt.value()) + TIMEOUT)
                     replayBatch(row.key);
             }
@@ -204,7 +204,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         if (batch == null || batch.isMarkedForDelete())
             return;
 
-        IColumn dataColumn = batch.getColumn(DATA);
+        Column dataColumn = batch.getColumn(DATA);
         try
         {
             if (dataColumn != null)

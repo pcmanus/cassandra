@@ -180,7 +180,7 @@ public class DefsTable
             if (Schema.invalidSchemaRow(row))
                 continue;
 
-            for (IColumn column : row.cf.columns)
+            for (Column column : row.cf.columns)
             {
                 Date columnDate = new Date(column.timestamp());
 
@@ -232,7 +232,7 @@ public class DefsTable
 
             RowMutation mutation = new RowMutation(Table.SYSTEM_KS, row.key.key);
 
-            for (IColumn column : row.cf.columns)
+            for (Column column : row.cf.columns)
             {
                 if (column.isLive())
                     mutation.add(columnFamily, column.name(), column.value(), microTimestamp);
@@ -290,7 +290,7 @@ public class DefsTable
         Table defs = Table.open(Table.SYSTEM_KS);
         ColumnFamilyStore cfStore = defs.getColumnFamilyStore(OLD_SCHEMA_CF);
         ColumnFamily cf = cfStore.getColumnFamily(QueryFilter.getIdentityFilter(vkey, OLD_SCHEMA_CF));
-        IColumn avroschema = cf.getColumn(DEFINITION_SCHEMA_COLUMN_NAME);
+        Column avroschema = cf.getColumn(DEFINITION_SCHEMA_COLUMN_NAME);
 
         Collection<KSMetaData> keyspaces = Collections.emptyList();
 
@@ -300,10 +300,10 @@ public class DefsTable
             org.apache.avro.Schema schema = org.apache.avro.Schema.parse(ByteBufferUtil.string(value));
 
             // deserialize keyspaces using schema
-            Collection<IColumn> columns = cf.getSortedColumns();
+            Collection<Column> columns = cf.getSortedColumns();
             keyspaces = new ArrayList<KSMetaData>(columns.size());
 
-            for (IColumn column : columns)
+            for (Column column : columns)
             {
                 if (column.name().equals(DEFINITION_SCHEMA_COLUMN_NAME))
                     continue;

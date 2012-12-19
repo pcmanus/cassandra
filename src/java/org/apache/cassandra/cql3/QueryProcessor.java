@@ -85,10 +85,10 @@ public class QueryProcessor
     {
         for (ByteBuffer name : columns)
         {
-            if (name.remaining() > IColumn.MAX_NAME_LENGTH)
+            if (name.remaining() > Column.MAX_NAME_LENGTH)
                 throw new InvalidRequestException(String.format("column name is too long (%s > %s)",
                                                                 name.remaining(),
-                                                                IColumn.MAX_NAME_LENGTH));
+                                                                Column.MAX_NAME_LENGTH));
             if (name.remaining() == 0)
                 throw new InvalidRequestException("zero-length column name");
         }

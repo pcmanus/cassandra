@@ -816,10 +816,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     private static void removeDeletedColumnsOnly(ColumnFamily cf, int gcBefore, SecondaryIndexManager.Updater indexer)
     {
-        Iterator<IColumn> iter = cf.iterator();
+        Iterator<Column> iter = cf.iterator();
         while (iter.hasNext())
         {
-            IColumn c = iter.next();
+            Column c = iter.next();
             // remove columns if
             // (a) the column itself is gcable or
             // (b) the column is shadowed by a CF tombstone

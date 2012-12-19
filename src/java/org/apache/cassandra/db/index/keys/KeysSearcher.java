@@ -108,7 +108,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
         return new ColumnFamilyStore.AbstractScanIterator()
         {
             private ByteBuffer lastSeenKey = startKey;
-            private Iterator<IColumn> indexColumns;
+            private Iterator<Column> indexColumns;
             private int columnsRead = Integer.MAX_VALUE;
 
             protected Row computeNext()
@@ -144,10 +144,10 @@ public class KeysSearcher extends SecondaryIndexSearcher
                             return endOfData();
                         }
 
-                        Collection<IColumn> sortedColumns = indexRow.getSortedColumns();
+                        Collection<Column> sortedColumns = indexRow.getSortedColumns();
                         columnsRead = sortedColumns.size();
                         indexColumns = sortedColumns.iterator();
-                        IColumn firstColumn = sortedColumns.iterator().next();
+                        Column firstColumn = sortedColumns.iterator().next();
 
                         // Paging is racy, so it is possible the first column of a page is not the last seen one.
                         if (lastSeenKey != startKey && lastSeenKey.equals(firstColumn.name()))
@@ -166,7 +166,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
 
                     while (indexColumns.hasNext())
                     {
-                        IColumn column = indexColumns.next();
+                        Column column = indexColumns.next();
                         lastSeenKey = column.name();
                         if (column.isMarkedForDelete())
                         {
@@ -205,7 +205,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         if (isIndexValueStale(data, primary.column_name, indexKey.key))
                         {
                             // delete the index entry w/ its own timestamp
-                            IColumn dummyColumn = new Column(primary.column_name, indexKey.key, column.timestamp());
+                            Column dummyColumn = new Column(primary.column_name, indexKey.key, column.timestamp());
                             ((PerColumnSecondaryIndex)index).delete(dk.key, dummyColumn);
                             continue;
                         }

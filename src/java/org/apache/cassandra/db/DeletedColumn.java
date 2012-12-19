@@ -64,7 +64,7 @@ public class DeletedColumn extends Column
     }
 
     @Override
-    public IColumn reconcile(IColumn column, Allocator allocator)
+    public Column reconcile(Column column, Allocator allocator)
     {
         if (column instanceof DeletedColumn)
             return super.reconcile(column, allocator);
@@ -72,13 +72,13 @@ public class DeletedColumn extends Column
     }
 
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public Column localCopy(ColumnFamilyStore cfs)
     {
         return new DeletedColumn(cfs.internOrCopy(name, HeapAllocator.instance), ByteBufferUtil.clone(value), timestamp);
     }
 
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    public Column localCopy(ColumnFamilyStore cfs, Allocator allocator)
     {
         return new DeletedColumn(cfs.internOrCopy(name, allocator), allocator.clone(value), timestamp);
     }

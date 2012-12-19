@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedSet;
@@ -34,14 +34,13 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class SuperColumns
 {
-    public static Iterator<OnDiskAtom> onDiskIterator(DataInput dis, int superColumnCount, IColumnSerializer.Flag flag, int expireBefore)
+    public static Iterator<OnDiskAtom> onDiskIterator(DataInput dis, int superColumnCount, ColumnSerializer.Flag flag, int expireBefore)
     {
         return new SCIterator(dis, superColumnCount, flag, expireBefore);
     }
@@ -57,13 +56,14 @@ public class SuperColumns
          *   deletions and which are super columns deletions (i.e. the
          *   subcolumns range deletions).
          */
-
-        Map<ByteBuffer, List<IColumn>> scMap = groupSuperColumns(scf);
         DeletionInfo delInfo = scf.deletionInfo();
+        Map<ByteBuffer, List<Column>> scMap = groupSuperColumns(scf);
 
         // Actually Serialize
         DeletionInfo.serializer().serialize(new DeletionInfo(delInfo.getTopLevelDeletion()), dos, version);
-        for (Map.Entry<ByteBuffer, List<IColumn>> entry : scMap.entrySet())
+        dos.writeInt(scMap.size());
+
+        for (Map.Entry<ByteBuffer, List<Column>> entry : scMap.entrySet())
         {
             ByteBufferUtil.writeWithShortLength(entry.getKey(), dos);
 
@@ -73,37 +73,38 @@ public class SuperColumns
             DeletionInfo.serializer().serialize(scDelInfo, dos, MessagingService.VERSION_10);
 
             dos.writeInt(entry.getValue().size());
-            for (IColumn subColumn : entry.getValue())
+            for (Column subColumn : entry.getValue())
                 Column.serializer().serialize(subColumn, dos);
         }
     }
 
-    private static Map<ByteBuffer, List<IColumn>> groupSuperColumns(ColumnFamily scf)
+    private static Map<ByteBuffer, List<Column>> groupSuperColumns(ColumnFamily scf)
     {
         CompositeType type = (CompositeType)scf.getComparator();
-        Map<ByteBuffer, List<IColumn>> scMap = new HashMap<ByteBuffer, List<IColumn>>();
+        // The order of insertion matters!
+        Map<ByteBuffer, List<Column>> scMap = new LinkedHashMap<ByteBuffer, List<Column>>();
 
         ByteBuffer scName = null;
-        List<IColumn> subColumns = null;
-        for (IColumn column : scf)
+        List<Column> subColumns = null;
+        for (Column column : scf)
         {
-            ByteBuffer components[] = type.split(column.name());
-            assert components.length == 2;
+            ByteBuffer newScName = scName(column.name());
+            ByteBuffer newSubName = subName(column.name());
 
-            if (scName == null || type.types.get(0).compare(scName, components[0]) != 0)
+            if (scName == null || type.types.get(0).compare(scName, newScName) != 0)
             {
                 // new super column
-                scName = components[0];
-                subColumns = new ArrayList<IColumn>();
+                scName = newScName;
+                subColumns = new ArrayList<Column>();
                 scMap.put(scName, subColumns);
             }
 
-            subColumns.add(((Column)column).withUpdatedName(components[1]));
+            subColumns.add(((Column)column).withUpdatedName(newSubName));
         }
         return scMap;
     }
 
-    public static void deserializerSuperColumnFamily(DataInput dis, ColumnFamily cf, IColumnSerializer.Flag flag, int expireBefore, int version) throws IOException
+    public static void deserializerSuperColumnFamily(DataInput dis, ColumnFamily cf, ColumnSerializer.Flag flag, int expireBefore, int version) throws IOException
     {
         // Note that there was no way to insert a range tombstone in a SCF in 1.2
         cf.delete(DeletionInfo.serializer().deserialize(dis, version, cf.getComparator()));
@@ -116,12 +117,12 @@ public class SuperColumns
 
     public static long serializedSize(ColumnFamily scf, TypeSizes typeSizes, int version)
     {
-        Map<ByteBuffer, List<IColumn>> scMap = groupSuperColumns(scf);
+        Map<ByteBuffer, List<Column>> scMap = groupSuperColumns(scf);
         DeletionInfo delInfo = scf.deletionInfo();
 
         // Actually Serialize
         long size = DeletionInfo.serializer().serializedSize(new DeletionInfo(delInfo.getTopLevelDeletion()), version);
-        for (Map.Entry<ByteBuffer, List<IColumn>> entry : scMap.entrySet())
+        for (Map.Entry<ByteBuffer, List<Column>> entry : scMap.entrySet())
         {
             int nameSize = entry.getKey().remaining();
             size += typeSizes.sizeof((short) nameSize) + nameSize;
@@ -132,7 +133,7 @@ public class SuperColumns
             size += DeletionInfo.serializer().serializedSize(scDelInfo, MessagingService.VERSION_10);
 
             size += typeSizes.sizeof(entry.getValue().size());
-            for (IColumn subColumn : entry.getValue())
+            for (Column subColumn : entry.getValue())
                 size += Column.serializer().serializedSize(subColumn, typeSizes);
         }
         return size;
@@ -143,13 +144,14 @@ public class SuperColumns
         private final DataInput dis;
         private final int scCount;
 
-        private final IColumnSerializer.Flag flag;
+        private final ColumnSerializer.Flag flag;
         private final int expireBefore;
 
         private int read;
+        private ByteBuffer scName;
         private Iterator<Column> subColumnsIterator;
 
-        private SCIterator(DataInput dis, int superColumnCount, IColumnSerializer.Flag flag, int expireBefore)
+        private SCIterator(DataInput dis, int superColumnCount, ColumnSerializer.Flag flag, int expireBefore)
         {
             this.dis = dis;
             this.scCount = superColumnCount;
@@ -166,13 +168,16 @@ public class SuperColumns
         {
             try
             {
-                if (subColumnsIterator.hasNext())
-                    return subColumnsIterator.next();
+                if (subColumnsIterator != null && subColumnsIterator.hasNext())
+                {
+                    Column c = subColumnsIterator.next();
+                    return c.withUpdatedName(CompositeType.build(scName, c.name()));
+                }
 
                 // Read one more super column
                 ++read;
 
-                ByteBuffer scName = ByteBufferUtil.readWithShortLength(dis);
+                scName = ByteBufferUtil.readWithShortLength(dis);
                 DeletionInfo delInfo = DeletionInfo.serializer().deserialize(dis, MessagingService.VERSION_10, null);
                 assert !delInfo.rangeIterator().hasNext(); // We assume no range tombstone (there was no way to insert some in a SCF in 1.2)
 
@@ -187,14 +192,10 @@ public class SuperColumns
 
                 // If the SC was deleted, return that first, otherwise return the first subcolumn
                 DeletionTime dtime = delInfo.getTopLevelDeletion();
-                if (dtime.equals(DeletionTime.LIVE))
-                {
-                    return subColumnsIterator.next();
-                }
-                else
-                {
+                if (!dtime.equals(DeletionTime.LIVE))
                     return new RangeTombstone(startOf(scName), endOf(scName), dtime);
-                }
+
+                return next();
             }
             catch (IOException e)
             {
@@ -287,63 +288,73 @@ public class SuperColumns
     public static SCFilter sliceFilterToSC(CompositeType type, SliceQueryFilter filter)
     {
         /*
-         * There is 3 cases that we can translate back into super column
+         * There is 3 main cases that we can translate back into super column
          * queries:
-         *  1) if we have only one slice where the first component of start
-         *  and finish is the same, we translate as a slice query on one SC.
-         *  2) if we have only one slice, neither the start and finish have a 2nd
-         *  component, and end has the 'end of component' set, we translate
-         *  as a slice of SCs.
-         *  3) if each slice have the same first component for start and
-         *  finish, no 2nd component and each finish has the 'end of
-         *  component' set, we translate as a names query of SCs.
+         *   1) We have only one slice where the first component of start and
+         *   finish is the same, we translate as a slice query on one SC.
+         *   2) We have only one slice, neither the start and finish have a 2nd
+         *   component, and end has the 'end of component' set, we translate
+         *   as a slice of SCs.
+         *   3) Each slice has the same first component for start and finish, no
+         *   2nd component and each finish has the 'end of component' set, we
+         *   translate as a names query of SCs (the filter must then not be reversed).
          * Otherwise, we can't do much.
          */
 
+        boolean reversed = filter.reversed;
         if (filter.slices.length == 1)
         {
-            ColumnSlice slice = filter.slices[0];
-            ByteBuffer[] startComponents = type.split(slice.start);
-            ByteBuffer[] finishComponents = type.split(slice.finish);
+            ByteBuffer start = filter.slices[0].start;
+            ByteBuffer finish = filter.slices[0].start;
 
-            if (startComponents.length == 0)
+            if (filter.compositesToGroup == 1)
             {
-                if (startComponents.length == 0)
-                    return new SCFilter(null, filter);
+                // Note: all the resulting filter must have compositeToGroup == 0 because this
+                // make no sense for super column on the destination node otherwise
+                if (start.remaining() == 0)
+                {
+                    if (finish.remaining() == 0)
+                        // An 'IdentityFilter', keep as is (except for the compositeToGroup)
+                        return new SCFilter(null, new SliceQueryFilter(filter.start(), filter.finish(), reversed, filter.count));
 
-                if (finishComponents.length == 1 && firstEndOfComponent(slice.finish))
-                    return new SCFilter(null, filter.withUpdatedSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, finishComponents[0]));
+                    if (subName(finish) == null
+                            && ((!reversed && !firstEndOfComponent(finish)) || (reversed && firstEndOfComponent(finish))))
+                        return new SCFilter(null, new SliceQueryFilter(ByteBufferUtil.EMPTY_BYTE_BUFFER, scName(finish), reversed, filter.count));
+                }
+                else if (finish.remaining() == 0)
+                {
+                    if (subName(start) == null
+                            && ((!reversed && firstEndOfComponent(start)) || (reversed && !firstEndOfComponent(start))))
+                        return new SCFilter(null, new SliceQueryFilter(scName(start), ByteBufferUtil.EMPTY_BYTE_BUFFER, reversed, filter.count));
+                }
+                else if (subName(start) == null && subName(finish) == null
+                        && ((   reversed && !firstEndOfComponent(start) &&  firstEndOfComponent(finish))
+                            || (!reversed &&  firstEndOfComponent(start) && !firstEndOfComponent(finish))))
+                {
+                    // A slice of supercolumns
+                    return new SCFilter(null, new SliceQueryFilter(scName(start), scName(finish), reversed, filter.count));
+                }
             }
-            else if (finishComponents.length == 0)
+            else if (filter.compositesToGroup == 0 && type.types.get(0).compare(scName(start), scName(finish)) == 0)
             {
-                if (startComponents.length == 1 && !firstEndOfComponent(slice.start))
-                    return new SCFilter(null, filter.withUpdatedSlice(startComponents[0], ByteBufferUtil.EMPTY_BYTE_BUFFER));
-            }
-            else if (startComponents.length == 1 && finishComponents.length == 1)
-            {
-                if (!firstEndOfComponent(slice.start) && firstEndOfComponent(slice.finish))
-                    return new SCFilter(null, filter.withUpdatedSlice(startComponents[0], finishComponents[0]));
-            }
-            else if (type.types.get(0).compare(startComponents[0], finishComponents[0]) == 0)
-            {
-                return new SCFilter(startComponents[0], filter.withUpdatedSlice(startComponents[1], finishComponents[1]));
+                // A slice of subcolumns
+                return new SCFilter(scName(start), filter.withUpdatedSlice(subName(start), subName(finish)));
             }
         }
-        else if (!filter.reversed)
+        else if (!reversed)
         {
             SortedSet<ByteBuffer> columns = new TreeSet<ByteBuffer>(type.types.get(0));
             for (int i = 0; i < filter.slices.length; ++i)
             {
-                ColumnSlice slice = filter.slices[i];
-                ByteBuffer[] startComponents = type.split(slice.start);
-                ByteBuffer[] finishComponents = type.split(slice.finish);
+                ByteBuffer start = filter.slices[i].start;
+                ByteBuffer finish = filter.slices[i].finish;
 
-                if (startComponents.length != 1 || finishComponents.length != 1
-                        || type.types.get(0).compare(startComponents[0], finishComponents[0]) != 0
-                        || firstEndOfComponent(slice.start) || !firstEndOfComponent(slice.finish))
+                if (subName(start) != null || subName(finish) != null
+                  || type.types.get(0).compare(scName(start), scName(finish)) != 0
+                  || firstEndOfComponent(start) || !firstEndOfComponent(finish))
                     throw new RuntimeException("Cannot convert filter to old super column format. Update all nodes to Cassandra 2.0 first.");
 
-                columns.add(startComponents[0]);
+                columns.add(scName(start));
             }
             return new SCFilter(null, new NamesQueryFilter(columns));
         }
@@ -369,7 +380,7 @@ public class SuperColumns
                 CompositeType.Builder builder = type.builder().add(bb);
                 slices[i++] = new ColumnSlice(builder.build(), builder.buildAsEndOfRange());
             }
-            return new SliceQueryFilter(slices, false, slices.length, 1, 1000);
+            return new SliceQueryFilter(slices, false, slices.length, 1, 1);
         }
         else
         {

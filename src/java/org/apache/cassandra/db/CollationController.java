@@ -159,7 +159,7 @@ public class CollationController
             final ColumnFamily c2 = container;
             CloseableIterator<OnDiskAtom> toCollate = new SimpleAbstractColumnIterator()
             {
-                final Iterator<IColumn> iter = c2.iterator();
+                final Iterator<Column> iter = c2.iterator();
 
                 protected OnDiskAtom computeNext()
                 {
@@ -214,7 +214,7 @@ public class CollationController
         for (Iterator<ByteBuffer> iterator = ((NamesQueryFilter) filter.filter).columns.iterator(); iterator.hasNext(); )
         {
             ByteBuffer filterColumn = iterator.next();
-            IColumn column = container.getColumn(filterColumn);
+            Column column = container.getColumn(filterColumn);
             if (column != null && column.timestamp() > sstableTimestamp)
                 iterator.remove();
         }

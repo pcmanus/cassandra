@@ -36,7 +36,6 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.exceptions.OverloadedException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.service.AbstractWriteResponseHandler;
@@ -75,11 +74,11 @@ public class CounterColumn extends Column
         this.timestampOfLastDelete = timestampOfLastDelete;
     }
 
-    public static CounterColumn create(ByteBuffer name, ByteBuffer value, long timestamp, long timestampOfLastDelete, IColumnSerializer.Flag flag)
+    public static CounterColumn create(ByteBuffer name, ByteBuffer value, long timestamp, long timestampOfLastDelete, ColumnSerializer.Flag flag)
     {
         // #elt being negative means we have to clean delta
         short count = value.getShort(value.position());
-        if (flag == IColumnSerializer.Flag.FROM_REMOTE || (flag == IColumnSerializer.Flag.LOCAL && count < 0))
+        if (flag == ColumnSerializer.Flag.FROM_REMOTE || (flag == ColumnSerializer.Flag.LOCAL && count < 0))
             value = CounterContext.instance().clearAllDelta(value);
         return new CounterColumn(name, value, timestamp, timestampOfLastDelete);
     }
@@ -117,7 +116,7 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public IColumn diff(IColumn column)
+    public Column diff(Column column)
     {
         assert (column instanceof CounterColumn) || (column instanceof DeletedColumn) : "Wrong class type: " + column.getClass();
 
@@ -166,7 +165,7 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public IColumn reconcile(IColumn column, Allocator allocator)
+    public Column reconcile(Column column, Allocator allocator)
     {
         assert (column instanceof CounterColumn) || (column instanceof DeletedColumn) : "Wrong class type: " + column.getClass();
 
@@ -214,13 +213,13 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public Column localCopy(ColumnFamilyStore cfs)
     {
         return new CounterColumn(cfs.internOrCopy(name, HeapAllocator.instance), ByteBufferUtil.clone(value), timestamp, timestampOfLastDelete);
     }
 
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    public Column localCopy(ColumnFamilyStore cfs, Allocator allocator)
     {
         return new CounterColumn(cfs.internOrCopy(name, allocator), allocator.clone(value), timestamp, timestampOfLastDelete);
     }
@@ -306,7 +305,7 @@ public class CounterColumn extends Column
     {
         ColumnFamily remoteMerger = null;
 
-        for (IColumn c : cf)
+        for (Column c : cf)
         {
             if (!(c instanceof CounterColumn))
                 continue;
@@ -340,7 +339,7 @@ public class CounterColumn extends Column
         }
     }
 
-    public IColumn markDeltaToBeCleared()
+    public Column markDeltaToBeCleared()
     {
         return new CounterColumn(name, contextManager.markDeltaToBeCleared(value), timestamp, timestampOfLastDelete);
     }

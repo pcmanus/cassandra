@@ -196,10 +196,12 @@ public class ThriftValidation
     private static void validateColumnNames(CFMetaData metadata, ByteBuffer superColumnName, Iterable<ByteBuffer> column_names)
     throws org.apache.cassandra.exceptions.InvalidRequestException
     {
+        int maxNameLength = org.apache.cassandra.db.Column.MAX_NAME_LENGTH;
+
         if (superColumnName != null)
         {
-            if (superColumnName.remaining() > IColumn.MAX_NAME_LENGTH)
-                throw new org.apache.cassandra.exceptions.InvalidRequestException("supercolumn name length must not be greater than " + IColumn.MAX_NAME_LENGTH);
+            if (superColumnName.remaining() > maxNameLength)
+                throw new org.apache.cassandra.exceptions.InvalidRequestException("supercolumn name length must not be greater than " + maxNameLength);
             if (superColumnName.remaining() == 0)
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("supercolumn name must not be empty");
             if (metadata.cfType == ColumnFamilyType.Standard)
@@ -208,8 +210,8 @@ public class ThriftValidation
         AbstractType<?> comparator = SuperColumns.getComparatorFor(metadata, superColumnName);
         for (ByteBuffer name : column_names)
         {
-            if (name.remaining() > IColumn.MAX_NAME_LENGTH)
-                throw new org.apache.cassandra.exceptions.InvalidRequestException("column name length must not be greater than " + IColumn.MAX_NAME_LENGTH);
+            if (name.remaining() > maxNameLength)
+                throw new org.apache.cassandra.exceptions.InvalidRequestException("column name length must not be greater than " + maxNameLength);
             if (name.remaining() == 0)
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("column name must not be empty");
             try
@@ -422,12 +424,20 @@ public class ThriftValidation
         }
 
         // Indexed column values cannot be larger than 64K.  See CASSANDRA-3057/4240 for more details
-        if (!Table.open(metadata.ksName).getColumnFamilyStore(metadata.cfName).indexManager.validate(column))
+        if (!Table.open(metadata.ksName).getColumnFamilyStore(metadata.cfName).indexManager.validate(asDBColumn(column)))
                     throw new org.apache.cassandra.exceptions.InvalidRequestException(String.format("Can't index column value of size %d for index %s in CF %s of KS %s",
                                                                               column.value.remaining(),
                                                                               columnDef.getIndexName(),
                                                                               metadata.cfName,
                                                                               metadata.ksName));
+    }
+
+    private static org.apache.cassandra.db.Column asDBColumn(Column column)
+    {
+        if (column.ttl <= 0)
+            return new org.apache.cassandra.db.Column(column.name, column.value, column.timestamp);
+        else
+            return new org.apache.cassandra.db.ExpiringColumn(column.name, column.value, column.timestamp, column.ttl);
     }
 
     /**

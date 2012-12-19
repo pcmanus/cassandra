@@ -29,7 +29,6 @@ import java.util.TreeSet;
 import java.util.UUID;
 
 import org.apache.cassandra.db.filter.NamesQueryFilter;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -130,7 +129,7 @@ public class CounterMutation implements IMutation
         {
             ColumnFamily cf = cf_.cloneMeShallow();
             ColumnFamilyStore cfs = table.getColumnFamilyStore(cf.id());
-            for (IColumn column : cf_)
+            for (Column column : cf_)
             {
                 cf.addColumn(column.localCopy(cfs), HeapAllocator.instance);
             }

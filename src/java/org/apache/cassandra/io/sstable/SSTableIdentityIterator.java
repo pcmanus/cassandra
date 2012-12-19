@@ -27,7 +27,6 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.ICountableColumnIterator;
 import org.apache.cassandra.db.marshal.MarshalException;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.BytesReadTracker;
 
@@ -39,7 +38,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     private final DataInput input;
     private final long dataStart;
     public final long dataSize;
-    public final IColumnSerializer.Flag flag;
+    public final ColumnSerializer.Flag flag;
 
     private final ColumnFamily columnFamily;
     private final int columnCount;
@@ -81,11 +80,11 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
      */
     public SSTableIdentityIterator(SSTableReader sstable, RandomAccessReader file, DecoratedKey key, long dataStart, long dataSize, boolean checkData)
     {
-        this(sstable.metadata, file, file.getPath(), key, dataStart, dataSize, checkData, sstable, IColumnSerializer.Flag.LOCAL);
+        this(sstable.metadata, file, file.getPath(), key, dataStart, dataSize, checkData, sstable, ColumnSerializer.Flag.LOCAL);
     }
 
     // Must only be used against current file format
-    public SSTableIdentityIterator(CFMetaData metadata, DataInput file, String filename, DecoratedKey key, long dataStart, long dataSize, IColumnSerializer.Flag flag)
+    public SSTableIdentityIterator(CFMetaData metadata, DataInput file, String filename, DecoratedKey key, long dataStart, long dataSize, ColumnSerializer.Flag flag)
     {
         this(metadata, file, filename, key, dataStart, dataSize, false, null, flag);
     }
@@ -100,7 +99,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
                                     long dataSize,
                                     boolean checkData,
                                     SSTableReader sstable,
-                                    IColumnSerializer.Flag flag)
+                                    ColumnSerializer.Flag flag)
     {
         assert !checkData || (sstable != null);
         this.input = input;

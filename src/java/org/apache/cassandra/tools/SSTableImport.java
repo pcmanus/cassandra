@@ -201,7 +201,12 @@ public class SSTableImport
 
     public SSTableImport(boolean isSorted)
     {
-        this(null, isSorted, false);
+        this(isSorted, false);
+    }
+
+    public SSTableImport(boolean isSorted, boolean oldSCFormat)
+    {
+        this(null, isSorted, oldSCFormat);
     }
 
     public SSTableImport(Integer keyCountToImport, boolean isSorted, boolean oldSCFormat)
@@ -292,7 +297,7 @@ public class SSTableImport
         {
             Map<?, ?> data = (Map<?, ?>) entry.getValue();
 
-            ByteBuffer superName = stringAsType((String) entry.getKey(), comparator);
+            ByteBuffer superName = stringAsType((String) entry.getKey(), ((CompositeType)comparator).types.get(0));
 
             addColumnsToCF((List<?>) data.get("subColumns"), superName, cfamily);
 
@@ -430,7 +435,6 @@ public class SSTableImport
 
             if (row.containsKey("metadata"))
                 parseMeta((Map<?, ?>) row.get("metadata"), columnFamily, null);
-
 
             if (columnFamily.getType() == ColumnFamilyType.Super && oldSCFormat)
                 addToSuperCF((Map<?, ?>)row.get("columns"), columnFamily);

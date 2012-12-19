@@ -51,7 +51,7 @@ import org.apache.cassandra.db.DeletedColumn;
 import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.ExpiringColumn;
-import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -154,7 +154,18 @@ public class SSTableExport
      * @param comparator columns comparator
      * @param cfMetaData Column Family metadata (to get validator)
      */
-    private static void serializeColumns(Iterator<OnDiskAtom> columns, PrintStream out, AbstractType<?> comparator, CFMetaData cfMetaData)
+    private static void serializeAtoms(Iterator<OnDiskAtom> atoms, PrintStream out, AbstractType<?> comparator, CFMetaData cfMetaData)
+    {
+        while (atoms.hasNext())
+        {
+            writeJSON(out, serializeAtom(atoms.next(), comparator, cfMetaData));
+
+            if (atoms.hasNext())
+                out.print(", ");
+        }
+    }
+
+    private static void serializeColumns(Iterator<Column> columns, PrintStream out, AbstractType<?> comparator, CFMetaData cfMetaData)
     {
         while (columns.hasNext())
         {
@@ -165,27 +176,16 @@ public class SSTableExport
         }
     }
 
-    private static void serializeIColumns(Iterator<IColumn> columns, PrintStream out, AbstractType<?> comparator, CFMetaData cfMetaData)
+    private static List<Object> serializeAtom(OnDiskAtom atom, AbstractType<?> comparator, CFMetaData cfMetaData)
     {
-        while (columns.hasNext())
+        if (atom instanceof Column)
         {
-            writeJSON(out, serializeColumn(columns.next(), comparator, cfMetaData));
-
-            if (columns.hasNext())
-                out.print(", ");
-        }
-    }
-
-    private static List<Object> serializeColumn(OnDiskAtom column, AbstractType<?> comparator, CFMetaData cfMetaData)
-    {
-        if (column instanceof IColumn)
-        {
-            return serializeColumn((IColumn)column, comparator, cfMetaData);
+            return serializeColumn((Column)atom, comparator, cfMetaData);
         }
         else
         {
-            assert column instanceof RangeTombstone;
-            RangeTombstone rt = (RangeTombstone)column;
+            assert atom instanceof RangeTombstone;
+            RangeTombstone rt = (RangeTombstone)atom;
             ArrayList<Object> serializedColumn = new ArrayList<Object>();
             serializedColumn.add(comparator.getString(rt.min));
             serializedColumn.add(comparator.getString(rt.max));
@@ -205,7 +205,7 @@ public class SSTableExport
      *
      * @return column as serialized list
      */
-    private static List<Object> serializeColumn(IColumn column, AbstractType<?> comparator, CFMetaData cfMetaData)
+    private static List<Object> serializeColumn(Column column, AbstractType<?> comparator, CFMetaData cfMetaData)
     {
         ArrayList<Object> serializedColumn = new ArrayList<Object>();
 
@@ -265,7 +265,7 @@ public class SSTableExport
         writeKey(out, "columns");
         out.print("[");
 
-        serializeColumns(row, out, comparator, cfMetaData);
+        serializeAtoms(row, out, comparator, cfMetaData);
 
         out.print("]");
         out.print("}");

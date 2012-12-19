@@ -121,7 +121,7 @@ public class CassandraServer implements Cassandra.Iface
         return columnFamilyKeyMap;
     }
 
-    public List<Column> thriftifySubColumns(Collection<IColumn> columns)
+    public List<Column> thriftifySubColumns(Collection<org.apache.cassandra.db.Column> columns)
     {
         if (columns == null || columns.isEmpty())
         {
@@ -129,7 +129,7 @@ public class CassandraServer implements Cassandra.Iface
         }
 
         ArrayList<Column> thriftColumns = new ArrayList<Column>(columns.size());
-        for (IColumn column : columns)
+        for (org.apache.cassandra.db.Column column : columns)
         {
             if (column.isMarkedForDelete())
             {
@@ -146,7 +146,7 @@ public class CassandraServer implements Cassandra.Iface
         return thriftColumns;
     }
 
-    public List<CounterColumn> thriftifyCounterSubColumns(Collection<IColumn> columns)
+    public List<CounterColumn> thriftifyCounterSubColumns(Collection<org.apache.cassandra.db.Column> columns)
     {
         if (columns == null || columns.isEmpty())
         {
@@ -154,7 +154,7 @@ public class CassandraServer implements Cassandra.Iface
         }
 
         ArrayList<CounterColumn> thriftColumns = new ArrayList<CounterColumn>(columns.size());
-        for (IColumn column : columns)
+        for (org.apache.cassandra.db.Column column : columns)
         {
             if (column.isMarkedForDelete())
             {
@@ -168,10 +168,10 @@ public class CassandraServer implements Cassandra.Iface
         return thriftColumns;
     }
 
-    public List<ColumnOrSuperColumn> thriftifyColumns(Collection<IColumn> columns, boolean reverseOrder)
+    public List<ColumnOrSuperColumn> thriftifyColumns(Collection<org.apache.cassandra.db.Column> columns, boolean reverseOrder)
     {
         ArrayList<ColumnOrSuperColumn> thriftColumns = new ArrayList<ColumnOrSuperColumn>(columns.size());
-        for (IColumn column : columns)
+        for (org.apache.cassandra.db.Column column : columns)
         {
             if (column.isMarkedForDelete())
                 continue;
@@ -187,7 +187,7 @@ public class CassandraServer implements Cassandra.Iface
         return thriftColumns;
     }
 
-    private ColumnOrSuperColumn thriftifyColumnWithName(IColumn column, ByteBuffer newName)
+    private ColumnOrSuperColumn thriftifyColumnWithName(org.apache.cassandra.db.Column column, ByteBuffer newName)
     {
         assert !column.isMarkedForDelete();
 
@@ -197,12 +197,12 @@ public class CassandraServer implements Cassandra.Iface
             return new ColumnOrSuperColumn().setColumn(thriftifySubColumn(column).setName(newName));
     }
 
-    private ColumnOrSuperColumn thriftifyColumn(IColumn column)
+    private ColumnOrSuperColumn thriftifyColumn(org.apache.cassandra.db.Column column)
     {
         return thriftifyColumnWithName(column, column.name());
     }
 
-    private Column thriftifySubColumn(IColumn column)
+    private Column thriftifySubColumn(org.apache.cassandra.db.Column column)
     {
         assert !column.isMarkedForDelete() && !(column instanceof org.apache.cassandra.db.CounterColumn);
 
@@ -214,18 +214,18 @@ public class CassandraServer implements Cassandra.Iface
         return thrift_column;
     }
 
-    private CounterColumn thriftifySubCounter(IColumn column)
+    private CounterColumn thriftifySubCounter(org.apache.cassandra.db.Column column)
     {
         assert !column.isMarkedForDelete() && (column instanceof org.apache.cassandra.db.CounterColumn);
         return new CounterColumn(column.name(), CounterContext.instance().total(column.value()));
     }
 
-    private List<ColumnOrSuperColumn> thriftifySuperColumns(Collection<IColumn> columns, boolean reverseOrder, boolean subcolumnsOnly, boolean isCounterCF)
+    private List<ColumnOrSuperColumn> thriftifySuperColumns(Collection<org.apache.cassandra.db.Column> columns, boolean reverseOrder, boolean subcolumnsOnly, boolean isCounterCF)
     {
         if (subcolumnsOnly)
         {
             ArrayList<ColumnOrSuperColumn> thriftSuperColumns = new ArrayList<ColumnOrSuperColumn>(columns.size());
-            for (IColumn column : columns)
+            for (org.apache.cassandra.db.Column column : columns)
             {
                 if (column.isMarkedForDelete())
                     continue;
@@ -245,11 +245,11 @@ public class CassandraServer implements Cassandra.Iface
         }
     }
 
-    private List<ColumnOrSuperColumn> thriftifySuperColumns(Collection<IColumn> columns, boolean reverseOrder)
+    private List<ColumnOrSuperColumn> thriftifySuperColumns(Collection<org.apache.cassandra.db.Column> columns, boolean reverseOrder)
     {
         ArrayList<ColumnOrSuperColumn> thriftSuperColumns = new ArrayList<ColumnOrSuperColumn>(columns.size());
         SuperColumn current = null;
-        for (IColumn column : columns)
+        for (org.apache.cassandra.db.Column column : columns)
         {
             if (column.isMarkedForDelete())
                 continue;
@@ -269,11 +269,11 @@ public class CassandraServer implements Cassandra.Iface
         return thriftSuperColumns;
     }
 
-    private List<ColumnOrSuperColumn> thriftifyCounterSuperColumns(Collection<IColumn> columns, boolean reverseOrder)
+    private List<ColumnOrSuperColumn> thriftifyCounterSuperColumns(Collection<org.apache.cassandra.db.Column> columns, boolean reverseOrder)
     {
         ArrayList<ColumnOrSuperColumn> thriftSuperColumns = new ArrayList<ColumnOrSuperColumn>(columns.size());
         CounterSuperColumn current = null;
-        for (IColumn column : columns)
+        for (org.apache.cassandra.db.Column column : columns)
         {
             if (column.isMarkedForDelete())
                 continue;

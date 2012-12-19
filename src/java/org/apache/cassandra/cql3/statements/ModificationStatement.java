@@ -180,7 +180,7 @@ public abstract class ModificationStatement extends CFStatement implements CQLSt
                     continue;
 
                 ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
-                for (IColumn column : row.cf)
+                for (Column column : row.cf)
                     groupBuilder.add(column);
 
                 List<ColumnGroupMap> groups = groupBuilder.groups();

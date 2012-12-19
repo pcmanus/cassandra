@@ -60,8 +60,8 @@ public class SliceQueryPager implements Iterator<ColumnFamily>
         }
         else
         {
-            Iterator<IColumn> iter = cf.getReverseSortedColumns().iterator();
-            IColumn lastColumn = iter.next();
+            Iterator<Column> iter = cf.getReverseSortedColumns().iterator();
+            Column lastColumn = iter.next();
             while (lastColumn.isMarkedForDelete())
                 lastColumn = iter.next();
 

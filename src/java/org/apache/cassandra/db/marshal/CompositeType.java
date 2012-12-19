@@ -131,7 +131,7 @@ public class CompositeType extends AbstractCompositeType
         return build(serialized);
     }
 
-    // Extract component idx from bb. This method don't check whether there is enough component.
+    // Extract component idx from bb. Return null if there is not enough component.
     public static ByteBuffer extractComponent(ByteBuffer bb, int idx)
     {
         bb = bb.duplicate();
@@ -145,7 +145,7 @@ public class CompositeType extends AbstractCompositeType
             bb.get(); // skip end-of-component
             ++i;
         }
-        throw new IllegalArgumentException();
+        return null;
     }
 
     @Override

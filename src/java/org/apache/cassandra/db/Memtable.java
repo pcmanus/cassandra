@@ -93,9 +93,9 @@ public class Memtable
 
     private final SlabAllocator allocator = new SlabAllocator();
     // We really only need one column by allocator but one by memtable is not a big waste and avoids needing allocators to know about CFS
-    private final Function<IColumn, IColumn> localCopyFunction = new Function<IColumn, IColumn>()
+    private final Function<Column, Column> localCopyFunction = new Function<Column, Column>()
     {
-        public IColumn apply(IColumn c)
+        public Column apply(Column c)
         {
             return c.localCopy(cfs, allocator);
         };
@@ -316,7 +316,7 @@ public class Memtable
     public static OnDiskAtomIterator getSliceIterator(final DecoratedKey key, final ColumnFamily cf, SliceQueryFilter filter)
     {
         assert cf != null;
-        final Iterator<IColumn> filteredIter = filter.reversed ? cf.reverseIterator(filter.slices) : cf.iterator(filter.slices);
+        final Iterator<Column> filteredIter = filter.reversed ? cf.reverseIterator(filter.slices) : cf.iterator(filter.slices);
 
         return new AbstractColumnIterator()
         {
@@ -365,7 +365,7 @@ public class Memtable
                 while (iter.hasNext())
                 {
                     ByteBuffer current = iter.next();
-                    IColumn column = cf.getColumn(current);
+                    Column column = cf.getColumn(current);
                     if (column != null)
                         return column;
                 }

@@ -129,8 +129,13 @@ public class SliceFromReadCommand extends ReadCommand
     }
 }
 
-class SliceFromReadCommandSerializer
+class SliceFromReadCommandSerializer implements IVersionedSerializer<ReadCommand>
 {
+    public void serialize(ReadCommand rm, DataOutput dos, int version) throws IOException
+    {
+        serialize(rm, null, dos, version);
+    }
+
     public void serialize(ReadCommand rm, ByteBuffer superColumn, DataOutput dos, int version) throws IOException
     {
         SliceFromReadCommand realRM = (SliceFromReadCommand)rm;
@@ -182,6 +187,11 @@ class SliceFromReadCommandSerializer
         ReadCommand command = new SliceFromReadCommand(table, key, cfName, filter);
         command.setDigestQuery(isDigest);
         return command;
+    }
+
+    public long serializedSize(ReadCommand cmd, int version)
+    {
+        return serializedSize(cmd, null, version);
     }
 
     public long serializedSize(ReadCommand cmd, ByteBuffer superColumn, int version)

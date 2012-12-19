@@ -29,9 +29,7 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.UUIDType;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.FastByteArrayInputStream;
 import org.apache.cassandra.net.MessageOut;
@@ -310,7 +308,7 @@ public class RowMutation implements IMutation
             }
         }
 
-        public RowMutation deserialize(DataInput dis, int version, IColumnSerializer.Flag flag) throws IOException
+        public RowMutation deserialize(DataInput dis, int version, ColumnSerializer.Flag flag) throws IOException
         {
             String table = dis.readUTF();
             ByteBuffer key = ByteBufferUtil.readWithShortLength(dis);
@@ -331,7 +329,7 @@ public class RowMutation implements IMutation
 
         public RowMutation deserialize(DataInput dis, int version) throws IOException
         {
-            return deserialize(dis, version, IColumnSerializer.Flag.FROM_REMOTE);
+            return deserialize(dis, version, ColumnSerializer.Flag.FROM_REMOTE);
         }
 
         public long serializedSize(RowMutation rm, int version)

@@ -23,6 +23,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
 import org.apache.commons.lang.ArrayUtils;
@@ -48,7 +49,6 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.SyntaxException;
-import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.SnappyCompressor;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -309,10 +309,16 @@ public final class CFMetaData
 
     public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp, AbstractType<?> subcc)
     {
-        this(keyspace, name, type,  makeComparator(type, comp, subcc), getId(keyspace, name));
+        this(keyspace, name, type,  makeComparator(type, comp, subcc));
     }
 
-    private CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp,  UUID id)
+    public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp)
+    {
+        this(keyspace, name, type, comp, getId(keyspace, name));
+    }
+
+    @VisibleForTesting
+    CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType<?> comp,  UUID id)
     {
         // Final fields must be set in constructor
         ksName = keyspace;
@@ -1037,10 +1043,10 @@ public final class CFMetaData
 
     public Iterator<OnDiskAtom> getOnDiskIterator(DataInput dis, int count, Descriptor.Version version)
     {
-        return getOnDiskIterator(dis, count, IColumnSerializer.Flag.LOCAL, (int) (System.currentTimeMillis() / 1000), version);
+        return getOnDiskIterator(dis, count, ColumnSerializer.Flag.LOCAL, (int) (System.currentTimeMillis() / 1000), version);
     }
 
-    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput dis, int count, IColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
+    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput dis, int count, ColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
     {
         if (version.hasSuperColumns && cfType == ColumnFamilyType.Super)
             return SuperColumns.onDiskIterator(dis, count, flag, expireBefore);

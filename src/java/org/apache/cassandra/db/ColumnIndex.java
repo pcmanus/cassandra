@@ -116,7 +116,7 @@ public class ColumnIndex
             RangeTombstone tombstone = rangeIter.hasNext() ? rangeIter.next() : null;
             Comparator<ByteBuffer> comparator = cf.getComparator();
 
-            for (IColumn c : cf)
+            for (Column c : cf)
             {
                 while (tombstone != null && comparator.compare(c.name(), tombstone.min) >= 0)
                 {
@@ -146,7 +146,7 @@ public class ColumnIndex
         {
             atomCount++;
 
-            if (column instanceof IColumn)
+            if (column instanceof Column)
                 result.bloomFilter.add(column.name());
 
             if (firstColumn == null)

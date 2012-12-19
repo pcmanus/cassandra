@@ -158,8 +158,10 @@ class ReadCommandSerializer implements IVersionedSerializer<ReadCommand>
         {
             case GET_BY_NAMES:
                 SliceByNamesReadCommand.serializer.serialize(newCommand, superColumn, dos, version);
+                break;
             case GET_SLICES:
                 SliceFromReadCommand.serializer.serialize(newCommand, superColumn, dos, version);
+                break;
             default:
                 throw new AssertionError();
         }
@@ -171,9 +173,9 @@ class ReadCommandSerializer implements IVersionedSerializer<ReadCommand>
         switch (msgType)
         {
             case GET_BY_NAMES:
-                SliceByNamesReadCommand.serializer.deserialize(dis, version);
+                return SliceByNamesReadCommand.serializer.deserialize(dis, version);
             case GET_SLICES:
-                SliceFromReadCommand.serializer.deserialize(dis, version);
+                return SliceFromReadCommand.serializer.deserialize(dis, version);
             default:
                 throw new AssertionError();
         }

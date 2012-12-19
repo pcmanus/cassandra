@@ -98,7 +98,7 @@ public class DeletionInfo
      * @param column the column to check.
      * @return true if the column is deleted, false otherwise
      */
-    public boolean isDeleted(IColumn column)
+    public boolean isDeleted(Column column)
     {
         return isDeleted(column.name(), column.mostRecentLiveChangeAt());
     }

@@ -322,7 +322,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
 
             }
 
-            for (final IColumn hint : hintsPage.getSortedColumns())
+            for (final Column hint : hintsPage.getSortedColumns())
             {
                 // Skip tombstones:
                 // if we iterate quickly enough, it's possible that we could request a new page in the same millisecond
