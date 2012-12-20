@@ -474,9 +474,9 @@ public class SelectStatement implements CQLStatement
 
             // We need to query the selected column as well as the marker
             // column (for the case where the row exists but has no columns outside the PK)
-            // One exception is "static CF" (non-composite non-compact CF) that
-            // don't have marker and for which we must query all columns instead
-            if (cfDef.isComposite)
+            // Two exceptions are "static CF" (non-composite non-compact CF) and "super CF"
+            // that don't have marker and for which we must query all columns instead
+            if (cfDef.isComposite && !cfDef.cfm.isSuper())
             {
                 // marker
                 columns.add(builder.copy().add(ByteBufferUtil.EMPTY_BYTE_BUFFER).build());
