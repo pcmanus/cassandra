@@ -32,7 +32,7 @@ import org.apache.cassandra.io.util.IIterableColumns;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.HeapAllocator;
 
-public abstract class AbstractColumnContainer implements IColumnContainer, IIterableColumns
+public abstract class AbstractColumnContainer implements IIterableColumns
 {
     protected final ISortedColumns columns;
 

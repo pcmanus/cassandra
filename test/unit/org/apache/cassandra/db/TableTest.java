@@ -502,12 +502,7 @@ public class TableTest extends SchemaLoader
         assertColumns(cf);
     }
 
-    public static void assertColumns(ColumnFamily cf, String... columnNames)
-    {
-        assertColumns((IColumnContainer)cf, columnNames);
-    }
-
-    public static void assertColumns(IColumnContainer container, String... columnNames)
+    public static void assertColumns(ColumnFamily container, String... columnNames)
     {
         Collection<Column> columns = container == null ? new TreeSet<Column>() : container.getSortedColumns();
         List<String> L = new ArrayList<String>();

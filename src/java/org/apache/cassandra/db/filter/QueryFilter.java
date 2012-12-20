@@ -166,7 +166,7 @@ public class QueryFilter
         return cfName;
     }
 
-    public static boolean isRelevant(Column column, IColumnContainer container, int gcBefore)
+    public static boolean isRelevant(Column column, ColumnFamily container, int gcBefore)
     {
         // the column itself must be not gc-able (it is live, or a still relevant tombstone, or has live subcolumns), (1)
         // and if its container is deleted, the column must be changed more recently than the container tombstone (2)

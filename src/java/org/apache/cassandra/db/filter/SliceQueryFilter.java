@@ -116,7 +116,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return reversed ? comparator.columnReverseComparator : comparator.columnComparator;
     }
 
-    public void collectReducedColumns(IColumnContainer container, Iterator<Column> reducedColumns, int gcBefore)
+    public void collectReducedColumns(ColumnFamily container, Iterator<Column> reducedColumns, int gcBefore)
     {
         columnCounter = getColumnCounter(container);
 
@@ -148,7 +148,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return counter.live();
     }
 
-    private ColumnCounter getColumnCounter(IColumnContainer container)
+    private ColumnCounter getColumnCounter(ColumnFamily container)
     {
         AbstractType<?> comparator = container.getComparator();
         if (compositesToGroup < 0)
