@@ -37,6 +37,7 @@ import java.util.zip.Checksum;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.AbstractIterator;
+import com.google.common.primitives.Longs;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +71,13 @@ public class FBUtilities
 
     private static volatile InetAddress localInetAddress;
     private static volatile InetAddress broadcastInetAddress;
+    public static Comparator<UUID> timeComparator = new Comparator<UUID>()
+    {
+        public int compare(UUID o1, UUID o2)
+        {
+            return Longs.compare(o1.timestamp(), o2.timestamp());
+        }
+    };
 
     public static int getAvailableProcessors()
     {

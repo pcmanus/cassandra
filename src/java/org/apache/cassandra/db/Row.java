@@ -18,9 +18,12 @@
 package org.apache.cassandra.db;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -39,6 +42,11 @@ public class Row
         this.cf = cf;
     }
 
+    public Row(ByteBuffer key, ColumnFamily updates)
+    {
+        this(StorageService.getPartitioner().decorateKey(key), updates);
+    }
+
     @Override
     public String toString()
     {
@@ -51,6 +59,32 @@ public class Row
     public int getLiveCount(IDiskAtomFilter filter)
     {
         return cf == null ? 0 : filter.getLiveCount(cf);
+    }
+
+    public static Row fromBytes(ByteBuffer bytes)
+    {
+        try
+        {
+            return serializer.deserialize(new DataInputStream(ByteBufferUtil.inputStream(bytes)), MessagingService.current_version);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public ByteBuffer toBytes()
+    {
+        DataOutputBuffer out = new DataOutputBuffer();
+        try
+        {
+            serializer.serialize(this, out, MessagingService.current_version);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return ByteBuffer.wrap(out.getData(), 0, out.getLength());
     }
 
     public static class RowSerializer implements IVersionedSerializer<Row>

@@ -128,6 +128,10 @@ public class UUIDGen
         return new UUID(createTime(uuidTstamp), MAX_CLOCK_SEQ_AND_NODE);
     }
 
+    /**
+     * @param uuid
+     * @return milliseconds since Unix epoch
+     */
     public static long unixTimestamp(UUID uuid) {
         if (uuid.version() != 1)
             throw new IllegalArgumentException(String.format("Can only retrieve the unix timestamp for version 1 uuid (provided version %d)", uuid.version()));
@@ -136,8 +140,12 @@ public class UUIDGen
         return (timestamp / 10000) + START_EPOCH;
     }
 
-    private static long fromUnixTimestamp(long tstamp) {
-        return (tstamp - START_EPOCH) * 10000;
+    /**
+     * @param timestamp milliseconds since Unix epoch
+     * @return
+     */
+    private static long fromUnixTimestamp(long timestamp) {
+        return (timestamp - START_EPOCH) * 10000;
     }
 
     /**
