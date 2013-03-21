@@ -55,6 +55,7 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 import static org.junit.Assert.assertTrue;
+import static org.apache.cassandra.Util.cellname;
 
 @RunWith(OrderedJUnit4ClassRunner.class)
 public class SSTableReaderTest extends SchemaLoader
@@ -76,7 +77,7 @@ public class SSTableReaderTest extends SchemaLoader
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
             RowMutation rm = new RowMutation("Keyspace1", key);
-            rm.add("Standard2", ByteBufferUtil.bytes("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.add("Standard2", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
             rm.apply();
         }
         store.forceBlockingFlush();
@@ -117,7 +118,7 @@ public class SSTableReaderTest extends SchemaLoader
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
             RowMutation rm = new RowMutation("Keyspace1", key);
-            rm.add("Standard1", ByteBufferUtil.bytes("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.add("Standard1", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
             rm.apply();
         }
         store.forceBlockingFlush();
@@ -152,7 +153,7 @@ public class SSTableReaderTest extends SchemaLoader
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
             RowMutation rm = new RowMutation("Keyspace1", key);
-            rm.add("Standard1", ByteBufferUtil.bytes("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.add("Standard1", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
             rm.apply();
         }
         store.forceBlockingFlush();
@@ -180,7 +181,7 @@ public class SSTableReaderTest extends SchemaLoader
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
             RowMutation rm = new RowMutation("Keyspace1", key);
-            rm.add("Standard2", ByteBufferUtil.bytes("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.add("Standard2", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
             rm.apply();
         }
         store.forceBlockingFlush();
@@ -209,7 +210,7 @@ public class SSTableReaderTest extends SchemaLoader
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Indexed1");
         ByteBuffer key = ByteBufferUtil.bytes(String.valueOf("k1"));
         RowMutation rm = new RowMutation("Keyspace1", key);
-        rm.add("Indexed1", ByteBufferUtil.bytes("birthdate"), ByteBufferUtil.bytes(1L), System.currentTimeMillis());
+        rm.add("Indexed1", cellname("birthdate"), ByteBufferUtil.bytes(1L), System.currentTimeMillis());
         rm.apply();
         store.forceBlockingFlush();
 
@@ -241,7 +242,7 @@ public class SSTableReaderTest extends SchemaLoader
             if (store.metadata.getKeyValidator().compare(lastKey.key, key.key) < 0)
                 lastKey = key;
             RowMutation rm = new RowMutation(ks, key.key);
-            rm.add(cf, ByteBufferUtil.bytes("col"),
+            rm.add(cf, cellname("col"),
                    ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp);
             rm.apply();
         }
@@ -265,7 +266,7 @@ public class SSTableReaderTest extends SchemaLoader
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Indexed1");
         ByteBuffer key = ByteBufferUtil.bytes(String.valueOf("k1"));
         RowMutation rm = new RowMutation("Keyspace1", key);
-        rm.add("Indexed1", ByteBufferUtil.bytes("birthdate"), ByteBufferUtil.bytes(1L), System.currentTimeMillis());
+        rm.add("Indexed1", cellname("birthdate"), ByteBufferUtil.bytes(1L), System.currentTimeMillis());
         rm.apply();
         store.forceBlockingFlush();
 
@@ -292,7 +293,7 @@ public class SSTableReaderTest extends SchemaLoader
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
         ByteBuffer key = ByteBufferUtil.bytes(String.valueOf("k1"));
         RowMutation rm = new RowMutation("Keyspace1", key);
-        rm.add("Standard1", ByteBufferUtil.bytes("xyz"), ByteBufferUtil.bytes("abc"), 0);
+        rm.add("Standard1", cellname("xyz"), ByteBufferUtil.bytes("abc"), 0);
         rm.apply();
         store.forceBlockingFlush();
         boolean foundScanner = false;
@@ -319,7 +320,7 @@ public class SSTableReaderTest extends SchemaLoader
         {
             ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
             RowMutation rm = new RowMutation("Keyspace1", key);
-            rm.add("Standard2", ByteBufferUtil.bytes("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.add("Standard2", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
             rm.apply();
         }
         store.forceBlockingFlush();
