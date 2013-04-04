@@ -619,7 +619,7 @@ public class SecondaryIndexManager
             for (SecondaryIndex index : indexFor(column.name()))
             {
                 ((PerColumnSecondaryIndex) index).delete(key.key, oldColumn);
-                if (column.isMarkedForDelete())
+                if (!column.isMarkedForDelete())
                     ((PerColumnSecondaryIndex) index).insert(key.key, column);
             }
         }
