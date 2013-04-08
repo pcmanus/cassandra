@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.sql.Time;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,6 +61,7 @@ import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.metrics.ClientRequestMetrics;
 import org.apache.cassandra.net.*;
 import org.apache.cassandra.service.paxos.*;
+import org.apache.cassandra.thrift.TimedOutException;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
 
@@ -198,65 +200,75 @@ public class StorageProxy implements StorageProxyMBean
     public static boolean cas(String table, String cfName, ByteBuffer key, ColumnFamily expected, ColumnFamily updates)
     throws UnavailableException, IOException, IsBootstrappingException, ReadTimeoutException, WriteTimeoutException
     {
-        // begin a paxos round
-        UUID ballot = UUIDGen.getTimeUUID();
-        Token tk = StorageService.getPartitioner().getToken(key);
-        List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(table, tk);
-        Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, table);
-        int requiredParticipants = pendingEndpoints.size() + 1 + naturalEndpoints.size() / 2; // See CASSANDRA-833
-        // for simplicity, we'll do a single liveness check at the start.  the gains from repeating this check
-        // are not large enough to bother with.
-        List<InetAddress> liveEndpoints = ImmutableList.copyOf(Iterables.filter(Iterables.concat(naturalEndpoints, pendingEndpoints), IAsyncCallback.isAlive));
-        if (liveEndpoints.size() < requiredParticipants)
-           throw new UnavailableException(ConsistencyLevel.SERIAL, requiredParticipants, liveEndpoints.size());
-
-        // prepare
-        logger.debug("Preparing {}", ballot);
-        PrepareCallback summary = preparePaxos(ballot, key, liveEndpoints, requiredParticipants);
-        if (!summary.promised)
+        long timedOut = System.currentTimeMillis() + DatabaseDescriptor.getCasContentionTimeout();
+        while (System.currentTimeMillis() < timedOut)
         {
-            logger.debug("Some replicas have already promised a higher ballot than ours; aborting");
-            return false;
-        }
-        Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
-        if (Iterables.size(missingMRC) > 0)
-            commitPaxos(ballot, summary.mostRecentCommit.update, missingMRC);
+            // begin a paxos round
+            UUID ballot = UUIDGen.getTimeUUID();
+            Token tk = StorageService.getPartitioner().getToken(key);
+            List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(table, tk);
+            Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, table);
+            int requiredParticipants = pendingEndpoints.size() + 1 + naturalEndpoints.size() / 2; // See CASSANDRA-833
+            // for simplicity, we'll do a single liveness check at the start.  the gains from repeating this check
+            // are not large enough to bother with.
+            List<InetAddress> liveEndpoints = ImmutableList.copyOf(Iterables.filter(Iterables.concat(naturalEndpoints, pendingEndpoints), IAsyncCallback.isAlive));
+            if (liveEndpoints.size() < requiredParticipants)
+               throw new UnavailableException(ConsistencyLevel.SERIAL, requiredParticipants, liveEndpoints.size());
 
-        // complete earlier, in-progress rounds if necessary
-        if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) >= 0)
-        {
-            logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
-            if (proposePaxos(ballot, summary.inProgressUpdates, liveEndpoints, 0))
-                commitPaxos(ballot, summary.inProgressUpdates, liveEndpoints);
-            return false;
+            // prepare
+            logger.debug("Preparing {}", ballot);
+            PrepareCallback summary = preparePaxos(ballot, key, liveEndpoints, requiredParticipants);
+            if (!summary.promised)
+            {
+                logger.debug("Some replicas have already promised a higher ballot than ours; aborting");
+                // sleep a random amount to give the other proposer a chance to finish
+                FBUtilities.sleep(FBUtilities.threadLocalRandom().nextInt(100));
+                continue;
+            }
+            Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
+            if (Iterables.size(missingMRC) > 0)
+                commitPaxos(ballot, summary.mostRecentCommit.update, missingMRC);
+
+            // complete earlier, in-progress rounds if necessary
+            if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) >= 0)
+            {
+                logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
+                if (proposePaxos(ballot, summary.inProgressUpdates, liveEndpoints, 0))
+                    commitPaxos(ballot, summary.inProgressUpdates, liveEndpoints);
+                // no need to sleep here
+                continue;
+            }
+
+            // read the current value and compare with expected
+            logger.debug("Reading existing values for CAS precondition");
+            ReadCommand readCommand = expected == null
+                                    ? new SliceFromReadCommand(table, key, cfName, new SliceQueryFilter(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER, false, 1))
+                                    : new SliceByNamesReadCommand(table, key, cfName, new NamesQueryFilter(ImmutableSortedSet.copyOf(expected.getColumnNames())));
+            List<Row> rows = read(Arrays.asList(readCommand), ConsistencyLevel.QUORUM);
+            ColumnFamily current = rows.get(0).cf;
+            if (!com.google.common.base.Objects.equal(current, expected))
+            {
+                logger.debug("CAS precondition {} does not match current values {}", expected, current);
+                return false;
+            }
+
+            // finish the paxos round w/ the desired updates
+            // TODO turn null updates into delete?
+            Row proposal = new Row(key, updates);
+            logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
+            if (proposePaxos(ballot, proposal, liveEndpoints, 0))
+            {
+                commitPaxos(ballot, proposal, liveEndpoints);
+                logger.debug("Paxos CAS successful");
+                return true;
+            }
+
+            logger.debug("Paxos proposal not accepted (pre-empted by a higher ballot)");
+            FBUtilities.sleep(FBUtilities.threadLocalRandom().nextInt(100));
+            // continue to retry
         }
 
-        // read the current value and compare with expected
-        logger.debug("Reading existing values for CAS precondition");
-        ReadCommand readCommand = expected == null
-                                ? new SliceFromReadCommand(table, key, cfName, new SliceQueryFilter(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER, false, 1))
-                                : new SliceByNamesReadCommand(table, key, cfName, new NamesQueryFilter(ImmutableSortedSet.copyOf(expected.getColumnNames())));
-        List<Row> rows = read(Arrays.asList(readCommand), ConsistencyLevel.QUORUM);
-        ColumnFamily current = rows.get(0).cf;
-        if (!com.google.common.base.Objects.equal(current, expected))
-        {
-            logger.debug("CAS precondition {} does not match current values {}", expected, current);
-            return false;
-        }
-
-        // finish the paxos round w/ the desired updates
-        // TODO turn null updates into delete?
-        Row proposal = new Row(key, updates);
-        logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
-        if (proposePaxos(ballot, proposal, liveEndpoints, 0))
-        {
-            commitPaxos(ballot, proposal, liveEndpoints);
-            logger.debug("Paxos CAS successful");
-            return true;
-        }
-
-        logger.debug("Paxos proposal not accepted (too many down nodes or pre-empted by a higher ballot)");
-        return false;
+        throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, -1, -1);
     }
 
     private static PrepareCallback preparePaxos(UUID ballot, ByteBuffer key, List<InetAddress> endpoints, int requiredParticipants)
@@ -1780,6 +1792,9 @@ public class StorageProxy implements StorageProxyMBean
 
     public Long getWriteRpcTimeout() { return DatabaseDescriptor.getWriteRpcTimeout(); }
     public void setWriteRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setWriteRpcTimeout(timeoutInMillis); }
+
+    public Long getCasContentionTimeout() { return DatabaseDescriptor.getCasContentionTimeout(); }
+    public void setCasContentionTimeout(Long timeoutInMillis) { DatabaseDescriptor.setCasContentionTimeout(timeoutInMillis); }
 
     public Long getRangeRpcTimeout() { return DatabaseDescriptor.getRangeRpcTimeout(); }
     public void setRangeRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setRangeRpcTimeout(timeoutInMillis); }
