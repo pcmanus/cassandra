@@ -804,11 +804,13 @@ public class SystemTable
         if (results.isEmpty())
             return new PaxosState(id);
         UntypedResultSet.Row row = results.one();
+        ByteBuffer proposalBytes = row.getBytes("proposal");
+        ByteBuffer commitBytes = row.getBytes("most_recent_commit");
         return new PaxosState(id,
                               row.getUUID("in_progress_ballot"),
-                              Row.fromBytes(row.getBytes("proposal")),
-                              new Commit(row.getUUID("most_recent_commit_at"),
-                                         Row.fromBytes(row.getBytes("most_recent_commit"))));
+                              proposalBytes == null ? null : Row.fromBytes(proposalBytes),
+                              commitBytes == null ? Commit.emptyCommit()
+                                                  : new Commit(row.getUUID("most_recent_commit_at"), Row.fromBytes(commitBytes)));
     }
 
     public static void savePaxosPromise(int id, UUID ballot)
@@ -819,7 +821,7 @@ public class SystemTable
 
     public static void savePaxosProposal(int id, UUID ballot, Row proposal)
     {
-        processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = %s WHERE id = %d",
+        processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = 0x%s WHERE id = %d",
                                       PAXOS_CF,
                                       UUIDGen.unixTimestamp(ballot),
                                       ByteBufferUtil.bytesToHex(proposal.toBytes()),
@@ -828,7 +830,7 @@ public class SystemTable
 
     public static void savePaxosCommit(int id, UUID ballot, Row update)
     {
-        processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = null, most_recent_commit_at = %s, most_recent_commit = %s WHERE id = %d",
+        processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = null, most_recent_commit_at = %s, most_recent_commit = 0x%s WHERE id = %d",
                                       PAXOS_CF,
                                       UUIDGen.unixTimestamp(ballot),
                                       ballot,
