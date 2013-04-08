@@ -21,10 +21,12 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.UUID;
 
 import com.google.common.base.Function;
 import com.google.common.base.Functions;
+import com.google.common.collect.ImmutableMap;
 
 import org.apache.commons.lang.builder.HashCodeBuilder;
 
@@ -416,6 +418,14 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
                 return true;
 
         return false;
+    }
+
+    public Map<ByteBuffer, ByteBuffer> asMap()
+    {
+        ImmutableMap.Builder<ByteBuffer, ByteBuffer> builder = ImmutableMap.builder();
+        for (Column column : this)
+            builder.put(column.name, column.value);
+        return builder.build();
     }
 
     public abstract static class Factory <T extends ColumnFamily>

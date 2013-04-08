@@ -246,7 +246,12 @@ public class StorageProxy implements StorageProxyMBean
                                     : new SliceByNamesReadCommand(table, key, cfName, new NamesQueryFilter(ImmutableSortedSet.copyOf(expected.getColumnNames())));
             List<Row> rows = read(Arrays.asList(readCommand), ConsistencyLevel.QUORUM);
             ColumnFamily current = rows.get(0).cf;
-            if (!com.google.common.base.Objects.equal(current, expected))
+            if ((current == null) != (expected == null))
+            {
+                logger.debug("CAS precondition {} does not match current values {}", expected, current);
+                return false;
+            }
+            if (current != null && !com.google.common.base.Objects.equal(current.asMap(), expected.asMap()))
             {
                 logger.debug("CAS precondition {} does not match current values {}", expected, current);
                 return false;
