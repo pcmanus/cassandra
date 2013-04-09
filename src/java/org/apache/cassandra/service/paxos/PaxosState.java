@@ -1,14 +1,12 @@
 package org.apache.cassandra.service.paxos;
 
 import java.nio.ByteBuffer;
-import java.util.Map;
 import java.util.UUID;
 
-import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.Row;
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.RowMutation;
 import org.apache.cassandra.db.SystemTable;
 import org.apache.cassandra.db.Table;
@@ -19,107 +17,90 @@ public class PaxosState
 {
     private static final Logger logger = LoggerFactory.getLogger(PaxosState.class);
 
-    private static final int STATE_BUCKETS = 1024;
-
-    private static final Map<Integer, PaxosState> states;
-
+    private static final Object[] locks;
     static
     {
-        ImmutableMap.Builder<Integer, PaxosState> builder = ImmutableMap.builder();
-        for (int i = 0; i < STATE_BUCKETS; i++)
-            builder.put(i, SystemTable.loadPaxosState(i));
-        states = builder.build();
+        locks = new Object[1024];
+        for (int i = 0; i < locks.length; i++)
+            locks[i] = new Object();
+    }
+    private static Object lockFor(ByteBuffer key)
+    {
+        return locks[key.hashCode() % locks.length];
     }
 
-    public static PaxosState stateFor(ByteBuffer key)
+    private final UUID inProgressBallot;
+    private final ColumnFamily acceptedProposal;
+    private final Commit mostRecentCommit;
+
+    public PaxosState()
     {
-        return states.get(key.hashCode() % STATE_BUCKETS);
+        this(UUIDGen.minTimeUUID(0), null, Commit.emptyCommit());
     }
 
-    private int id;
-    private UUID inProgressBallot;
-    private Row acceptedProposal;
-    private Commit mostRecentCommit;
-
-
-    public PaxosState(int id)
+    public PaxosState(UUID inProgressBallot, ColumnFamily acceptedProposal, Commit mostRecentCommit)
     {
-        this(id, UUIDGen.minTimeUUID(0), null, Commit.emptyCommit());
-    }
-
-    public PaxosState(int id, UUID inProgressBallot, Row acceptedProposal, Commit mostRecentCommit)
-    {
-        this.id = id;
         this.inProgressBallot = inProgressBallot;
         this.acceptedProposal = acceptedProposal;
         this.mostRecentCommit = mostRecentCommit;
     }
 
-    /**
-     * If writing to CommitLog, caller should synchronize with this to make sure that commitlog replay
-     * order matches the order we apply live.
-     */
-    public synchronized PrepareResponse prepare(UUID ballot)
+    public static PrepareResponse prepare(ByteBuffer key, UUID ballot)
     {
-        if (FBUtilities.timeComparator.compare(ballot, inProgressBallot) > 0)
+        synchronized (lockFor(key))
         {
-            logger.debug("promising ballot {}", ballot);
-            try
+            PaxosState state = SystemTable.loadPaxosState(key);
+            if (FBUtilities.timeComparator.compare(ballot, state.inProgressBallot) > 0)
             {
+                logger.debug("promising ballot {}", ballot);
+                SystemTable.savePaxosPromise(key, ballot);
                 // return the pre-promise ballot so coordinator can pick the most recent in-progress value to resume
-                return new PrepareResponse(true, inProgressBallot, acceptedProposal, mostRecentCommit);
+                return new PrepareResponse(true, state.inProgressBallot, state.acceptedProposal, state.mostRecentCommit);
             }
-            finally
+            else
             {
-                inProgressBallot = ballot;
-                SystemTable.savePaxosPromise(id, ballot);
+                logger.debug("promise rejected; {} is not sufficiently newer than {}", ballot, state.inProgressBallot);
+                return new PrepareResponse(false, state.inProgressBallot, state.acceptedProposal, state.mostRecentCommit);
             }
         }
-        else
+    }
+
+    public static Boolean propose(ByteBuffer key, UUID ballot, ColumnFamily proposal)
+    {
+        synchronized (lockFor(key))
         {
-            logger.debug("promise rejected; {} is not sufficiently newer than {}", ballot, inProgressBallot);
-            return new PrepareResponse(false, inProgressBallot, acceptedProposal, mostRecentCommit);
+            PaxosState state = SystemTable.loadPaxosState(key);
+            if (state.inProgressBallot.equals(ballot))
+            {
+                logger.debug("accepting {} for {}", ballot, proposal);
+                SystemTable.savePaxosProposal(key, ballot, proposal);
+                return true;
+            }
+
+            logger.debug("accept requested for {} but inProgressBallot is now {}", ballot, state.inProgressBallot);
+            return false;
         }
     }
 
-    /**
-     * If writing to CommitLog, caller should synchronize with this to make sure that commitlog replay
-     * order matches the order we apply live.
-     */
-    public synchronized Boolean propose(UUID ballot, Row proposal)
+    public static void commit(ByteBuffer key, UUID ballot, ColumnFamily proposal)
     {
-        if (inProgressBallot.equals(ballot))
+        synchronized (lockFor(key))
         {
-            logger.debug("accepting {} for {}", ballot, proposal);
-            acceptedProposal = proposal;
-            SystemTable.savePaxosProposal(id, ballot, proposal);
-            return true;
-        }
+            PaxosState state = SystemTable.loadPaxosState(key);
+            if (state.inProgressBallot.equals(ballot))
+            {
+                logger.debug("committing {} for {}", proposal, ballot);
 
-        logger.debug("accept requested for {} but inProgressBallot is now {}", ballot, inProgressBallot);
-        return false;
-    }
-
-    /**
-     * Caller does not need to update the commitlog; commit will log a RowMutation
-     */
-    public synchronized void commit(UUID ballot, Row proposal)
-    {
-        if (inProgressBallot.equals(ballot))
-        {
-            logger.debug("committing {} for {}", proposal, ballot);
-
-            RowMutation rm = new RowMutation(proposal.key.key, proposal.cf);
-            Table.open(rm.getTable()).apply(rm, true);
-            mostRecentCommit = new Commit(ballot, proposal);
-            acceptedProposal = null;
-            SystemTable.savePaxosCommit(id, ballot, proposal);
-        }
-        else
-        {
-            // a new coordinator extracted a promise from us before the old one issued its commit.
-            // (this means the new one should also issue a commit soon.)
-            logger.debug("commit requested for {} but inProgressBallot is now {}", ballot, inProgressBallot);
+                RowMutation rm = new RowMutation(key, proposal);
+                Table.open(rm.getTable()).apply(rm, true);
+                SystemTable.savePaxosCommit(key, ballot, proposal);
+            }
+            else
+            {
+                // a new coordinator extracted a promise from us before the old one issued its commit.
+                // (this means the new one should also issue a commit soon.)
+                logger.debug("commit requested for {} but inProgressBallot is now {}", ballot, state.inProgressBallot);
+            }
         }
     }
 }

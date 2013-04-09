@@ -61,32 +61,6 @@ public class Row
         return cf == null ? 0 : filter.getLiveCount(cf);
     }
 
-    public static Row fromBytes(ByteBuffer bytes)
-    {
-        try
-        {
-            return serializer.deserialize(new DataInputStream(ByteBufferUtil.inputStream(bytes)), MessagingService.current_version);
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public ByteBuffer toBytes()
-    {
-        DataOutputBuffer out = new DataOutputBuffer();
-        try
-        {
-            serializer.serialize(this, out, MessagingService.current_version);
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-        return ByteBuffer.wrap(out.getData(), 0, out.getLength());
-    }
-
     public static class RowSerializer implements IVersionedSerializer<Row>
     {
         public void serialize(Row row, DataOutput out, int version) throws IOException

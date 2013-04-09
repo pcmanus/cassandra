@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.DataInputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.Collection;
@@ -37,6 +39,8 @@ import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.ColumnStats;
 import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.*;
 
 /**
@@ -426,6 +430,25 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
         for (Column column : this)
             builder.put(column.name, column.value);
         return builder.build();
+    }
+
+    public static ColumnFamily fromBytes(ByteBuffer bytes)
+    {
+        try
+        {
+            return serializer.deserialize(new DataInputStream(ByteBufferUtil.inputStream(bytes)), MessagingService.current_version);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public ByteBuffer toBytes()
+    {
+        DataOutputBuffer out = new DataOutputBuffer();
+        serializer.serialize(this, out, MessagingService.current_version);
+        return ByteBuffer.wrap(out.getData(), 0, out.getLength());
     }
 
     public abstract static class Factory <T extends ColumnFamily>

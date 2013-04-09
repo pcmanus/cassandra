@@ -9,7 +9,7 @@ import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.Row;
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -21,7 +21,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
     public boolean promised = true;
     public Commit mostRecentCommit = Commit.emptyCommit();
     public UUID inProgressBallot = UUIDGen.minTimeUUID(0);
-    public Row inProgressUpdates = null;
+    public ColumnFamily inProgressUpdates = null;
 
     private Map<InetAddress, Commit> commitsByReplica = new HashMap<InetAddress, Commit>();
     private SortedMap<UUID, AtomicInteger> sharedCommits = new TreeMap<UUID, AtomicInteger>(FBUtilities.timeComparator);
@@ -70,7 +70,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         {
             public boolean apply(InetAddress inetAddress)
             {
-                return commitsByReplica.get(inetAddress).ballot != mostRecentCommit.ballot;
+                return (!commitsByReplica.get(inetAddress).ballot.equals(mostRecentCommit.ballot));
             }
         });
     }

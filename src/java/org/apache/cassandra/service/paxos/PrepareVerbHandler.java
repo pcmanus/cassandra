@@ -9,9 +9,7 @@ public class PrepareVerbHandler implements IVerbHandler<PrepareRequest>
 {
     public void doVerb(MessageIn<PrepareRequest> message, int id)
     {
-        PaxosState state = PaxosState.stateFor(message.payload.key);
-
-        PrepareResponse response = state.prepare(message.payload.ballot);
+        PrepareResponse response = PaxosState.prepare(message.payload.key, message.payload.ballot);
         MessageOut<PrepareResponse> reply = new MessageOut<PrepareResponse>(MessagingService.Verb.REQUEST_RESPONSE, response, PrepareResponse.serializer);
         MessagingService.instance().sendReply(reply, id, message.from);
     }

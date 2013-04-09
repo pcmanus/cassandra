@@ -7,7 +7,6 @@ public class CommitVerbHandler implements IVerbHandler<ProposeRequest>
 {
     public void doVerb(MessageIn<ProposeRequest> message, int id)
     {
-        PaxosState state = PaxosState.stateFor(message.payload.proposal.key.key);
-        state.commit(message.payload.ballot, message.payload.proposal);
+        PaxosState.commit(message.payload.key, message.payload.ballot, message.payload.update);
     }
 }

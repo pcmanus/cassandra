@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
-import java.sql.Time;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -61,7 +60,6 @@ import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.metrics.ClientRequestMetrics;
 import org.apache.cassandra.net.*;
 import org.apache.cassandra.service.paxos.*;
-import org.apache.cassandra.thrift.TimedOutException;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
 
@@ -227,14 +225,14 @@ public class StorageProxy implements StorageProxyMBean
             }
             Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
             if (Iterables.size(missingMRC) > 0)
-                commitPaxos(ballot, summary.mostRecentCommit.update, missingMRC);
+                commitPaxos(key, ballot, summary.mostRecentCommit.update, missingMRC);
 
             // complete earlier, in-progress rounds if necessary
             if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) >= 0)
             {
                 logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
-                if (proposePaxos(ballot, summary.inProgressUpdates, liveEndpoints, 0))
-                    commitPaxos(ballot, summary.inProgressUpdates, liveEndpoints);
+                if (proposePaxos(key, ballot, summary.inProgressUpdates, liveEndpoints, requiredParticipants))
+                    commitPaxos(key, ballot, summary.inProgressUpdates, liveEndpoints);
                 // no need to sleep here
                 continue;
             }
@@ -259,11 +257,11 @@ public class StorageProxy implements StorageProxyMBean
 
             // finish the paxos round w/ the desired updates
             // TODO turn null updates into delete?
-            Row proposal = new Row(key, updatesWithPaxosTime(updates, ballot));
+            ColumnFamily proposal = updatesWithPaxosTime(updates, ballot);
             logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
-            if (proposePaxos(ballot, proposal, liveEndpoints, 0))
+            if (proposePaxos(key, ballot, proposal, liveEndpoints, requiredParticipants))
             {
-                commitPaxos(ballot, proposal, liveEndpoints);
+                commitPaxos(key, ballot, proposal, liveEndpoints);
                 logger.debug("Paxos CAS successful");
                 return true;
             }
@@ -307,10 +305,10 @@ public class StorageProxy implements StorageProxyMBean
         return callback;
     }
 
-    private static boolean proposePaxos(UUID ballot, Row proposal, List<InetAddress> endpoints, int requiredParticipants)
+    private static boolean proposePaxos(ByteBuffer key, UUID ballot, ColumnFamily proposal, List<InetAddress> endpoints, int requiredParticipants)
     {
         ProposeCallback callback = new ProposeCallback(endpoints.size());
-        ProposeRequest request = new ProposeRequest(ballot, proposal);
+        ProposeRequest request = new ProposeRequest(key, ballot, proposal);
         MessageOut<ProposeRequest> message = new MessageOut<ProposeRequest>(MessagingService.Verb.PAXOS_PROPOSE, request, ProposeRequest.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendRR(message, target, callback);
@@ -319,9 +317,9 @@ public class StorageProxy implements StorageProxyMBean
         return callback.getSuccessful() >= requiredParticipants;
     }
 
-    private static void commitPaxos(UUID ballot, Row proposal, Iterable<InetAddress> endpoints)
+    private static void commitPaxos(ByteBuffer key, UUID ballot, ColumnFamily proposal, Iterable<InetAddress> endpoints)
     {
-        ProposeRequest request = new ProposeRequest(ballot, proposal);
+        ProposeRequest request = new ProposeRequest(key, ballot, proposal);
         MessageOut<ProposeRequest> message = new MessageOut<ProposeRequest>(MessagingService.Verb.PAXOS_COMMIT, request, ProposeRequest.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendOneWay(message, target);
