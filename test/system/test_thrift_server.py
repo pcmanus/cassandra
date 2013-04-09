@@ -233,9 +233,13 @@ class TestMutations(ThriftTester):
     def test_cas(self):
         _set_keyspace('Keyspace1')
         assert not client.cas('key1', 'Standard1', _SIMPLE_COLUMNS, _SIMPLE_COLUMNS)
+
         assert client.cas('key1', 'Standard1', None, _SIMPLE_COLUMNS)
+
         result = [cosc.column for cosc in _big_slice('key1', ColumnParent('Standard1'))]
-        assert result == _SIMPLE_COLUMNS, result
+        # CAS will use its own timestamp, so we can't just compare result == _SIMPLE_COLUMNS
+        assert dict((c.name, c.value) for c in result) == dict((c.name, c.value) for c in _SIMPLE_COLUMNS), result
+
         assert not client.cas('key1', 'Standard1', None, _SIMPLE_COLUMNS)
 
     def test_missing_super(self):

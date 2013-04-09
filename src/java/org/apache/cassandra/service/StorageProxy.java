@@ -259,7 +259,7 @@ public class StorageProxy implements StorageProxyMBean
 
             // finish the paxos round w/ the desired updates
             // TODO turn null updates into delete?
-            Row proposal = new Row(key, updates);
+            Row proposal = new Row(key, updatesWithPaxosTime(updates, ballot));
             logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
             if (proposePaxos(ballot, proposal, liveEndpoints, 0))
             {
@@ -274,6 +274,15 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, -1, -1);
+    }
+
+    private static ColumnFamily updatesWithPaxosTime(ColumnFamily updates, UUID ballot)
+    {
+        ColumnFamily cf = updates.cloneMeShallow();
+        long t = UUIDGen.unixTimestamp(ballot) * 1000;
+        for (Column column : updates)
+            cf.addColumn(column.name(), column.value(), t);
+        return cf;
     }
 
     private static PrepareCallback preparePaxos(UUID ballot, ByteBuffer key, List<InetAddress> endpoints, int requiredParticipants)
