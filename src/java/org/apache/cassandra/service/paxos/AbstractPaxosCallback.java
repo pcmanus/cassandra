@@ -4,6 +4,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.net.IAsyncCallback;
 
 public abstract class AbstractPaxosCallback<T> implements IAsyncCallback<T>
@@ -27,11 +30,12 @@ public abstract class AbstractPaxosCallback<T> implements IAsyncCallback<T>
         return (int) (targets - latch.getCount());
     }
 
-    public void await()
+    public void await() throws WriteTimeoutException
     {
         try
         {
-            latch.await(DatabaseDescriptor.getWriteRpcTimeout(), TimeUnit.MILLISECONDS);
+            if (!latch.await(DatabaseDescriptor.getWriteRpcTimeout(), TimeUnit.MILLISECONDS))
+                throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, getResponseCount(), targets);
         }
         catch (InterruptedException ex)
         {

@@ -223,17 +223,30 @@ public class StorageProxy implements StorageProxyMBean
                 FBUtilities.sleep(FBUtilities.threadLocalRandom().nextInt(100));
                 continue;
             }
-            Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
-            if (Iterables.size(missingMRC) > 0)
-                commitPaxos(key, ballot, summary.mostRecentCommit.update, missingMRC);
 
-            // complete earlier, in-progress rounds if necessary
-            if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) >= 0)
+            // If we have an in-progress ballot greater than the MRC we know, then it's an in-progress round that
+            // needs to be completed, so do it.
+            if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) > 0)
             {
                 logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
                 if (proposePaxos(key, ballot, summary.inProgressUpdates, liveEndpoints, requiredParticipants))
                     commitPaxos(key, ballot, summary.inProgressUpdates, liveEndpoints);
                 // no need to sleep here
+                continue;
+            }
+
+            // To be able to propose our value on a new round, we need a quorum of replica to have learn the previous one. Why is explained at:
+            // https://issues.apache.org/jira/browse/CASSANDRA-5062?focusedCommentId=13619810&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-13619810)
+            // Since we waited for quorum nodes, if some of them haven't seen the last commit (which may just be a timing issue, but may also
+            // mean we lost messages), we pro-actively "repair" those nodes, and retry.
+            Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
+            if (Iterables.size(missingMRC) > 0)
+            {
+                commitPaxos(key, summary.mostRecentCommit.ballot, summary.mostRecentCommit.update, missingMRC);
+                // TODO: provided commits don't invalid the prepare we just did above (which they don't), we could just wait
+                // for all the missingMRC to acknowledge this commit and then move on with proposing our value. But that means
+                // adding the ability to have commitPaxos block, which is exactly CASSANDRA-5442 will do. So once we have that
+                // latter ticket, we can pass CL.ALL to the commit above and remove the 'continue'.
                 continue;
             }
 
@@ -284,30 +297,21 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     private static PrepareCallback preparePaxos(UUID ballot, ByteBuffer key, List<InetAddress> endpoints, int requiredParticipants)
-            throws WriteTimeoutException, UnavailableException
+    throws WriteTimeoutException, UnavailableException
     {
-        PrepareCallback callback = new PrepareCallback(endpoints.size());
+        PrepareCallback callback = new PrepareCallback(requiredParticipants);
         PrepareRequest request = new PrepareRequest(ballot, key);
         MessageOut<PrepareRequest> message = new MessageOut<PrepareRequest>(MessagingService.Verb.PAXOS_PREPARE, request, PrepareRequest.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendRR(message, target, callback);
         callback.await();
-
-        if (callback.getResponseCount() < requiredParticipants)
-            throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, callback.getResponseCount(), endpoints.size());
-
-        // Require that a majority of the nodes that participated in the last commit be present.
-        // This prevents replicas from diverging fatally over time.  An example is presented at
-        // https://issues.apache.org/jira/browse/CASSANDRA-5062?focusedCommentId=13619810&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-13619810
-        if (!callback.mostRecentCommitHasQuorum(requiredParticipants))
-            throw new UnavailableException(ConsistencyLevel.SERIAL, requiredParticipants, endpoints.size());
-
         return callback;
     }
 
     private static boolean proposePaxos(ByteBuffer key, UUID ballot, ColumnFamily proposal, List<InetAddress> endpoints, int requiredParticipants)
+    throws WriteTimeoutException
     {
-        ProposeCallback callback = new ProposeCallback(endpoints.size());
+        ProposeCallback callback = new ProposeCallback(requiredParticipants);
         ProposeRequest request = new ProposeRequest(key, ballot, proposal);
         MessageOut<ProposeRequest> message = new MessageOut<ProposeRequest>(MessagingService.Verb.PAXOS_PROPOSE, request, ProposeRequest.serializer);
         for (InetAddress target : endpoints)

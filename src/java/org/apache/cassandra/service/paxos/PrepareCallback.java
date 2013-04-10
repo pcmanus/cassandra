@@ -2,7 +2,6 @@ package org.apache.cassandra.service.paxos;
 
 import java.net.InetAddress;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
@@ -24,7 +23,6 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
     public ColumnFamily inProgressUpdates = null;
 
     private Map<InetAddress, Commit> commitsByReplica = new HashMap<InetAddress, Commit>();
-    private SortedMap<UUID, AtomicInteger> sharedCommits = new TreeMap<UUID, AtomicInteger>(FBUtilities.timeComparator);
 
     public PrepareCallback(int targets)
     {
@@ -39,14 +37,6 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         promised &= response.promised;
         commitsByReplica.put(message.from, response.mostRecentCommit);
 
-        AtomicInteger mrc = sharedCommits.get(response.mostRecentCommit.ballot);
-        if (mrc == null)
-        {
-            mrc = new AtomicInteger(0);
-            sharedCommits.put(response.mostRecentCommit.ballot, mrc);
-        }
-        mrc.incrementAndGet();
-
         if (response.mostRecentCommit.ballot.timestamp() > mostRecentCommit.ballot.timestamp())
             mostRecentCommit = response.mostRecentCommit;
 
@@ -57,11 +47,6 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         }
 
         latch.countDown();
-    }
-
-    public boolean mostRecentCommitHasQuorum(int required)
-    {
-        return sharedCommits.get(sharedCommits.lastKey()).get() >= required;
     }
 
     public Iterable<InetAddress> replicasMissingMostRecentCommit()
