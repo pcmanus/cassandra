@@ -34,8 +34,13 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         PrepareResponse response = message.payload;
         logger.debug("Prepare response {} from {}", response, message.from);
 
-        promised &= response.promised;
-        commitsByReplica.put(message.from, response.mostRecentCommit);
+        if (!response.promised)
+        {
+            promised = false;
+            while (latch.getCount() > 0)
+                latch.countDown();
+            return;
+        }
 
         if (response.mostRecentCommit.ballot.timestamp() > mostRecentCommit.ballot.timestamp())
             mostRecentCommit = response.mostRecentCommit;
