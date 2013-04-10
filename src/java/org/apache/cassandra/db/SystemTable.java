@@ -826,7 +826,7 @@ public class SystemTable
                                       ByteBufferUtil.bytesToHex(commit.key)));
     }
 
-    public static void savePaxosCommit(Commit commit)
+    public static void savePaxosCommit(Commit commit, boolean eraseInProgressProposal)
     {
         processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = null, most_recent_commit_at = %s, most_recent_commit = 0x%s WHERE row_key = 0x%s",
                                       PAXOS_CF,
