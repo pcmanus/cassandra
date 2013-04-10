@@ -60,7 +60,6 @@ import org.apache.cassandra.net.sink.SinkManager;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.service.paxos.Commit;
-import org.apache.cassandra.service.paxos.PrepareRequest;
 import org.apache.cassandra.service.paxos.PrepareResponse;
 import org.apache.cassandra.streaming.*;
 import org.apache.cassandra.streaming.compress.CompressedFileStreamTask;
@@ -204,7 +203,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.INDEX_SCAN, IndexScanCommand.serializer);
         put(Verb.REPLICATION_FINISHED, null);
         put(Verb.COUNTER_MUTATION, CounterMutation.serializer);
-        put(Verb.PAXOS_PREPARE, PrepareRequest.serializer);
+        put(Verb.PAXOS_PREPARE, Commit.serializer);
         put(Verb.PAXOS_PROPOSE, Commit.serializer);
         put(Verb.PAXOS_COMMIT, Commit.serializer);
     }};

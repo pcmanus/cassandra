@@ -19,8 +19,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
 
     public boolean promised = true;
     public Commit mostRecentCommit = Commit.emptyCommit(null);
-    public UUID inProgressBallot = UUIDGen.minTimeUUID(0);
-    public ColumnFamily inProgressUpdates = null;
+    public Commit inProgressCommit = Commit.emptyCommit(null);
 
     private Map<InetAddress, Commit> commitsByReplica = new HashMap<InetAddress, Commit>();
 
@@ -45,11 +44,8 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         if (response.mostRecentCommit.isAfter(mostRecentCommit))
             mostRecentCommit = response.mostRecentCommit;
 
-        if (response.inProgressBallot.timestamp() > inProgressBallot.timestamp())
-        {
-            inProgressBallot = response.inProgressBallot;
-            inProgressUpdates = response.inProgressUpdates;
-        }
+        if (response.inProgressCommit.isAfter(inProgressCommit))
+            inProgressCommit = response.inProgressCommit;
 
         latch.countDown();
     }

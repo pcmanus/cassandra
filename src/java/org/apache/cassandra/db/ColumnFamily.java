@@ -434,6 +434,9 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
 
     public static ColumnFamily fromBytes(ByteBuffer bytes)
     {
+        if (bytes == null)
+            return null;
+
         try
         {
             return serializer.deserialize(new DataInputStream(ByteBufferUtil.inputStream(bytes)), MessagingService.current_version);

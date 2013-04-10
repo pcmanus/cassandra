@@ -215,7 +215,8 @@ public class StorageProxy implements StorageProxyMBean
 
             // prepare
             logger.debug("Preparing {}", ballot);
-            PrepareCallback summary = preparePaxos(key, ballot, liveEndpoints, requiredParticipants);
+            Commit toPrepare = Commit.newPrepare(key, ballot);
+            PrepareCallback summary = preparePaxos(toPrepare, liveEndpoints, requiredParticipants);
             if (!summary.promised)
             {
                 logger.debug("Some replicas have already promised a higher ballot than ours; aborting");
@@ -224,14 +225,16 @@ public class StorageProxy implements StorageProxyMBean
                 continue;
             }
 
+            Commit inProgress = summary.inProgressCommit;
+            Commit mostRecent = summary.mostRecentCommit;
+
             // If we have an in-progress ballot greater than the MRC we know, then it's an in-progress round that
             // needs to be completed, so do it.
-            if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) > 0)
+            if (inProgress.update != null && inProgress.isAfter(mostRecent))
             {
-                logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
-                Commit toComplete = new Commit(key, ballot, summary.inProgressUpdates);
-                if (proposePaxos(toComplete, liveEndpoints, requiredParticipants))
-                    commitPaxos(toComplete, liveEndpoints);
+                logger.debug("Finishing incomplete paxos round {}", inProgress);
+                if (proposePaxos(inProgress, liveEndpoints, requiredParticipants))
+                    commitPaxos(inProgress, liveEndpoints);
                 // no need to sleep here
                 continue;
             }
@@ -243,7 +246,7 @@ public class StorageProxy implements StorageProxyMBean
             Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
             if (Iterables.size(missingMRC) > 0)
             {
-                commitPaxos(summary.mostRecentCommit, missingMRC);
+                commitPaxos(mostRecent, missingMRC);
                 // TODO: provided commits don't invalid the prepare we just did above (which they don't), we could just wait
                 // for all the missingMRC to acknowledge this commit and then move on with proposing our value. But that means
                 // adding the ability to have commitPaxos block, which is exactly CASSANDRA-5442 will do. So once we have that
@@ -271,7 +274,7 @@ public class StorageProxy implements StorageProxyMBean
 
             // finish the paxos round w/ the desired updates
             // TODO turn null updates into delete?
-            Commit proposal = Commit.newProposal(key, ballot, updates);
+            Commit proposal = toPrepare.makeProposal(updates);
             logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
             if (proposePaxos(proposal, liveEndpoints, requiredParticipants))
             {
@@ -288,12 +291,11 @@ public class StorageProxy implements StorageProxyMBean
         throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, -1, -1);
     }
 
-    private static PrepareCallback preparePaxos(ByteBuffer key, UUID ballot, List<InetAddress> endpoints, int requiredParticipants)
+    private static PrepareCallback preparePaxos(Commit toPrepare, List<InetAddress> endpoints, int requiredParticipants)
     throws WriteTimeoutException, UnavailableException
     {
         PrepareCallback callback = new PrepareCallback(requiredParticipants);
-        PrepareRequest request = new PrepareRequest(ballot, key);
-        MessageOut<PrepareRequest> message = new MessageOut<PrepareRequest>(MessagingService.Verb.PAXOS_PREPARE, request, PrepareRequest.serializer);
+        MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_PREPARE, toPrepare, Commit.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendRR(message, target, callback);
         callback.await();

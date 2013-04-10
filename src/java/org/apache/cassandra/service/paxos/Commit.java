@@ -32,7 +32,12 @@ public class Commit
         this.update = update;
     }
 
-    public static Commit newProposal(ByteBuffer key, UUID ballot, ColumnFamily update)
+    public static Commit newPrepare(ByteBuffer key, UUID ballot)
+    {
+        return new Commit(key, ballot, null);
+    }
+
+    public Commit makeProposal(ColumnFamily update)
     {
         return new Commit(key, ballot, updatesWithPaxosTime(update, ballot));
     }
@@ -54,6 +59,7 @@ public class Commit
 
     public RowMutation makeMutation()
     {
+        assert update != null;
         return new RowMutation(key, update);
     }
 

@@ -29,38 +29,36 @@ public class PaxosState
         return locks[key.hashCode() % locks.length];
     }
 
-    private final UUID inProgressBallot;
-    private final ColumnFamily acceptedProposal;
+    private final Commit inProgressCommit;
     private final Commit mostRecentCommit;
 
     public PaxosState(ByteBuffer key)
     {
-        this(UUIDGen.minTimeUUID(0), null, Commit.emptyCommit(key));
+        this(Commit.emptyCommit(key), Commit.emptyCommit(key));
     }
 
-    public PaxosState(UUID inProgressBallot, ColumnFamily acceptedProposal, Commit mostRecentCommit)
+    public PaxosState(Commit inProgressCommit, Commit mostRecentCommit)
     {
-        this.inProgressBallot = inProgressBallot;
-        this.acceptedProposal = acceptedProposal;
+        this.inProgressCommit = inProgressCommit;
         this.mostRecentCommit = mostRecentCommit;
     }
 
-    public static PrepareResponse prepare(ByteBuffer key, UUID ballot)
+    public static PrepareResponse prepare(Commit toPrepare)
     {
-        synchronized (lockFor(key))
+        synchronized (lockFor(toPrepare.key))
         {
-            PaxosState state = SystemTable.loadPaxosState(key);
-            if (FBUtilities.timeComparator.compare(ballot, state.inProgressBallot) > 0)
+            PaxosState state = SystemTable.loadPaxosState(toPrepare.key);
+            if (toPrepare.isAfter(state.inProgressCommit))
             {
-                logger.debug("promising ballot {}", ballot);
-                SystemTable.savePaxosPromise(key, ballot);
+                logger.debug("promising ballot {}", toPrepare.ballot);
+                SystemTable.savePaxosPromise(toPrepare);
                 // return the pre-promise ballot so coordinator can pick the most recent in-progress value to resume
-                return new PrepareResponse(true, state.inProgressBallot, state.acceptedProposal, state.mostRecentCommit);
+                return new PrepareResponse(true, state.inProgressCommit, state.mostRecentCommit);
             }
             else
             {
-                logger.debug("promise rejected; {} is not sufficiently newer than {}", ballot, state.inProgressBallot);
-                return new PrepareResponse(false, state.inProgressBallot, state.acceptedProposal, state.mostRecentCommit);
+                logger.debug("promise rejected; {} is not sufficiently newer than {}", toPrepare, state.inProgressCommit);
+                return new PrepareResponse(false, state.inProgressCommit, state.mostRecentCommit);
             }
         }
     }
@@ -70,14 +68,14 @@ public class PaxosState
         synchronized (lockFor(proposal.key))
         {
             PaxosState state = SystemTable.loadPaxosState(proposal.key);
-            if (proposal.hasBallot(state.inProgressBallot))
+            if (proposal.hasBallot(state.inProgressCommit.ballot))
             {
                 logger.debug("accepting {}", proposal);
                 SystemTable.savePaxosProposal(proposal);
                 return true;
             }
 
-            logger.debug("accept requested for {} but inProgressBallot is now {}", proposal, state.inProgressBallot);
+            logger.debug("accept requested for {} but inProgress is now {}", proposal, state.inProgressCommit);
             return false;
         }
     }
@@ -87,7 +85,7 @@ public class PaxosState
         synchronized (lockFor(proposal.key))
         {
             PaxosState state = SystemTable.loadPaxosState(proposal.key);
-            if (proposal.hasBallot(state.inProgressBallot))
+            if (proposal.hasBallot(state.inProgressCommit.ballot))
             {
                 logger.debug("committing {}", proposal);
 
@@ -99,7 +97,7 @@ public class PaxosState
             {
                 // a new coordinator extracted a promise from us before the old one issued its commit.
                 // (this means the new one should also issue a commit soon.)
-                logger.debug("commit requested for {} but inProgressBallot is now {}", proposal, state.inProgressBallot);
+                logger.debug("commit requested for {} but inProgress is now {}", proposal, state.inProgressCommit);
             }
         }
     }

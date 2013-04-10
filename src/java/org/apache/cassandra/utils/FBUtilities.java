@@ -71,13 +71,6 @@ public class FBUtilities
 
     private static volatile InetAddress localInetAddress;
     private static volatile InetAddress broadcastInetAddress;
-    public static Comparator<UUID> timeComparator = new Comparator<UUID>()
-    {
-        public int compare(UUID o1, UUID o2)
-        {
-            return Longs.compare(o1.timestamp(), o2.timestamp());
-        }
-    };
 
     public static int getAvailableProcessors()
     {

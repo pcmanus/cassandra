@@ -804,18 +804,17 @@ public class SystemTable
         if (results.isEmpty())
             return new PaxosState(key);
         UntypedResultSet.Row row = results.one();
-        ByteBuffer proposalBytes = row.getBytes("proposal");
-        ByteBuffer commitBytes = row.getBytes("most_recent_commit");
-        return new PaxosState(row.getUUID("in_progress_ballot"),
-                              proposalBytes == null ? null : ColumnFamily.fromBytes(proposalBytes),
-                              commitBytes == null ? Commit.emptyCommit(key)
-                                                  : new Commit(key, row.getUUID("most_recent_commit_at"), ColumnFamily.fromBytes(commitBytes)));
+        Commit inProgress = new Commit(key, row.getUUID("in_progress_ballot"), ColumnFamily.fromBytes(row.getBytes("proposal")));
+        Commit mostRecent = row.has("most_recent_commit")
+                          ? new Commit(key, row.getUUID("most_recent_commit_at"), ColumnFamily.fromBytes(row.getBytes("most_recent_commit")))
+                          : Commit.emptyCommit(key);
+        return new PaxosState(inProgress, mostRecent);
     }
 
-    public static void savePaxosPromise(ByteBuffer key, UUID ballot)
+    public static void savePaxosPromise(Commit promise)
     {
         String req = "UPDATE %s USING TIMESTAMP %d SET in_progress_ballot = %s WHERE row_key = 0x%s";
-        processInternal(String.format(req, PAXOS_CF, UUIDGen.microsTimestamp(ballot), ballot, ByteBufferUtil.bytesToHex(key)));
+        processInternal(String.format(req, PAXOS_CF, UUIDGen.microsTimestamp(promise.ballot), promise.ballot, ByteBufferUtil.bytesToHex(promise.key)));
     }
 
     public static void savePaxosProposal(Commit commit)

@@ -14,22 +14,20 @@ public class PrepareResponse
     public static final PrepareResponseSerializer serializer = new PrepareResponseSerializer();
 
     public final boolean promised;
-    public final UUID inProgressBallot;
-    public final ColumnFamily inProgressUpdates;
+    public final Commit inProgressCommit;
     public final Commit mostRecentCommit;
 
-    public PrepareResponse(boolean promised, UUID inProgressBallot, ColumnFamily inProgressUpdates, Commit mostRecentCommit)
+    public PrepareResponse(boolean promised, Commit inProgressCommit, Commit mostRecentCommit)
     {
         this.promised = promised;
         this.mostRecentCommit = mostRecentCommit;
-        this.inProgressBallot = inProgressBallot;
-        this.inProgressUpdates = inProgressUpdates;
+        this.inProgressCommit = inProgressCommit;
     }
 
+    @Override
     public String toString()
     {
-        return String.format("PrepareResponse(%s, %s, %s, %s)",
-                             promised, mostRecentCommit, inProgressBallot, inProgressUpdates);
+        return String.format("PrepareResponse(%s, %s, %s)", promised, mostRecentCommit, inProgressCommit);
     }
 
     public static class PrepareResponseSerializer implements IVersionedSerializer<PrepareResponse>
@@ -37,26 +35,21 @@ public class PrepareResponse
         public void serialize(PrepareResponse response, DataOutput out, int version) throws IOException
         {
             out.writeBoolean(response.promised);
-
-            UUIDSerializer.serializer.serialize(response.inProgressBallot, out, version);
-            ColumnFamily.serializer.serialize(response.inProgressUpdates, out, version);
-
+            Commit.serializer.serialize(response.inProgressCommit, out, version);
             Commit.serializer.serialize(response.mostRecentCommit, out, version);
         }
 
         public PrepareResponse deserialize(DataInput in, int version) throws IOException
         {
             return new PrepareResponse(in.readBoolean(),
-                                       UUIDSerializer.serializer.deserialize(in, version),
-                                       ColumnFamily.serializer.deserialize(in, version),
+                                       Commit.serializer.deserialize(in, version),
                                        Commit.serializer.deserialize(in, version));
         }
 
         public long serializedSize(PrepareResponse response, int version)
         {
             return 1
-                   + UUIDSerializer.serializer.serializedSize(response.inProgressBallot, version)
-                   + ColumnFamily.serializer.serializedSize(response.inProgressUpdates, version)
+                   + Commit.serializer.serializedSize(response.inProgressCommit, version)
                    + Commit.serializer.serializedSize(response.mostRecentCommit, version);
         }
     }

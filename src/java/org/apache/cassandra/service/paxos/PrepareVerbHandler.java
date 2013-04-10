@@ -5,11 +5,11 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
-public class PrepareVerbHandler implements IVerbHandler<PrepareRequest>
+public class PrepareVerbHandler implements IVerbHandler<Commit>
 {
-    public void doVerb(MessageIn<PrepareRequest> message, int id)
+    public void doVerb(MessageIn<Commit> message, int id)
     {
-        PrepareResponse response = PaxosState.prepare(message.payload.key, message.payload.ballot);
+        PrepareResponse response = PaxosState.prepare(message.payload);
         MessageOut<PrepareResponse> reply = new MessageOut<PrepareResponse>(MessagingService.Verb.REQUEST_RESPONSE, response, PrepareResponse.serializer);
         MessagingService.instance().sendReply(reply, id, message.from);
     }
