@@ -33,9 +33,9 @@ public class PaxosState
     private final ColumnFamily acceptedProposal;
     private final Commit mostRecentCommit;
 
-    public PaxosState()
+    public PaxosState(ByteBuffer key)
     {
-        this(UUIDGen.minTimeUUID(0), null, Commit.emptyCommit());
+        this(UUIDGen.minTimeUUID(0), null, Commit.emptyCommit(key));
     }
 
     public PaxosState(UUID inProgressBallot, ColumnFamily acceptedProposal, Commit mostRecentCommit)
@@ -65,41 +65,41 @@ public class PaxosState
         }
     }
 
-    public static Boolean propose(ByteBuffer key, UUID ballot, ColumnFamily proposal)
+    public static Boolean propose(Commit proposal)
     {
-        synchronized (lockFor(key))
+        synchronized (lockFor(proposal.key))
         {
-            PaxosState state = SystemTable.loadPaxosState(key);
-            if (state.inProgressBallot.equals(ballot))
+            PaxosState state = SystemTable.loadPaxosState(proposal.key);
+            if (proposal.hasBallot(state.inProgressBallot))
             {
-                logger.debug("accepting {} for {}", ballot, proposal);
-                SystemTable.savePaxosProposal(key, ballot, proposal);
+                logger.debug("accepting {}", proposal);
+                SystemTable.savePaxosProposal(proposal);
                 return true;
             }
 
-            logger.debug("accept requested for {} but inProgressBallot is now {}", ballot, state.inProgressBallot);
+            logger.debug("accept requested for {} but inProgressBallot is now {}", proposal, state.inProgressBallot);
             return false;
         }
     }
 
-    public static void commit(ByteBuffer key, UUID ballot, ColumnFamily proposal)
+    public static void commit(Commit proposal)
     {
-        synchronized (lockFor(key))
+        synchronized (lockFor(proposal.key))
         {
-            PaxosState state = SystemTable.loadPaxosState(key);
-            if (state.inProgressBallot.equals(ballot))
+            PaxosState state = SystemTable.loadPaxosState(proposal.key);
+            if (proposal.hasBallot(state.inProgressBallot))
             {
-                logger.debug("committing {} for {}", proposal, ballot);
+                logger.debug("committing {}", proposal);
 
-                RowMutation rm = new RowMutation(key, proposal);
+                RowMutation rm = proposal.makeMutation();
                 Table.open(rm.getTable()).apply(rm, true);
-                SystemTable.savePaxosCommit(key, ballot, proposal);
+                SystemTable.savePaxosCommit(proposal);
             }
             else
             {
                 // a new coordinator extracted a promise from us before the old one issued its commit.
                 // (this means the new one should also issue a commit soon.)
-                logger.debug("commit requested for {} but inProgressBallot is now {}", ballot, state.inProgressBallot);
+                logger.debug("commit requested for {} but inProgressBallot is now {}", proposal, state.inProgressBallot);
             }
         }
     }

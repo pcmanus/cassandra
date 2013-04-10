@@ -18,7 +18,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
     private static final Logger logger = LoggerFactory.getLogger(PrepareCallback.class);
 
     public boolean promised = true;
-    public Commit mostRecentCommit = Commit.emptyCommit();
+    public Commit mostRecentCommit = Commit.emptyCommit(null);
     public UUID inProgressBallot = UUIDGen.minTimeUUID(0);
     public ColumnFamily inProgressUpdates = null;
 
@@ -42,7 +42,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
             return;
         }
 
-        if (response.mostRecentCommit.ballot.timestamp() > mostRecentCommit.ballot.timestamp())
+        if (response.mostRecentCommit.isAfter(mostRecentCommit))
             mostRecentCommit = response.mostRecentCommit;
 
         if (response.inProgressBallot.timestamp() > inProgressBallot.timestamp())

@@ -802,14 +802,14 @@ public class SystemTable
         String req = "SELECT * FROM system.%s WHERE row_key = 0x%s";
         UntypedResultSet results = processInternal(String.format(req, PAXOS_CF, ByteBufferUtil.bytesToHex(key)));
         if (results.isEmpty())
-            return new PaxosState();
+            return new PaxosState(key);
         UntypedResultSet.Row row = results.one();
         ByteBuffer proposalBytes = row.getBytes("proposal");
         ByteBuffer commitBytes = row.getBytes("most_recent_commit");
         return new PaxosState(row.getUUID("in_progress_ballot"),
                               proposalBytes == null ? null : ColumnFamily.fromBytes(proposalBytes),
-                              commitBytes == null ? Commit.emptyCommit()
-                                                  : new Commit(row.getUUID("most_recent_commit_at"), ColumnFamily.fromBytes(commitBytes)));
+                              commitBytes == null ? Commit.emptyCommit(key)
+                                                  : new Commit(key, row.getUUID("most_recent_commit_at"), ColumnFamily.fromBytes(commitBytes)));
     }
 
     public static void savePaxosPromise(ByteBuffer key, UUID ballot)
@@ -818,22 +818,22 @@ public class SystemTable
         processInternal(String.format(req, PAXOS_CF, UUIDGen.microsTimestamp(ballot), ballot, ByteBufferUtil.bytesToHex(key)));
     }
 
-    public static void savePaxosProposal(ByteBuffer key, UUID ballot, ColumnFamily proposal)
+    public static void savePaxosProposal(Commit commit)
     {
         processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = 0x%s WHERE row_key = 0x%s",
                                       PAXOS_CF,
-                                      UUIDGen.microsTimestamp(ballot),
-                                      ByteBufferUtil.bytesToHex(proposal.toBytes()),
-                                      ByteBufferUtil.bytesToHex(key)));
+                                      UUIDGen.microsTimestamp(commit.ballot),
+                                      ByteBufferUtil.bytesToHex(commit.update.toBytes()),
+                                      ByteBufferUtil.bytesToHex(commit.key)));
     }
 
-    public static void savePaxosCommit(ByteBuffer key, UUID ballot, ColumnFamily update)
+    public static void savePaxosCommit(Commit commit)
     {
         processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = null, most_recent_commit_at = %s, most_recent_commit = 0x%s WHERE row_key = 0x%s",
                                       PAXOS_CF,
-                                      UUIDGen.microsTimestamp(ballot),
-                                      ballot,
-                                      ByteBufferUtil.bytesToHex(update.toBytes()),
-                                      ByteBufferUtil.bytesToHex(key)));
+                                      UUIDGen.microsTimestamp(commit.ballot),
+                                      commit.ballot,
+                                      ByteBufferUtil.bytesToHex(commit.update.toBytes()),
+                                      ByteBufferUtil.bytesToHex(commit.key)));
     }
 }

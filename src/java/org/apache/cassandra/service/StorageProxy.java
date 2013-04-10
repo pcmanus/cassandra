@@ -215,7 +215,7 @@ public class StorageProxy implements StorageProxyMBean
 
             // prepare
             logger.debug("Preparing {}", ballot);
-            PrepareCallback summary = preparePaxos(ballot, key, liveEndpoints, requiredParticipants);
+            PrepareCallback summary = preparePaxos(key, ballot, liveEndpoints, requiredParticipants);
             if (!summary.promised)
             {
                 logger.debug("Some replicas have already promised a higher ballot than ours; aborting");
@@ -229,8 +229,9 @@ public class StorageProxy implements StorageProxyMBean
             if (summary.inProgressUpdates != null && FBUtilities.timeComparator.compare(summary.inProgressBallot, summary.mostRecentCommit.ballot) > 0)
             {
                 logger.debug("Finishing incomplete update {} for paxos round {}", summary.inProgressUpdates, summary.inProgressBallot);
-                if (proposePaxos(key, ballot, summary.inProgressUpdates, liveEndpoints, requiredParticipants))
-                    commitPaxos(key, ballot, summary.inProgressUpdates, liveEndpoints);
+                Commit toComplete = new Commit(key, ballot, summary.inProgressUpdates);
+                if (proposePaxos(toComplete, liveEndpoints, requiredParticipants))
+                    commitPaxos(toComplete, liveEndpoints);
                 // no need to sleep here
                 continue;
             }
@@ -242,7 +243,7 @@ public class StorageProxy implements StorageProxyMBean
             Iterable<InetAddress> missingMRC = summary.replicasMissingMostRecentCommit();
             if (Iterables.size(missingMRC) > 0)
             {
-                commitPaxos(key, summary.mostRecentCommit.ballot, summary.mostRecentCommit.update, missingMRC);
+                commitPaxos(summary.mostRecentCommit, missingMRC);
                 // TODO: provided commits don't invalid the prepare we just did above (which they don't), we could just wait
                 // for all the missingMRC to acknowledge this commit and then move on with proposing our value. But that means
                 // adding the ability to have commitPaxos block, which is exactly CASSANDRA-5442 will do. So once we have that
@@ -270,11 +271,11 @@ public class StorageProxy implements StorageProxyMBean
 
             // finish the paxos round w/ the desired updates
             // TODO turn null updates into delete?
-            ColumnFamily proposal = updatesWithPaxosTime(updates, ballot);
+            Commit proposal = Commit.newProposal(key, ballot, updates);
             logger.debug("CAS precondition is met; proposing client-requested updates for {}", ballot);
-            if (proposePaxos(key, ballot, proposal, liveEndpoints, requiredParticipants))
+            if (proposePaxos(proposal, liveEndpoints, requiredParticipants))
             {
-                commitPaxos(key, ballot, proposal, liveEndpoints);
+                commitPaxos(proposal, liveEndpoints);
                 logger.debug("Paxos CAS successful");
                 return true;
             }
@@ -287,16 +288,7 @@ public class StorageProxy implements StorageProxyMBean
         throw new WriteTimeoutException(WriteType.CAS, ConsistencyLevel.SERIAL, -1, -1);
     }
 
-    private static ColumnFamily updatesWithPaxosTime(ColumnFamily updates, UUID ballot)
-    {
-        ColumnFamily cf = updates.cloneMeShallow();
-        long t = UUIDGen.microsTimestamp(ballot);
-        for (Column column : updates)
-            cf.addColumn(column.name(), column.value(), t);
-        return cf;
-    }
-
-    private static PrepareCallback preparePaxos(UUID ballot, ByteBuffer key, List<InetAddress> endpoints, int requiredParticipants)
+    private static PrepareCallback preparePaxos(ByteBuffer key, UUID ballot, List<InetAddress> endpoints, int requiredParticipants)
     throws WriteTimeoutException, UnavailableException
     {
         PrepareCallback callback = new PrepareCallback(requiredParticipants);
@@ -308,12 +300,11 @@ public class StorageProxy implements StorageProxyMBean
         return callback;
     }
 
-    private static boolean proposePaxos(ByteBuffer key, UUID ballot, ColumnFamily proposal, List<InetAddress> endpoints, int requiredParticipants)
+    private static boolean proposePaxos(Commit proposal, List<InetAddress> endpoints, int requiredParticipants)
     throws WriteTimeoutException
     {
         ProposeCallback callback = new ProposeCallback(requiredParticipants);
-        ProposeRequest request = new ProposeRequest(key, ballot, proposal);
-        MessageOut<ProposeRequest> message = new MessageOut<ProposeRequest>(MessagingService.Verb.PAXOS_PROPOSE, request, ProposeRequest.serializer);
+        MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_PROPOSE, proposal, Commit.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendRR(message, target, callback);
         callback.await();
@@ -321,10 +312,9 @@ public class StorageProxy implements StorageProxyMBean
         return callback.getSuccessful() >= requiredParticipants;
     }
 
-    private static void commitPaxos(ByteBuffer key, UUID ballot, ColumnFamily proposal, Iterable<InetAddress> endpoints)
+    private static void commitPaxos(Commit proposal, Iterable<InetAddress> endpoints)
     {
-        ProposeRequest request = new ProposeRequest(key, ballot, proposal);
-        MessageOut<ProposeRequest> message = new MessageOut<ProposeRequest>(MessagingService.Verb.PAXOS_COMMIT, request, ProposeRequest.serializer);
+        MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_COMMIT, proposal, Commit.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendOneWay(message, target);
     }

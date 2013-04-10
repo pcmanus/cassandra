@@ -39,32 +39,25 @@ public class PrepareResponse
             out.writeBoolean(response.promised);
 
             UUIDSerializer.serializer.serialize(response.inProgressBallot, out, version);
-            out.writeBoolean(response.inProgressUpdates == null);
-            if (response.inProgressUpdates != null)
-                ColumnFamily.serializer.serialize(response.inProgressUpdates, out, version);
+            ColumnFamily.serializer.serialize(response.inProgressUpdates, out, version);
 
-            UUIDSerializer.serializer.serialize(response.mostRecentCommit.ballot, out, version);
-            out.writeBoolean(response.mostRecentCommit.update == null);
-            if (response.mostRecentCommit.update != null)
-                ColumnFamily.serializer.serialize(response.mostRecentCommit.update, out, version);
+            Commit.serializer.serialize(response.mostRecentCommit, out, version);
         }
 
         public PrepareResponse deserialize(DataInput in, int version) throws IOException
         {
             return new PrepareResponse(in.readBoolean(),
                                        UUIDSerializer.serializer.deserialize(in, version),
-                                       in.readBoolean() ? null : ColumnFamily.serializer.deserialize(in, version),
-                                       new Commit(UUIDSerializer.serializer.deserialize(in, version),
-                                                  in.readBoolean() ? null : ColumnFamily.serializer.deserialize(in, version)));
+                                       ColumnFamily.serializer.deserialize(in, version),
+                                       Commit.serializer.deserialize(in, version));
         }
 
         public long serializedSize(PrepareResponse response, int version)
         {
             return 1
                    + UUIDSerializer.serializer.serializedSize(response.inProgressBallot, version)
-                   + (response.inProgressUpdates == null ? 1 : 1 + ColumnFamily.serializer.serializedSize(response.inProgressUpdates, version))
-                   + UUIDSerializer.serializer.serializedSize(response.mostRecentCommit.ballot, version)
-                   + (response.mostRecentCommit.update == null ? 1 : 1 + ColumnFamily.serializer.serializedSize(response.mostRecentCommit.update, version));
+                   + ColumnFamily.serializer.serializedSize(response.inProgressUpdates, version)
+                   + Commit.serializer.serializedSize(response.mostRecentCommit, version);
         }
     }
 }

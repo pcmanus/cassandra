@@ -6,11 +6,11 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.BooleanSerializer;
 
-public class ProposeVerbHandler implements IVerbHandler<ProposeRequest>
+public class ProposeVerbHandler implements IVerbHandler<Commit>
 {
-    public void doVerb(MessageIn<ProposeRequest> message, int id)
+    public void doVerb(MessageIn<Commit> message, int id)
     {
-        Boolean response = PaxosState.propose(message.payload.key, message.payload.ballot, message.payload.update);
+        Boolean response = PaxosState.propose(message.payload);
         MessageOut<Boolean> reply = new MessageOut<Boolean>(MessagingService.Verb.REQUEST_RESPONSE, response, BooleanSerializer.serializer);
         MessagingService.instance().sendReply(reply, id, message.from);
     }
