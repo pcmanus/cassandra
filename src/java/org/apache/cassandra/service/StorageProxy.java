@@ -277,7 +277,7 @@ public class StorageProxy implements StorageProxyMBean
     private static ColumnFamily updatesWithPaxosTime(ColumnFamily updates, UUID ballot)
     {
         ColumnFamily cf = updates.cloneMeShallow();
-        long t = UUIDGen.unixTimestamp(ballot) * 1000;
+        long t = UUIDGen.microsTimestamp(ballot);
         for (Column column : updates)
             cf.addColumn(column.name(), column.value(), t);
         return cf;

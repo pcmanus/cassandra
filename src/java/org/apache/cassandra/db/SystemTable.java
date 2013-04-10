@@ -815,14 +815,14 @@ public class SystemTable
     public static void savePaxosPromise(ByteBuffer key, UUID ballot)
     {
         String req = "UPDATE %s USING TIMESTAMP %d SET in_progress_ballot = %s WHERE row_key = 0x%s";
-        processInternal(String.format(req, PAXOS_CF, UUIDGen.unixTimestamp(ballot) * 1000, ballot, ByteBufferUtil.bytesToHex(key)));
+        processInternal(String.format(req, PAXOS_CF, UUIDGen.microsTimestamp(ballot), ballot, ByteBufferUtil.bytesToHex(key)));
     }
 
     public static void savePaxosProposal(ByteBuffer key, UUID ballot, ColumnFamily proposal)
     {
         processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = 0x%s WHERE row_key = 0x%s",
                                       PAXOS_CF,
-                                      UUIDGen.unixTimestamp(ballot) * 1000,
+                                      UUIDGen.microsTimestamp(ballot),
                                       ByteBufferUtil.bytesToHex(proposal.toBytes()),
                                       ByteBufferUtil.bytesToHex(key)));
     }
@@ -831,7 +831,7 @@ public class SystemTable
     {
         processInternal(String.format("UPDATE %s USING TIMESTAMP %d SET proposal = null, most_recent_commit_at = %s, most_recent_commit = 0x%s WHERE row_key = 0x%s",
                                       PAXOS_CF,
-                                      UUIDGen.unixTimestamp(ballot) * 1000,
+                                      UUIDGen.microsTimestamp(ballot),
                                       ballot,
                                       ByteBufferUtil.bytesToHex(update.toBytes()),
                                       ByteBufferUtil.bytesToHex(key)));

@@ -132,12 +132,18 @@ public class UUIDGen
      * @param uuid
      * @return milliseconds since Unix epoch
      */
-    public static long unixTimestamp(UUID uuid) {
-        if (uuid.version() != 1)
-            throw new IllegalArgumentException(String.format("Can only retrieve the unix timestamp for version 1 uuid (provided version %d)", uuid.version()));
+    public static long unixTimestamp(UUID uuid)
+    {
+        return (uuid.timestamp() / 10000) + START_EPOCH;
+    }
 
-        long timestamp = uuid.timestamp();
-        return (timestamp / 10000) + START_EPOCH;
+    /**
+     * @param uuid
+     * @return microseconds since Unix epoch
+     */
+    public static long microsTimestamp(UUID uuid)
+    {
+        return (uuid.timestamp() / 10) + START_EPOCH * 1000;
     }
 
     /**
