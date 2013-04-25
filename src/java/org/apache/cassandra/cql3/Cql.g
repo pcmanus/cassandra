@@ -273,7 +273,7 @@ orderByClause[Map<ColumnIdentifier, Boolean> orderings]
  * USING TIMESTAMP <long>;
  *
  */
-insertStatement returns [UpdateStatement expr]
+insertStatement returns [UpdateStatement.ParsedInsert expr]
     @init {
         Attributes attrs = new Attributes();
         List<ColumnIdentifier> columnNames  = new ArrayList<ColumnIdentifier>();
@@ -285,7 +285,7 @@ insertStatement returns [UpdateStatement expr]
           '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
         ( usingClause[attrs] )?
       {
-          $expr = new UpdateStatement(cf, attrs, columnNames, values);
+          $expr = new UpdateStatement.ParsedInsert(cf, attrs, columnNames, values);
       }
     ;
 
@@ -312,7 +312,7 @@ usingClauseObjective[Attributes attrs]
  * SET name1 = value1, name2 = value2
  * WHERE key = value;
  */
-updateStatement returns [UpdateStatement expr]
+updateStatement returns [UpdateStatement.ParsedUpdate expr]
     @init {
         Attributes attrs = new Attributes();
         List<Pair<ColumnIdentifier, Operation.RawUpdate>> operations = new ArrayList<Pair<ColumnIdentifier, Operation.RawUpdate>>();
@@ -322,7 +322,7 @@ updateStatement returns [UpdateStatement expr]
       K_SET columnOperation[operations] (',' columnOperation[operations])*
       K_WHERE wclause=whereClause
       {
-          return new UpdateStatement(cf, operations, wclause, attrs);
+          return new UpdateStatement.ParsedUpdate(cf, attrs, operations, wclause);
       }
     ;
 
@@ -332,7 +332,7 @@ updateStatement returns [UpdateStatement expr]
  * USING TIMESTAMP <long>
  * WHERE KEY = keyname;
  */
-deleteStatement returns [DeleteStatement expr]
+deleteStatement returns [DeleteStatement.Parsed expr]
     @init {
         Attributes attrs = new Attributes();
         List<Operation.RawDeletion> columnDeletions = Collections.emptyList();
@@ -342,7 +342,7 @@ deleteStatement returns [DeleteStatement expr]
       ( usingClauseDelete[attrs] )?
       K_WHERE wclause=whereClause
       {
-          return new DeleteStatement(cf, columnDeletions, wclause, attrs);
+          return new DeleteStatement.Parsed(cf, attrs, columnDeletions, wclause);
       }
     ;
 
@@ -381,10 +381,10 @@ deleteOp returns [Operation.RawDeletion op]
  *   ...
  * APPLY BATCH
  */
-batchStatement returns [BatchStatement expr]
+batchStatement returns [BatchStatement.Parsed expr]
     @init {
         BatchStatement.Type type = BatchStatement.Type.LOGGED;
-        List<ModificationStatement> statements = new ArrayList<ModificationStatement>();
+        List<ModificationStatement.Parsed> statements = new ArrayList<ModificationStatement.Parsed>();
         Attributes attrs = new Attributes();
     }
     : K_BEGIN
@@ -393,11 +393,11 @@ batchStatement returns [BatchStatement expr]
           s1=batchStatementObjective ';'? { statements.add(s1); } ( sN=batchStatementObjective ';'? { statements.add(sN); } )*
       K_APPLY K_BATCH
       {
-          return new BatchStatement(type, statements, attrs);
+          return new BatchStatement.Parsed(type, attrs, statements);
       }
     ;
 
-batchStatementObjective returns [ModificationStatement statement]
+batchStatementObjective returns [ModificationStatement.Parsed statement]
     : i=insertStatement  { $statement = i; }
     | u=updateStatement  { $statement = u; }
     | d=deleteStatement  { $statement = d; }
