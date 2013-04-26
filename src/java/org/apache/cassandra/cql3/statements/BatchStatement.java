@@ -87,12 +87,6 @@ public class BatchStatement implements CQLStatement
 
             if (attrs.timestamp != null && statement.isSetTimestamp())
                 throw new InvalidRequestException("Timestamp must be set either on BATCH or individual statements");
-
-            if (statement.isCounter() && type != Type.COUNTER)
-                throw new InvalidRequestException("Counter mutations are only allowed in COUNTER batches");
-
-            if (!statement.isCounter() && type == Type.COUNTER)
-                throw new InvalidRequestException("Only counter mutations are allowed in COUNTER batches");
         }
     }
 
@@ -180,7 +174,19 @@ public class BatchStatement implements CQLStatement
 
             List<ModificationStatement> statements = new ArrayList<ModificationStatement>(parsedStatements.size());
             for (ModificationStatement.Parsed parsed : parsedStatements)
-                statements.add(parsed.prepare(boundNames));
+            {
+                ModificationStatement stmt = parsed.prepare(boundNames);
+                if (stmt.hasConditions())
+                    throw new InvalidRequestException("Conditional updates are not allowed in batches");
+
+                if (stmt.isCounter() && type != Type.COUNTER)
+                    throw new InvalidRequestException("Counter mutations are only allowed in COUNTER batches");
+
+                if (!stmt.isCounter() && type == Type.COUNTER)
+                    throw new InvalidRequestException("Only counter mutations are allowed in COUNTER batches");
+
+                statements.add(stmt);
+            }
 
             return new ParsedStatement.Prepared(new BatchStatement(getBoundsTerms(), type, statements, attrs), Arrays.<ColumnSpecification>asList(boundNames));
         }

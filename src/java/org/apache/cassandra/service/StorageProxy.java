@@ -197,7 +197,7 @@ public class StorageProxy implements StorageProxyMBean
      * @return true if the operation succeeds in updating the row
      */
     public static boolean cas(String table, String cfName, ByteBuffer key, ColumnFamily expected, ColumnFamily updates)
-    throws UnavailableException, IOException, IsBootstrappingException, ReadTimeoutException, WriteTimeoutException
+    throws UnavailableException, IsBootstrappingException, ReadTimeoutException, WriteTimeoutException
     {
         CFMetaData metadata = Schema.instance.getCFMetaData(table, cfName);
 
@@ -214,7 +214,7 @@ public class StorageProxy implements StorageProxyMBean
             // are not large enough to bother with.
             List<InetAddress> liveEndpoints = ImmutableList.copyOf(Iterables.filter(Iterables.concat(naturalEndpoints, pendingEndpoints), IAsyncCallback.isAlive));
             if (liveEndpoints.size() < requiredParticipants)
-               throw new UnavailableException(ConsistencyLevel.SERIAL, requiredParticipants, liveEndpoints.size());
+                throw new UnavailableException(ConsistencyLevel.SERIAL, requiredParticipants, liveEndpoints.size());
 
             // prepare
             logger.debug("Preparing {}", ballot);

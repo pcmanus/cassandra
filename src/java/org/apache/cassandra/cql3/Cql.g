@@ -321,9 +321,19 @@ updateStatement returns [UpdateStatement.ParsedUpdate expr]
       ( usingClause[attrs] )?
       K_SET columnOperation[operations] (',' columnOperation[operations])*
       K_WHERE wclause=whereClause
+      ( K_IF conditions=updateCondition )?
       {
-          return new UpdateStatement.ParsedUpdate(cf, attrs, operations, wclause);
+          return new UpdateStatement.ParsedUpdate(cf,
+                                                  attrs,
+                                                  operations,
+                                                  wclause,
+                                                  conditions == null ? Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList() : conditions);
       }
+    ;
+
+updateCondition returns [List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions]
+    @init { conditions = new ArrayList<Pair<ColumnIdentifier, Operation.RawUpdate>>(); }
+    : columnOperation[conditions] ( K_AND columnOperation[conditions] )*
     ;
 
 /**
@@ -341,8 +351,13 @@ deleteStatement returns [DeleteStatement.Parsed expr]
       K_FROM cf=columnFamilyName
       ( usingClauseDelete[attrs] )?
       K_WHERE wclause=whereClause
+      ( K_IF conditions=updateCondition )?
       {
-          return new DeleteStatement.Parsed(cf, attrs, columnDeletions, wclause);
+          return new DeleteStatement.Parsed(cf,
+                                            attrs,
+                                            columnDeletions,
+                                            wclause,
+                                            conditions == null ? Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList() : conditions);
       }
     ;
 
@@ -926,6 +941,7 @@ K_ASC:         A S C;
 K_DESC:        D E S C;
 K_ALLOW:       A L L O W;
 K_FILTERING:   F I L T E R I N G;
+K_IF:          I F;
 
 K_GRANT:       G R A N T;
 K_ALL:         A L L;

@@ -27,6 +27,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.thrift.ThriftValidation;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * A <code>DELETE</code> parsed from a CQL query statement.
@@ -94,19 +95,20 @@ public class DeleteStatement extends ModificationStatement
         private final List<Operation.RawDeletion> deletions;
         private final List<Relation> whereClause;
 
-        public Parsed(CFName name, Attributes attrs, List<Operation.RawDeletion> deletions, List<Relation> whereClause)
+        public Parsed(CFName name,
+                      Attributes attrs,
+                      List<Operation.RawDeletion> deletions,
+                      List<Relation> whereClause,
+                      List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
         {
-            super(name, attrs);
+            super(name, attrs, conditions);
             this.deletions = deletions;
             this.whereClause = whereClause;
         }
 
-        public ModificationStatement prepare(ColumnSpecification[] boundNames) throws InvalidRequestException
+        protected ModificationStatement prepareInternal(CFDefinition cfDef, ColumnSpecification[] boundNames) throws InvalidRequestException
         {
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
-            CFDefinition cfDef = metadata.getCfDef();
-
-            DeleteStatement stmt = new DeleteStatement(getBoundsTerms(), metadata, attrs);
+            DeleteStatement stmt = new DeleteStatement(getBoundsTerms(), cfDef.cfm, attrs);
 
             for (Operation.RawDeletion deletion : deletions)
             {

@@ -119,17 +119,14 @@ public class UpdateStatement extends ModificationStatement
          */
         public ParsedInsert(CFName name, Attributes attrs, List<ColumnIdentifier> columnNames, List<Term.Raw> columnValues)
         {
-            super(name, attrs);
+            super(name, attrs, Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList());
             this.columnNames = columnNames;
             this.columnValues = columnValues;
         }
 
-        public ModificationStatement prepare(ColumnSpecification[] boundNames) throws InvalidRequestException
+        protected ModificationStatement prepareInternal(CFDefinition cfDef, ColumnSpecification[] boundNames) throws InvalidRequestException
         {
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
-            CFDefinition cfDef = metadata.getCfDef();
-
-            UpdateStatement stmt = new UpdateStatement(getBoundsTerms(), metadata, attrs);
+            UpdateStatement stmt = new UpdateStatement(getBoundsTerms(), cfDef.cfm, attrs);
 
             // Created from an INSERT
             if (stmt.isCounter())
@@ -186,19 +183,20 @@ public class UpdateStatement extends ModificationStatement
          * @param updates a map of column operations to perform
          * @param whereClause the where clause
          */
-        public ParsedUpdate(CFName name, Attributes attrs, List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates, List<Relation> whereClause)
+        public ParsedUpdate(CFName name,
+                            Attributes attrs,
+                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates,
+                            List<Relation> whereClause,
+                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
         {
-            super(name, attrs);
+            super(name, attrs, conditions);
             this.updates = updates;
             this.whereClause = whereClause;
         }
 
-        public ModificationStatement prepare(ColumnSpecification[] boundNames) throws InvalidRequestException
+        protected ModificationStatement prepareInternal(CFDefinition cfDef, ColumnSpecification[] boundNames) throws InvalidRequestException
         {
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
-            CFDefinition cfDef = metadata.getCfDef();
-
-            UpdateStatement stmt = new UpdateStatement(getBoundsTerms(), metadata, attrs);
+            UpdateStatement stmt = new UpdateStatement(getBoundsTerms(), cfDef.cfm, attrs);
 
             for (Pair<ColumnIdentifier, Operation.RawUpdate> entry : updates)
             {
