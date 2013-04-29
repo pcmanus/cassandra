@@ -283,7 +283,7 @@ orderByClause[Map<ColumnIdentifier, Boolean> orderings]
  */
 insertStatement returns [UpdateStatement.ParsedInsert expr]
     @init {
-        Attributes attrs = new Attributes();
+        Attributes.Raw attrs = new Attributes.Raw();
         List<ColumnIdentifier> columnNames  = new ArrayList<ColumnIdentifier>();
         List<Term.Raw> values = new ArrayList<Term.Raw>();
     }
@@ -297,21 +297,21 @@ insertStatement returns [UpdateStatement.ParsedInsert expr]
       }
     ;
 
-usingClause[Attributes attrs]
+usingClause[Attributes.Raw attrs]
     : K_USING usingClauseObjective[attrs] ( K_AND? usingClauseObjective[attrs] )*
     ;
 
-usingClauseDelete[Attributes attrs]
+usingClauseDelete[Attributes.Raw attrs]
     : K_USING usingClauseDeleteObjective[attrs] ( K_AND? usingClauseDeleteObjective[attrs] )*
     ;
 
-usingClauseDeleteObjective[Attributes attrs]
-    : K_TIMESTAMP ts=INTEGER { attrs.timestamp = Long.valueOf($ts.text); }
+usingClauseDeleteObjective[Attributes.Raw attrs]
+    : K_TIMESTAMP ts=intValue { attrs.timestamp = ts; }
     ;
 
-usingClauseObjective[Attributes attrs]
+usingClauseObjective[Attributes.Raw attrs]
     : usingClauseDeleteObjective[attrs]
-    | K_TTL t=INTEGER { attrs.timeToLive = Integer.valueOf($t.text); }
+    | K_TTL t=intValue { attrs.timeToLive = t; }
     ;
 
 /**
@@ -322,7 +322,7 @@ usingClauseObjective[Attributes attrs]
  */
 updateStatement returns [UpdateStatement.ParsedUpdate expr]
     @init {
-        Attributes attrs = new Attributes();
+        Attributes.Raw attrs = new Attributes.Raw();
         List<Pair<ColumnIdentifier, Operation.RawUpdate>> operations = new ArrayList<Pair<ColumnIdentifier, Operation.RawUpdate>>();
         boolean ifNotExists = false;
     }
@@ -354,7 +354,7 @@ updateCondition returns [List<Pair<ColumnIdentifier, Operation.RawUpdate>> condi
  */
 deleteStatement returns [DeleteStatement.Parsed expr]
     @init {
-        Attributes attrs = new Attributes();
+        Attributes.Raw attrs = new Attributes.Raw();
         List<Operation.RawDeletion> columnDeletions = Collections.emptyList();
     }
     : K_DELETE ( dels=deleteSelection { columnDeletions = dels; } )?
@@ -410,7 +410,7 @@ batchStatement returns [BatchStatement.Parsed expr]
     @init {
         BatchStatement.Type type = BatchStatement.Type.LOGGED;
         List<ModificationStatement.Parsed> statements = new ArrayList<ModificationStatement.Parsed>();
-        Attributes attrs = new Attributes();
+        Attributes.Raw attrs = new Attributes.Raw();
     }
     : K_BEGIN
       ( K_UNLOGGED { type = BatchStatement.Type.UNLOGGED; } | K_COUNTER { type = BatchStatement.Type.COUNTER; } )?
@@ -736,6 +736,12 @@ value returns [Term.Raw value]
     | l=collection_literal { $value = l; }
     | K_NULL               { $value = Constants.NULL_LITERAL; }
     | QMARK                { $value = new AbstractMarker.Raw(++currentBindMarkerIdx); }
+    ;
+
+intValue returns [Term.Raw value]
+    :
+    | t=INTEGER { $value = Constants.Literal.integer($t.text); }
+    | QMARK     { $value = new AbstractMarker.Raw(++currentBindMarkerIdx); }
     ;
 
 functionName returns [String s]
