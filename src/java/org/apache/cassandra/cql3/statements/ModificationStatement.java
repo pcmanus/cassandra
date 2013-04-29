@@ -86,19 +86,19 @@ public abstract class ModificationStatement implements CQLStatement
         return cfm.getDefaultValidator().isCommutative();
     }
 
-    public int getTimeToLive()
+    public long getTimestamp(long now, List<ByteBuffer> variables) throws InvalidRequestException
     {
-        return attrs.timeToLive;
+        return attrs.getTimestamp(now, variables);
     }
 
-    public long getTimestamp(long now)
+    public boolean isTimestampSet()
     {
-        return attrs.timestamp == null ? now : attrs.timestamp;
+        return attrs.isTimestampSet();
     }
 
-    public boolean isSetTimestamp()
+    public int getTimeToLive(List<ByteBuffer> variables) throws InvalidRequestException
     {
-        return attrs.timestamp != null;
+        return attrs.getTimeToLive(variables);
     }
 
     public void checkAccess(ClientState state) throws InvalidRequestException, UnauthorizedException
@@ -108,7 +108,6 @@ public abstract class ModificationStatement implements CQLStatement
 
     public void validate(ClientState state) throws InvalidRequestException
     {
-        attrs.validate();
     }
 
     public void addOperation(Operation op)
@@ -364,7 +363,7 @@ public abstract class ModificationStatement implements CQLStatement
             throw new InvalidRequestException("IN on the partition key is not supported with conditional updates");
 
         ColumnNameBuilder clusteringPrefix = createClusteringPrefixBuilder(variables);
-        UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(queryState.getTimestamp()), getTimeToLive(), null);
+        UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(queryState.getTimestamp(), variables), getTimeToLive(variables), null);
 
         ByteBuffer key = keys.get(0);
         ThriftValidation.validateKey(cfm, key);
@@ -408,7 +407,7 @@ public abstract class ModificationStatement implements CQLStatement
 
         // Some lists operation requires reading
         Map<ByteBuffer, ColumnGroupMap> rows = readRequiredRows(keys, clusteringPrefix, local, cl);
-        UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(now), getTimeToLive(), rows);
+        UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(now, variables), getTimeToLive(variables), rows);
 
         Collection<IMutation> mutations = new ArrayList<IMutation>();
         for (ByteBuffer key: keys)
@@ -450,11 +449,11 @@ public abstract class ModificationStatement implements CQLStatement
 
     public static abstract class Parsed extends CFStatement
     {
-        protected final Attributes attrs;
+        protected final Attributes.Raw attrs;
         private final List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions;
         private final boolean ifNotExists;
 
-        protected Parsed(CFName name, Attributes attrs, List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions, boolean ifNotExists)
+        protected Parsed(CFName name, Attributes.Raw attrs, List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions, boolean ifNotExists)
         {
             super(name);
             this.attrs = attrs;
@@ -474,7 +473,10 @@ public abstract class ModificationStatement implements CQLStatement
             CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
             CFDefinition cfDef = metadata.getCfDef();
 
-            ModificationStatement stmt = prepareInternal(cfDef, boundNames);
+            Attributes preparedAttributes = attrs.prepare(keyspace(), columnFamily());
+            preparedAttributes.collectMarkerSpecification(boundNames);
+
+            ModificationStatement stmt = prepareInternal(cfDef, boundNames, preparedAttributes);
 
             if (stmt.isCounter())
                 throw new InvalidRequestException("Conditional updates are not supported on counter tables");
@@ -527,6 +529,6 @@ public abstract class ModificationStatement implements CQLStatement
             return stmt;
         }
 
-        protected abstract ModificationStatement prepareInternal(CFDefinition cfDef, ColumnSpecification[] boundNames) throws InvalidRequestException;
+        protected abstract ModificationStatement prepareInternal(CFDefinition cfDef, ColumnSpecification[] boundNames, Attributes attrs) throws InvalidRequestException;
     }
 }
