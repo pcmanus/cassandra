@@ -101,7 +101,7 @@ public class DeleteStatement extends ModificationStatement
                       List<Relation> whereClause,
                       List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
         {
-            super(name, attrs, conditions);
+            super(name, attrs, conditions, false);
             this.deletions = deletions;
             this.whereClause = whereClause;
         }

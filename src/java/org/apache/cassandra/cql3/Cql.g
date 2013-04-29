@@ -316,18 +316,20 @@ updateStatement returns [UpdateStatement.ParsedUpdate expr]
     @init {
         Attributes attrs = new Attributes();
         List<Pair<ColumnIdentifier, Operation.RawUpdate>> operations = new ArrayList<Pair<ColumnIdentifier, Operation.RawUpdate>>();
+        boolean ifNotExists = false;
     }
     : K_UPDATE cf=columnFamilyName
       ( usingClause[attrs] )?
       K_SET columnOperation[operations] (',' columnOperation[operations])*
       K_WHERE wclause=whereClause
-      ( K_IF conditions=updateCondition )?
+      ( K_IF (K_NOT K_EXISTS { ifNotExists = true; } | conditions=updateCondition) )?
       {
           return new UpdateStatement.ParsedUpdate(cf,
                                                   attrs,
                                                   operations,
                                                   wclause,
-                                                  conditions == null ? Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList() : conditions);
+                                                  conditions == null ? Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList() : conditions,
+                                                  ifNotExists);
       }
     ;
 
@@ -979,6 +981,8 @@ K_TOKEN:       T O K E N;
 K_WRITETIME:   W R I T E T I M E;
 
 K_NULL:        N U L L;
+K_NOT:         N O T;
+K_EXISTS:      E X I S T S;
 
 K_MAP:         M A P;
 K_LIST:        L I S T;

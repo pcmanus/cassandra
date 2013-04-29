@@ -119,7 +119,7 @@ public class UpdateStatement extends ModificationStatement
          */
         public ParsedInsert(CFName name, Attributes attrs, List<ColumnIdentifier> columnNames, List<Term.Raw> columnValues)
         {
-            super(name, attrs, Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList());
+            super(name, attrs, Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList(), false);
             this.columnNames = columnNames;
             this.columnValues = columnValues;
         }
@@ -187,9 +187,10 @@ public class UpdateStatement extends ModificationStatement
                             Attributes attrs,
                             List<Pair<ColumnIdentifier, Operation.RawUpdate>> updates,
                             List<Relation> whereClause,
-                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions)
+                            List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions,
+                            boolean ifNotExists)
         {
-            super(name, attrs, conditions);
+            super(name, attrs, conditions, ifNotExists);
             this.updates = updates;
             this.whereClause = whereClause;
         }
