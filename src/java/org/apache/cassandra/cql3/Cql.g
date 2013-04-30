@@ -211,7 +211,7 @@ useStatement returns [UseStatement stmt]
 selectStatement returns [SelectStatement.RawStatement expr]
     @init {
         boolean isCount = false;
-        int limit = Integer.MAX_VALUE;
+        Term.Raw limit = null;
         Map<ColumnIdentifier, Boolean> orderings = new LinkedHashMap<ColumnIdentifier, Boolean>();
         boolean allowFiltering = false;
     }
@@ -219,14 +219,13 @@ selectStatement returns [SelectStatement.RawStatement expr]
       K_FROM cf=columnFamilyName
       ( K_WHERE wclause=whereClause )?
       ( K_ORDER K_BY orderByClause[orderings] ( ',' orderByClause[orderings] )* )?
-      ( K_LIMIT rows=INTEGER { limit = Integer.parseInt($rows.text); } )?
+      ( K_LIMIT rows=intValue { limit = rows; } )?
       ( K_ALLOW K_FILTERING  { allowFiltering = true; } )?
       {
-          SelectStatement.Parameters params = new SelectStatement.Parameters(limit,
-                                                                             orderings,
+          SelectStatement.Parameters params = new SelectStatement.Parameters(orderings,
                                                                              isCount,
                                                                              allowFiltering);
-          $expr = new SelectStatement.RawStatement(cf, params, sclause, wclause);
+          $expr = new SelectStatement.RawStatement(cf, params, sclause, wclause, limit);
       }
     ;
 
