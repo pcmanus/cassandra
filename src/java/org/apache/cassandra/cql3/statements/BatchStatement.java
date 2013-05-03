@@ -19,6 +19,13 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+
+import com.google.common.base.Function;
+import com.google.common.base.Throwables;
+import com.google.common.util.concurrent.AsyncFunction;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
@@ -95,51 +102,85 @@ public class BatchStatement implements CQLStatement
         return attrs.timestamp == null ? now : attrs.timestamp;
     }
 
-    private Collection<? extends IMutation> getMutations(List<ByteBuffer> variables, boolean local, ConsistencyLevel cl, long now)
-    throws RequestExecutionException, RequestValidationException
+    private ListenableFuture<Collection<? extends IMutation>> getMutations(List<ByteBuffer> variables, boolean local, ConsistencyLevel cl, long now)
+    throws RequestValidationException, RequestExecutionException
     {
-        Map<Pair<String, ByteBuffer>, IMutation> mutations = new HashMap<Pair<String, ByteBuffer>, IMutation>();
+        List<ListenableFuture<Collection<? extends IMutation>>> allMutationsFutures = new ArrayList<ListenableFuture<Collection<? extends IMutation>>>();
         for (ModificationStatement statement : statements)
+            allMutationsFutures.add(statement.getMutations(variables, local, cl, getTimestamp(now), true));
+
+        ListenableFuture<List<Collection<? extends IMutation>>> future = Futures.allAsList(allMutationsFutures);
+
+        // Group mutation together, otherwise they won't get applied atomically
+        return Futures.transform(future, new Function<List<Collection<? extends IMutation>>, Collection<? extends IMutation>>()
         {
-            // Group mutation together, otherwise they won't get applied atomically
-            for (IMutation m : statement.getMutations(variables, local, cl, getTimestamp(now), true))
+            public Collection<? extends IMutation> apply(List<Collection<? extends IMutation>> mutationsList)
             {
-                Pair<String, ByteBuffer> key = Pair.create(m.getTable(), m.key());
-                IMutation existing = mutations.get(key);
+                Map<Pair<String, ByteBuffer>, IMutation> mutations = new HashMap<Pair<String, ByteBuffer>, IMutation>();
+                for (Collection<? extends IMutation> lm : mutationsList)
+                {
+                    for (IMutation m : lm)
+                    {
+                        Pair<String, ByteBuffer> key = Pair.create(m.getTable(), m.key());
+                        IMutation existing = mutations.get(key);
 
-                if (existing == null)
-                {
-                    mutations.put(key, m);
+                        if (existing == null)
+                            mutations.put(key, m);
+                        else
+                            existing.addAll(m);
+                    }
                 }
-                else
-                {
-                    existing.addAll(m);
-                }
+                return mutations.values();
             }
-        }
-
-        return mutations.values();
+        });
     }
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables) throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<ResultMessage> execute(final ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         if (cl == null)
             throw new InvalidRequestException("Invalid empty consistency level");
 
-        Collection<? extends IMutation> mutations = getMutations(variables, false, cl, queryState.getTimestamp());
-        if (type == Type.LOGGED && mutations.size() > 1)
-            StorageProxy.mutateAtomically((Collection<RowMutation>) mutations, cl);
-        else
-            StorageProxy.mutate(mutations, cl);
+        ListenableFuture<Collection<? extends IMutation>> mutationFuture = getMutations(variables, false, cl, queryState.getTimestamp());
+        return Futures.transform(mutationFuture, new AsyncFunction<Collection<? extends IMutation>, ResultMessage>()
+        {
+            public ListenableFuture<ResultMessage> apply(Collection<? extends IMutation> mutations)
+            {
+                try
+                {
+                    ListenableFuture<List<Void>> future = type == Type.LOGGED && mutations.size() > 1
+                                                        ? StorageProxy.mutateAtomically((Collection<RowMutation>) mutations, cl)
+                                                        : StorageProxy.mutate(mutations, cl);
 
-        return null;
+                    return QueryProcessor.emptyResultOnCompletion(future);
+                }
+                catch (Exception e)
+                {
+                    return Futures.immediateFailedFuture(e);
+                }
+            }
+        });
     }
 
     public ResultMessage executeInternal(QueryState queryState) throws RequestValidationException, RequestExecutionException
     {
-        for (IMutation mutation : getMutations(Collections.<ByteBuffer>emptyList(), true, null, queryState.getTimestamp()))
-            mutation.apply();
-        return null;
+        try
+        {
+            for (IMutation mutation : getMutations(Collections.<ByteBuffer>emptyList(), true, null, queryState.getTimestamp()).get())
+                mutation.apply();
+            return null;
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            Throwables.propagateIfInstanceOf(cause, RequestExecutionException.class);
+            Throwables.propagateIfInstanceOf(cause, RequestValidationException.class);
+            throw new RuntimeException(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError(e);
+        }
     }
 
     public String toString()

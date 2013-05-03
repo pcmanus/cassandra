@@ -321,11 +321,6 @@ listen_address: localhost
 start_native_transport: true
 # port for the CQL native transport to listen for clients on
 native_transport_port: 9042
-# The minimum and maximum threads for handling requests when the native
-# transport is used. They are similar to rpc_min_threads and rpc_max_threads,
-# though the defaults differ slightly.
-# native_transport_min_threads: 16
-# native_transport_max_threads: 128
 
 # Whether to start the thrift rpc server.
 start_rpc: true
@@ -476,9 +471,9 @@ read_request_timeout_in_ms: 10000
 range_request_timeout_in_ms: 10000
 # How long the coordinator should wait for writes to complete
 write_request_timeout_in_ms: 10000
-# How long a coordinator should continue to retry a CAS operation
-# that contends with other proposals for the same row
-cas_contention_timeout_in_ms: 1000
+# How long a coordinator should wait for conditional write and reads to complete
+# (both read and write have the same timeout because they have similar performance characteristic)
+conditional_request_timeout_in_ms: 1000
 # How long the coordinator should wait for truncates to complete
 # (This can be much longer, because unless auto_snapshot is disabled
 # we need to flush first so we can snapshot before removing the data.)

@@ -15,17 +15,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.exceptions;
+package org.apache.cassandra.net;
 
-import org.apache.cassandra.db.ConsistencyLevel;
+import com.google.common.util.concurrent.AbstractFuture;
 
-public class ReadTimeoutException extends AbstractRequestTimeoutException
+/**
+ * A callback specialized for returning a value from a single target; that is, this is for messages
+ * that we only send to one recipient.
+ */
+public class OneResponseCallback<T> extends AbstractFuture<T> implements IAsyncCallback<T>
 {
-    public final boolean dataPresent;
-
-    public ReadTimeoutException(ConsistencyLevel consistency, int received, int blockFor, boolean dataPresent)
+    public void response(MessageIn<T> response)
     {
-        super(ExceptionCode.READ_TIMEOUT, consistency, received, blockFor);
-        this.dataPresent = dataPresent;
+        set(response.payload);
+    }
+
+    public boolean isLatencyForSnitch()
+    {
+        return false;
     }
 }

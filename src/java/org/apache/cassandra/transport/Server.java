@@ -48,7 +48,6 @@ import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
-import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.logging.InternalLoggerFactory;
 import org.jboss.netty.logging.Slf4JLoggerFactory;
@@ -68,7 +67,6 @@ public class Server implements CassandraDaemon.Server
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     private ChannelFactory factory;
-    private ExecutionHandler executionHandler;
 
     public Server(InetSocketAddress socket)
     {
@@ -113,7 +111,6 @@ public class Server implements CassandraDaemon.Server
     private void run()
     {
         // Configure the server.
-        executionHandler = new ExecutionHandler(new RequestThreadPoolExecutor());
         factory = new NioServerSocketChannelFactory(Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
         ServerBootstrap bootstrap = new ServerBootstrap(factory);
 
@@ -143,8 +140,6 @@ public class Server implements CassandraDaemon.Server
         connectionTracker.closeAll();
         factory.releaseExternalResources();
         factory = null;
-        executionHandler.releaseExternalResources();
-        executionHandler = null;
         logger.info("Stop listening for CQL clients");
     }
 
@@ -218,8 +213,6 @@ public class Server implements CassandraDaemon.Server
             pipeline.addLast("messageDecoder", messageDecoder);
             pipeline.addLast("messageEncoder", messageEncoder);
 
-            pipeline.addLast("executor", server.executionHandler);
-
             pipeline.addLast("dispatcher", dispatcher);
 
             return pipeline;
@@ -251,7 +244,7 @@ public class Server implements CassandraDaemon.Server
             sslEngine.setUseClientMode(false);
             sslEngine.setEnabledCipherSuites(encryptionOptions.cipher_suites);
             sslEngine.setNeedClientAuth(encryptionOptions.require_client_auth);
-            
+
             SslHandler sslHandler = new SslHandler(sslEngine);
             sslHandler.setIssueHandshake(true);
             ChannelPipeline pipeline = super.getPipeline();

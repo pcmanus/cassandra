@@ -65,9 +65,4 @@ public abstract class AbstractRowResolver implements IResponseResolver<ReadRespo
         replies.add(message);
         return true;
     }
-
-    public Iterable<MessageIn<ReadResponse>> getMessages()
-    {
-        return replies;
-    }
 }

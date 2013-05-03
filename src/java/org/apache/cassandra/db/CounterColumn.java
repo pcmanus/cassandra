@@ -38,7 +38,7 @@ import org.apache.cassandra.exceptions.OverloadedException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
-import org.apache.cassandra.service.AbstractWriteResponseHandler;
+import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.utils.*;
 
@@ -353,7 +353,7 @@ public class CounterColumn extends Column
 
         StorageProxy.performWrite(rm, ConsistencyLevel.ANY, localDataCenter, new StorageProxy.WritePerformer()
         {
-            public void apply(IMutation mutation, Iterable<InetAddress> targets, AbstractWriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level)
+            public void apply(IMutation mutation, Iterable<InetAddress> targets, WriteResponseHandler responseHandler, String localDataCenter, ConsistencyLevel consistency_level)
             throws OverloadedException
             {
                 // We should only send to the remote replica, not the local one
@@ -362,7 +362,7 @@ public class CounterColumn extends Column
                 responseHandler.response(null);
                 StorageProxy.sendToHintedEndpoints((RowMutation) mutation, remotes, responseHandler, localDataCenter, consistency_level);
             }
-        }, null, WriteType.SIMPLE);
+        }, WriteType.SIMPLE);
 
         // we don't wait for answers
     }

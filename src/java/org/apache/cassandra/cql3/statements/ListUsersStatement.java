@@ -17,6 +17,10 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.util.concurrent.ExecutionException;
+
+import com.google.common.base.Throwables;
+
 import org.apache.cassandra.auth.Auth;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -40,8 +44,22 @@ public class ListUsersStatement extends AuthenticationStatement
 
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
-        return QueryProcessor.process(String.format("SELECT * FROM %s.%s", Auth.AUTH_KS, Auth.USERS_CF),
-                                      ConsistencyLevel.QUORUM,
-                                      new QueryState(new ClientState(true)));
+        try
+        {
+            return QueryProcessor.process(String.format("SELECT * FROM %s.%s", Auth.AUTH_KS, Auth.USERS_CF),
+                                          ConsistencyLevel.QUORUM,
+                                          new QueryState(new ClientState(true))).get();
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            Throwables.propagateIfInstanceOf(cause, RequestValidationException.class);
+            Throwables.propagateIfInstanceOf(cause, RequestExecutionException.class);
+            throw new RuntimeException(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError(e);
+        }
     }
 }

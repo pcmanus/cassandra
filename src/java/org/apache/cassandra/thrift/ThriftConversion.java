@@ -45,7 +45,8 @@ public class ThriftConversion
         throw new AssertionError();
     }
 
-    public static void rethrow(RequestExecutionException e) throws UnavailableException, TimedOutException
+    // We have a return type just for convenience sakes
+    public static RuntimeException rethrow(RequestExecutionException e) throws UnavailableException, TimedOutException
     {
         if (e instanceof RequestTimeoutException)
             throw toThrift((RequestTimeoutException)e);

@@ -26,6 +26,7 @@ import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.db.WriteResponse;
 
 /**
  * This class blocks for a quorum of responses _in the local datacenter only_ (CL.LOCAL_QUORUM).
@@ -34,24 +35,20 @@ public class DatacenterWriteResponseHandler extends WriteResponseHandler
 {
     private static final IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
 
-    public DatacenterWriteResponseHandler(Collection<InetAddress> naturalEndpoints,
+    public DatacenterWriteResponseHandler(Table table,
+                                          Collection<InetAddress> naturalEndpoints,
                                           Collection<InetAddress> pendingEndpoints,
                                           ConsistencyLevel consistencyLevel,
-                                          Table table,
-                                          Runnable callback,
                                           WriteType writeType)
     {
-        super(naturalEndpoints, pendingEndpoints, consistencyLevel, table, callback, writeType);
+        super(table, naturalEndpoints, pendingEndpoints, consistencyLevel, writeType);
         assert consistencyLevel == ConsistencyLevel.LOCAL_QUORUM;
     }
 
     @Override
-    public void response(MessageIn message)
+    protected boolean process(MessageIn<WriteResponse> message)
     {
-        if (message == null || DatabaseDescriptor.getLocalDataCenter().equals(snitch.getDatacenter(message.from)))
-        {
-            if (responses.decrementAndGet() == 0)
-                signal();
-        }
+        // Only count responses from the local DC
+        return message == null || DatabaseDescriptor.getLocalDataCenter().equals(snitch.getDatacenter(message.from));
     }
 }

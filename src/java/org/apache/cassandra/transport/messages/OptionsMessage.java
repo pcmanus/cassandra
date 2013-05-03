@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.Futures;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
@@ -58,7 +60,7 @@ public class OptionsMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<? extends Message.Response> execute(QueryState state)
     {
         List<String> cqlVersions = new ArrayList<String>();
         cqlVersions.add(QueryProcessor.CQL_VERSION.toString());
@@ -71,7 +73,7 @@ public class OptionsMessage extends Message.Request
         supported.put(StartupMessage.CQL_VERSION, cqlVersions);
         supported.put(StartupMessage.COMPRESSION, compressions);
 
-        return new SupportedMessage(supported);
+        return Futures.immediateFuture(new SupportedMessage(supported));
     }
 
     @Override

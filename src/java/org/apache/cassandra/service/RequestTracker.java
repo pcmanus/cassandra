@@ -15,17 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.exceptions;
+package org.apache.cassandra.service;
 
-import org.apache.cassandra.db.ConsistencyLevel;
+import com.google.common.util.concurrent.ListenableFuture;
 
-public class ReadTimeoutException extends AbstractRequestTimeoutException
+public interface RequestTracker<T> extends TimeoutReporter
 {
-    public final boolean dataPresent;
-
-    public ReadTimeoutException(ConsistencyLevel consistency, int received, int blockFor, boolean dataPresent)
-    {
-        super(ExceptionCode.READ_TIMEOUT, consistency, received, blockFor);
-        this.dataPresent = dataPresent;
-    }
+    public ListenableFuture<T> future();
 }

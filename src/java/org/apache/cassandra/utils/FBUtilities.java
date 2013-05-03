@@ -51,7 +51,6 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.IAllocator;
-import org.apache.cassandra.net.AsyncOneResponse;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TDeserializer;
 import org.apache.thrift.TException;
@@ -380,12 +379,6 @@ public class FBUtilities
         {
             throw new AssertionError(ie);
         }
-    }
-
-    public static void waitOnFutures(List<AsyncOneResponse> results, long ms) throws TimeoutException
-    {
-        for (AsyncOneResponse result : results)
-            result.get(ms, TimeUnit.MILLISECONDS);
     }
 
     public static IPartitioner newPartitioner(String partitionerClassName) throws ConfigurationException

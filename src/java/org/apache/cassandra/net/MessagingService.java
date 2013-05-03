@@ -630,11 +630,11 @@ public final class MessagingService implements MessagingServiceMBean
         connection.enqueue(processedMessage, id);
     }
 
-    public <T> AsyncOneResponse<T> sendRR(MessageOut message, InetAddress to)
+    public <T> OneResponseCallback<T> sendRR(MessageOut message, InetAddress to)
     {
-        AsyncOneResponse<T> iar = new AsyncOneResponse<T>();
-        sendRR(message, to, iar);
-        return iar;
+        OneResponseCallback<T> orc = new OneResponseCallback<T>();
+        sendRR(message, to, orc);
+        return orc;
     }
 
     /**

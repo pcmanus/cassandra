@@ -20,6 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -57,7 +59,7 @@ public class PrepareMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<? extends Message.Response> execute(QueryState state)
     {
         try
         {
@@ -79,11 +81,11 @@ public class PrepareMessage extends Message.Request
             if (tracingId != null)
                 response.setTracingId(tracingId);
 
-            return response;
+            return Futures.immediateFuture(response);
         }
         catch (Exception e)
         {
-            return ErrorMessage.fromException(e);
+            return Futures.immediateFuture(ErrorMessage.fromException(e));
         }
         finally
         {

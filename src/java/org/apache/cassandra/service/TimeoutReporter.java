@@ -15,17 +15,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.exceptions;
+package org.apache.cassandra.service;
 
-import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.exceptions.RequestTimeoutException;
 
-public class ReadTimeoutException extends AbstractRequestTimeoutException
+public interface TimeoutReporter
 {
-    public final boolean dataPresent;
+    /**
+     * Retuns a timeout exception containing a request current state.
+     * This *should* return null if the request is already done when this is called.
+     */
+    public RequestTimeoutException reportTimeout();
 
-    public ReadTimeoutException(ConsistencyLevel consistency, int received, int blockFor, boolean dataPresent)
+    public static class Updatable implements TimeoutReporter
     {
-        super(ExceptionCode.READ_TIMEOUT, consistency, received, blockFor);
-        this.dataPresent = dataPresent;
+        private volatile TimeoutReporter reporter;
+
+        public RequestTimeoutException reportTimeout()
+        {
+            return reporter == null ? null : reporter.reportTimeout();
+        }
+
+        public Updatable switchTo(TimeoutReporter newReporter)
+        {
+            this.reporter = newReporter;
+            return this;
+        }
     }
 }

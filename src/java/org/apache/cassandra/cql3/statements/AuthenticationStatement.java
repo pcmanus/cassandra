@@ -19,6 +19,9 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.Callable;
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -40,10 +43,19 @@ public abstract class AuthenticationStatement extends ParsedStatement implements
         return 0;
     }
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, final QueryState state, List<ByteBuffer> variables)
+    throws RequestValidationException
     {
-        return execute(state.getClientState());
+        // We don't want to change the IAuthenticator API, which is intinsically synchronous, so we can't make
+        // execute(ClientState) asynchronous easily. So to avoid blocking on an I/O thread, we just submit
+        // through the MISC stage (which is likely ok since Authentication request should be rare).
+        return miscExecutor.submit(new Callable<ResultMessage>()
+        {
+            public ResultMessage call() throws RequestExecutionException, RequestValidationException
+            {
+                return execute(state.getClientState());
+            }
+        });
     }
 
     public abstract ResultMessage execute(ClientState state) throws RequestExecutionException, RequestValidationException;
@@ -54,4 +66,3 @@ public abstract class AuthenticationStatement extends ParsedStatement implements
         throw new UnsupportedOperationException();
     }
 }
-

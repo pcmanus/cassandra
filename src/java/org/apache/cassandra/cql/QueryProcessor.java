@@ -21,8 +21,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
+import com.google.common.base.Throwables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +74,7 @@ public class QueryProcessor
     public static final String DEFAULT_KEY_NAME = bufferToString(CFMetaData.DEFAULT_KEY_NAME);
 
     private static List<org.apache.cassandra.db.Row> getSlice(CFMetaData metadata, SelectStatement select, List<ByteBuffer> variables)
-    throws InvalidRequestException, ReadTimeoutException, UnavailableException, IsBootstrappingException, WriteTimeoutException
+    throws InvalidRequestException, ReadTimeoutException, UnavailableException, IsBootstrappingException
     {
         List<ReadCommand> commands = new ArrayList<ReadCommand>();
 
@@ -110,7 +112,19 @@ public class QueryProcessor
             }
         }
 
-        return StorageProxy.read(commands, select.getConsistencyLevel());
+        try
+        {
+            return StorageProxy.read(commands, select.getConsistencyLevel()).get();
+        }
+        catch (ExecutionException e)
+        {
+            Throwables.propagateIfInstanceOf(e.getCause(), ReadTimeoutException.class);
+            throw new RuntimeException("Unexpected error during read", e.getCause());
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
+        }
     }
 
     private static SortedSet<ByteBuffer> getColumnNames(SelectStatement select, CFMetaData metadata, List<ByteBuffer> variables)
@@ -173,30 +187,45 @@ public class QueryProcessor
                   ? select.getNumRecords() + 1
                   : select.getNumRecords();
 
-        List<org.apache.cassandra.db.Row> rows = StorageProxy.getRangeSlice(new RangeSliceCommand(metadata.ksName,
-                                                                                                  select.getColumnFamily(),
-                                                                                                  columnFilter,
-                                                                                                  bounds,
-                                                                                                  expressions,
-                                                                                                  limit),
-                                                                            select.getConsistencyLevel());
-
-        // if start key was set and relation was "greater than"
-        if (select.getKeyStart() != null && !select.includeStartKey() && !rows.isEmpty())
+        try
         {
-            if (rows.get(0).key.key.equals(startKeyBytes))
-                rows.remove(0);
-        }
+            List<org.apache.cassandra.db.Row> rows = StorageProxy.getRangeSlice(new RangeSliceCommand(metadata.ksName,
+                                                                                                      select.getColumnFamily(),
+                                                                                                      columnFilter,
+                                                                                                      bounds,
+                                                                                                      expressions,
+                                                                                                      limit),
+                                                                                select.getConsistencyLevel()).get();
 
-        // if finish key was set and relation was "less than"
-        if (select.getKeyFinish() != null && !select.includeFinishKey() && !rows.isEmpty())
+            // if start key was set and relation was "greater than"
+            if (select.getKeyStart() != null && !select.includeStartKey() && !rows.isEmpty())
+            {
+                if (rows.get(0).key.key.equals(startKeyBytes))
+                    rows.remove(0);
+            }
+
+            // if finish key was set and relation was "less than"
+            if (select.getKeyFinish() != null && !select.includeFinishKey() && !rows.isEmpty())
+            {
+                int lastIndex = rows.size() - 1;
+                if (rows.get(lastIndex).key.key.equals(finishKeyBytes))
+                    rows.remove(lastIndex);
+            }
+
+            return rows.subList(0, select.getNumRecords() < rows.size() ? select.getNumRecords() : rows.size());
+        }
+        catch (ExecutionException e)
         {
-            int lastIndex = rows.size() - 1;
-            if (rows.get(lastIndex).key.key.equals(finishKeyBytes))
-                rows.remove(lastIndex);
+            Throwable cause = e.getCause();
+            Throwables.propagateIfInstanceOf(cause, ReadTimeoutException.class);
+            Throwables.propagateIfInstanceOf(cause, UnavailableException.class);
+            Throwables.propagateIfInstanceOf(cause, InvalidRequestException.class);
+            throw new RuntimeException(cause);
         }
-
-        return rows.subList(0, select.getNumRecords() < rows.size() ? select.getNumRecords() : rows.size());
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
+        }
     }
 
     private static IDiskAtomFilter filterFromSelect(SelectStatement select, CFMetaData metadata, List<ByteBuffer> variables)
@@ -555,18 +584,7 @@ public class QueryProcessor
                 validateColumnFamily(keyspace, columnFamily.right);
                 clientState.hasColumnFamilyAccess(keyspace, columnFamily.right, Permission.MODIFY);
 
-                try
-                {
-                    StorageProxy.truncateBlocking(keyspace, columnFamily.right);
-                }
-                catch (TimeoutException e)
-                {
-                    throw new TruncateException(e);
-                }
-                catch (IOException e)
-                {
-                    throw new RuntimeException(e);
-                }
+                StorageProxy.truncateBlocking(keyspace, columnFamily.right);
 
                 result.type = CqlResultType.VOID;
                 return result;

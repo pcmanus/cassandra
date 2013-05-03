@@ -35,6 +35,7 @@ import javax.management.NotificationBroadcasterSupport;
 import javax.management.ObjectName;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Throwables;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.AtomicDouble;
 import com.google.common.util.concurrent.Uninterruptibles;
@@ -58,9 +59,7 @@ import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.sstable.SSTableDeletingTask;
 import org.apache.cassandra.io.sstable.SSTableLoader;
@@ -69,7 +68,7 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.DynamicEndpointSnitch;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
-import org.apache.cassandra.net.AsyncOneResponse;
+import org.apache.cassandra.net.OneResponseCallback;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.ResponseVerbHandler;
@@ -1747,15 +1746,23 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.debug("Notifying " + remote.toString() + " of replication completion\n");
         while (failureDetector.isAlive(remote))
         {
-            AsyncOneResponse iar = MessagingService.instance().sendRR(msg, remote);
+            OneResponseCallback orc = MessagingService.instance().sendRR(msg, remote);
             try
             {
-                iar.get(DatabaseDescriptor.getRpcTimeout(), TimeUnit.MILLISECONDS);
+                orc.get(DatabaseDescriptor.getRpcTimeout(), TimeUnit.MILLISECONDS);
                 return; // done
             }
-            catch(TimeoutException e)
+            catch (ExecutionException e)
+            {
+                throw Throwables.propagate(e.getCause());
+            }
+            catch (TimeoutException e)
             {
                 // try again
+            }
+            catch (InterruptedException e)
+            {
+                throw new AssertionError(e);
             }
         }
     }
@@ -3277,13 +3284,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return old;
     }
 
-    public void truncate(String keyspace, String columnFamily) throws TimeoutException, IOException
+    public void truncate(String keyspace, String columnFamily) throws IOException
     {
         try
         {
             StorageProxy.truncateBlocking(keyspace, columnFamily);
         }
-        catch (UnavailableException e)
+        catch (RequestExecutionException e)
         {
             throw new IOException(e.getMessage());
         }

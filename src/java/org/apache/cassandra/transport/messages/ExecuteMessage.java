@@ -23,12 +23,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+import com.google.common.base.Function;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
+import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
@@ -95,7 +99,7 @@ public class ExecuteMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<? extends Message.Response> execute(QueryState state)
     {
         try
         {
@@ -104,12 +108,9 @@ public class ExecuteMessage extends Message.Request
             if (statement == null)
                 throw new PreparedQueryNotFoundException(statementId);
 
-            UUID tracingId = null;
-            if (isTracingRequested())
-            {
-                tracingId = UUIDGen.getTimeUUID();
+            final UUID tracingId = isTracingRequested() ? UUIDGen.getTimeUUID() : null;
+            if (tracingId != null)
                 state.prepareTracingSession(tracingId);
-            }
 
             if (state.traceNextQuery())
             {
@@ -118,16 +119,27 @@ public class ExecuteMessage extends Message.Request
                 Tracing.instance().begin("Execute CQL3 prepared query", Collections.<String, String>emptyMap());
             }
 
-            Message.Response response = QueryProcessor.processPrepared(statement, consistency, state, values);
+            ListenableFuture<ResultMessage> responseFuture = QueryProcessor.processPrepared(statement, consistency, state, values);
 
-            if (tracingId != null)
-                response.setTracingId(tracingId);
-
-            return response;
+            if (tracingId == null)
+            {
+                return responseFuture;
+            }
+            else
+            {
+                return Futures.transform(responseFuture, new Function<ResultMessage, ResultMessage>()
+                {
+                    public ResultMessage apply(ResultMessage response)
+                    {
+                        response.setTracingId(tracingId);
+                        return response;
+                    }
+                });
+            }
         }
         catch (Exception e)
         {
-            return ErrorMessage.fromException(e);
+            return Futures.immediateFuture(ErrorMessage.fromException(e));
         }
         finally
         {

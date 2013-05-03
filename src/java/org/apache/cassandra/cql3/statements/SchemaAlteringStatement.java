@@ -19,6 +19,9 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.Callable;
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.cql3.CFName;
 import org.apache.cassandra.cql3.CQLStatement;
@@ -68,11 +71,18 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
     public void validate(ClientState state) throws RequestValidationException
     {}
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestValidationException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestValidationException
     {
-        announceMigration();
-        String tableName = cfName == null || columnFamily() == null ? "" : columnFamily();
-        return new ResultMessage.SchemaChange(changeType(), keyspace(), tableName);
+        // TODO: we could make announceMigration async, but as schema changes are relatively infrequent and not that performance sensitive, we don't bother
+        return miscExecutor.submit(new Callable<ResultMessage>()
+        {
+            public ResultMessage call() throws RequestValidationException
+            {
+                announceMigration();
+                String tableName = cfName == null || columnFamily() == null ? "" : columnFamily();
+                return new ResultMessage.SchemaChange(changeType(), keyspace(), tableName);
+            }
+        });
     }
 
     public ResultMessage executeInternal(QueryState state)

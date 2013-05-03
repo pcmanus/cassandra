@@ -23,8 +23,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
+
+import com.google.common.base.Function;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -99,16 +104,13 @@ public class QueryMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<? extends Message.Response> execute(QueryState state)
     {
         try
         {
-            UUID tracingId = null;
-            if (isTracingRequested())
-            {
-                tracingId = UUIDGen.getTimeUUID();
+            final UUID tracingId = isTracingRequested() ? UUIDGen.getTimeUUID() : null;
+            if (tracingId != null)
                 state.prepareTracingSession(tracingId);
-            }
 
             if (state.traceNextQuery())
             {
@@ -116,18 +118,27 @@ public class QueryMessage extends Message.Request
                 Tracing.instance().begin("Execute CQL3 query", ImmutableMap.of("query", query));
             }
 
-            Message.Response response = QueryProcessor.process(query, values, consistency, state);
+            ListenableFuture<ResultMessage> responseFuture = QueryProcessor.process(query, values, consistency, state);
 
-            if (tracingId != null)
-                response.setTracingId(tracingId);
-
-            return response;
+            if (tracingId == null)
+            {
+                return responseFuture;
+            }
+            else
+            {
+                return Futures.transform(responseFuture, new Function<ResultMessage, ResultMessage>()
+                {
+                    public ResultMessage apply(ResultMessage response)
+                    {
+                        response.setTracingId(tracingId);
+                        return response;
+                    }
+                });
+            }
         }
         catch (Exception e)
         {
-            if (!((e instanceof RequestValidationException) || (e instanceof RequestExecutionException)))
-                logger.error("Unexpected error during query", e);
-            return ErrorMessage.fromException(e);
+            return Futures.immediateFuture(ErrorMessage.fromException(e));
         }
         finally
         {

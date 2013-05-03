@@ -61,7 +61,7 @@ public class Config
 
     public Long write_request_timeout_in_ms = new Long(10000);
 
-    public Long cas_contention_timeout_in_ms = new Long(1000);
+    public Long conditional_request_timeout_in_ms = new Long(10000);
 
     public Long truncate_request_timeout_in_ms = new Long(60000);
 
@@ -98,8 +98,6 @@ public class Config
 
     public Boolean start_native_transport = false;
     public Integer native_transport_port = 9042;
-    public Integer native_transport_min_threads = 16;
-    public Integer native_transport_max_threads = 128;
 
     public Integer thrift_max_message_length_in_mb = 16;
     public Integer thrift_framed_transport_size_in_mb = 15;

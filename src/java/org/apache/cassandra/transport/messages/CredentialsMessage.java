@@ -19,10 +19,17 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
+import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.CBUtil;
@@ -62,6 +69,8 @@ public class CredentialsMessage extends Message.Request
         }
     };
 
+    private static final ListeningExecutorService miscExecutor = MoreExecutors.listeningDecorator(StageManager.getStage(Stage.MISC));
+
     public final Map<String, String> credentials = new HashMap<String, String>();
 
     public CredentialsMessage()
@@ -74,17 +83,19 @@ public class CredentialsMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<Message.Response> execute(final QueryState state)
     {
-        try
+        // Same as for AuthenticationStatement. Login() can be costly, but we don't bother
+        // making it asynchronous itself since the authenticator API it uses is not asynchronous
+        // by nature. So we just summit to the misc stage to avoid doing this on an I/O thread.
+        return miscExecutor.submit(new Callable<Message.Response>()
         {
-            state.getClientState().login(credentials);
-            return new ReadyMessage();
-        }
-        catch (AuthenticationException e)
-        {
-            return ErrorMessage.fromException(e);
-        }
+            public Message.Response call() throws AuthenticationException
+            {
+                state.getClientState().login(credentials);
+                return new ReadyMessage();
+            }
+        });
     }
 
     @Override

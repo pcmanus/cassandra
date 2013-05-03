@@ -2,15 +2,10 @@ package org.apache.cassandra.service.paxos;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.net.MessageIn;
 
-public class ProposeCallback extends AbstractPaxosCallback<Boolean>
+public class ProposeCallback extends AbstractPaxosCallback<Boolean, Boolean>
 {
-    private static final Logger logger = LoggerFactory.getLogger(ProposeCallback.class);
-
     private final AtomicInteger successful = new AtomicInteger(0);
 
     public ProposeCallback(int targets)
@@ -18,17 +13,15 @@ public class ProposeCallback extends AbstractPaxosCallback<Boolean>
         super(targets);
     }
 
-    public void response(MessageIn<Boolean> msg)
+    protected boolean process(MessageIn<Boolean> message)
     {
-        logger.debug("Propose response {} from {}", msg.payload, msg.from);
-
-        if (msg.payload)
+        if (message.payload)
             successful.incrementAndGet();
-        latch.countDown();
+        return true;
     }
 
-    public int getSuccessful()
+    public Boolean getResult()
     {
-        return successful.get();
+        return successful.get() >= waitFor();
     }
 }

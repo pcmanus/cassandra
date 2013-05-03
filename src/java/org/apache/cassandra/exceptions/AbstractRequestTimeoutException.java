@@ -19,13 +19,18 @@ package org.apache.cassandra.exceptions;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 
-public class ReadTimeoutException extends AbstractRequestTimeoutException
+public class AbstractRequestTimeoutException extends RequestTimeoutException
 {
-    public final boolean dataPresent;
+    public final ConsistencyLevel consistency;
+    public final int received;
+    public final int blockFor;
 
-    public ReadTimeoutException(ConsistencyLevel consistency, int received, int blockFor, boolean dataPresent)
+    protected AbstractRequestTimeoutException(ExceptionCode code, ConsistencyLevel consistency, int received, int blockFor)
     {
-        super(ExceptionCode.READ_TIMEOUT, consistency, received, blockFor);
-        this.dataPresent = dataPresent;
+        super(code, String.format("Operation timed out - received only %d responses.", received));
+        this.consistency = consistency;
+        this.received = received;
+        this.blockFor = blockFor;
     }
 }
+

@@ -20,7 +20,7 @@ package org.apache.cassandra.exceptions;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
 
-public class WriteTimeoutException extends RequestTimeoutException
+public class WriteTimeoutException extends AbstractRequestTimeoutException
 {
     public final WriteType writeType;
 

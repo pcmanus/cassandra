@@ -19,6 +19,9 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.Callable;
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.auth.DataResource;
 import org.apache.cassandra.cql3.CQLStatement;
@@ -30,6 +33,7 @@ import org.apache.cassandra.transport.messages.ResultMessage;
 
 public abstract class AuthorizationStatement extends ParsedStatement implements CQLStatement
 {
+
     @Override
     public Prepared prepare()
     {
@@ -41,10 +45,17 @@ public abstract class AuthorizationStatement extends ParsedStatement implements 
         return 0;
     }
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables)
-    throws RequestValidationException, RequestExecutionException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, final QueryState state, List<ByteBuffer> variables)
+    throws RequestValidationException
     {
-        return execute(state.getClientState());
+        // Same as for AuthenticationStatement.execute()
+        return miscExecutor.submit(new Callable<ResultMessage>()
+        {
+            public ResultMessage call() throws RequestValidationException, RequestExecutionException
+            {
+                return execute(state.getClientState());
+            }
+        });
     }
 
     public abstract ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException;

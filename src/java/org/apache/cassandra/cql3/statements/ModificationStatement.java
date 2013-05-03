@@ -19,6 +19,13 @@ package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+
+import com.google.common.base.Function;
+import com.google.common.base.Throwables;
+import com.google.common.util.concurrent.AsyncFunction;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
@@ -259,7 +266,7 @@ public abstract class ModificationStatement implements CQLStatement
         return null;
     }
 
-    protected Map<ByteBuffer, ColumnGroupMap> readRequiredRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, boolean local, ConsistencyLevel cl)
+    protected ListenableFuture<Map<ByteBuffer, ColumnGroupMap>> readRequiredRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
         // Lists SET operation incurs a read.
@@ -274,10 +281,12 @@ public abstract class ModificationStatement implements CQLStatement
             }
         }
 
-        return toRead == null ? null : readRows(partitionKeys, clusteringPrefix, toRead, (CompositeType)cfm.comparator, local, cl);
+        return toRead == null
+             ? Futures.<Map<ByteBuffer, ColumnGroupMap>>immediateFuture(null)
+             : readRows(partitionKeys, clusteringPrefix, toRead, (CompositeType)cfm.comparator, local, cl);
     }
 
-    private Map<ByteBuffer, ColumnGroupMap> readRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, Set<ByteBuffer> toRead, CompositeType composite, boolean local, ConsistencyLevel cl)
+    private ListenableFuture<Map<ByteBuffer, ColumnGroupMap>> readRows(List<ByteBuffer> partitionKeys, ColumnNameBuilder clusteringPrefix, Set<ByteBuffer> toRead, final CompositeType composite, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
         try
@@ -305,26 +314,32 @@ public abstract class ModificationStatement implements CQLStatement
                                                   columnFamily(),
                                                   new SliceQueryFilter(slices, false, Integer.MAX_VALUE)));
 
-        List<Row> rows = local
-                       ? SelectStatement.readLocally(keyspace(), commands)
-                       : StorageProxy.read(commands, cl);
+        ListenableFuture<List<Row>> future = local
+                                           ? Futures.immediateFuture(SelectStatement.readLocally(keyspace(), commands)) // local are for internal calls so it's ok to block
+                                           : StorageProxy.read(commands, cl);
 
-        Map<ByteBuffer, ColumnGroupMap> map = new HashMap<ByteBuffer, ColumnGroupMap>();
-        for (Row row : rows)
+        return Futures.transform(future, new Function<List<Row>, Map<ByteBuffer, ColumnGroupMap>>()
         {
-            if (row.cf == null || row.cf.getColumnCount() == 0)
-                continue;
+            public Map<ByteBuffer, ColumnGroupMap> apply(List<Row> rows)
+            {
+                Map<ByteBuffer, ColumnGroupMap> map = new HashMap<ByteBuffer, ColumnGroupMap>();
+                for (Row row : rows)
+                {
+                    if (row.cf == null || row.cf.getColumnCount() == 0)
+                        continue;
 
-            ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
-            for (Column column : row.cf)
-                groupBuilder.add(column);
+                    ColumnGroupMap.Builder groupBuilder = new ColumnGroupMap.Builder(composite, true);
+                    for (Column column : row.cf)
+                        groupBuilder.add(column);
 
-            List<ColumnGroupMap> groups = groupBuilder.groups();
-            assert groups.isEmpty() || groups.size() == 1;
-            if (!groups.isEmpty())
-                map.put(row.key.key, groups.get(0));
-        }
-        return map;
+                    List<ColumnGroupMap> groups = groupBuilder.groups();
+                    assert groups.isEmpty() || groups.size() == 1;
+                    if (!groups.isEmpty())
+                        map.put(row.key.key, groups.get(0));
+                }
+                return map;
+            }
+        });
     }
 
     public boolean hasConditions()
@@ -332,8 +347,8 @@ public abstract class ModificationStatement implements CQLStatement
         return ifNotExists || (columnConditions != null && !columnConditions.isEmpty());
     }
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         if (cl == null)
             throw new InvalidRequestException("Invalid empty consistency level");
@@ -343,20 +358,33 @@ public abstract class ModificationStatement implements CQLStatement
              : executeWithoutCondition(cl, queryState, variables);
     }
 
-    private ResultMessage executeWithoutCondition(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    private ListenableFuture<ResultMessage> executeWithoutCondition(final ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         if (isCounter())
             cl.validateCounterForWrite(cfm);
         else
             cl.validateForWrite(cfm.ksName);
 
-        StorageProxy.mutate(getMutations(variables, false, cl, queryState.getTimestamp(), false), cl);
-        return null;
+        ListenableFuture<Collection<? extends IMutation>> mutationFuture = getMutations(variables, false, cl, queryState.getTimestamp(), false);
+        return Futures.transform(mutationFuture, new AsyncFunction<Collection<? extends IMutation>, ResultMessage>()
+        {
+            public ListenableFuture<ResultMessage> apply(Collection<? extends IMutation> mutations)
+            {
+                try
+                {
+                    return QueryProcessor.emptyResultOnCompletion(StorageProxy.mutate(mutations, cl));
+                }
+                catch (Exception e)
+                {
+                    return Futures.immediateFailedFuture(e);
+                }
+            }
+        });
     }
 
-    public ResultMessage executeWithCondition(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<ResultMessage> executeWithCondition(ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         List<ByteBuffer> keys = buildPartitionKeyNames(variables);
         // We don't support IN for CAS operation so far
@@ -372,11 +400,18 @@ public abstract class ModificationStatement implements CQLStatement
         ColumnFamily updates = updateForKey(key, clusteringPrefix, params);
         ColumnFamily expected = buildConditions(key, clusteringPrefix, params);
 
-        boolean result = StorageProxy.cas(keyspace(), columnFamily(), key, expected, updates);
+        ListenableFuture<Boolean> future = StorageProxy.cas(keyspace(), columnFamily(), key, expected, updates);
 
-        ResultSet.Metadata metadata = new ResultSet.Metadata(Collections.singletonList(new ColumnSpecification(keyspace(), columnFamily(), RESULT_COLUMN, BooleanType.instance)));
-        List<List<ByteBuffer>> newRows = Collections.singletonList(Collections.singletonList(BooleanType.instance.decompose(result)));
-        return new ResultMessage.Rows(new ResultSet(metadata, newRows));
+        return Futures.transform(future, new Function<Boolean, ResultMessage>()
+        {
+            public ResultMessage apply(Boolean result)
+            {
+                ColumnSpecification spec = new ColumnSpecification(keyspace(), columnFamily(), RESULT_COLUMN, BooleanType.instance);
+                ResultSet.Metadata metadata = new ResultSet.Metadata(Collections.singletonList(spec));
+                List<List<ByteBuffer>> newRows = Collections.singletonList(Collections.singletonList(BooleanType.instance.decompose(result)));
+                return new ResultMessage.Rows(new ResultSet(metadata, newRows));
+            }
+        });
     }
 
     public ResultMessage executeInternal(QueryState queryState) throws RequestValidationException, RequestExecutionException
@@ -384,9 +419,23 @@ public abstract class ModificationStatement implements CQLStatement
         if (hasConditions())
             throw new UnsupportedOperationException();
 
-        for (IMutation mutation : getMutations(Collections.<ByteBuffer>emptyList(), true, null, queryState.getTimestamp(), false))
-            mutation.apply();
-        return null;
+        try
+        {
+            for (IMutation mutation : getMutations(Collections.<ByteBuffer>emptyList(), true, null, queryState.getTimestamp(), false).get())
+                mutation.apply();
+            return null;
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            Throwables.propagateIfInstanceOf(cause, RequestExecutionException.class);
+            Throwables.propagateIfInstanceOf(cause, RequestValidationException.class);
+            throw new RuntimeException(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError(e);
+        }
     }
 
     /**
@@ -400,24 +449,41 @@ public abstract class ModificationStatement implements CQLStatement
      * @return list of the mutations
      * @throws InvalidRequestException on invalid requests
      */
-    public Collection<? extends IMutation> getMutations(List<ByteBuffer> variables, boolean local, ConsistencyLevel cl, long now, boolean isBatch)
-    throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<Collection<? extends IMutation>> getMutations(final List<ByteBuffer> variables,
+                                                                          boolean local,
+                                                                          final ConsistencyLevel cl,
+                                                                          final long now,
+                                                                          final boolean isBatch)
+    throws RequestValidationException, RequestExecutionException
     {
-        List<ByteBuffer> keys = buildPartitionKeyNames(variables);
-        ColumnNameBuilder clusteringPrefix = createClusteringPrefixBuilder(variables);
+        final List<ByteBuffer> keys = buildPartitionKeyNames(variables);
+        final ColumnNameBuilder clusteringPrefix = createClusteringPrefixBuilder(variables);
 
         // Some lists operation requires reading
-        Map<ByteBuffer, ColumnGroupMap> rows = readRequiredRows(keys, clusteringPrefix, local, cl);
-        UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(now), getTimeToLive(), rows);
-
-        Collection<IMutation> mutations = new ArrayList<IMutation>();
-        for (ByteBuffer key: keys)
+        ListenableFuture<Map<ByteBuffer, ColumnGroupMap>> readFuture = readRequiredRows(keys, clusteringPrefix, local, cl);
+        return Futures.transform(readFuture, new AsyncFunction<Map<ByteBuffer, ColumnGroupMap>, Collection<? extends IMutation>>()
         {
-            ThriftValidation.validateKey(cfm, key);
-            ColumnFamily cf = updateForKey(key, clusteringPrefix, params);
-            mutations.add(makeMutation(key, cf, cl, isBatch));
-        }
-        return mutations;
+            public ListenableFuture<Collection<? extends IMutation>> apply(Map<ByteBuffer, ColumnGroupMap> rows)
+            {
+                try
+                {
+                    UpdateParameters params = new UpdateParameters(cfm, variables, getTimestamp(now), getTimeToLive(), rows);
+
+                    Collection<IMutation> mutations = new ArrayList<IMutation>();
+                    for (ByteBuffer key: keys)
+                    {
+                        ThriftValidation.validateKey(cfm, key);
+                        ColumnFamily cf = updateForKey(key, clusteringPrefix, params);
+                        mutations.add(makeMutation(key, cf, cl, isBatch));
+                    }
+                    return Futures.<Collection<? extends IMutation>>immediateFuture(mutations);
+                }
+                catch (InvalidRequestException e)
+                {
+                    return Futures.immediateFailedFuture(e);
+                }
+            }
+        });
     }
 
     private IMutation makeMutation(ByteBuffer key, ColumnFamily cf, ConsistencyLevel cl, boolean isBatch)

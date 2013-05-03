@@ -19,6 +19,8 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.Map;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
@@ -66,7 +68,7 @@ public class StartupMessage extends Message.Request
         return codec.encode(this);
     }
 
-    public Message.Response execute(QueryState state)
+    public ListenableFuture<Message.Response> execute(QueryState state)
     {
         ClientState cState = state.getClientState();
         String cqlVersion = options.get(CQL_VERSION);
@@ -100,10 +102,10 @@ public class StartupMessage extends Message.Request
             }
         }
 
-        if (DatabaseDescriptor.getAuthenticator().requireAuthentication())
-            return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
-        else
-            return new ReadyMessage();
+        Message.Response response = DatabaseDescriptor.getAuthenticator().requireAuthentication()
+                                  ? new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName())
+                                  : new ReadyMessage();
+        return Futures.immediateFuture(response);
     }
 
     @Override

@@ -22,12 +22,13 @@ import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import com.google.common.collect.AbstractIterator;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.RangeSliceReply;
 import org.apache.cassandra.db.Row;
-import org.apache.cassandra.net.AsyncOneResponse;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
@@ -48,24 +49,25 @@ public class RangeSliceResponseResolver implements IResponseResolver<RangeSliceR
     };
 
     private final String table;
-    private List<InetAddress> sources;
+    private final List<InetAddress> sources;
     protected final Collection<MessageIn<RangeSliceReply>> responses = new ConcurrentLinkedQueue<MessageIn<RangeSliceReply>>();
-    public final List<AsyncOneResponse> repairResults = new ArrayList<AsyncOneResponse>();
+    private final List<ListenableFuture<?>> repairFutures = new ArrayList<ListenableFuture<?>>();
 
-    public RangeSliceResponseResolver(String table)
+    public RangeSliceResponseResolver(String table, List<InetAddress> sources)
     {
         this.table = table;
-    }
-
-    public void setSources(List<InetAddress> endpoints)
-    {
-        this.sources = endpoints;
+        this.sources = sources;
     }
 
     public List<Row> getData()
     {
         MessageIn<RangeSliceReply> response = responses.iterator().next();
         return response.payload.rows;
+    }
+
+    public ListenableFuture<?> repairFuture()
+    {
+        return Futures.allAsList(repairFutures);
     }
 
     // Note: this would deserialize the response a 2nd time if getData was called first.
@@ -121,11 +123,6 @@ public class RangeSliceResponseResolver implements IResponseResolver<RangeSliceR
         public void close() {}
     }
 
-    public Iterable<MessageIn<RangeSliceReply>> getMessages()
-    {
-        return responses;
-    }
-
     private class Reducer extends MergeIterator.Reducer<Pair<Row,InetAddress>, Row>
     {
         List<ColumnFamily> versions = new ArrayList<ColumnFamily>(sources.size());
@@ -158,7 +155,7 @@ public class RangeSliceResponseResolver implements IResponseResolver<RangeSliceR
             }
             // resolved can be null even if versions doesn't have all nulls because of the call to removeDeleted in resolveSuperSet
             if (resolved != null)
-                repairResults.addAll(RowDataResolver.scheduleRepairs(resolved, table, key, versions, versionSources));
+                repairFutures.add(RowDataResolver.scheduleRepairs(resolved, table, key, versions, versionSources));
             versions.clear();
             versionSources.clear();
             return new Row(key, resolved);

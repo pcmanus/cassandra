@@ -141,7 +141,7 @@ public class ErrorMessage extends Message.Response
                     break;
                 case WRITE_TIMEOUT:
                 case READ_TIMEOUT:
-                    RequestTimeoutException rte = (RequestTimeoutException)msg.error;
+                    AbstractRequestTimeoutException rte = (AbstractRequestTimeoutException)msg.error;
                     boolean isWrite = msg.error.code() == ExceptionCode.WRITE_TIMEOUT;
 
                     ChannelBuffer rteCl = CBUtil.consistencyLevelToCB(rte.consistency);

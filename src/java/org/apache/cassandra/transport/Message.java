@@ -20,6 +20,9 @@ package org.apache.cassandra.transport;
 import java.util.EnumSet;
 import java.util.UUID;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.FutureCallback;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
@@ -168,7 +171,7 @@ public abstract class Message
                 throw new IllegalArgumentException();
         }
 
-        public abstract Response execute(QueryState queryState);
+        public abstract ListenableFuture<? extends Response> execute(QueryState queryState);
 
         public void setTracingRequested()
         {
@@ -288,25 +291,37 @@ public abstract class Message
             if (e.getMessage() instanceof Response)
                 throw new ProtocolException("Invalid response message received, expecting requests");
 
-            Request request = (Request)e.getMessage();
+            final Request request = (Request)e.getMessage();
+            final Channel channel = ctx.getChannel();
 
             try
             {
                 assert request.connection() instanceof ServerConnection;
-                ServerConnection connection = (ServerConnection)request.connection();
+                final ServerConnection connection = (ServerConnection)request.connection();
                 connection.validateNewMessage(request.type);
 
                 logger.debug("Received: {}, v={}", request, request.getVersion());
 
-                Response response = request.execute(connection.getQueryState(request.getStreamId()));
-                response.setStreamId(request.getStreamId());
-                response.setVersion(request.getVersion());
-                response.attach(connection);
-                connection.applyStateTransition(request.type, response.type);
+                ListenableFuture<? extends Response> responseFuture = request.execute(connection.getQueryState(request.getStreamId()));
+                Futures.addCallback(responseFuture, new FutureCallback<Response>()
+                {
+                    public void onSuccess(Response response)
+                    {
+                        logger.debug("Responding: {}, v={}", response, response.getVersion());
 
-                logger.debug("Responding: {}, v={}", response, response.getVersion());
+                        response.setStreamId(request.getStreamId());
+                        response.setVersion(request.getVersion());
+                        response.attach(connection);
+                        connection.applyStateTransition(request.type, response.type);
 
-                ctx.getChannel().write(response);
+                        channel.write(response);
+                    }
+
+                    public void onFailure(Throwable error)
+                    {
+                        channel.write(ErrorMessage.fromException(error).setStreamId(request.getStreamId()).setVersion(request.getVersion()));
+                    }
+                });
             }
             catch (Exception ex)
             {

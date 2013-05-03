@@ -20,6 +20,9 @@ package org.apache.cassandra.cql3.statements;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -51,10 +54,10 @@ public class UseStatement extends ParsedStatement implements CQLStatement
     {
     }
 
-    public ResultMessage execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws InvalidRequestException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws InvalidRequestException
     {
         state.getClientState().setKeyspace(keyspace);
-        return new ResultMessage.SetKeyspace(keyspace);
+        return Futures.<ResultMessage>immediateFuture(new ResultMessage.SetKeyspace(keyspace));
     }
 
     public ResultMessage executeInternal(QueryState state)

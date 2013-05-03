@@ -24,6 +24,9 @@ import java.util.concurrent.ExecutionException;
 import com.google.common.base.Predicate;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterables;
+import com.google.common.util.concurrent.AsyncFunction;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
@@ -118,18 +121,32 @@ public class SelectStatement implements CQLStatement
         // Nothing to do, all validation has been done by RawStatement.prepare()
     }
 
-    public ResultMessage.Rows execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestExecutionException, RequestValidationException
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, QueryState state, final List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         if (cl == null)
             throw new InvalidRequestException("Invalid empty consistency level");
 
         cl.validateForRead(keyspace());
 
-        List<Row> rows = isKeyRange || usesSecondaryIndexing
-                       ? StorageProxy.getRangeSlice(getRangeCommand(variables), cl)
-                       : StorageProxy.read(getSliceCommands(variables), cl);
+        ListenableFuture<List<Row>> future = isKeyRange || usesSecondaryIndexing
+                                           ? StorageProxy.getRangeSlice(getRangeCommand(variables), cl)
+                                           : StorageProxy.read(getSliceCommands(variables), cl);
 
-        return processResults(rows, variables);
+        return Futures.transform(future, new AsyncFunction<List<Row>, ResultMessage>()
+        {
+            public ListenableFuture<ResultMessage> apply(List<Row> rows)
+            {
+                try
+                {
+                    return Futures.<ResultMessage>immediateFuture(processResults(rows, variables));
+                }
+                catch (RequestValidationException e)
+                {
+                    return Futures.immediateFailedFuture(e);
+                }
+            }
+        });
     }
 
     private ResultMessage.Rows processResults(List<Row> rows, List<ByteBuffer> variables) throws RequestValidationException

@@ -728,14 +728,14 @@ public class DatabaseDescriptor
         conf.write_request_timeout_in_ms = timeOutInMillis;
     }
 
-    public static long getCasContentionTimeout()
+    public static long getCasRpcTimeout()
     {
-        return conf.cas_contention_timeout_in_ms;
+        return conf.conditional_request_timeout_in_ms;
     }
 
-    public static void setCasContentionTimeout(Long timeOutInMillis)
+    public static void setCasRpcTimeout(Long timeOutInMillis)
     {
-        conf.cas_contention_timeout_in_ms = timeOutInMillis;
+        conf.conditional_request_timeout_in_ms = timeOutInMillis;
     }
 
     public static long getTruncateRpcTimeout()
@@ -961,16 +961,6 @@ public class DatabaseDescriptor
     public static int getNativeTransportPort()
     {
         return Integer.parseInt(System.getProperty("cassandra.native_transport_port", conf.native_transport_port.toString()));
-    }
-
-    public static Integer getNativeTransportMinThreads()
-    {
-        return conf.native_transport_min_threads;
-    }
-
-    public static Integer getNativeTransportMaxThreads()
-    {
-        return conf.native_transport_max_threads;
     }
 
     public static double getCommitLogSyncBatchWindow()

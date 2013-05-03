@@ -19,7 +19,8 @@ package org.apache.cassandra.service;
 
 import org.apache.cassandra.net.MessageIn;
 
-public interface IResponseResolver<TMessage, TResolved> {
+public interface IResponseResolver<TMessage, TResolved>
+{
 
     /**
      * This Method resolves the responses that are passed in . for example : if
@@ -39,5 +40,4 @@ public interface IResponseResolver<TMessage, TResolved> {
     public TResolved getData();
 
     public boolean preprocess(MessageIn<TMessage> message);
-    public Iterable<MessageIn<TMessage>> getMessages();
 }

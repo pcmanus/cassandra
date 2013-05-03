@@ -19,7 +19,12 @@ package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 
+import com.google.common.base.Function;
+import com.google.common.base.Throwables;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.googlecode.concurrentlinkedhashmap.ConcurrentLinkedHashMap;
 import org.antlr.runtime.*;
 import org.slf4j.Logger;
@@ -53,6 +58,13 @@ public class QueryProcessor
                                                                                    .maximumWeightedCapacity(MAX_CACHE_PREPARED)
                                                                                    .build();
 
+    private static final Function<Object, ResultMessage> emptyResultFunction = new Function<Object, ResultMessage>()
+    {
+        public ResultMessage apply(Object v)
+        {
+            return new ResultMessage.Void();
+        }
+    };
 
     public static CQLStatement getPrepared(MD5Digest id)
     {
@@ -121,23 +133,27 @@ public class QueryProcessor
         }
     }
 
-    private static ResultMessage processStatement(CQLStatement statement, ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    public static ListenableFuture<ResultMessage> emptyResultOnCompletion(ListenableFuture<?> future)
+    {
+        return Futures.transform(future, emptyResultFunction);
+    }
+
+    private static ListenableFuture<ResultMessage> processStatement(CQLStatement statement, ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         ClientState clientState = queryState.getClientState();
         statement.validate(clientState);
         statement.checkAccess(clientState);
-        ResultMessage result = statement.execute(cl, queryState, variables);
-        return result == null ? new ResultMessage.Void() : result;
+        return statement.execute(cl, queryState, variables);
     }
 
-    public static ResultMessage process(String queryString, ConsistencyLevel cl, QueryState queryState)
-    throws RequestExecutionException, RequestValidationException
+    public static ListenableFuture<ResultMessage> process(String queryString, ConsistencyLevel cl, QueryState queryState)
+    throws RequestValidationException, RequestExecutionException
     {
         return process(queryString, Collections.<ByteBuffer>emptyList(), cl, queryState);
     }
 
-    public static ResultMessage process(String queryString, List<ByteBuffer> variables, ConsistencyLevel cl, QueryState queryState)
+    public static ListenableFuture<ResultMessage> process(String queryString, List<ByteBuffer> variables, ConsistencyLevel cl, QueryState queryState)
     throws RequestExecutionException, RequestValidationException
     {
         logger.trace("CQL QUERY: {}", queryString);
@@ -152,11 +168,21 @@ public class QueryProcessor
         try
         {
             QueryState state = new QueryState(new ClientState(true));
-            ResultMessage result = process(query, cl, state);
+            ListenableFuture<ResultMessage> future = process(query, cl, state);
+            ResultMessage result = future.get();
             if (result instanceof ResultMessage.Rows)
                 return new UntypedResultSet(((ResultMessage.Rows)result).result);
             else
                 return null;
+        }
+        catch (ExecutionException e)
+        {
+            Throwables.propagateIfInstanceOf(e.getCause(), RequestExecutionException.class);
+            throw new RuntimeException(e.getCause());
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException(e);
         }
         catch (RequestValidationException e)
         {
@@ -240,8 +266,8 @@ public class QueryProcessor
         }
     }
 
-    public static ResultMessage processPrepared(CQLStatement statement, ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
-    throws RequestExecutionException, RequestValidationException
+    public static ListenableFuture<ResultMessage> processPrepared(CQLStatement statement, ConsistencyLevel cl, QueryState queryState, List<ByteBuffer> variables)
+    throws RequestValidationException, RequestExecutionException
     {
         // Check to see if there are any bound variables to verify
         if (!(variables.isEmpty() && (statement.getBoundsTerms() == 0)))

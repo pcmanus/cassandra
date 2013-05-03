@@ -29,27 +29,25 @@ import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.db.WriteResponse;
 
 /**
  * This class blocks for a quorum of responses _in all datacenters_ (CL.EACH_QUORUM).
  */
-public class DatacenterSyncWriteResponseHandler extends AbstractWriteResponseHandler
+public class DatacenterSyncWriteResponseHandler extends WriteResponseHandler
 {
     private static final IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
 
     private final NetworkTopologyStrategy strategy;
     private final HashMap<String, AtomicInteger> responses = new HashMap<String, AtomicInteger>();
-    private final AtomicInteger acks = new AtomicInteger(0);
 
-    public DatacenterSyncWriteResponseHandler(Collection<InetAddress> naturalEndpoints,
+    public DatacenterSyncWriteResponseHandler(Table table,
+                                              Collection<InetAddress> naturalEndpoints,
                                               Collection<InetAddress> pendingEndpoints,
                                               ConsistencyLevel consistencyLevel,
-                                              Table table,
-                                              Runnable callback,
                                               WriteType writeType)
     {
-        // Response is been managed by the map so make it 1 for the superclass.
-        super(table, naturalEndpoints, pendingEndpoints, consistencyLevel, callback, writeType);
+        super(table, naturalEndpoints, pendingEndpoints, consistencyLevel, writeType);
         assert consistencyLevel == ConsistencyLevel.EACH_QUORUM;
 
         strategy = (NetworkTopologyStrategy) table.getReplicationStrategy();
@@ -68,32 +66,15 @@ public class DatacenterSyncWriteResponseHandler extends AbstractWriteResponseHan
         }
     }
 
-    public void response(MessageIn message)
+    @Override
+    protected boolean process(MessageIn<WriteResponse> message)
     {
         String dataCenter = message == null
-                            ? DatabaseDescriptor.getLocalDataCenter()
-                            : snitch.getDatacenter(message.from);
+                          ? DatabaseDescriptor.getLocalDataCenter()
+                          : snitch.getDatacenter(message.from);
 
-        responses.get(dataCenter).getAndDecrement();
-        acks.incrementAndGet();
-
-        for (AtomicInteger i : responses.values())
-        {
-            if (i.get() > 0)
-                return;
-        }
-
-        // all the quorum conditions are met
-        signal();
-    }
-
-    protected int ackCount()
-    {
-        return acks.get();
-    }
-
-    public boolean isLatencyForSnitch()
-    {
-        return false;
+        int dcRemaining = responses.get(dataCenter).decrementAndGet();
+        // Only count it if we were still waiting for a response for this dc
+        return dcRemaining >= 0;
     }
 }

@@ -21,60 +21,45 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.util.concurrent.AbstractFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.TruncateResponse;
 import org.apache.cassandra.net.IAsyncCallback;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.SimpleCondition;
+import org.apache.cassandra.exceptions.RequestTimeoutException;
+import org.apache.cassandra.exceptions.TruncateException;
 
-public class TruncateResponseHandler implements IAsyncCallback
+public class TruncateResponseHandler extends AbstractRequestCallback<TruncateResponse, Void>
 {
-    protected static final Logger logger = LoggerFactory.getLogger(TruncateResponseHandler.class);
-    protected final SimpleCondition condition = new SimpleCondition();
-    private final int responseCount;
-    protected final AtomicInteger responses = new AtomicInteger(0);
-    private final long startTime;
-
     public TruncateResponseHandler(int responseCount)
     {
+        super(responseCount);
         // at most one node per range can bootstrap at a time, and these will be added to the write until
         // bootstrap finishes (at which point we no longer need to write to the old ones).
         assert 1 <= responseCount: "invalid response count " + responseCount;
-
-        this.responseCount = responseCount;
-        startTime = System.currentTimeMillis();
     }
 
-    public void get() throws TimeoutException
+    protected boolean process(MessageIn<TruncateResponse> message)
     {
-        long timeout = DatabaseDescriptor.getTruncateRpcTimeout() - (System.currentTimeMillis() - startTime);
-        boolean success;
-        try
-        {
-            success = condition.await(timeout, TimeUnit.MILLISECONDS); // TODO truncate needs a much longer timeout
-        }
-        catch (InterruptedException ex)
-        {
-            throw new AssertionError(ex);
-        }
-
-        if (!success)
-        {
-            throw new TimeoutException("Truncate timed out - received only " + responses.get() + " responses");
-        }
+        return true;
     }
 
-    public void response(MessageIn message)
+    protected Void getResult() throws Exception
     {
-        responses.incrementAndGet();
-        if (responses.get() >= responseCount)
-            condition.signal();
+        return null;
     }
 
     public boolean isLatencyForSnitch()
     {
         return false;
+    }
+
+    public TruncateException reportTimeout()
+    {
+        return new TruncateException(String.format("Timeout during truncate (%d node responded over %d", getResponsesCount(), waitFor()));
     }
 }

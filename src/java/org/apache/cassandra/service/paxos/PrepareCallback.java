@@ -7,20 +7,14 @@ import java.util.Map;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.net.MessageIn;
 
-public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
+public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse, PrepareSummary>
 {
-    private static final Logger logger = LoggerFactory.getLogger(PrepareCallback.class);
-
-    public boolean promised = true;
-    public Commit mostRecentCommit;
-    public Commit inProgressCommit;
-
+    private Commit mostRecentCommit;
+    private Commit inProgressCommit;
     private Map<InetAddress, Commit> commitsByReplica = new HashMap<InetAddress, Commit>();
 
     public PrepareCallback(ByteBuffer key, CFMetaData metadata, int targets)
@@ -31,18 +25,17 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         inProgressCommit = Commit.emptyCommit(key, metadata);
     }
 
-    public synchronized void response(MessageIn<PrepareResponse> message)
+    protected synchronized boolean process(MessageIn<PrepareResponse> message)
     {
         PrepareResponse response = message.payload;
-        logger.debug("Prepare response {} from {}", response, message.from);
-
         if (!response.promised)
         {
-            promised = false;
-            while (latch.getCount() > 0)
-                latch.countDown();
-            return;
+            // Set the future response, we know it's failed
+            set(PrepareSummary.failedPrepare());
+            return true;
         }
+
+        commitsByReplica.put(message.from, response.mostRecentCommit);
 
         if (response.mostRecentCommit.isAfter(mostRecentCommit))
             mostRecentCommit = response.mostRecentCommit;
@@ -50,17 +43,18 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         if (response.inProgressCommit.isAfter(inProgressCommit))
             inProgressCommit = response.inProgressCommit;
 
-        latch.countDown();
+        return true;
     }
 
-    public Iterable<InetAddress> replicasMissingMostRecentCommit()
+    protected PrepareSummary getResult()
     {
-        return Iterables.filter(commitsByReplica.keySet(), new Predicate<InetAddress>()
+        Iterable<InetAddress> missingMRC = Iterables.filter(commitsByReplica.keySet(), new Predicate<InetAddress>()
         {
             public boolean apply(InetAddress inetAddress)
             {
                 return (!commitsByReplica.get(inetAddress).ballot.equals(mostRecentCommit.ballot));
             }
         });
+        return PrepareSummary.successfulPrepare(mostRecentCommit, inProgressCommit, missingMRC);
     }
 }

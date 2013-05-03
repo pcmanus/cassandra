@@ -23,8 +23,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
+
+import com.google.common.base.Throwables;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
@@ -101,18 +104,27 @@ public class CassandraServer implements Cassandra.Iface
         try
         {
             schedule(DatabaseDescriptor.getReadRpcTimeout());
-            try
-            {
-                rows = StorageProxy.read(commands, consistency_level);
-            }
-            finally
-            {
-                release();
-            }
+            rows = StorageProxy.read(commands, consistency_level).get();
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
+            throw ThriftConversion.rethrow(e);
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestExecutionException)
+                ThriftConversion.rethrow((RequestExecutionException)cause);
+            Throwables.propagateIfInstanceOf(cause, org.apache.cassandra.exceptions.InvalidRequestException.class);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
+        }
+        finally
+        {
+            release();
         }
 
         for (Row row: rows)
@@ -780,20 +792,28 @@ public class CassandraServer implements Cassandra.Iface
             }
 
             schedule(DatabaseDescriptor.getWriteRpcTimeout());
-            return StorageProxy.cas(cState.getKeyspace(), column_family, key, cfExpected, cfUpdates);
+            return StorageProxy.cas(cState.getKeyspace(), column_family, key, cfExpected, cfUpdates).get();
         }
-        catch (RequestTimeoutException e)
+        catch (RequestExecutionException e)
         {
-            throw ThriftConversion.toThrift(e);
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
             throw ThriftConversion.toThrift(e);
         }
-        catch (RequestExecutionException e)
+        catch (ExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return false; // makes javac happy -- it can't tell that rethrow always throws
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {
@@ -1157,7 +1177,7 @@ public class CassandraServer implements Cassandra.Iface
             {
                 IDiskAtomFilter filter = ThriftValidation.asIFilter(predicate, metadata, column_parent.super_column);
                 rows = StorageProxy.getRangeSlice(new RangeSliceCommand(keyspace, column_parent.column_family, filter, bounds,
-                                                                        range.row_filter, range.count), consistencyLevel);
+                                                                        range.row_filter, range.count), consistencyLevel).get();
             }
             finally
             {
@@ -1171,14 +1191,22 @@ public class CassandraServer implements Cassandra.Iface
         {
             throw ThriftConversion.toThrift(e);
         }
-        catch (ReadTimeoutException e)
+        catch (RequestExecutionException e)
         {
-            logger.debug("... timed out");
-            throw ThriftConversion.toThrift(e);
+            throw ThriftConversion.rethrow(e);
         }
-        catch (org.apache.cassandra.exceptions.UnavailableException e)
+        catch (ExecutionException e)
         {
-            throw ThriftConversion.toThrift(e);
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {
@@ -1241,7 +1269,7 @@ public class CassandraServer implements Cassandra.Iface
             {
                 IDiskAtomFilter filter = ThriftValidation.asIFilter(predicate, metadata, null);
                 rows = StorageProxy.getRangeSlice(new RangeSliceCommand(keyspace, column_family, filter,
-                                                                        bounds, range.row_filter, range.count, true, true), consistencyLevel);
+                                                                        bounds, range.row_filter, range.count, true, true), consistencyLevel).get();
             }
             finally
             {
@@ -1255,14 +1283,22 @@ public class CassandraServer implements Cassandra.Iface
         {
             throw ThriftConversion.toThrift(e);
         }
-        catch (ReadTimeoutException e)
+        catch (RequestExecutionException e)
         {
-            logger.debug("... timed out");
-            throw ThriftConversion.toThrift(e);
+            throw ThriftConversion.rethrow(e);
         }
-        catch (org.apache.cassandra.exceptions.UnavailableException e)
+        catch (ExecutionException e)
         {
-            throw ThriftConversion.toThrift(e);
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {
@@ -1323,21 +1359,29 @@ public class CassandraServer implements Cassandra.Iface
                                                               index_clause.expressions,
                                                               index_clause.count);
 
-            List<Row> rows = StorageProxy.getRangeSlice(command, consistencyLevel);
+            List<Row> rows = StorageProxy.getRangeSlice(command, consistencyLevel).get();
             return thriftifyKeySlices(rows, column_parent, column_predicate);
         }
         catch (RequestValidationException e)
         {
             throw ThriftConversion.toThrift(e);
         }
-        catch (ReadTimeoutException e)
+        catch (RequestExecutionException e)
         {
-            logger.debug("... timed out");
-            throw ThriftConversion.toThrift(e);
+            throw ThriftConversion.rethrow(e);
         }
-        catch (org.apache.cassandra.exceptions.UnavailableException e)
+        catch (ExecutionException e)
         {
-            throw ThriftConversion.toThrift(e);
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {
@@ -1658,18 +1702,9 @@ public class CassandraServer implements Cassandra.Iface
         {
             throw ThriftConversion.toThrift(e);
         }
-        catch (org.apache.cassandra.exceptions.UnavailableException e)
+        catch (RequestExecutionException e)
         {
-            throw ThriftConversion.toThrift(e);
-        }
-        catch (TimeoutException e)
-        {
-            logger.debug("... timed out");
-            throw new TimedOutException();
-        }
-        catch (IOException e)
-        {
-            throw (UnavailableException) new UnavailableException().initCause(e);
+            throw ThriftConversion.rethrow(e);
         }
         finally
         {
@@ -1914,16 +1949,28 @@ public class CassandraServer implements Cassandra.Iface
             }
 
             ThriftClientState cState = state();
-            return org.apache.cassandra.cql3.QueryProcessor.process(queryString, ThriftConversion.fromThrift(cLevel), cState.getQueryState()).toThriftResult();
+            return org.apache.cassandra.cql3.QueryProcessor.process(queryString, ThriftConversion.fromThrift(cLevel), cState.getQueryState()).get().toThriftResult();
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null;
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
             throw ThriftConversion.toThrift(e);
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {
@@ -2039,16 +2086,28 @@ public class CassandraServer implements Cassandra.Iface
                                                                 itemId, org.apache.cassandra.cql3.QueryProcessor.MAX_CACHE_PREPARED, itemId));
             logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, statement.getBoundsTerms());
 
-            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement, ThriftConversion.fromThrift(cLevel), cState.getQueryState(), bindVariables).toThriftResult();
-        }
-        catch (RequestExecutionException e)
-        {
-            ThriftConversion.rethrow(e);
-            return null;
+            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement, ThriftConversion.fromThrift(cLevel), cState.getQueryState(), bindVariables).get().toThriftResult();
         }
         catch (RequestValidationException e)
         {
             throw ThriftConversion.toThrift(e);
+        }
+        catch (RequestExecutionException e)
+        {
+            throw ThriftConversion.rethrow(e);
+        }
+        catch (ExecutionException e)
+        {
+            Throwable cause = e.getCause();
+            if (cause instanceof RequestValidationException)
+                throw ThriftConversion.toThrift((RequestValidationException)cause);
+            if (cause instanceof RequestExecutionException)
+                throw ThriftConversion.rethrow((RequestExecutionException)cause);
+            throw Throwables.propagate(cause);
+        }
+        catch (InterruptedException e)
+        {
+            throw new AssertionError();
         }
         finally
         {

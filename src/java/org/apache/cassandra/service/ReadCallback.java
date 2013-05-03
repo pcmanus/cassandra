@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.util.concurrent.AbstractFuture;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,18 +44,14 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SimpleCondition;
 
-public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessage>
+public class ReadCallback<TMessage, TResolved> extends AbstractRequestCallback<TMessage, TResolved>
 {
-    protected static final Logger logger = LoggerFactory.getLogger( ReadCallback.class );
+    protected static final Logger logger = LoggerFactory.getLogger(ReadCallback.class);
 
     public final IResponseResolver<TMessage, TResolved> resolver;
-    private final SimpleCondition condition = new SimpleCondition();
-    final long startTime;
-    private final int blockfor;
     final List<InetAddress> endpoints;
     private final IReadCommand command;
     private final ConsistencyLevel consistencyLevel;
-    private final AtomicInteger received = new AtomicInteger(0);
     private final Table table; // TODO push this into ConsistencyLevel?
 
     /**
@@ -63,68 +61,60 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
     {
         this(resolver, consistencyLevel, consistencyLevel.blockFor(Table.open(command.getKeyspace())), command, Table.open(command.getKeyspace()), filteredEndpoints);
         if (logger.isTraceEnabled())
-            logger.trace(String.format("Blockfor is %s; setting up requests to %s", blockfor, StringUtils.join(this.endpoints, ",")));
+            logger.trace(String.format("Blockfor is %s; setting up requests to %s", waitFor(), StringUtils.join(this.endpoints, ",")));
     }
 
     private ReadCallback(IResponseResolver<TMessage, TResolved> resolver, ConsistencyLevel consistencyLevel, int blockfor, IReadCommand command, Table table, List<InetAddress> endpoints)
     {
+        super(blockfor);
         this.command = command;
         this.table = table;
-        this.blockfor = blockfor;
         this.consistencyLevel = consistencyLevel;
         this.resolver = resolver;
-        this.startTime = System.currentTimeMillis();
         this.endpoints = endpoints;
     }
 
     public ReadCallback<TMessage, TResolved> withNewResolver(IResponseResolver<TMessage, TResolved> newResolver)
     {
-        return new ReadCallback<TMessage, TResolved>(newResolver, consistencyLevel, blockfor, command, table, endpoints);
+        return new ReadCallback<TMessage, TResolved>(newResolver, consistencyLevel, waitFor(), command, table, endpoints);
     }
 
-    public boolean await(long interimTimeout)
+    public ReadTimeoutException reportTimeout()
     {
-        long timeout = interimTimeout - (System.currentTimeMillis() - startTime);
-        try
-        {
-            return condition.await(timeout, TimeUnit.MILLISECONDS);
-        }
-        catch (InterruptedException ex)
-        {
-            throw new AssertionError(ex);
-        }
+        ReadTimeoutException ex = new ReadTimeoutException(consistencyLevel, getResponsesCount(), waitFor(), resolver.isDataPresent());
+        if (logger.isDebugEnabled())
+            logger.debug("Read timeout: {}", ex.toString());
+        return ex;
     }
 
-    public TResolved get() throws ReadTimeoutException, DigestMismatchException
-    {
-        long timeout = command.getTimeout() - (System.currentTimeMillis() - startTime);
-        if (!await(timeout))
-        {
-            ReadTimeoutException ex = new ReadTimeoutException(consistencyLevel, received.get(), blockfor, resolver.isDataPresent());
-            if (logger.isDebugEnabled())
-                logger.debug("Read timeout: {}", ex.toString());
-            throw ex;
-        }
-        return blockfor == 1 ? resolver.getData() : resolver.resolve();
-    }
-
-    public void response(MessageIn<TMessage> message)
+    protected boolean process(MessageIn<TMessage> message)
     {
         boolean hasAdded = resolver.preprocess(message);
-        int n = (waitingFor(message) && hasAdded)
-              ? received.incrementAndGet()
-              : received.get();
-        if (n >= blockfor && resolver.isDataPresent())
+        return hasAdded && waitingFor(message);
+    }
+
+    protected TResolved getResult() throws DigestMismatchException
+    {
+        try
         {
-            condition.signal();
+            return waitFor() == 1 ? resolver.getData() : resolver.resolve();
+        }
+        finally
+        {
             maybeResolveForRepair();
         }
+    }
+
+    @Override
+    protected boolean isReady()
+    {
+        return resolver.isDataPresent();
     }
 
     /**
      * @return true if the message counts towards the blockfor threshold
      */
-    private boolean waitingFor(MessageIn message)
+    private boolean waitingFor(MessageIn<TMessage> message)
     {
         return consistencyLevel == ConsistencyLevel.LOCAL_QUORUM
              ? DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(message.from))
@@ -147,7 +137,7 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
      */
     protected void maybeResolveForRepair()
     {
-        if (blockfor < endpoints.size() && received.get() == endpoints.size())
+        if (waitFor() < endpoints.size() && getResponsesCount() == endpoints.size())
         {
             assert resolver.isDataPresent();
             StageManager.getStage(Stage.READ_REPAIR).execute(new AsyncRepairRunner());

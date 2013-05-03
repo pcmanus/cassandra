@@ -22,6 +22,10 @@ import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.ListenableFuture;
+
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.net.IVerbHandler;
@@ -46,15 +50,19 @@ public class CounterMutationVerbHandler implements IVerbHandler<CounterMutation>
             // We should not wait for the result of the write in this thread,
             // otherwise we could have a distributed deadlock between replicas
             // running this VerbHandler (see #4578).
-            // Instead, we use a callback to send the response. Note that the callback
-            // will not be called if the request timeout, but this is ok
-            // because the coordinator of the counter mutation will timeout on
-            // it's own in that case.
-            StorageProxy.applyCounterMutationOnLeader(cm, localDataCenter, new Runnable(){
-                public void run()
+            // Instead, we add a listener to send the response.
+            ListenableFuture<Void> future = StorageProxy.applyCounterMutationOnLeader(cm, localDataCenter).future();
+            Futures.addCallback(future, new FutureCallback<Void>()
+            {
+                public void onSuccess(Void v)
                 {
                     WriteResponse response = new WriteResponse();
                     MessagingService.instance().sendReply(response.createMessage(), id, message.from);
+                }
+
+                public void onFailure(Throwable t)
+                {
+                    // It's ok to ignore failure, the coordinator will timeout on it's own.
                 }
             });
         }

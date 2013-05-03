@@ -20,6 +20,8 @@ package org.apache.cassandra.cql3;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import com.google.common.util.concurrent.ListenableFuture;
+
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.service.ClientState;
@@ -49,16 +51,17 @@ public interface CQLStatement
     public void validate(ClientState state) throws RequestValidationException;
 
     /**
-     * Execute the statement and return the resulting result or null if there is no result.
+     * Execute the statement and return a future on the result.
      *
      * @param state the current query state
      * @param variables the values for bounded variables. The implementation
      * can assume that each bound term have a corresponding value.
      */
-    public ResultMessage execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestValidationException, RequestExecutionException;
+    public ListenableFuture<ResultMessage> execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestValidationException, RequestExecutionException;
 
     /**
      * Variante of execute used for internal query against the system tables, and thus only query the local node.
+     * Contrarly to execute, this version is blocking.
      *
      * @param state the current query state
      */

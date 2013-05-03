@@ -23,57 +23,86 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.collect.Iterables;
+import com.google.common.util.concurrent.AbstractFuture;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.Table;
-import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.db.WriteResponse;
+import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.net.MessageIn;
 
 /**
  * Handles blocking writes for ONE, ANY, TWO, THREE, QUORUM, and ALL consistency levels.
  */
-public class WriteResponseHandler extends AbstractWriteResponseHandler
+public class WriteResponseHandler extends AbstractRequestCallback<WriteResponse, Void>
 {
     protected static final Logger logger = LoggerFactory.getLogger(WriteResponseHandler.class);
 
-    protected final AtomicInteger responses;
+    protected final Table table;
+    public final Collection<InetAddress> naturalEndpoints;
+    public final Collection<InetAddress> pendingEndpoints;
+    protected final ConsistencyLevel consistencyLevel;
+    private final WriteType writeType;
 
-    public WriteResponseHandler(Collection<InetAddress> writeEndpoints,
-                                Collection<InetAddress> pendingEndpoints,
-                                ConsistencyLevel consistencyLevel,
-                                Table table,
-                                Runnable callback,
-                                WriteType writeType)
+    /**
+     * @param pendingEndpoints
+     * @param callback A callback to be called when the write is successful.
+     */
+    public WriteResponseHandler(Table table,
+                                   Collection<InetAddress> naturalEndpoints,
+                                   Collection<InetAddress> pendingEndpoints,
+                                   ConsistencyLevel consistencyLevel,
+                                   WriteType writeType)
     {
-        super(table, writeEndpoints, pendingEndpoints, consistencyLevel, callback, writeType);
-        responses = new AtomicInteger(totalBlockFor());
+        // During bootstrap, we have to include the pending endpoints or we may fail the consistency level
+        // guarantees (see #833)
+        super(consistencyLevel.blockFor(table) + pendingEndpoints.size());
+
+        this.table = table;
+        this.pendingEndpoints = pendingEndpoints;
+        this.naturalEndpoints = naturalEndpoints;
+        this.consistencyLevel = consistencyLevel;
+        this.writeType = writeType;
     }
 
-    public WriteResponseHandler(InetAddress endpoint, WriteType writeType, Runnable callback)
+    public Iterable<InetAddress> allEndpoints()
     {
-        this(Arrays.asList(endpoint), Collections.<InetAddress>emptyList(), ConsistencyLevel.ONE, null, callback, writeType);
+        return Iterables.concat(naturalEndpoints, pendingEndpoints);
     }
 
     public WriteResponseHandler(InetAddress endpoint, WriteType writeType)
     {
-        this(endpoint, writeType, null);
+        this(null, Arrays.asList(endpoint), Collections.<InetAddress>emptyList(), ConsistencyLevel.ONE, writeType);
     }
 
-    public void response(MessageIn m)
+    protected boolean process(MessageIn<WriteResponse> message)
     {
-        if (responses.decrementAndGet() == 0)
-            signal();
+        return true;
     }
 
-    protected int ackCount()
+    protected Void getResult()
     {
-        return totalBlockFor() - responses.get();
+        return null;
+    }
+
+    public void assureSufficientLiveNodes() throws UnavailableException
+    {
+        consistencyLevel.assureSufficientLiveNodes(table, Iterables.filter(Iterables.concat(naturalEndpoints, pendingEndpoints), isAlive));
+    }
+
+    public RequestTimeoutException reportTimeout()
+    {
+        return new WriteTimeoutException(writeType, consistencyLevel, getResponsesCount(), waitFor());
     }
 
     public boolean isLatencyForSnitch()
     {
         return false;
     }
+
 }

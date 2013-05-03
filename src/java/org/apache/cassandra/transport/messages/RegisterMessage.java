@@ -20,6 +20,8 @@ package org.apache.cassandra.transport.messages;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
@@ -57,14 +59,14 @@ public class RegisterMessage extends Message.Request
         this.eventTypes = eventTypes;
     }
 
-    public Response execute(QueryState state)
+    public ListenableFuture<? extends Response> execute(QueryState state)
     {
         assert connection instanceof ServerConnection;
         Connection.Tracker tracker = ((ServerConnection)connection).getTracker();
         assert tracker instanceof Server.ConnectionTracker;
         for (Event.Type type : eventTypes)
             ((Server.ConnectionTracker)tracker).register(type, connection().channel());
-        return new ReadyMessage();
+        return Futures.immediateFuture(new ReadyMessage());
     }
 
     public ChannelBuffer encode()

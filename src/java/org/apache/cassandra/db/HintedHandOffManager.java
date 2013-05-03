@@ -34,7 +34,7 @@ import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.RateLimiter;
 import com.google.common.util.concurrent.Uninterruptibles;
-
+import com.google.common.util.concurrent.MoreExecutors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -386,7 +386,8 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                         deleteHint(hostIdBytes, hint.name(), hint.maxTimestamp());
                     }
                 };
-                WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.UNLOGGED_BATCH, callback);
+                WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.UNLOGGED_BATCH);
+                responseHandler.future().addListener(callback, MoreExecutors.sameThreadExecutor());
                 MessagingService.instance().sendRR(message, endpoint, responseHandler);
                 responseHandlers.add(responseHandler);
             }
@@ -395,11 +396,14 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
             {
                 try
                 {
-                    handler.get();
+                    handler.future().get();
                 }
-                catch (WriteTimeoutException e)
+                catch (Exception e)
                 {
-                    logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
+                    if (e instanceof ExecutionException && ((ExecutionException)e).getCause() instanceof WriteTimeoutException)
+                        logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
+                    else
+                        logger.info("Unknown error ({}) replaying hints to {}; aborting ({} delivered)", new Object[]{ e.getCause(), endpoint, rowsReplayed });
                     return;
                 }
             }
@@ -546,7 +550,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         List<Row> rows;
         try
         {
-            rows = StorageProxy.getRangeSlice(new RangeSliceCommand(Table.SYSTEM_KS, SystemTable.HINTS_CF, predicate, range, null, LARGE_NUMBER), ConsistencyLevel.ONE);
+            rows = StorageProxy.getRangeSlice(new RangeSliceCommand(Table.SYSTEM_KS, SystemTable.HINTS_CF, predicate, range, null, LARGE_NUMBER), ConsistencyLevel.ONE).get();
         }
         catch (Exception e)
         {

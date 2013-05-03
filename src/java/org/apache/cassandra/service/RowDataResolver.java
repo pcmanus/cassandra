@@ -24,6 +24,8 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.Iterables;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
@@ -36,7 +38,7 @@ import org.apache.cassandra.utils.FBUtilities;
 public class RowDataResolver extends AbstractRowResolver
 {
     private int maxLiveCount = 0;
-    public List<AsyncOneResponse> repairResults = Collections.emptyList();
+    public volatile ListenableFuture<?> repairFuture;
     private final IDiskAtomFilter filter;
 
     public RowDataResolver(String table, ByteBuffer key, IDiskAtomFilter qFilter)
@@ -85,7 +87,7 @@ public class RowDataResolver extends AbstractRowResolver
             // send updates to any replica that was missing part of the full row
             // (resolved can be null even if versions doesn't have all nulls because of the call to removeDeleted in resolveSuperSet)
             if (resolved != null)
-                repairResults = scheduleRepairs(resolved, table, key, versions, endpoints);
+                repairFuture = scheduleRepairs(resolved, table, key, versions, endpoints);
         }
         else
         {
@@ -102,9 +104,9 @@ public class RowDataResolver extends AbstractRowResolver
      * For each row version, compare with resolved (the superset of all row versions);
      * if it is missing anything, send a mutation to the endpoint it come from.
      */
-    public static List<AsyncOneResponse> scheduleRepairs(ColumnFamily resolved, String table, DecoratedKey key, List<ColumnFamily> versions, List<InetAddress> endpoints)
+    public static ListenableFuture<?> scheduleRepairs(ColumnFamily resolved, String table, DecoratedKey key, List<ColumnFamily> versions, List<InetAddress> endpoints)
     {
-        List<AsyncOneResponse> results = new ArrayList<AsyncOneResponse>(versions.size());
+        List<ListenableFuture<?>> results = new ArrayList<ListenableFuture<?>>(versions.size());
 
         for (int i = 0; i < versions.size(); i++)
         {
@@ -121,7 +123,7 @@ public class RowDataResolver extends AbstractRowResolver
             results.add(MessagingService.instance().sendRR(repairMessage, endpoints.get(i)));
         }
 
-        return results;
+        return Futures.allAsList(results);
     }
 
     static ColumnFamily resolveSuperset(Iterable<ColumnFamily> versions)

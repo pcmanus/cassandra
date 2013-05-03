@@ -34,7 +34,6 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.RingPosition;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.service.AbstractWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterSyncWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterWriteResponseHandler;
 import org.apache.cassandra.service.WriteResponseHandler;
@@ -120,18 +119,18 @@ public abstract class AbstractReplicationStrategy
      */
     public abstract List<InetAddress> calculateNaturalEndpoints(Token searchToken, TokenMetadata tokenMetadata);
 
-    public AbstractWriteResponseHandler getWriteResponseHandler(Collection<InetAddress> naturalEndpoints, Collection<InetAddress> pendingEndpoints, ConsistencyLevel consistency_level, Runnable callback, WriteType writeType)
+    public WriteResponseHandler getWriteResponseHandler(Collection<InetAddress> naturalEndpoints, Collection<InetAddress> pendingEndpoints, ConsistencyLevel consistencyLevel, WriteType writeType)
     {
-        if (consistency_level == ConsistencyLevel.LOCAL_QUORUM)
+        if (consistencyLevel == ConsistencyLevel.LOCAL_QUORUM)
         {
             // block for in this context will be localnodes block.
-            return new DatacenterWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, getTable(), callback, writeType);
+            return new DatacenterWriteResponseHandler(getTable(), naturalEndpoints, pendingEndpoints, consistencyLevel, writeType);
         }
-        else if (consistency_level == ConsistencyLevel.EACH_QUORUM)
+        else if (consistencyLevel == ConsistencyLevel.EACH_QUORUM)
         {
-            return new DatacenterSyncWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, getTable(), callback, writeType);
+            return new DatacenterSyncWriteResponseHandler(getTable(), naturalEndpoints, pendingEndpoints, consistencyLevel, writeType);
         }
-        return new WriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, getTable(), callback, writeType);
+        return new WriteResponseHandler(getTable(), naturalEndpoints, pendingEndpoints, consistencyLevel, writeType);
     }
 
     private Table getTable()

@@ -20,11 +20,20 @@ package org.apache.cassandra.cql3.statements;
 import java.util.Collections;
 import java.util.List;
 
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+
+import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
 public abstract class ParsedStatement
 {
+    // Used to make some statements asynchronous when they are not internally for some reason
+    // (see Authorization, Authentication, Credentials and SchemaAltering statements).
+    protected static final ListeningExecutorService miscExecutor = MoreExecutors.listeningDecorator(StageManager.getStage(Stage.MISC));
+
     private int boundTerms;
 
     public int getBoundsTerms()
