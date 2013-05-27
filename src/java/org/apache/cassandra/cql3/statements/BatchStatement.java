@@ -180,7 +180,7 @@ public class BatchStatement implements CQLStatement
             // anyway and I suppose it's ok if the info is not perfect in some cases.
             assert !parsedStatements.isEmpty();
             ModificationStatement.Parsed first = parsedStatements.get(0);
-            Attributes prepAttrs = attrs.prepare(first.keyspace(), first.columnFamily());
+            Attributes prepAttrs = attrs.prepare("[batch]", "[batch]");
             prepAttrs.collectMarkerSpecification(boundNames);
 
             return new ParsedStatement.Prepared(new BatchStatement(getBoundsTerms(), type, statements, prepAttrs), Arrays.<ColumnSpecification>asList(boundNames));

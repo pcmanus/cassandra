@@ -63,12 +63,13 @@ public class Attributes
         try
         {
             LongType.instance.validate(tval);
-            return LongType.instance.compose(tval);
         }
         catch (MarshalException e)
         {
             throw new InvalidRequestException("Invalid timestamp value");
         }
+
+        return LongType.instance.compose(tval);
     }
 
     public int getTimeToLive(List<ByteBuffer> variables) throws InvalidRequestException
@@ -83,19 +84,20 @@ public class Attributes
         try
         {
             Int32Type.instance.validate(tval);
-            int ttl = Int32Type.instance.compose(tval);
-            if (ttl < 0)
-                throw new InvalidRequestException("A TTL must be greater or equal to 0");
-
-            if (ttl > ExpiringColumn.MAX_TTL)
-                throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)", ttl, ExpiringColumn.MAX_TTL));
-
-            return ttl;
         }
         catch (MarshalException e)
         {
             throw new InvalidRequestException("Invalid timestamp value");
         }
+
+        int ttl = Int32Type.instance.compose(tval);
+        if (ttl < 0)
+            throw new InvalidRequestException("A TTL must be greater or equal to 0");
+
+        if (ttl > ExpiringColumn.MAX_TTL)
+            throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)", ttl, ExpiringColumn.MAX_TTL));
+
+        return ttl;
     }
 
     public void collectMarkerSpecification(ColumnSpecification[] boundNames)
