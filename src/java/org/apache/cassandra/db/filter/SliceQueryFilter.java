@@ -100,9 +100,40 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return new SliceQueryFilter(new ColumnSlice[]{ new ColumnSlice(start, finish) }, reversed, count, compositesToGroup);
     }
 
-    public OnDiskAtomIterator getMemtableColumnIterator(ColumnFamily cf, DecoratedKey key)
+    public OnDiskAtomIterator getColumnFamilyIterator(final DecoratedKey key, final ColumnFamily cf)
     {
-        return Memtable.getSliceIterator(key, cf, this);
+        assert cf != null;
+        final Iterator<Column> filteredIter = reversed ? cf.reverseIterator(slices) : cf.iterator(slices);
+
+        return new OnDiskAtomIterator()
+        {
+            public ColumnFamily getColumnFamily()
+            {
+                return cf;
+            }
+
+            public DecoratedKey getKey()
+            {
+                return key;
+            }
+
+            public boolean hasNext()
+            {
+                return filteredIter.hasNext();
+            }
+
+            public OnDiskAtom next()
+            {
+                return filteredIter.next();
+            }
+
+            public void close() throws IOException { }
+
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+        };
     }
 
     public OnDiskAtomIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)

@@ -1218,22 +1218,16 @@ public class CassandraServer implements Cassandra.Iface
                 bounds = new Bounds<RowPosition>(RowPosition.forKey(range.start_key, p), end);
             }
 
+            if (range.row_filter != null && !range.row_filter.isEmpty())
+                throw new InvalidRequestException("Cross-row paging is not supported along with index clauses");
+
             List<Row> rows;
             long now = System.currentTimeMillis();
             schedule(DatabaseDescriptor.getRangeRpcTimeout());
             try
             {
                 IDiskAtomFilter filter = ThriftValidation.asIFilter(predicate, metadata, null);
-                rows = StorageProxy.getRangeSlice(new RangeSliceCommand(keyspace,
-                                                                        column_family,
-                                                                        now,
-                                                                        filter,
-                                                                        bounds,
-                                                                        range.row_filter,
-                                                                        range.count,
-                                                                        true,
-                                                                        true),
-                                                  consistencyLevel);
+                rows = StorageProxy.getRangeSlice(new RangeSliceCommand(keyspace, column_family, now, filter, bounds, null, range.count, true, true), consistencyLevel);
             }
             finally
             {

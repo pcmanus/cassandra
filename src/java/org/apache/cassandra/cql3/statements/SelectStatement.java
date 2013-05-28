@@ -169,7 +169,7 @@ public class SelectStatement implements CQLStatement
         int limit = getLimit(variables);
         long now = System.currentTimeMillis();
         List<Row> rows = isKeyRange || usesSecondaryIndexing
-                       ? RangeSliceVerbHandler.executeLocally(getRangeCommand(variables, limit, now))
+                       ? getRangeCommand(variables, limit, now).executeLocally()
                        : readLocally(keyspace(), getSliceCommands(variables, limit, now));
 
         return processResults(rows, variables, limit, now);

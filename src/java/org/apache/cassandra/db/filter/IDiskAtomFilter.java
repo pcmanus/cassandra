@@ -41,10 +41,10 @@ import org.apache.cassandra.io.util.FileDataInput;
 public interface IDiskAtomFilter
 {
     /**
-     * returns an iterator that returns columns from the given memtable
+     * returns an iterator that returns columns from the given columnFamily
      * matching the Filter criteria in sorted order.
      */
-    public OnDiskAtomIterator getMemtableColumnIterator(ColumnFamily cf, DecoratedKey key);
+    public OnDiskAtomIterator getColumnFamilyIterator(DecoratedKey key, ColumnFamily cf);
 
     /**
      * Get an iterator that returns columns from the given SSTable using the opened file
