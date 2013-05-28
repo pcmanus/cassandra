@@ -121,6 +121,7 @@ public final class MessagingService implements MessagingServiceMBean
         PAXOS_PREPARE,
         PAXOS_PROPOSE,
         PAXOS_COMMIT,
+        PAGED_RANGE,
         // remember to add new verbs at the end, since we serialize by ordinal
         UNUSED_1,
         UNUSED_2,
@@ -141,6 +142,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.READ, Stage.READ);
         put(Verb.RANGE_SLICE, Stage.READ);
         put(Verb.INDEX_SCAN, Stage.READ);
+        put(Verb.PAGED_RANGE, Stage.READ);
 
         put(Verb.REQUEST_RESPONSE, Stage.REQUEST_RESPONSE);
         put(Verb.INTERNAL_RESPONSE, Stage.INTERNAL_RESPONSE);
@@ -195,6 +197,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.STREAM_REPLY, StreamReply.serializer);
         put(Verb.STREAM_REQUEST, StreamRequest.serializer);
         put(Verb.RANGE_SLICE, RangeSliceCommand.serializer);
+        put(Verb.PAGED_RANGE, RangeSliceCommand.serializer);
         put(Verb.BOOTSTRAP_TOKEN, BootStrapper.StringSerializer.instance);
         put(Verb.TREE_REQUEST, ActiveRepairService.TreeRequest.serializer);
         put(Verb.TREE_RESPONSE, ActiveRepairService.Validator.serializer);
@@ -223,6 +226,7 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.READ_REPAIR, WriteResponse.serializer);
         put(Verb.COUNTER_MUTATION, WriteResponse.serializer);
         put(Verb.RANGE_SLICE, RangeSliceReply.serializer);
+        put(Verb.PAGED_RANGE, RangeSliceReply.serializer);
         put(Verb.READ, ReadResponse.serializer);
         put(Verb.TRUNCATE, TruncateResponse.serializer);
         put(Verb.SNAPSHOT, null);
@@ -300,6 +304,7 @@ public final class MessagingService implements MessagingServiceMBean
                                                                    Verb.READ_REPAIR,
                                                                    Verb.READ,
                                                                    Verb.RANGE_SLICE,
+                                                                   Verb.PAGED_RANGE,
                                                                    Verb.REQUEST_RESPONSE);
 
     // total dropped message counts for server lifetime

@@ -46,15 +46,15 @@ public class KeysSearcher extends SecondaryIndexSearcher
     }
 
     @Override
-    public List<Row> search(List<IndexExpression> clause, AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter dataFilter, boolean countCQL3Rows)
+    public List<Row> search(ExtendedFilter filter)
     {
-        assert clause != null && !clause.isEmpty();
-        ExtendedFilter filter = ExtendedFilter.create(baseCfs, dataFilter, clause, maxResults, countCQL3Rows, false);
-        return baseCfs.filter(getIndexedIterator(range, filter), filter);
+        assert filter.getClause() != null && !filter.getClause().isEmpty();
+        return baseCfs.filter(getIndexedIterator(filter), filter);
     }
 
-    public ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final AbstractBounds<RowPosition> range, final ExtendedFilter filter)
+    public ColumnFamilyStore.AbstractScanIterator getIndexedIterator(final ExtendedFilter filter)
     {
+
         // Start with the most-restrictive indexed clause, then apply remaining clauses
         // to each row matching that clause.
         // TODO: allow merge join instead of just one index + loop
@@ -73,6 +73,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
          * possible key having a given token. A fix would be to actually store the token along the key in the
          * indexed row.
          */
+        final AbstractBounds<RowPosition> range = filter.dataRange.keyRange();
         final ByteBuffer startKey = range.left instanceof DecoratedKey ? ((DecoratedKey)range.left).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
         final ByteBuffer endKey = range.right instanceof DecoratedKey ? ((DecoratedKey)range.right).key : ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
@@ -158,14 +159,14 @@ public class KeysSearcher extends SecondaryIndexSearcher
                         }
 
                         logger.trace("Returning index hit for {}", dk);
-                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, filter.initialFilter()));
+                        ColumnFamily data = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, filter.columnFilter(lastSeenKey)));
                         // While the column family we'll get in the end should contains the primary clause column, the initialFilter may not have found it and can thus be null
                         if (data == null)
                             data = TreeMapBackedSortedColumns.factory.create(baseCfs.metadata);
 
                         // as in CFS.filter - extend the filter to ensure we include the columns
                         // from the index expressions, just in case they weren't included in the initialFilter
-                        IDiskAtomFilter extraFilter = filter.getExtraFilter(data);
+                        IDiskAtomFilter extraFilter = filter.getExtraFilter(dk, data);
                         if (extraFilter != null)
                         {
                             ColumnFamily cf = baseCfs.getColumnFamily(new QueryFilter(dk, baseCfs.name, extraFilter));

@@ -156,7 +156,7 @@ public class SelectStatement implements CQLStatement
         List<ByteBuffer> variables = Collections.<ByteBuffer>emptyList();
         int limit = getLimit(variables);
         List<Row> rows = isKeyRange || usesSecondaryIndexing
-                       ? RangeSliceVerbHandler.executeLocally(getRangeCommand(variables, limit))
+                       ? getRangeCommand(variables, limit).executeLocally()
                        : readLocally(keyspace(), getSliceCommands(variables, limit));
 
         return processResults(rows, variables, limit);

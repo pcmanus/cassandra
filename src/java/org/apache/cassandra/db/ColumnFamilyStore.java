@@ -52,9 +52,11 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
+import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -1304,7 +1306,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     ColumnFamily filterColumnFamily(ColumnFamily cached, QueryFilter filter, int gcBefore)
     {
         ColumnFamily cf = cached.cloneMeShallow(ArrayBackedSortedColumns.factory, filter.filter.isReversed());
-        OnDiskAtomIterator ci = filter.getMemtableColumnIterator(cached, null);
+        OnDiskAtomIterator ci = filter.getColumnFamilyIterator(null, cached);
         filter.collateOnDiskAtom(cf, ci, gcBefore);
         return removeDeletedCF(cf, gcBefore);
     }
@@ -1465,24 +1467,18 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     /**
       * Iterate over a range of rows and columns from memtables/sstables.
       *
-      * @param range Either a Bounds, which includes start key, or a Range, which does not.
-      * @param columnFilter description of the columns we're interested in for each row
+      * @param range The range of keys and columns within those keys to fetch
      */
-    public AbstractScanIterator getSequentialIterator(final AbstractBounds<RowPosition> range, IDiskAtomFilter columnFilter)
+    public AbstractScanIterator getSequentialIterator(final DataRange range)
     {
-        assert !(range instanceof Range) || !((Range)range).isWrapAround() || range.right.isMinimum() : range;
+        assert !(range.keyRange() instanceof Range) || !((Range)range.keyRange()).isWrapAround() || range.keyRange().right.isMinimum() : range.keyRange();
 
-        final RowPosition startWith = range.left;
-        final RowPosition stopAt = range.right;
-
-        QueryFilter filter = new QueryFilter(null, name, columnFilter);
-
-        final ViewFragment view = markReferenced(range);
-        Tracing.trace("Executing seq scan across {} sstables for {}", view.sstables.size(), range.getString(metadata.getKeyValidator()));
+        final ViewFragment view = markReferenced(range.keyRange());
+        Tracing.trace("Executing seq scan across {} sstables for {}", view.sstables.size(), range.keyRange().getString(metadata.getKeyValidator()));
 
         try
         {
-            final CloseableIterator<Row> iterator = RowIteratorFactory.getIterator(view.memtables, view.sstables, startWith, stopAt, filter, this);
+            final CloseableIterator<Row> iterator = RowIteratorFactory.getIterator(view.memtables, view.sstables, range, this);
 
             // todo this could be pushed into SSTableScanner
             return new AbstractScanIterator()
@@ -1496,7 +1492,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     Row current = iterator.next();
                     DecoratedKey key = current.key;
 
-                    if (!stopAt.isMinimum() && stopAt.compareTo(key) < 0)
+                    if (!range.stopKey().isMinimum() && range.stopKey().compareTo(key) < 0)
                         return endOfData();
 
                     // skipping outside of assigned range
@@ -1526,23 +1522,67 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public List<Row> getRangeSlice(final AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter columnFilter, List<IndexExpression> rowFilter)
     {
-        return getRangeSlice(range, maxResults, columnFilter, rowFilter, false, false);
+        return getRangeSlice(makeExtendedFilter(range, maxResults, columnFilter, rowFilter, false, false));
+    }
+
+    /**
+     * Allows generic range paging with the slice column filter.
+     * Typically, suppose we have rows A, B, C ... Z having each some columns in [1, 100].
+     * And suppose we want to page throught the query that for all rows returns the columns
+     * within [25, 75]. For that, we need to be able to do a range slice starting at (row r, column c)
+     * and ending at (row Z, column 75), *but* that only return columns in [25, 75].
+     * That is what this method allows. The columnRange is the "window" of  columns we are interested
+     * in each row, and columnStart (resp. columnEnd) is the start (resp. end) for the first
+     * (resp. end) requested row.
+     */
+    public ExtendedFilter makeExtendedFilter(AbstractBounds<RowPosition> keyRange,
+                                             SliceQueryFilter columnRange,
+                                             ByteBuffer columnStart,
+                                             ByteBuffer columnStop,
+                                             List<IndexExpression> rowFilter,
+                                             int maxResults)
+    {
+        DataRange dataRange = new DataRange.Paging(keyRange, columnRange, columnStart, columnStop, metadata.comparator);
+        return ExtendedFilter.create(this, dataRange, rowFilter, maxResults, true);
     }
 
     public List<Row> getRangeSlice(final AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter columnFilter, List<IndexExpression> rowFilter, boolean countCQL3Rows, boolean isPaging)
     {
-        return filter(getSequentialIterator(range, columnFilter), ExtendedFilter.create(this, columnFilter, rowFilter, maxResults, countCQL3Rows, isPaging));
+        return getRangeSlice(makeExtendedFilter(range, maxResults, columnFilter, rowFilter, countCQL3Rows, isPaging));
+    }
+
+    public ExtendedFilter makeExtendedFilter(final AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter columnFilter, List<IndexExpression> rowFilter, boolean countCQL3Rows, boolean isPaging)
+    {
+        DataRange dataRange;
+        if (isPaging)
+        {
+            assert columnFilter instanceof SliceQueryFilter;
+            SliceQueryFilter sfilter = (SliceQueryFilter)columnFilter;
+            assert sfilter.slices.length == 1;
+            SliceQueryFilter newFilter = new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, sfilter.isReversed(), sfilter.count);
+            dataRange = new DataRange.Paging(range, newFilter, sfilter.start(), sfilter.finish(), metadata.comparator);
+        }
+        else
+        {
+            dataRange = new DataRange(range, columnFilter);
+        }
+        return ExtendedFilter.create(this, dataRange, rowFilter, maxResults, countCQL3Rows);
+    }
+
+    public List<Row> getRangeSlice(ExtendedFilter filter)
+    {
+        return filter(getSequentialIterator(filter.dataRange), filter);
     }
 
     public List<Row> search(List<IndexExpression> clause, AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter dataFilter)
     {
-        return search(clause, range, maxResults, dataFilter, false);
+        return search(makeExtendedFilter(range, maxResults, dataFilter, clause, false, false));
     }
 
-    public List<Row> search(List<IndexExpression> clause, AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter dataFilter, boolean countCQL3Rows)
+    public List<Row> search(ExtendedFilter filter)
     {
-        Tracing.trace("Executing indexed scan for {}", range.getString(metadata.getKeyValidator()));
-        return indexManager.search(clause, range, maxResults, dataFilter, countCQL3Rows);
+        Tracing.trace("Executing indexed scan for {}", filter.dataRange.keyRange().getString(metadata.getKeyValidator()));
+        return indexManager.search(filter);
     }
 
     public List<Row> filter(AbstractScanIterator rowIterator, ExtendedFilter filter)
@@ -1563,7 +1603,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                 if (rowIterator.needsFiltering())
                 {
-                    IDiskAtomFilter extraFilter = filter.getExtraFilter(data);
+                    IDiskAtomFilter extraFilter = filter.getExtraFilter(rawRow.key, data);
                     if (extraFilter != null)
                     {
                         ColumnFamily cf = filter.cfs.getColumnFamily(new QueryFilter(rawRow.key, name, extraFilter));
@@ -1573,12 +1613,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                     removeDroppedColumns(data);
 
-                    if (!filter.isSatisfiedBy(rawRow.key.key, data, null))
+                    if (!filter.isSatisfiedBy(rawRow.key, data, null))
                         continue;
 
                     logger.trace("{} satisfies all filter expressions", data);
                     // cut the resultset back to what was requested, if necessary
-                    data = filter.prune(data);
+                    data = filter.prune(rawRow.key, data);
                 }
                 else
                 {

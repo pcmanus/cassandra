@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -514,9 +515,9 @@ public class SecondaryIndexManager
      * @param dataFilter the column range to restrict to
      * @return found indexed rows
      */
-    public List<Row> search(List<IndexExpression> clause, AbstractBounds<RowPosition> range, int maxResults, IDiskAtomFilter dataFilter, boolean countCQL3Rows)
+    public List<Row> search(ExtendedFilter filter)
     {
-        List<SecondaryIndexSearcher> indexSearchers = getIndexSearchersForQuery(clause);
+        List<SecondaryIndexSearcher> indexSearchers = getIndexSearchersForQuery(filter.getClause());
 
         if (indexSearchers.isEmpty())
             return Collections.emptyList();
@@ -526,7 +527,7 @@ public class SecondaryIndexManager
             throw new RuntimeException("Unable to search across multiple secondary index types");
 
 
-        return indexSearchers.get(0).search(clause, range, maxResults, dataFilter, countCQL3Rows);
+        return indexSearchers.get(0).search(filter);
     }
 
     public Collection<SecondaryIndex> getIndexesByNames(Set<String> idxNames)

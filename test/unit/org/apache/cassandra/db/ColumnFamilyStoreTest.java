@@ -964,9 +964,15 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         for (int i = 0; i < 4; i++)
             cols[i] = column("c" + i, "value", 1);
 
-        putColsStandard(cfs, Util.dk("a"), cols[0], cols[1], cols[2], cols[3]);
-        putColsStandard(cfs, Util.dk("b"), cols[0], cols[1], cols[2]);
-        putColsStandard(cfs, Util.dk("c"), cols[0], cols[1], cols[2], cols[3]);
+        DecoratedKey ka = Util.dk("a");
+        DecoratedKey kb = Util.dk("b");
+        DecoratedKey kc = Util.dk("c");
+
+        RowPosition min = Util.rp("");
+
+        putColsStandard(cfs, ka, cols[0], cols[1], cols[2], cols[3]);
+        putColsStandard(cfs, kb, cols[0], cols[1], cols[2]);
+        putColsStandard(cfs, kc, cols[0], cols[1], cols[2], cols[3]);
         cfs.forceBlockingFlush();
 
         SlicePredicate sp = new SlicePredicate();
@@ -975,34 +981,87 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         sp.getSlice_range().setStart(ArrayUtils.EMPTY_BYTE_ARRAY);
         sp.getSlice_range().setFinish(ArrayUtils.EMPTY_BYTE_ARRAY);
 
-        Collection<Row> rows = cfs.getRangeSlice(Util.range("", ""), 3, ThriftValidation.asIFilter(sp, cfs.metadata, null), null, true, true);
-        assert rows.size() == 1 : "Expected 1 row, got " + rows;
-        Row row = rows.iterator().next();
-        assertColumnNames(row, "c0", "c1", "c2");
+        Collection<Row> rows;
+        Row row, row1, row2;
+        IDiskAtomFilter filter = ThriftValidation.asIFilter(sp, cfs.metadata, null);
 
-        sp.getSlice_range().setStart(ByteBufferUtil.getArray(ByteBufferUtil.bytes("c2")));
-        rows = cfs.getRangeSlice(Util.range("", ""), 3, ThriftValidation.asIFilter(sp, cfs.metadata, null), null, true, true);
-        assert rows.size() == 2 : "Expected 2 rows, got " + rows;
-        Iterator<Row> iter = rows.iterator();
-        Row row1 = iter.next();
-        Row row2 = iter.next();
-        assertColumnNames(row1, "c2", "c3");
-        assertColumnNames(row2, "c0");
-
-        sp.getSlice_range().setStart(ByteBufferUtil.getArray(ByteBufferUtil.bytes("c0")));
-        rows = cfs.getRangeSlice(new Bounds<RowPosition>(row2.key, Util.rp("")), 3, ThriftValidation.asIFilter(sp, cfs.metadata, null), null, true, true);
-        assert rows.size() == 1 : "Expected 1 row, got " + rows;
+        rows = cfs.getRangeSlice(Util.range("", ""), 3, filter, null, true, true);
+        assert rows.size() == 1 : "Expected 1 row, got " + toString(rows);
         row = rows.iterator().next();
         assertColumnNames(row, "c0", "c1", "c2");
 
         sp.getSlice_range().setStart(ByteBufferUtil.getArray(ByteBufferUtil.bytes("c2")));
-        rows = cfs.getRangeSlice(new Bounds<RowPosition>(row.key, Util.rp("")), 3, ThriftValidation.asIFilter(sp, cfs.metadata, null), null, true, true);
-        assert rows.size() == 2 : "Expected 2 rows, got " + rows;
+        filter = ThriftValidation.asIFilter(sp, cfs.metadata, null);
+        rows = cfs.getRangeSlice(new Bounds<RowPosition>(ka, min), 3, filter, null, true, true);
+        assert rows.size() == 2 : "Expected 2 rows, got " + toString(rows);
+        Iterator<Row> iter = rows.iterator();
+        row1 = iter.next();
+        row2 = iter.next();
+        assertColumnNames(row1, "c2", "c3");
+        assertColumnNames(row2, "c0");
+
+        sp.getSlice_range().setStart(ByteBufferUtil.getArray(ByteBufferUtil.bytes("c0")));
+        filter = ThriftValidation.asIFilter(sp, cfs.metadata, null);
+        rows = cfs.getRangeSlice(new Bounds<RowPosition>(row2.key, min), 3, filter, null, true, true);
+        assert rows.size() == 1 : "Expected 1 row, got " + toString(rows);
+        row = rows.iterator().next();
+        assertColumnNames(row, "c0", "c1", "c2");
+
+        sp.getSlice_range().setStart(ByteBufferUtil.getArray(ByteBufferUtil.bytes("c2")));
+        filter = ThriftValidation.asIFilter(sp, cfs.metadata, null);
+        rows = cfs.getRangeSlice(new Bounds<RowPosition>(row.key, min), 3, filter, null, true, true);
+        assert rows.size() == 2 : "Expected 2 rows, got " + toString(rows);
         iter = rows.iterator();
         row1 = iter.next();
         row2 = iter.next();
         assertColumnNames(row1, "c2");
         assertColumnNames(row2, "c0", "c1");
+
+        // Paging within bounds
+        SliceQueryFilter sf = new SliceQueryFilter(ByteBufferUtil.bytes("c1"),
+                                                   ByteBufferUtil.bytes("c2"),
+                                                   false,
+                                                   0);
+        rows = cfs.getRangeSlice(cfs.makeExtendedFilter(new Bounds<RowPosition>(ka, kc), sf, ByteBufferUtil.bytes("c2"), ByteBufferUtil.bytes("c1"), null, 2));
+        assert rows.size() == 2 : "Expected 2 rows, got " + toString(rows);
+        iter = rows.iterator();
+        row1 = iter.next();
+        row2 = iter.next();
+        assertColumnNames(row1, "c2");
+        assertColumnNames(row2, "c1");
+
+        rows = cfs.getRangeSlice(cfs.makeExtendedFilter(new Bounds<RowPosition>(kb, kc), sf, ByteBufferUtil.bytes("c1"), ByteBufferUtil.bytes("c1"), null, 10));
+        assert rows.size() == 2 : "Expected 2 rows, got " + toString(rows);
+        iter = rows.iterator();
+        row1 = iter.next();
+        row2 = iter.next();
+        assertColumnNames(row1, "c1", "c2");
+        assertColumnNames(row2, "c1");
+    }
+
+    private static String toString(Collection<Row> rows)
+    {
+        try
+        {
+            StringBuilder sb = new StringBuilder();
+            for (Row row : rows)
+            {
+                sb.append("{");
+                sb.append(ByteBufferUtil.string(row.key.key));
+                sb.append(":");
+                if (row.cf != null && !row.cf.isEmpty())
+                {
+                    for (Column c : row.cf)
+                        sb.append(" ").append(ByteBufferUtil.string(c.name()));
+                }
+                sb.append("} ");
+            }
+            return sb.toString();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     private static void assertColumnNames(Row row, String ... columnNames) throws Exception
@@ -1102,7 +1161,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
 
         IndexExpression expr = new IndexExpression(ByteBufferUtil.bytes("birthdate"), IndexOperator.EQ, LongType.instance.decompose(1L));
         // explicitly tell to the KeysSearcher to use column limiting for rowsPerQuery to trigger bogus columnsRead--; (CASSANDRA-3996)
-        List<Row> rows = store.search(Arrays.asList(expr), Util.range("", ""), 10, new IdentityQueryFilter(), true);
+        List<Row> rows = store.search(store.makeExtendedFilter(Util.range("", ""), 10, new IdentityQueryFilter(), Arrays.asList(expr), true, false));
 
         assert rows.size() == 10;
     }
