@@ -55,6 +55,16 @@ public class ColumnCounter
         return ignored;
     }
 
+    public ColumnCounter countAll(ColumnFamily container)
+    {
+        if (container == null)
+            return this;
+
+        for (Column c : container)
+            count(c, container);
+        return this;
+    }
+
     public static class GroupByPrefix extends ColumnCounter
     {
         private final CompositeType type;

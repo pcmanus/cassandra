@@ -52,6 +52,8 @@ public abstract class AbstractRangeCommand implements IReadCommand
 
     public abstract MessageOut<? extends AbstractRangeCommand> createMessage();
     public abstract AbstractRangeCommand forSubRange(AbstractBounds<RowPosition> range);
+    public abstract AbstractRangeCommand withUpdatedLimit(int newLimit);
+
     public abstract int limit();
     public abstract boolean countCQL3Rows();
     public abstract List<Row> executeLocally();

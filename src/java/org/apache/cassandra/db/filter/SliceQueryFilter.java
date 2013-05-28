@@ -98,6 +98,35 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return new SliceQueryFilter(newSlices, reversed, count, compositesToGroup);
     }
 
+    public SliceQueryFilter withUpdatedStart(ByteBuffer newStart, AbstractType<?> comparator)
+    {
+        Comparator<ByteBuffer> cmp = reversed ? comparator.reverseComparator : comparator;
+
+        List<ColumnSlice> newSlices = new ArrayList<ColumnSlice>();
+        boolean pastNewStart = false;
+        for (int i = 0; i < slices.length; i++)
+        {
+            ColumnSlice slice = slices[i];
+
+            if (pastNewStart)
+            {
+                newSlices.add(slice);
+                continue;
+            }
+
+            if (slices[i].isBefore(cmp, newStart))
+                continue;
+
+            if (slice.includes(cmp, newStart))
+                newSlices.add(new ColumnSlice(newStart, slice.finish));
+            else
+                newSlices.add(slice);
+
+            pastNewStart = true;
+        }
+        return withUpdatedSlices(newSlices.toArray(new ColumnSlice[newSlices.size()]));
+    }
+
     public SliceQueryFilter withUpdatedSlice(ByteBuffer start, ByteBuffer finish)
     {
         return new SliceQueryFilter(new ColumnSlice[]{ new ColumnSlice(start, finish) }, reversed, count, compositesToGroup);
@@ -156,7 +185,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
 
     public void collectReducedColumns(ColumnFamily container, Iterator<Column> reducedColumns, int gcBefore)
     {
-        columnCounter = getColumnCounter(container);
+        columnCounter = columnCounter(container.getComparator());
 
         while (reducedColumns.hasNext())
         {
@@ -178,15 +207,11 @@ public class SliceQueryFilter implements IDiskAtomFilter
 
     public int getLiveCount(ColumnFamily cf)
     {
-        ColumnCounter counter = getColumnCounter(cf);
-        for (Column column : cf)
-            counter.count(column, cf);
-        return counter.live();
+        return columnCounter(cf.getComparator()).countAll(cf).live();
     }
 
-    private ColumnCounter getColumnCounter(ColumnFamily container)
+    public ColumnCounter columnCounter(AbstractType<?> comparator)
     {
-        AbstractType<?> comparator = container.getComparator();
         if (compositesToGroup < 0)
             return new ColumnCounter();
         else if (compositesToGroup == 0)
@@ -197,7 +222,7 @@ public class SliceQueryFilter implements IDiskAtomFilter
 
     public void trim(ColumnFamily cf, int trimTo)
     {
-        ColumnCounter counter = getColumnCounter(cf);
+        ColumnCounter counter = columnCounter(cf.getComparator());
 
         Collection<Column> columns = reversed
                                    ? cf.getReverseSortedColumns()
