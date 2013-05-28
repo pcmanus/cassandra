@@ -74,6 +74,7 @@ public interface IDiskAtomFilter
     public void updateColumnsLimit(int newLimit);
 
     public int getLiveCount(ColumnFamily cf, long now);
+    public ColumnCounter columnCounter(AbstractType<?> comparator, long now);
 
     public IDiskAtomFilter cloneShallow();
     public boolean maySelectPrefix(Comparator<ByteBuffer> cmp, ByteBuffer prefix);

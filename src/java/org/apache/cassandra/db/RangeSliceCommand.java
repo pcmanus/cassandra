@@ -35,11 +35,12 @@ import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.pager.Pageable;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public class RangeSliceCommand extends AbstractRangeCommand
+public class RangeSliceCommand extends AbstractRangeCommand implements Pageable
 {
     public static final RangeSliceCommandSerializer serializer = new RangeSliceCommandSerializer();
 
@@ -98,6 +99,19 @@ public class RangeSliceCommand extends AbstractRangeCommand
                                      subRange,
                                      rowFilter,
                                      maxResults,
+                                     countCQL3Rows,
+                                     isPaging);
+    }
+
+    public AbstractRangeCommand withUpdatedLimit(int newLimit)
+    {
+        return new RangeSliceCommand(keyspace,
+                                     columnFamily,
+                                     timestamp,
+                                     predicate,
+                                     keyRange,
+                                     rowFilter,
+                                     newLimit,
                                      countCQL3Rows,
                                      isPaging);
     }

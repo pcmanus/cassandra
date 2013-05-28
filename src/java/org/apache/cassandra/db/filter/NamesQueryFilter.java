@@ -122,6 +122,8 @@ public class NamesQueryFilter implements IDiskAtomFilter
 
     public int getLiveCount(ColumnFamily cf, long now)
     {
+        // Note: we could use columnCounter() but we save the object allocation as it's simple enough
+
         if (countCQL3Rows)
             return cf.hasOnlyTombstones(now) ? 0 : 1;
 
@@ -147,6 +149,18 @@ public class NamesQueryFilter implements IDiskAtomFilter
     public boolean shouldInclude(SSTableReader sstable)
     {
         return true;
+    }
+
+    public boolean countCQL3Rows()
+    {
+        return countCQL3Rows;
+    }
+
+    public ColumnCounter columnCounter(AbstractType<?> comparator, long now)
+    {
+        return countCQL3Rows
+             ? new ColumnCounter.GroupByPrefix(now, null, 0)
+             : new ColumnCounter(now);
     }
 
     private static class ByNameColumnIterator extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
