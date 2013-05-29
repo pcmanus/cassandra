@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 
+@Deprecated
 public class StreamReplyVerbHandler implements IVerbHandler<StreamReply>
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamReplyVerbHandler.class);

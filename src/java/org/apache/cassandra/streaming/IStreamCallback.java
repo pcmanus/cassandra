@@ -22,6 +22,7 @@ package org.apache.cassandra.streaming;
 /**
  * Callback interface for streaming session success/failure.
  */
+@Deprecated
 public interface IStreamCallback
 {
     /**

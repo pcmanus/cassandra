@@ -44,6 +44,7 @@ import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throttle;
 import org.apache.cassandra.utils.WrappedRunnable;
 
+@Deprecated
 public class FileStreamTask extends WrappedRunnable
 {
     private static final Logger logger = LoggerFactory.getLogger(FileStreamTask.class);

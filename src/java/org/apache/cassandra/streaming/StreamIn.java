@@ -38,6 +38,7 @@ import org.apache.cassandra.utils.FBUtilities;
  * Sends a STREAM_REQUEST Message to the source node(s), after which StreamOut on that side takes over.
  * See StreamOut for details.
  */
+@Deprecated
 public class StreamIn
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamIn.class);

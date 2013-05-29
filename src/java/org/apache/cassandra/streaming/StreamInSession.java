@@ -39,6 +39,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDGen;
 
 /** each context gets its own StreamInSession. So there may be >1 Session per host */
+@Deprecated
 public class StreamInSession extends AbstractStreamSession
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamInSession.class);

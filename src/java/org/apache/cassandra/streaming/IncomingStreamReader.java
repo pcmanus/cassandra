@@ -43,6 +43,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.BytesReadTracker;
 import org.apache.cassandra.utils.Pair;
 
+@Deprecated
 public class IncomingStreamReader
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingStreamReader.class);

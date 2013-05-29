@@ -74,6 +74,7 @@ import org.apache.cassandra.utils.Pair;
  * target has no way to know that it can stop waiting for an answer.
  *
  */
+@Deprecated
 public class StreamOut
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamOut.class);

@@ -32,6 +32,7 @@ import org.apache.cassandra.utils.Pair;
 /**
  * Represents portions of a file to be streamed between nodes.
  */
+@Deprecated
 public class PendingFile
 {
     public static final PendingFileSerializer serializer = new PendingFileSerializer();

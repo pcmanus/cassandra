@@ -27,6 +27,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
 
+@Deprecated
 public class StreamHeader
 {
     public static final IVersionedSerializer<StreamHeader> serializer = new StreamHeaderSerializer();

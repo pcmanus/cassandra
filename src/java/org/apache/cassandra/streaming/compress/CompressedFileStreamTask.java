@@ -43,6 +43,7 @@ import org.apache.cassandra.utils.Pair;
  *
  * This class sends relevant part of compressed file directly using nio if available.
  */
+@Deprecated
 public class CompressedFileStreamTask extends FileStreamTask
 {
     private static final Logger logger = LoggerFactory.getLogger(CompressedFileStreamTask.class);

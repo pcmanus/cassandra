@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.gms.*;
 
+@Deprecated
 public abstract class AbstractStreamSession implements IEndpointStateChangeSubscriber, IFailureDetectionEventListener
 {
     private static final Logger logger = LoggerFactory.getLogger(AbstractStreamSession.class);

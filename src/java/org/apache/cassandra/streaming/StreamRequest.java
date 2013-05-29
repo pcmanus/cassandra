@@ -48,6 +48,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
 *
 * If a file is specified, ranges and table will not. vice-versa should hold as well.
 */
+@Deprecated
 public class StreamRequest
 {
     public static final IVersionedSerializer<StreamRequest> serializer = new StreamRequestSerializer();

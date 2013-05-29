@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import java.util.List;
 import java.util.Set;
 
+@Deprecated
 public interface StreamingServiceMBean
 {
     /** hosts recieving outgoing streams */

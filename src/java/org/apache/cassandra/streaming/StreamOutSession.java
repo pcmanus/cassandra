@@ -33,6 +33,7 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 /**
  * This class manages the streaming of multiple files one after the other.
  */
+@Deprecated
 public class StreamOutSession extends AbstractStreamSession
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamOutSession.class);

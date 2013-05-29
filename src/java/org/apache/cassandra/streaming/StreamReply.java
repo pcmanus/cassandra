@@ -28,6 +28,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
 
+@Deprecated
 public class StreamReply
 {
     static enum Status

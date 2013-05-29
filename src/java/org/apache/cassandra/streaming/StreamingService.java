@@ -27,6 +27,7 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 
+@Deprecated
 public class StreamingService implements StreamingServiceMBean
 {
     public static final String MBEAN_OBJECT_NAME = "org.apache.cassandra.net:type=StreamingService";

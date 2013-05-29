@@ -27,6 +27,7 @@ import org.apache.cassandra.net.MessageIn;
  * This verb handler handles the StreamRequestMessage that is sent by
  * the node requesting range transfer.
 */
+@Deprecated
 public class StreamRequestVerbHandler implements IVerbHandler<StreamRequest>
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamRequestVerbHandler.class);
