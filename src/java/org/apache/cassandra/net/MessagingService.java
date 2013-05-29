@@ -17,10 +17,7 @@
  */
 package org.apache.cassandra.net;
 
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOError;
-import java.io.IOException;
+import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -885,9 +882,29 @@ public final class MessagingService implements MessagingServiceMBean
                 {
                     Socket socket = server.accept();
                     if (authenticate(socket))
-                        new IncomingTcpConnection(socket).start();
+                    {
+                        // determine the connection type to decide whether to buffer
+                        DataInputStream in = new DataInputStream(socket.getInputStream());
+                        MessagingService.validateMagic(in.readInt());
+                        int header = in.readInt();
+                        boolean isStream = MessagingService.getBits(header, 3, 1) == 1;
+                        int version = MessagingService.getBits(header, 15, 8);
+                        logger.debug("Connection version {} from {}", version, socket.getInetAddress());
+
+                        if (isStream)
+                        {
+                            new IncomingStreamingConnection(version, socket).start();
+                        }
+                        else
+                        {
+                            boolean compressed = MessagingService.getBits(header, 2, 1) == 1;
+                            new IncomingTcpConnection(version, compressed, socket).start();
+                        }
+                    }
                     else
+                    {
                         socket.close();
+                    }
                 }
                 catch (AsynchronousCloseException e)
                 {
