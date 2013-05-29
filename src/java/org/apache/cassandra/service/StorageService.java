@@ -255,7 +255,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.ECHO, new EchoVerbHandler());
 
         // spin up the streaming service so it is available for jmx tools.
-        if (StreamingService.instance == null)
+        if (StreamManager.instance == null)
             throw new RuntimeException("Streaming service is unavailable.");
     }
 

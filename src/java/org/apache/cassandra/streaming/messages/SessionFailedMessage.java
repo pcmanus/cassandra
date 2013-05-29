@@ -15,19 +15,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.messages;
+
+import java.io.IOException;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
+
+import org.apache.cassandra.streaming.StreamSession;
 
 /**
- * Streaming operation type.
  */
-public enum OperationType
+public class SessionFailedMessage extends StreamMessage
 {
-    ACTIVE_REPAIR,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+    public static Serializer<SessionFailedMessage> serializer = new Serializer<SessionFailedMessage>()
+    {
+        public SessionFailedMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        {
+            return new SessionFailedMessage();
+        }
 
+        public void serialize(SessionFailedMessage message, WritableByteChannel out, StreamSession session) throws IOException {}
+    };
+
+    public SessionFailedMessage()
+    {
+        super(Type.SESSION_FAILED);
+    }
+}

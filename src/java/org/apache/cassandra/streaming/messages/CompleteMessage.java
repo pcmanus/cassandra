@@ -15,19 +15,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
+package org.apache.cassandra.streaming.messages;
+
+import java.io.IOException;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
+
+import org.apache.cassandra.streaming.StreamSession;
 
 /**
- * Streaming operation type.
  */
-public enum OperationType
+public class CompleteMessage extends StreamMessage
 {
-    ACTIVE_REPAIR,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+    public static Serializer<CompleteMessage> serializer = new Serializer<CompleteMessage>()
+    {
+        public CompleteMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        {
+            return new CompleteMessage();
+        }
 
+        public void serialize(CompleteMessage message, WritableByteChannel out, StreamSession session) throws IOException {}
+    };
+
+    public CompleteMessage()
+    {
+        super(Type.COMPLETE);
+    }
+}

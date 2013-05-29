@@ -17,17 +17,21 @@
  */
 package org.apache.cassandra.streaming;
 
-/**
- * Streaming operation type.
- */
-public enum OperationType
-{
-    ACTIVE_REPAIR,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
+/**
+ *
+ */
+public interface StreamManagerMBean
+{
+    public static final String OBJECT_NAME = "org.apache.cassandra.net:type=StreamManager";
+
+    /**
+     * @return List of plan IDs of currently running stream plans
+     */
+    List<UUID> getCurrentStreamPlans();
+
+    Set<StreamState> getCurrentStatus();
+}

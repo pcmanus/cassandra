@@ -17,17 +17,15 @@
  */
 package org.apache.cassandra.streaming;
 
-/**
- * Streaming operation type.
- */
-public enum OperationType
-{
-    ACTIVE_REPAIR,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+import com.google.common.util.concurrent.FutureCallback;
 
+public interface StreamEventHandler extends FutureCallback<StreamState>
+{
+    /**
+     * Callback for various streaming events.
+     *
+     * @see StreamEvent.Type
+     * @param event Stream event.
+     */
+    void handleStreamEvent(StreamEvent event);
+}

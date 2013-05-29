@@ -17,17 +17,37 @@
  */
 package org.apache.cassandra.streaming;
 
-/**
- * Streaming operation type.
- */
-public enum OperationType
-{
-    ACTIVE_REPAIR,
-    BOOTSTRAP,
-    UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT,
-    BULK_LOAD,
-    REBUILD,
-    HINTS,
-}
+import java.io.Serializable;
+import java.util.Set;
+import java.util.UUID;
 
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+
+/**
+ * Current snapshot of streaming progress.
+ */
+public class StreamState implements Serializable
+{
+    public final UUID planId;
+    public final OperationType type;
+    public final Set<SessionInfo> sessions;
+
+    public StreamState(UUID planId, OperationType type, Set<SessionInfo> sessions)
+    {
+        this.planId = planId;
+        this.type = type;
+        this.sessions = sessions;
+    }
+
+    public boolean isFailed()
+    {
+        return Iterables.any(sessions, new Predicate<SessionInfo>()
+        {
+            public boolean apply(SessionInfo input)
+            {
+                return false;
+            }
+        });
+    }
+}

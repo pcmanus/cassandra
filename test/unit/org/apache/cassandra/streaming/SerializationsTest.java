@@ -48,7 +48,7 @@ public class SerializationsTest extends AbstractSerializationsTester
     {
         // make sure to test serializing null and a pf with no sstable.
         PendingFile normal = makePendingFile(true, 100, OperationType.BOOTSTRAP);
-        PendingFile noSections = makePendingFile(true, 0, OperationType.AES);
+        PendingFile noSections = makePendingFile(true, 0, OperationType.ACTIVE_REPAIR);
         PendingFile noSST = makePendingFile(false, 100, OperationType.RESTORE_REPLICA_COUNT);
 
         DataOutputStream out = getOutput("streaming.PendingFile.bin");
