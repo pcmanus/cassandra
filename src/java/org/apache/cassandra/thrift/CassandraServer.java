@@ -2028,7 +2028,11 @@ public class CassandraServer implements Cassandra.Iface
                                                                 itemId, org.apache.cassandra.cql3.QueryProcessor.MAX_CACHE_PREPARED, itemId));
             logger.trace("Retrieved prepared statement #{} with {} bind markers", itemId, statement.getBoundsTerms());
 
-            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement, ThriftConversion.fromThrift(cLevel), cState.getQueryState(), bindVariables).toThriftResult();
+            return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement,
+                                                                            ThriftConversion.fromThrift(cLevel),
+                                                                            cState.getQueryState(),
+                                                                            bindVariables,
+                                                                            -1).toThriftResult();
         }
         catch (RequestExecutionException e)
         {
