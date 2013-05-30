@@ -39,6 +39,9 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.RangeSliceVerbHandler;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.service.pager.Pageable;
+import org.apache.cassandra.service.pager.QueryPager;
+import org.apache.cassandra.service.pager.QueryPagers;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
@@ -119,22 +122,51 @@ public class SelectStatement implements CQLStatement
         // Nothing to do, all validation has been done by RawStatement.prepare()
     }
 
-    public ResultMessage.Rows execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables) throws RequestExecutionException, RequestValidationException
+    public ResultMessage.Rows execute(ConsistencyLevel cl, QueryState state, List<ByteBuffer> variables, int pageSize) throws RequestExecutionException, RequestValidationException
     {
         if (cl == null)
             throw new InvalidRequestException("Invalid empty consistency level");
 
         cl.validateForRead(keyspace());
 
+
         int limit = getLimit(variables);
-        List<Row> rows = isKeyRange || usesSecondaryIndexing
-                       ? StorageProxy.getRangeSlice(getRangeCommand(variables, limit), cl)
-                       : StorageProxy.read(getSliceCommands(variables, limit), cl);
+        Pageable command = isKeyRange || usesSecondaryIndexing
+                         ? getRangeCommand(variables, limit)
+                         : new Pageable.ReadCommands(getSliceCommands(variables, limit));
+
+        if (parameters.isCount || pageSize < 0 || !QueryPagers.mayNeedPaging(command, pageSize))
+            return execute(command, cl, variables, limit);
+        else
+            return setupPaging(QueryPagers.pager(command, cl), state, variables, limit, pageSize);
+    }
+
+    private ResultMessage.Rows execute(Pageable command, ConsistencyLevel cl, List<ByteBuffer> variables, int limit) throws RequestValidationException, RequestExecutionException
+    {
+        List<Row> rows = command instanceof Pageable.ReadCommands
+                       ? StorageProxy.read(((Pageable.ReadCommands)command).commands, cl)
+                       : StorageProxy.getRangeSlice((RangeSliceCommand)command, cl);
 
         return processResults(rows, variables, limit);
     }
 
-    private ResultMessage.Rows processResults(List<Row> rows, List<ByteBuffer> variables, int limit) throws RequestValidationException
+    // TODO: we could probably refactor processResults so it doesn't needs the variables, so we don't have to keep around. But that can wait.
+    private ResultMessage.Rows setupPaging(QueryPager pager, QueryState state, List<ByteBuffer> variables, int limit, int pageSize) throws RequestValidationException, RequestExecutionException
+    {
+        List<Row> page = pager.fetchPage(pageSize);
+
+        ResultMessage.Rows msg = processResults(page, variables, limit);
+
+        // Don't bother setting up the pager if we actually don't need to.
+        if (pager.isExhausted())
+            return msg;
+
+        state.attachPager(pager, this, variables);
+        msg.result.metadata.setHasMorePages();
+        return msg;
+    }
+
+    public ResultMessage.Rows processResults(List<Row> rows, List<ByteBuffer> variables, int limit) throws RequestValidationException
     {
         // Even for count, we need to process the result as it'll group some column together in sparse column families
         ResultSet rset = process(rows, variables, limit);

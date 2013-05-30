@@ -70,7 +70,8 @@ public abstract class Message
         EXECUTE      (10, Direction.REQUEST,  ExecuteMessage.codec),
         REGISTER     (11, Direction.REQUEST,  RegisterMessage.codec),
         EVENT        (12, Direction.RESPONSE, EventMessage.codec),
-        BATCH        (13, Direction.REQUEST,  BatchMessage.codec);
+        BATCH        (13, Direction.REQUEST,  BatchMessage.codec),
+        NEXT         (14, Direction.REQUEST,  NextMessage.codec);
 
         public final int opcode;
         public final Direction direction;
@@ -295,11 +296,11 @@ public abstract class Message
             {
                 assert request.connection() instanceof ServerConnection;
                 ServerConnection connection = (ServerConnection)request.connection();
-                connection.validateNewMessage(request.type);
+                QueryState qstate = connection.validateNewMessage(request.type, request.getStreamId());
 
                 logger.debug("Received: {}, v={}", request, request.getVersion());
 
-                Response response = request.execute(connection.getQueryState(request.getStreamId()));
+                Response response = request.execute(qstate);
                 response.setStreamId(request.getStreamId());
                 response.setVersion(request.getVersion());
                 response.attach(connection);

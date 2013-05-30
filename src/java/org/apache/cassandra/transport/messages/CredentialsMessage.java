@@ -48,7 +48,7 @@ public class CredentialsMessage extends Message.Request
             return msg;
         }
 
-        public ChannelBuffer encode(CredentialsMessage msg)
+        public ChannelBuffer encode(CredentialsMessage msg, int version)
         {
             ChannelBuffer cb = ChannelBuffers.dynamicBuffer();
 
@@ -71,7 +71,7 @@ public class CredentialsMessage extends Message.Request
 
     public ChannelBuffer encode()
     {
-        return codec.encode(this);
+        return codec.encode(this, getVersion());
     }
 
     public Message.Response execute(QueryState state)

@@ -17,91 +17,39 @@
  */
 package org.apache.cassandra.transport.messages;
 
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.*;
 import org.apache.cassandra.utils.UUIDGen;
 
-/**
- * A CQL query
- */
-public class QueryMessage extends Message.Request
+public class NextMessage extends Message.Request
 {
-    public static final Message.Codec<QueryMessage> codec = new Message.Codec<QueryMessage>()
+    public static final Message.Codec<NextMessage> codec = new Message.Codec<NextMessage>()
     {
-        public QueryMessage decode(ChannelBuffer body, int version)
+        public NextMessage decode(ChannelBuffer body, int version)
         {
-            String query = CBUtil.readLongString(body);
-            ConsistencyLevel consistency = CBUtil.readConsistencyLevel(body);
             int resultPageSize = body.readInt();
-            List<ByteBuffer> values;
-            if (body.readable())
-            {
-                int paramCount = body.readUnsignedShort();
-                values = paramCount == 0 ? Collections.<ByteBuffer>emptyList() : new ArrayList<ByteBuffer>(paramCount);
-                for (int i = 0; i < paramCount; i++)
-                     values.add(CBUtil.readValue(body));
-            }
-            else
-            {
-                values = Collections.emptyList();
-            }
-            return new QueryMessage(query, values, consistency, resultPageSize);
+            return new NextMessage(resultPageSize);
         }
 
-        public ChannelBuffer encode(QueryMessage msg, int version)
+        public ChannelBuffer encode(NextMessage msg, int version)
         {
-            // We have:
-            //   - query
-            //   - options
-            //     * optional:
-            //   - Number of values
-            //   - The values
-            int vs = msg.values.size();
-            CBUtil.BufferBuilder builder = new CBUtil.BufferBuilder(3 + (vs > 0 ? 1 : 0), 0, vs);
-            builder.add(CBUtil.longStringToCB(msg.query));
-            builder.add(CBUtil.consistencyLevelToCB(msg.consistency));
-            builder.add(CBUtil.intToCB(msg.resultPageSize));
-            if (vs > 0)
-            {
-                assert version > 1 : "Version 1 of the protocol do not allow values";
-                builder.add(CBUtil.shortToCB(vs));
-                for (ByteBuffer value : msg.values)
-                    builder.addValue(value);
-            }
-            return builder.build();
+            return CBUtil.intToCB(msg.resultPageSize);
         }
     };
 
-    public final String query;
-    public final ConsistencyLevel consistency;
     public final int resultPageSize;
-    public final List<ByteBuffer> values;
 
-    public QueryMessage(String query, ConsistencyLevel consistency)
+    public NextMessage(int resultPageSize)
     {
-        this(query, Collections.<ByteBuffer>emptyList(), consistency, -1);
-    }
-
-    public QueryMessage(String query, List<ByteBuffer> values, ConsistencyLevel consistency, int resultPageSize)
-    {
-        super(Type.QUERY);
-        this.query = query;
+        super(Type.NEXT);
         this.resultPageSize = resultPageSize;
-        this.consistency = consistency;
-        this.values = values;
     }
 
     public ChannelBuffer encode()
@@ -116,6 +64,12 @@ public class QueryMessage extends Message.Request
             if (resultPageSize == 0)
                 throw new ProtocolException("The page size cannot be 0");
 
+            /*
+             * If we had traced the previous page and we are asked to trace this one,
+             * record the previous id to allow linking the trace together.
+             */
+            UUID previousTracingId = state.getAndResetCurrentTracingSession();
+
             UUID tracingId = null;
             if (isTracingRequested())
             {
@@ -126,16 +80,15 @@ public class QueryMessage extends Message.Request
             if (state.traceNextQuery())
             {
                 state.createTracingSession();
-
                 ImmutableMap.Builder<String, String> builder = ImmutableMap.builder();
-                builder.put("query", query);
                 if (resultPageSize > 0)
                     builder.put("page_size", Integer.toString(resultPageSize));
-
-                Tracing.instance().begin("Execute CQL3 query", builder.build());
+                if (previousTracingId != null)
+                    builder.put("previous_trace", previousTracingId.toString());
+                Tracing.instance().begin("Continue paged CQL3 query", builder.build());
             }
 
-            Message.Response response = QueryProcessor.process(query, values, consistency, state, resultPageSize);
+            Message.Response response = state.getNextPage(resultPageSize < 0 ? Integer.MAX_VALUE : resultPageSize);
 
             if (tracingId != null)
                 response.setTracingId(tracingId);
@@ -160,6 +113,6 @@ public class QueryMessage extends Message.Request
     @Override
     public String toString()
     {
-        return "QUERY " + query;
+        return "NEXT " + resultPageSize;
     }
 }

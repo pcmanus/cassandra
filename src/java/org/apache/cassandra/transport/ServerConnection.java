@@ -48,7 +48,7 @@ public class ServerConnection extends Connection
         this.state = State.UNINITIALIZED;
     }
 
-    public QueryState getQueryState(int streamId)
+    private QueryState getQueryState(int streamId)
     {
         QueryState qState = queryStates.get(streamId);
         if (qState == null)
@@ -61,7 +61,7 @@ public class ServerConnection extends Connection
         return qState;
     }
 
-    public void validateNewMessage(Message.Type type)
+    public QueryState validateNewMessage(Message.Type type, int streamId)
     {
         switch (state)
         {
@@ -80,6 +80,20 @@ public class ServerConnection extends Connection
             default:
                 throw new AssertionError();
         }
+
+        QueryState qstate = getQueryState(streamId);
+        if (qstate.hasPager())
+        {
+            if (type != Message.Type.NEXT)
+                qstate.dropPager();
+        }
+        else
+        {
+            if (type == Message.Type.NEXT)
+                throw new ProtocolException("Unexpected NEXT message, paging is not set (or is done)");
+        }
+
+        return qstate;
     }
 
     public void applyStateTransition(Message.Type requestType, Message.Type responseType)
