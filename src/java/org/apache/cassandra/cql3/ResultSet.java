@@ -97,7 +97,11 @@ public class ResultSet
         String ksName = metadata.names.get(0).ksName;
         String cfName = metadata.names.get(0).cfName;
         long count = rows.size();
+        return makeCountResult(ksName, cfName, count, alias);
+    }
 
+    public static ResultSet makeCountResult(String ksName, String cfName, long count, ColumnIdentifier alias)
+    {
         ColumnSpecification spec = new ColumnSpecification(ksName, cfName, alias == null ? COUNT_COLUMN : alias, LongType.instance);
         Metadata newMetadata = new Metadata(Collections.singletonList(spec));
         List<List<ByteBuffer>> newRows = Collections.singletonList(Collections.singletonList(ByteBufferUtil.bytes(count)));
