@@ -44,6 +44,7 @@ import org.apache.cassandra.cql.CQLStatement;
 import org.apache.cassandra.cql.QueryProcessor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.context.CounterContext;
+import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.filter.IDiskAtomFilter;
 import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
@@ -59,6 +60,7 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.service.pager.QueryPagers;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
@@ -395,6 +397,40 @@ public class CassandraServer implements Cassandra.Iface
         }
     }
 
+    private SliceQueryFilter toInternalFilter(CFMetaData metadata, ColumnParent parent, SliceRange range)
+    {
+        SliceQueryFilter filter = new SliceQueryFilter(range.start, range.finish, range.reversed, range.count);
+        if (metadata.isSuper())
+            filter = SuperColumns.fromSCSliceFilter((CompositeType)metadata.comparator, parent.bufferForSuper_column(), filter);
+        return filter;
+    }
+
+    private IDiskAtomFilter toInternalFilter(CFMetaData metadata, ColumnParent parent, SlicePredicate predicate)
+    {
+        IDiskAtomFilter filter;
+        if (predicate.column_names != null)
+        {
+            if (metadata.isSuper())
+            {
+                CompositeType type = (CompositeType)metadata.comparator;
+                SortedSet s = new TreeSet<ByteBuffer>(parent.isSetSuper_column() ? type.types.get(1) : type.types.get(0));
+                s.addAll(predicate.column_names);
+                filter = SuperColumns.fromSCNamesFilter(type, parent.bufferForSuper_column(), new NamesQueryFilter(s));
+            }
+            else
+            {
+                SortedSet s = new TreeSet<ByteBuffer>(metadata.comparator);
+                s.addAll(predicate.column_names);
+                filter = new NamesQueryFilter(s);
+            }
+        }
+        else
+        {
+            filter = toInternalFilter(metadata, parent, predicate.slice_range);
+        }
+        return filter;
+    }
+
     private Map<ByteBuffer, List<ColumnOrSuperColumn>> multigetSliceInternal(String keyspace, List<ByteBuffer> keys, ColumnParent column_parent, SlicePredicate predicate, ConsistencyLevel consistency_level)
     throws org.apache.cassandra.exceptions.InvalidRequestException, UnavailableException, TimedOutException
     {
@@ -406,30 +442,7 @@ public class CassandraServer implements Cassandra.Iface
         consistencyLevel.validateForRead(keyspace);
 
         List<ReadCommand> commands = new ArrayList<ReadCommand>(keys.size());
-        IDiskAtomFilter filter;
-        if (predicate.column_names != null)
-        {
-            if (metadata.isSuper())
-            {
-                CompositeType type = (CompositeType)metadata.comparator;
-                SortedSet s = new TreeSet<ByteBuffer>(column_parent.isSetSuper_column() ? type.types.get(1) : type.types.get(0));
-                s.addAll(predicate.column_names);
-                filter = SuperColumns.fromSCNamesFilter(type, column_parent.bufferForSuper_column(), new NamesQueryFilter(s));
-            }
-            else
-            {
-                SortedSet s = new TreeSet<ByteBuffer>(metadata.comparator);
-                s.addAll(predicate.column_names);
-                filter = new NamesQueryFilter(s);
-            }
-        }
-        else
-        {
-            SliceRange range = predicate.slice_range;
-            filter = new SliceQueryFilter(range.start, range.finish, range.reversed, range.count);
-            if (metadata.isSuper())
-                filter = SuperColumns.fromSCFilter((CompositeType)metadata.comparator, column_parent.bufferForSuper_column(), filter);
-        }
+        IDiskAtomFilter filter = toInternalFilter(metadata, column_parent, predicate);
 
         for (ByteBuffer key: keys)
         {
@@ -556,46 +569,23 @@ public class CassandraServer implements Cassandra.Iface
                 pageSize = COUNT_PAGE_SIZE;
             }
 
-            int totalCount = 0;
-            List<ColumnOrSuperColumn> columns;
+            SliceQueryFilter filter = predicate.slice_range == null
+                                    ? new IdentityQueryFilter()
+                                    : toInternalFilter(cfs.metadata, column_parent, predicate.slice_range);
 
-            if (predicate.slice_range == null)
+            int count = 0;
+            Iterator<org.apache.cassandra.db.Column> iter = QueryPagers.pageQuery(keyspace,
+                                                                                  column_parent.column_family,
+                                                                                  key,
+                                                                                  filter,
+                                                                                  ThriftConversion.fromThrift(consistency_level),
+                                                                                  COUNT_PAGE_SIZE);
+            while (iter.hasNext())
             {
-                predicate.slice_range = new SliceRange(ByteBufferUtil.EMPTY_BYTE_BUFFER,
-                                                       ByteBufferUtil.EMPTY_BYTE_BUFFER,
-                                                       false,
-                                                       Integer.MAX_VALUE);
+                if (!iter.next().isMarkedForDelete())
+                    count++;
             }
-
-            final int requestedCount = predicate.slice_range.count;
-            int remaining = requestedCount;
-            int pages = 0;
-            while (true)
-            {
-                predicate.slice_range.count = Math.min(pageSize, Math.max(2, remaining)); // fetch at least two columns
-                columns = get_slice(key, column_parent, predicate, consistency_level);
-                if (columns.isEmpty())
-                    break;
-
-                ByteBuffer firstName = getName(columns.get(0));
-                int newColumns = pages == 0 || !firstName.equals(predicate.slice_range.start) ? columns.size() : columns.size() - 1;
-
-                totalCount += newColumns;
-                // if we over-counted, just return original limit
-                if (totalCount > requestedCount)
-                    return requestedCount;
-                remaining -= newColumns;
-                pages++;
-                // We're done if either:
-                // - We've querying the number of columns requested by the user
-                // - last fetched page only contains the column we already fetched
-                if (remaining == 0 || ((columns.size() == 1) && (firstName.equals(predicate.slice_range.start))))
-                    break;
-                else
-                    predicate.slice_range.start = getName(columns.get(columns.size() - 1));
-            }
-
-            return totalCount;
+            return count;
         }
         catch (RequestValidationException e)
         {
