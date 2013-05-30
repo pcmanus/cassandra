@@ -57,6 +57,8 @@ import org.apache.cassandra.utils.Pair;
  */
 public class SelectStatement implements CQLStatement
 {
+    private static final int DEFAULT_COUNT_PAGE_SIZE = 10000;
+
     private final int boundTerms;
     public final CFDefinition cfDef;
     public final Parameters parameters;
@@ -135,10 +137,22 @@ public class SelectStatement implements CQLStatement
                          ? getRangeCommand(variables, limit)
                          : new Pageable.ReadCommands(getSliceCommands(variables, limit));
 
-        if (parameters.isCount || pageSize < 0 || !QueryPagers.mayNeedPaging(command, pageSize))
+        // A count query will never be paged for the user, but we always page it internally to avoid OOM.
+        // If we user provided a pageSize we'll use that to page internally (because why not), otherwise we use our default
+        if (parameters.isCount && pageSize < 0)
+            pageSize = DEFAULT_COUNT_PAGE_SIZE;
+
+        if (pageSize < 0 || !QueryPagers.mayNeedPaging(command, pageSize))
+        {
             return execute(command, cl, variables, limit);
+        }
         else
-            return setupPaging(QueryPagers.pager(command, cl), state, variables, limit, pageSize);
+        {
+            QueryPager pager = QueryPagers.pager(command, cl);
+            return parameters.isCount
+                 ? pageCountQuery(pager, variables, pageSize)
+                 : setupPaging(pager, state, variables, limit, pageSize);
+        }
     }
 
     private ResultMessage.Rows execute(Pageable command, ConsistencyLevel cl, List<ByteBuffer> variables, int limit) throws RequestValidationException, RequestExecutionException
@@ -164,6 +178,20 @@ public class SelectStatement implements CQLStatement
         state.attachPager(pager, this, variables);
         msg.result.metadata.setHasMorePages();
         return msg;
+    }
+
+    private ResultMessage.Rows pageCountQuery(QueryPager pager, List<ByteBuffer> variables, int pageSize) throws RequestValidationException, RequestExecutionException
+    {
+        int count = 0;
+        while (!pager.isExhausted())
+        {
+            int maxLimit = pager.maxRemaining();
+            ResultSet rset = process(pager.fetchPage(pageSize), variables, maxLimit);
+            count += rset.rows.size();
+        }
+
+        ResultSet result = ResultSet.makeCountResult(keyspace(), columnFamily(), count, parameters.countAlias);
+        return new ResultMessage.Rows(result);
     }
 
     public ResultMessage.Rows processResults(List<Row> rows, List<ByteBuffer> variables, int limit) throws RequestValidationException
