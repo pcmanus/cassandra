@@ -36,7 +36,6 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.streaming.OperationType;
 
 public class BootStrapper
 {
@@ -63,7 +62,7 @@ public class BootStrapper
         if (logger.isDebugEnabled())
             logger.debug("Beginning bootstrap process");
 
-        RangeStreamer streamer = new RangeStreamer(tokenMetadata, address, OperationType.BOOTSTRAP);
+        RangeStreamer streamer = new RangeStreamer(tokenMetadata, address, "Bootstrap");
         streamer.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(FailureDetector.instance));
 
         for (String table : Schema.instance.getNonSystemTables())

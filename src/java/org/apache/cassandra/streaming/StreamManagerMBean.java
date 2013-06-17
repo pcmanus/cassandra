@@ -21,9 +21,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- *
- */
 public interface StreamManagerMBean
 {
     public static final String OBJECT_NAME = "org.apache.cassandra.net:type=StreamManager";

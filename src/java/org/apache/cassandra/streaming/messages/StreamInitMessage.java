@@ -27,27 +27,32 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.streaming.OperationType;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
- * StreamInitMessage is first sent from the node where StreamOperation is started,
- * to initialize corresponding StreamSession on the other side.
+ * StreamInitMessage is first sent from the node where {@link org.apache.cassandra.streaming.StreamSession} is started,
+ * to initiate corresponding {@link org.apache.cassandra.streaming.StreamSession} on the other side.
  */
 public class StreamInitMessage
 {
     public static IVersionedSerializer<StreamInitMessage> serializer = new StreamInitMessageSerializer();
 
     public final UUID planId;
-    public final OperationType operationType;
+    public final String description;
 
-    public StreamInitMessage(UUID planId, OperationType operationType)
+    public StreamInitMessage(UUID planId, String description)
     {
         this.planId = planId;
-        this.operationType = operationType;
+        this.description = description;
     }
 
-    // TODO streaming own versioning
+    /**
+     * Create serialized message.
+     *
+     * @param compress true if message is compressed
+     * @param version Streaming protocol version
+     * @return serialized message in ByteBuffer format
+     */
     public ByteBuffer createMessage(boolean compress, int version)
     {
         int header = 0;
@@ -90,22 +95,20 @@ public class StreamInitMessage
     {
         public void serialize(StreamInitMessage message, DataOutput out, int version) throws IOException
         {
-            UUIDSerializer.serializer.serialize(message.planId, out, version);
-            out.writeInt(message.operationType.ordinal());
+            UUIDSerializer.serializer.serialize(message.planId, out, MessagingService.current_version);
+            out.writeUTF(message.description);
         }
 
         public StreamInitMessage deserialize(DataInput in, int version) throws IOException
         {
-            UUID opId = UUIDSerializer.serializer.deserialize(in, version);
-            int type = in.readInt();
-            OperationType operationType = OperationType.values()[type];
-            return new StreamInitMessage(opId, operationType);
+            UUID planId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
+            return new StreamInitMessage(planId, in.readUTF());
         }
 
         public long serializedSize(StreamInitMessage message, int version)
         {
-            long size = UUIDSerializer.serializer.serializedSize(message.planId, version);
-            size += TypeSizes.NATIVE.sizeof(message.operationType.ordinal());
+            long size = UUIDSerializer.serializer.serializedSize(message.planId, MessagingService.current_version);
+            size += TypeSizes.NATIVE.sizeof(message.description);
             return size;
         }
     }

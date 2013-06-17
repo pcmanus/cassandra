@@ -622,7 +622,7 @@ public class NodeCmd
             outs.println("Not sending any streams.");
         for (StreamState status : statuses)
         {
-            outs.printf("%s %s%n", status.type.toString(), status.planId.toString());
+            outs.printf("%s %s%n", status.description, status.planId.toString());
             for (SessionInfo info : status.sessions)
             {
                 outs.printf("    %s%n", info.peer.toString());

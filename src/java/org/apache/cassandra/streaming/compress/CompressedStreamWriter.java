@@ -28,7 +28,7 @@ import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
-import org.apache.cassandra.streaming.StreamEvent;
+import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.StreamWriter;
 import org.apache.cassandra.utils.Pair;
@@ -74,7 +74,7 @@ public class CompressedStreamWriter extends StreamWriter
                     long lastWrite = fc.transferTo(section.left + bytesTransferred, toTransfer, channel);
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
-                    session.onStreamProgress(sstable.descriptor, StreamEvent.Direction.OUT, progress, totalSize);
+                    session.progress(sstable.descriptor, ProgressInfo.Direction.OUT, progress, totalSize);
                 }
             }
         }

@@ -28,14 +28,16 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.utils.Pair;
 
 /**
- * Task that manages receiving files for the session for certain keyspace, ranges, and columnfamily.
+ * Task that manages receiving files for the session for certain ColumnFamily.
  */
 public class StreamReceiveTask extends StreamTask
 {
+    // number of files to receive
     private final int totalFiles;
+    // total size of files to receive
     private final long totalSize;
 
-    //  holds SSTables received
+    //  holds references to SSTables received
     protected Collection<SSTableReader> sstables;
 
     public StreamReceiveTask(StreamSession session, UUID cfId, int totalFiles, long totalSize)
@@ -47,9 +49,9 @@ public class StreamReceiveTask extends StreamTask
     }
 
     /**
-     * Receive file.
+     * Process received file.
      *
-     * @param sstable
+     * @param sstable SSTable file received.
      */
     public void receive(SSTableReader sstable)
     {

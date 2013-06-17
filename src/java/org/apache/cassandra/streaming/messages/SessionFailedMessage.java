@@ -23,18 +23,16 @@ import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.streaming.StreamSession;
 
-/**
- */
 public class SessionFailedMessage extends StreamMessage
 {
     public static Serializer<SessionFailedMessage> serializer = new Serializer<SessionFailedMessage>()
     {
-        public SessionFailedMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        public SessionFailedMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
         {
             return new SessionFailedMessage();
         }
 
-        public void serialize(SessionFailedMessage message, WritableByteChannel out, StreamSession session) throws IOException {}
+        public void serialize(SessionFailedMessage message, WritableByteChannel out, int version, StreamSession session) throws IOException {}
     };
 
     public SessionFailedMessage()

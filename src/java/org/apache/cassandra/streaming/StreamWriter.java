@@ -44,7 +44,7 @@ public class StreamWriter
 
     protected final SSTableReader sstable;
     protected final Collection<Pair<Long, Long>> sections;
-    protected final RateLimiter limiter;
+    protected final RateLimiter limiter = StreamManager.getRateLimiter();
     protected final StreamSession session;
 
     private OutputStream compressedOutput;
@@ -57,7 +57,6 @@ public class StreamWriter
         this.session = session;
         this.sstable = sstable;
         this.sections = sections;
-        this.limiter = session.limiter;
     }
 
     /**
@@ -103,7 +102,7 @@ public class StreamWriter
                     long lastWrite = write(file, validator, skipBytes, length, bytesTransferred);
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
-                    session.onStreamProgress(sstable.descriptor, StreamEvent.Direction.OUT, progress, totalSize);
+                    session.progress(sstable.descriptor, ProgressInfo.Direction.OUT, progress, totalSize);
                     skipBytes = 0;
                 }
 
@@ -117,6 +116,7 @@ public class StreamWriter
             FileUtils.closeQuietly(file);
         }
 
+        // release reference only when completed successfully
         sstable.releaseReference();
     }
 

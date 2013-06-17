@@ -24,57 +24,42 @@ import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import org.apache.cassandra.streaming.StreamRequest;
 import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.streaming.StreamSummary;
 
-/**
- */
 public class PrepareMessage extends StreamMessage
 {
     public static Serializer<PrepareMessage> serializer = new Serializer<PrepareMessage>()
     {
-        public PrepareMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        public PrepareMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
         {
             DataInput input = new DataInputStream(Channels.newInputStream(in));
             PrepareMessage message = new PrepareMessage();
             // requests
             int numRequests = input.readInt();
             for (int i = 0; i < numRequests; i++)
-                message.requests.add(StreamRequest.serializer.deserialize(input));
+                message.requests.add(StreamRequest.serializer.deserialize(input, version));
             // summaries
             int numSummaries = input.readInt();
             for (int i = 0; i < numSummaries; i++)
-                message.summaries.add(StreamSummary.serializer.deserialize(input));
+                message.summaries.add(StreamSummary.serializer.deserialize(input, version));
             return message;
         }
 
-        public void serialize(PrepareMessage message, WritableByteChannel out, StreamSession session) throws IOException
+        public void serialize(PrepareMessage message, WritableByteChannel out, int version, StreamSession session) throws IOException
         {
             DataOutput output = new DataOutputStream(Channels.newOutputStream(out));
             // requests
             output.writeInt(message.requests.size());
             for (StreamRequest request : message.requests)
-                StreamRequest.serializer.serialize(request, output);
+                StreamRequest.serializer.serialize(request, output, version);
             // summaries
             output.writeInt(message.summaries.size());
             for (StreamSummary summary : message.summaries)
-                StreamSummary.serializer.serialize(summary, output);
+                StreamSummary.serializer.serialize(summary, output, version);
         }
     };
-
-    public static StreamMessage from(ReadableByteChannel in) throws IOException
-    {
-        DataInput input = new DataInputStream(Channels.newInputStream(in));
-        PrepareMessage message = new PrepareMessage();
-        // requests
-        int numRequests = input.readInt();
-        for (int i = 0; i < numRequests; i++)
-            message.requests.add(StreamRequest.serializer.deserialize(input));
-        // summaries
-        int numSummaries = input.readInt();
-        for (int i = 0; i < numSummaries; i++)
-            message.summaries.add(StreamSummary.serializer.deserialize(input));
-        return message;
-    }
 
     /**
      * Streaming requests

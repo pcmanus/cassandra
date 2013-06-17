@@ -23,7 +23,6 @@ import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 
@@ -55,31 +54,42 @@ public class StreamPlan
 
     // plan ID will be auto generated when not given
     private UUID planId;
-    private final OperationType type;
+    private String description;
+
     // sessions per InetAddress of the other end.
     private final Map<InetAddress, StreamSession> sessions = new HashMap<>();
 
     private boolean flushBeforeTransfer = true;
 
     /**
-     * Start building stream plan.
+     * Start building stream plan of specific planId.
      *
-     * @param type Stream type that describes this StreamPlan
+     * @param planId Plan ID
      */
-    public StreamPlan(OperationType type)
+    public StreamPlan(UUID planId)
     {
-        this.type = type;
+        this.planId = planId;
     }
 
     /**
-     * Force building plan to have specific plan ID.
+     * Start building stream plan.
      *
-     * @param planId Plan ID to set to. Must not be null.
+     * @param description Stream type that describes this StreamPlan
+     */
+    public StreamPlan(String description)
+    {
+        this.description = description;
+    }
+
+    /**
+     * Add description to this plan.
+     *
+     * @param description description to set
      * @return this object for chaining
      */
-    public StreamPlan planId(UUID planId)
+    public StreamPlan description(String description)
     {
-        this.planId = Preconditions.checkNotNull(planId);
+        this.description = description;
         return this;
     }
 
@@ -156,11 +166,11 @@ public class StreamPlan
         return this;
     }
 
-    public StreamPlan bind(Socket socket)
+    public StreamPlan bind(Socket socket, int protocolVersion)
     {
         if (!sessions.containsKey(socket.getInetAddress()))
         {
-            StreamSession session = new StreamSession(socket);
+            StreamSession session = new StreamSession(socket, protocolVersion);
             sessions.put(socket.getInetAddress(), session);
         }
         return this;
@@ -183,7 +193,7 @@ public class StreamPlan
     {
         if (planId == null)
             planId = UUIDGen.getTimeUUID();
-        StreamResultFuture streamResult = new StreamResultFuture(planId, type, sessions.size());
+        StreamResultFuture streamResult = new StreamResultFuture(planId, description, sessions.size());
 
         MANAGER.register(streamResult);
 

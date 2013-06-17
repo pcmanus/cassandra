@@ -113,7 +113,7 @@ public class StreamingRepairTask implements Runnable
     private void initiateStreaming()
     {
         logger.info(String.format("[streaming task #%s] Performing streaming repair of %d ranges with %s", id, ranges.size(), dst));
-        StreamResultFuture op = new StreamPlan(OperationType.ACTIVE_REPAIR)
+        StreamResultFuture op = new StreamPlan("Repair")
                                     .flushBeforeTransfer(true)
                                     // request ranges from the remote node
                                     .requestRanges(dst, tableName, ranges, cfName)

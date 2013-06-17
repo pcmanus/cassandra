@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 
 /**
@@ -53,6 +54,8 @@ public class ConnectionHandler
     private static final int MAX_CONNECT_ATTEMPTS = 3;
 
     private final StreamSession session;
+    private final int protocolVersion;
+
     private IncomingMessageHandler incoming;
     private OutgoingMessageHandler outgoing;
 
@@ -62,13 +65,15 @@ public class ConnectionHandler
     ConnectionHandler(StreamSession session)
     {
         this.session = session;
+        this.protocolVersion = StreamMessage.CURRENT_VERSION;
     }
 
-    ConnectionHandler(StreamSession session, Socket socket)
+    ConnectionHandler(StreamSession session, Socket socket, int protocolVersion)
     {
         this.session = session;
         this.socket = Preconditions.checkNotNull(socket);
         this.connected = socket.isConnected();
+        this.protocolVersion = protocolVersion;
     }
 
     /**
@@ -114,7 +119,8 @@ public class ConnectionHandler
             out = Channels.newChannel(socket.getOutputStream());
         }
         logger.debug("Sending stream init...");
-        out.write(session.createStreamInitMessage(MessagingService.current_version));
+        StreamInitMessage message = new StreamInitMessage(session.planId(), session.description());
+        out.write(message.createMessage(false, protocolVersion));
 
         connected = true;
 
@@ -151,8 +157,8 @@ public class ConnectionHandler
             out = Channels.newChannel(socket.getOutputStream());
         }
 
-        incoming = new IncomingMessageHandler(session, in);
-        outgoing = new OutgoingMessageHandler(session, out);
+        incoming = new IncomingMessageHandler(session, protocolVersion, in);
+        outgoing = new OutgoingMessageHandler(session, protocolVersion, out);
 
         // ready to send/receive files
         new Thread(incoming, "STREAM-IN-" + session.peer).start();
@@ -187,11 +193,13 @@ public class ConnectionHandler
     abstract static class MessageHandler implements Runnable
     {
         protected final StreamSession session;
+        protected final int protocolVersion;
         protected final AtomicBoolean terminated = new AtomicBoolean(false);
 
-        protected MessageHandler(StreamSession session)
+        protected MessageHandler(StreamSession session, int protocolVersion)
         {
             this.session = session;
+            this.protocolVersion = protocolVersion;
         }
 
         public void terminate()
@@ -212,9 +220,9 @@ public class ConnectionHandler
     {
         private final ReadableByteChannel in;
 
-        IncomingMessageHandler(StreamSession session, ReadableByteChannel in)
+        IncomingMessageHandler(StreamSession session, int protocolVersion, ReadableByteChannel in)
         {
-            super(session);
+            super(session, protocolVersion);
             this.in = in;
         }
 
@@ -225,7 +233,7 @@ public class ConnectionHandler
                 try
                 {
                     // receive message
-                    StreamMessage message = StreamMessage.deserialize(in, session);
+                    StreamMessage message = StreamMessage.deserialize(in, protocolVersion, session);
                     if (message != null)
                         session.messageReceived(message);
                 }
@@ -263,9 +271,9 @@ public class ConnectionHandler
 
         private final WritableByteChannel out;
 
-        OutgoingMessageHandler(StreamSession session, WritableByteChannel out)
+        OutgoingMessageHandler(StreamSession session, int protocolVersion, WritableByteChannel out)
         {
-            super(session);
+            super(session, protocolVersion);
             this.out = out;
         }
 
@@ -284,7 +292,7 @@ public class ConnectionHandler
                     if (next != null)
                     {
                         logger.debug("Sending " + next);
-                        StreamMessage.serialize(next, out, session);
+                        StreamMessage.serialize(next, out, protocolVersion, session);
                         if (next.type == StreamMessage.Type.SESSION_FAILED)
                             terminate();
                     }

@@ -33,7 +33,7 @@ import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
-import org.apache.cassandra.streaming.StreamEvent;
+import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamReader;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.messages.FileMessageHeader;
@@ -85,7 +85,7 @@ public class CompressedStreamReader extends StreamReader
                 {
                     writeRow(writer, in, cfs);
                     // when compressed, report total bytes of compressed chunks read since remoteFile.size is the sum of chunks transferred
-                    session.onStreamProgress(desc, StreamEvent.Direction.IN, cis.getTotalCompressedBytesRead(), totalSize);
+                    session.progress(desc, ProgressInfo.Direction.IN, cis.getTotalCompressedBytesRead(), totalSize);
                 }
             }
             return writer.closeAndOpenReader();

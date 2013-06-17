@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.streaming;
 
-import java.net.InetAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,25 +42,18 @@ public class StreamManager implements StreamManagerMBean, FutureCallback<StreamS
 {
     public static final StreamManager instance = new StreamManager();
 
-    private static final Map<InetAddress, RateLimiter> rateLimiters = new NonBlockingHashMap<>();
+    private static final RateLimiter limiter = RateLimiter.create(Double.MAX_VALUE);
 
     /**
-     * Gets streaming rate limiter associated with given address.
+     * Gets streaming rate limiter.
      * When stream_throughput_outbound_megabits_per_sec is 0, this returns rate limiter
      * with the rate of Double.MAX_VALUE bytes per second.
      * Rate unit is bytes per sec.
      *
-     * @param address address to apply RateLimiter
      * @return RateLimiter with rate limit set
      */
-    public static RateLimiter getRateLimiter(InetAddress address)
+    public static RateLimiter getRateLimiter()
     {
-        RateLimiter limiter = rateLimiters.get(address);
-        if (limiter == null)
-        {
-            limiter = RateLimiter.create(Double.MAX_VALUE);
-            rateLimiters.put(address, limiter);
-        }
         double currentThroughput = DatabaseDescriptor.getStreamThroughputOutboundMegabitsPerSec() * 1024 * 1024 / 8 / 1000;
         // if throughput is set to 0, throttling is disabled
         if (currentThroughput == 0)

@@ -23,34 +23,27 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.util.UUID;
 
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.utils.UUIDSerializer;
 
-/**
- */
 public class RetryMessage extends StreamMessage
 {
     public static Serializer<RetryMessage> serializer = new Serializer<RetryMessage>()
     {
-        public RetryMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        public RetryMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
         {
             DataInput input = new DataInputStream(Channels.newInputStream(in));
-            return new RetryMessage(UUIDSerializer.serializer.deserialize(input, 0), input.readInt());
+            return new RetryMessage(UUIDSerializer.serializer.deserialize(input, MessagingService.current_version), input.readInt());
         }
 
-        public void serialize(RetryMessage message, WritableByteChannel out, StreamSession session) throws IOException
+        public void serialize(RetryMessage message, WritableByteChannel out, int version, StreamSession session) throws IOException
         {
             DataOutput output = new DataOutputStream(Channels.newOutputStream(out));
-            UUIDSerializer.serializer.serialize(message.cfId, output, 0);
+            UUIDSerializer.serializer.serialize(message.cfId, output, MessagingService.current_version);
             output.writeInt(message.sequenceNumber);
         }
     };
-
-    public static StreamMessage from(ReadableByteChannel in) throws IOException
-    {
-        DataInput input = new DataInputStream(Channels.newInputStream(in));
-        return new RetryMessage(UUIDSerializer.serializer.deserialize(input, 0), input.readInt());
-    }
 
     public final UUID cfId;
     public final int sequenceNumber;

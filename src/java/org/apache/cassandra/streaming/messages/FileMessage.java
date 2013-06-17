@@ -38,19 +38,15 @@ import org.apache.cassandra.utils.Pair;
 
 /**
  * FileMessage is used to transfer/receive the part(or whole) of a SSTable data file.
- *
- * Streaming or receiving file is done lazily.
- *
- * The message consists of the following:
  */
 public class FileMessage extends StreamMessage
 {
     public static Serializer<FileMessage> serializer = new Serializer<FileMessage>()
     {
-        public FileMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+        public FileMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
         {
             DataInputStream input = new DataInputStream(Channels.newInputStream(in));
-            FileMessageHeader header = FileMessageHeader.serializer.deserialize(input);
+            FileMessageHeader header = FileMessageHeader.serializer.deserialize(input, version);
             StreamReader reader = header.compressionInfo == null ? new StreamReader(header, session)
                                           : new CompressedStreamReader(header, session);
 
@@ -65,21 +61,17 @@ public class FileMessage extends StreamMessage
             }
         }
 
-        public void serialize(FileMessage message, WritableByteChannel out, StreamSession session) throws IOException
+        public void serialize(FileMessage message, WritableByteChannel out, int version, StreamSession session) throws IOException
         {
             DataOutput output = new DataOutputStream(Channels.newOutputStream(out));
-            FileMessageHeader.serializer.serialize(message.header, output);
+            FileMessageHeader.serializer.serialize(message.header, output, version);
             StreamWriter writer = message.header.compressionInfo == null ?
                                           new StreamWriter(message.sstable, message.header.sections, session) :
                                           new CompressedStreamWriter(message.sstable,
                                                                      message.header.sections,
                                                                      message.header.compressionInfo, session);
             writer.write(out);
-            session.onFileSend(message.header);
-            /*
-            StreamingMetrics.totalOutgoingBytes.inc(totalBytesTransferred);
-            metrics.outgoingBytes.inc(totalBytesTransferred);
-            */
+            session.fileSent(message.header);
         }
     };
 

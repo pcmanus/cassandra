@@ -76,14 +76,14 @@ public class StreamingTransferTest extends SchemaLoader
     @Test
     public void testEmptyStreamPlan() throws Exception
     {
-        StreamResultFuture futureResult = new StreamPlan(OperationType.BOOTSTRAP).execute();
+        StreamResultFuture futureResult = new StreamPlan("StreamingTransferTest").execute();
         final UUID planId = futureResult.planId;
         Futures.addCallback(futureResult, new FutureCallback<StreamState>()
         {
             public void onSuccess(StreamState result)
             {
                 assert planId.equals(result.planId);
-                assert result.type == OperationType.BOOTSTRAP;
+                assert result.description.equals("StreamingTransferTest");
                 assert result.sessions.isEmpty();
             }
 
@@ -105,14 +105,14 @@ public class StreamingTransferTest extends SchemaLoader
         ranges.add(new Range<>(p.getMinimumToken(), p.getToken(ByteBufferUtil.bytes("key1"))));
         ranges.add(new Range<>(p.getToken(ByteBufferUtil.bytes("key2")), p.getMinimumToken()));
 
-        StreamResultFuture futureResult = new StreamPlan(OperationType.BOOTSTRAP)
+        StreamResultFuture futureResult = new StreamPlan("StreamingTransferTest")
                                                   .requestRanges(LOCAL, "Keyspace2", ranges)
                                                   .execute();
 
         UUID planId = futureResult.planId;
         StreamState result = futureResult.get();
         assert planId.equals(result.planId);
-        assert result.type == OperationType.BOOTSTRAP;
+        assert result.description.equals("StreamingTransferTest");
 
         // we should have completed session with empty transfer
         assert result.sessions.size() == 1;
@@ -183,7 +183,7 @@ public class StreamingTransferTest extends SchemaLoader
 
     private void transfer(SSTableReader sstable, List<Range<Token>> ranges) throws Exception
     {
-        new StreamPlan(OperationType.BOOTSTRAP).transferFiles(LOCAL, ranges, Collections.singleton(sstable)).execute().get();
+        new StreamPlan("StreamingTransferTest").transferFiles(LOCAL, ranges, Collections.singleton(sstable)).execute().get();
     }
 
     /**
@@ -338,7 +338,7 @@ public class StreamingTransferTest extends SchemaLoader
         // Acquiring references, transferSSTables needs it
         sstable.acquireReference();
         sstable2.acquireReference();
-        new StreamPlan(OperationType.BOOTSTRAP).transferFiles(LOCAL, ranges, Arrays.asList(sstable, sstable2)).execute().get();
+        new StreamPlan("StreamingTransferTest").transferFiles(LOCAL, ranges, Arrays.asList(sstable, sstable2)).execute().get();
 
         // confirm that the sstables were transferred and registered and that 2 keys arrived
         ColumnFamilyStore cfstore = Table.open(tablename).getColumnFamilyStore(cfname);
@@ -392,7 +392,7 @@ public class StreamingTransferTest extends SchemaLoader
         if (!SSTableReader.acquireReferences(ssTableReaders))
             throw new AssertionError();
 
-        new StreamPlan(OperationType.BOOTSTRAP).transferFiles(LOCAL, ranges, ssTableReaders).execute().get();
+        new StreamPlan("StreamingTransferTest").transferFiles(LOCAL, ranges, ssTableReaders).execute().get();
 
         // check that only two keys were transferred
         for (Map.Entry<DecoratedKey,String> entry : Arrays.asList(first, last))

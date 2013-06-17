@@ -26,35 +26,38 @@ import org.apache.cassandra.streaming.StreamSession;
 
 /**
  * StreamMessage is an abstract base class that every messages in streaming protocol inherit.
+ *
+ * Every message carries message type({@link Type}) and streaming protocol version byte.
  */
 public abstract class StreamMessage
 {
-    public static void serialize(StreamMessage message, WritableByteChannel out, StreamSession session) throws IOException
+    /** Streaming protocol version */
+    public static final int CURRENT_VERSION = 1;
+
+    public static void serialize(StreamMessage message, WritableByteChannel out, int version, StreamSession session) throws IOException
     {
-        // message type
         ByteBuffer buff = ByteBuffer.allocate(1);
+        // message type
         buff.put(message.type.type);
         buff.flip();
         out.write(buff);
-        message.type.serializer.serialize(message, out, session);
+        message.type.serializer.serialize(message, out, version, session);
     }
 
-    public static StreamMessage deserialize(ReadableByteChannel in, StreamSession session) throws IOException
+    public static StreamMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
     {
         ByteBuffer buff = ByteBuffer.allocate(1);
         in.read(buff);
         buff.flip();
-        byte typeByte = buff.get();
-        Type type = Type.get(typeByte);
-        return type.serializer.deserialize(in, session);
+        Type type = Type.get(buff.get());
+        return type.serializer.deserialize(in, version, session);
     }
 
     /** StreamMessage serializer */
     public static interface Serializer<V extends StreamMessage>
     {
-        // TODO should we generalize session?
-        V deserialize(ReadableByteChannel in, StreamSession session) throws IOException;
-        void serialize(V message, WritableByteChannel out, StreamSession session) throws IOException;
+        V deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException;
+        void serialize(V message, WritableByteChannel out, int version, StreamSession session) throws IOException;
     }
 
     /** StreamMessage types */
@@ -80,6 +83,7 @@ public abstract class StreamMessage
         public final int priority;
         public final Serializer<StreamMessage> serializer;
 
+        @SuppressWarnings("unchecked")
         private Type(int type, int priority, Serializer serializer)
         {
             this.type = (byte) type;

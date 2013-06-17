@@ -27,31 +27,38 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 
-import org.apache.cassandra.streaming.messages.StreamSummary;
-
 /**
  * Stream session info.
  */
 public final class SessionInfo implements Serializable
 {
     public final InetAddress peer;
-
     /** Immutable collection of receiving summaries */
     public final Collection<StreamSummary> receivingSummaries;
-
     /** Immutable collection of sending summaries*/
     public final Collection<StreamSummary> sendingSummaries;
+    /** Current session state */
+    public final StreamSession.State state;
 
     private final Map<String, ProgressInfo> receivingFiles;
     private final Map<String, ProgressInfo> sendingFiles;
 
-    public SessionInfo(InetAddress peer, Collection<StreamSummary> receivingSummaries, Collection<StreamSummary> sendingSummaries)
+    public SessionInfo(InetAddress peer,
+                       Collection<StreamSummary> receivingSummaries,
+                       Collection<StreamSummary> sendingSummaries,
+                       StreamSession.State state)
     {
         this.peer = peer;
         this.receivingSummaries = ImmutableSet.copyOf(receivingSummaries);
         this.sendingSummaries = ImmutableSet.copyOf(sendingSummaries);
         this.receivingFiles = new HashMap<>();
         this.sendingFiles = new HashMap<>();
+        this.state = state;
+    }
+
+    public boolean isFailed()
+    {
+        return state == StreamSession.State.FAILED;
     }
 
     /**
@@ -63,7 +70,7 @@ public final class SessionInfo implements Serializable
     {
         assert peer.equals(newProgress.peer);
 
-        Map<String, ProgressInfo> currentFiles = newProgress.direction == StreamEvent.Direction.IN
+        Map<String, ProgressInfo> currentFiles = newProgress.direction == ProgressInfo.Direction.IN
                                                     ? receivingFiles : sendingFiles;
         currentFiles.put(newProgress.fileName, newProgress);
     }

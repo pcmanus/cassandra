@@ -34,7 +34,7 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 public final class StreamResultFuture extends AbstractFuture<StreamState>
 {
     public final UUID planId;
-    public final OperationType type;
+    public final String description;
     private final List<StreamEventHandler> eventListeners = Collections.synchronizedList(new ArrayList<StreamEventHandler>());
     private final AtomicInteger remainingSession;
     private final Map<InetAddress, SessionInfo> sessionStates = new NonBlockingHashMap<>();
@@ -45,13 +45,13 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
      * Constructor is package private. You need to use {@link StreamPlan#execute()} to get the instance.
      *
      * @param planId Stream plan ID
-     * @param type Stream operation type
+     * @param description Stream description
      * @param numberOfSessions number of sessions to wait for complete
      */
-    StreamResultFuture(UUID planId, OperationType type, int numberOfSessions)
+    StreamResultFuture(UUID planId, String description, int numberOfSessions)
     {
         this.planId = planId;
-        this.type = type;
+        this.description = description;
         this.remainingSession = new AtomicInteger(numberOfSessions);
         // if there is no session to listen to, we immediately set result for returning
         if (numberOfSessions == 0)
@@ -69,7 +69,7 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
      */
     public StreamState getCurrentState()
     {
-        return new StreamState(planId, type, ImmutableSet.copyOf(sessionStates.values()));
+        return new StreamState(planId, description, ImmutableSet.copyOf(sessionStates.values()));
     }
 
     @Override
@@ -87,37 +87,41 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
         return planId.hashCode();
     }
 
+    void handleSessionPrepared(StreamSession session)
+    {
+        SessionInfo sessionInfo = session.getSessionInfo();
+        StreamEvent.SessionPreparedEvent event = new StreamEvent.SessionPreparedEvent(planId, sessionInfo);
+        sessionStates.put(sessionInfo.peer, sessionInfo);
+        fireStreamEvent(event);
+    }
+
     void handleSessionComplete(StreamSession session)
     {
-        remainingSession.decrementAndGet();
+        SessionInfo sessionInfo = session.getSessionInfo();
+        sessionStates.put(sessionInfo.peer, sessionInfo);
         fireStreamEvent(new StreamEvent.SessionCompleteEvent(session));
         maybeComplete();
     }
 
+    public void handleProgress(ProgressInfo progress)
+    {
+        sessionStates.get(progress.peer).updateProgress(progress);
+        fireStreamEvent(new StreamEvent.ProgressEvent(planId, progress));
+    }
+
     void fireStreamEvent(StreamEvent event)
     {
-        // update hold status
-        switch (event.eventType)
-        {
-            case STREAM_PREPARED:
-                SessionInfo session = ((StreamEvent.SessionPreparedEvent) event).session;
-                sessionStates.put(session.peer, session);
-                break;
-            case FILE_PROGRESS:
-                StreamEvent.ProgressEvent pe = (StreamEvent.ProgressEvent) event;
-                sessionStates.get(pe.progress.peer).updateProgress(pe.progress);
-                break;
-        }
+        // delegate to listener
         for (StreamEventHandler listener : eventListeners)
             listener.handleStreamEvent(event);
     }
 
     private void maybeComplete()
     {
-        if (remainingSession.get() == 0)
+        if (remainingSession.decrementAndGet() == 0)
         {
             StreamState finalState = getCurrentState();
-            if (finalState.isFailed())
+            if (finalState.hasFailedSession())
                 setException(new StreamException(finalState, "Stream failed"));
             else
                 set(finalState);

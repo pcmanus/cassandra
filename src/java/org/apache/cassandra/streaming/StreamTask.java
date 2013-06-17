@@ -19,11 +19,8 @@ package org.apache.cassandra.streaming;
 
 import java.util.UUID;
 
-import org.apache.cassandra.streaming.messages.StreamSummary;
-
 /**
- * StreamTask is an abstraction of the streaming task performed over
- * specific ColumnFamily.
+ * StreamTask is an abstraction of the streaming task performed over specific ColumnFamily.
  */
 public abstract class StreamTask
 {

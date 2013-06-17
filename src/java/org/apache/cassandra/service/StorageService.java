@@ -789,7 +789,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         logger.info("rebuild from dc: {}", sourceDc == null ? "(any dc)" : sourceDc);
 
-        RangeStreamer streamer = new RangeStreamer(tokenMetadata, FBUtilities.getBroadcastAddress(), OperationType.REBUILD);
+        RangeStreamer streamer = new RangeStreamer(tokenMetadata, FBUtilities.getBroadcastAddress(), "Rebuild");
         streamer.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(FailureDetector.instance));
         if (sourceDc != null)
             streamer.addSourceFilter(new RangeStreamer.SingleDatacenterFilter(DatabaseDescriptor.getEndpointSnitch(), sourceDc));
@@ -1792,7 +1792,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
         }
 
-        StreamPlan stream = new StreamPlan(OperationType.RESTORE_REPLICA_COUNT);
+        StreamPlan stream = new StreamPlan("Restore replica count");
         for (final String table : rangesToFetch.keySet())
         {
             for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : rangesToFetch.get(table))
@@ -2733,7 +2733,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             Token token = StorageService.getPartitioner().getMinimumToken();
             List<Range<Token>> ranges = Collections.singletonList(new Range<Token>(token, token));
 
-            return new StreamPlan(OperationType.HINTS).transferRanges(hintsDestinationHost,
+            return new StreamPlan("Hints").transferRanges(hintsDestinationHost,
                                                                       Table.SYSTEM_KS,
                                                                       ranges,
                                                                       SystemTable.HINTS_CF)
@@ -2821,7 +2821,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     private class RangeRelocator
     {
-        private StreamPlan streamPlan = new StreamPlan(OperationType.BOOTSTRAP);
+        private StreamPlan streamPlan = new StreamPlan("Bootstrap");
 
         private RangeRelocator(Collection<Token> tokens, List<String> tables)
         {
@@ -3414,7 +3414,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             sessionsToStreamByTable.put(keyspace, rangesPerEndpoint);
         }
 
-        StreamPlan streamPlan = new StreamPlan(OperationType.UNBOOTSTRAP);
+        StreamPlan streamPlan = new StreamPlan("Unbootstrap");
         for (Map.Entry<String, Map<InetAddress, List<Range<Token>>>> entry : sessionsToStreamByTable.entrySet())
         {
             final String table = entry.getKey();

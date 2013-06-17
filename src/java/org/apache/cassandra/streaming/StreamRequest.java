@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming.messages;
+package org.apache.cassandra.streaming;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -26,15 +26,13 @@ import java.util.HashSet;
 import java.util.List;
 
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.io.ISerializer;
-import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.io.IVersionedSerializer;
 
 public class StreamRequest
 {
-    public static final ISerializer<StreamRequest> serializer = new StreamRequestSerializer();
+    public static final IVersionedSerializer<StreamRequest> serializer = new StreamRequestSerializer();
 
     public final String keyspace;
     public final Collection<Range<Token>> ranges;
@@ -47,26 +45,33 @@ public class StreamRequest
         this.columnFamilies.addAll(columnFamilies);
     }
 
-    public static class StreamRequestSerializer implements ISerializer<StreamRequest>
+    public static class StreamRequestSerializer implements IVersionedSerializer<StreamRequest>
     {
-        public void serialize(StreamRequest request, DataOutput out) throws IOException
+        public void serialize(StreamRequest request, DataOutput out, int version) throws IOException
         {
             out.writeUTF(request.keyspace);
             out.writeInt(request.ranges.size());
             for (Range<Token> range : request.ranges)
-                AbstractBounds.serializer.serialize(range, out, MessagingService.current_version);
+            {
+                Token.serializer.serialize(range.left, out);
+                Token.serializer.serialize(range.right, out);
+            }
             out.writeInt(request.columnFamilies.size());
             for (String cf : request.columnFamilies)
                 out.writeUTF(cf);
         }
 
-        public StreamRequest deserialize(DataInput in) throws IOException
+        public StreamRequest deserialize(DataInput in, int version) throws IOException
         {
             String keyspace = in.readUTF();
             int rangeCount = in.readInt();
             List<Range<Token>> ranges = new ArrayList<>(rangeCount);
             for (int i = 0; i < rangeCount; i++)
-                ranges.add((Range<Token>) AbstractBounds.serializer.deserialize(in, MessagingService.current_version));
+            {
+                Token left = Token.serializer.deserialize(in);
+                Token right = Token.serializer.deserialize(in);
+                ranges.add(new Range<>(left, right));
+            }
             int cfCount = in.readInt();
             List<String> columnFamilies = new ArrayList<>(cfCount);
             for (int i = 0; i < cfCount; i++)
@@ -74,15 +79,18 @@ public class StreamRequest
             return new StreamRequest(keyspace, ranges, columnFamilies);
         }
 
-        public long serializedSize(StreamRequest request, TypeSizes type)
+        public long serializedSize(StreamRequest request, int version)
         {
-            int size = type.sizeof(request.keyspace);
-            size += type.sizeof(request.ranges.size());
+            int size = TypeSizes.NATIVE.sizeof(request.keyspace);
+            size += TypeSizes.NATIVE.sizeof(request.ranges.size());
             for (Range<Token> range : request.ranges)
-                size += AbstractBounds.serializer.serializedSize(range, MessagingService.current_version);
-            size += type.sizeof(request.columnFamilies.size());
+            {
+                size += Token.serializer.serializedSize(range.left, TypeSizes.NATIVE);
+                size += Token.serializer.serializedSize(range.right, TypeSizes.NATIVE);
+            }
+            size += TypeSizes.NATIVE.sizeof(request.columnFamilies.size());
             for (String cf : request.columnFamilies)
-                size += type.sizeof(cf);
+                size += TypeSizes.NATIVE.sizeof(cf);
             return size;
         }
     }

@@ -89,7 +89,7 @@ public class StreamReader
             {
                 writeRow(writer, in, cfs);
                 // TODO move this to BytesReadTracker
-                session.onStreamProgress(desc, StreamEvent.Direction.IN, in.getBytesRead(), totalSize);
+                session.progress(desc, ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
             }
             return writer.closeAndOpenReader();
         }

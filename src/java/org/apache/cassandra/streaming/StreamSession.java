@@ -20,12 +20,10 @@ package org.apache.cassandra.streaming;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.Future;
 
 import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +38,7 @@ import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.metrics.StreamingMetrics;
 import org.apache.cassandra.streaming.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
@@ -79,7 +78,6 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     private static final Logger logger = LoggerFactory.getLogger(StreamSession.class);
 
     public final InetAddress peer;
-    public final RateLimiter limiter;
 
     // should not be null when session is started
     private StreamResultFuture streamResult;
@@ -90,21 +88,23 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     private final Map<UUID, StreamTransferTask> transfers = new HashMap<>();
     // data receivers, filled after receiving prepare message
     private final Map<UUID, StreamReceiveTask> receivers = new HashMap<>();
+    private final StreamingMetrics metrics;
 
     public final ConnectionHandler handler;
 
     private int retries;
 
-    // TODO state management
     public static enum State
     {
-        INIT, PREPARING, STREAMING, COMPLETED,
+        INITIALIZING,
+        PREPARING,
+        STREAMING,
+        WAIT_COMPLETE,
+        COMPLETE,
+        FAILED,
     }
 
-    private State state = State.INIT;
-
-    private volatile boolean completed = false;
-    private volatile boolean peerCompleted = false;
+    private volatile State state = State.INITIALIZING;
 
     /**
      * Create new streaming session with the peer.
@@ -115,24 +115,30 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     {
         this.peer = peer;
         this.handler = new ConnectionHandler(this);
-        this.limiter = StreamManager.getRateLimiter(peer);
+        this.metrics = StreamingMetrics.get(peer);
     }
 
     /**
      * Create streaming session from established connection.
      *
      * @param socket established connection
+     * @param protocolVersion Streaming protocol verison
      */
-    public StreamSession(Socket socket)
+    public StreamSession(Socket socket, int protocolVersion)
     {
         this.peer = socket.getInetAddress();
-        this.handler = new ConnectionHandler(this, socket);
-        this.limiter = StreamManager.getRateLimiter(peer);
+        this.handler = new ConnectionHandler(this, socket, protocolVersion);
+        this.metrics = StreamingMetrics.get(peer);
     }
 
     public UUID planId()
     {
         return streamResult == null ? null : streamResult.planId;
+    }
+
+    public String description()
+    {
+        return streamResult == null ? null : streamResult.description;
     }
 
     /**
@@ -227,17 +233,16 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
 
     /**
      * Start this stream session.
-     * <p>
-     * When this session is created on the initiator node,
      */
     public void run()
     {
-        assert streamResult != null : "No operation is associated with this session";
+        assert streamResult != null : "No result is associated with this session";
 
         try
         {
             if (handler.isConnected())
             {
+                // if this session is created from remote...
                 handler.start();
             }
             else
@@ -245,6 +250,7 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
                 if (requests.isEmpty() && transfers.isEmpty())
                 {
                     logger.debug("Session does not have any tasks.");
+                    state(State.COMPLETE);
                     streamResult.handleSessionComplete(this);
                 }
                 else
@@ -260,13 +266,31 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     }
 
     /**
+     * Set current state to {@code newState}.
+     *
+     * @param newState new state to set
+     */
+    public void state(State newState)
+    {
+        state = newState;
+    }
+
+    /**
+     * @return current state
+     */
+    public State state()
+    {
+        return state;
+    }
+
+    /**
      * Return if this session completed successfully.
      *
      * @return true if session completed successfully.
      */
     public boolean isSuccess()
     {
-        return completed && peerCompleted;
+        return state == State.COMPLETE;
     }
 
     public void messageReceived(StreamMessage message)
@@ -279,7 +303,7 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
                 break;
 
             case FILE:
-                onFileReceive((FileMessage) message);
+                receive((FileMessage) message);
                 break;
 
             case RETRY:
@@ -292,7 +316,7 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
                 break;
 
             case SESSION_FAILED:
-                onSessionFailedReceived();
+                sessionFailed();
                 break;
         }
     }
@@ -304,10 +328,10 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
      */
     public void onConnect()
     {
-        state = State.PREPARING;
-
         logger.debug("Connected. Sending prepare...");
+
         // send prepare message
+        state(State.PREPARING);
         PrepareMessage prepare = new PrepareMessage();
         prepare.requests.addAll(requests);
         for (StreamTransferTask task : transfers.values())
@@ -329,7 +353,9 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
      */
     public void onError(Throwable e)
     {
-        logger.error("onError", e);
+        state(State.FAILED);
+
+        logger.error("Streaming error occurred", e);
         // send session failure message
         handler.sendMessage(new SessionFailedMessage());
         // fail session
@@ -343,6 +369,7 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     {
         logger.debug("Start preparing this session (" + requests.size() + " requests, " + summaries.size() + " columnfamilies receiving)");
         // prepare tasks
+        state(State.PREPARING);
         for (StreamRequest request : requests)
             addTransferRanges(request.keyspace, request.ranges, request.columnFamilies, true); // always flush on stream request
         for (StreamSummary summary : summaries)
@@ -357,10 +384,12 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
             handler.sendMessage(prepare);
         }
 
-        maybeCompleted();
-
-        logger.debug("Prepare complete. Start streaming files.");
-        startStreamingFiles();
+        // if there are files to stream
+        if (!maybeCompleted())
+        {
+            logger.debug("Prepare complete. Start streaming files.");
+            startStreamingFiles();
+        }
     }
 
     /**
@@ -368,8 +397,10 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
      *
      * @param header sent header
      */
-    public void onFileSend(FileMessageHeader header)
+    public void fileSent(FileMessageHeader header)
     {
+        StreamingMetrics.totalOutgoingBytes.inc(header.size());
+        metrics.outgoingBytes.inc(header.size());
         transfers.get(header.cfId).complete(header.sequenceNumber);
     }
 
@@ -378,14 +409,17 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
      *
      * @param message received file
      */
-    public void onFileReceive(FileMessage message)
+    public void receive(FileMessage message)
     {
+        StreamingMetrics.totalIncomingBytes.inc(message.header.size());
+        metrics.incomingBytes.inc(message.header.size());
         receivers.get(message.header.cfId).receive(message.sstable);
     }
 
-    public void onStreamProgress(Descriptor desc, StreamEvent.Direction direction, long bytes, long total)
+    public void progress(Descriptor desc, ProgressInfo.Direction direction, long bytes, long total)
     {
-        fireStreamEvent(new StreamEvent.ProgressEvent(this, desc.filenameFor(Component.DATA), direction, bytes, total));
+        ProgressInfo progress = new ProgressInfo(peer, desc.filenameFor(Component.DATA), direction, bytes, total);
+        streamResult.handleProgress(progress);
     }
 
     /**
@@ -401,25 +435,27 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     }
 
     /**
-     * Call back on receiving {@code StreamMessage.Type.COMPLETE} message.
+     * Check if session is completed on receiving {@code StreamMessage.Type.COMPLETE} message.
      */
     public synchronized void complete()
     {
-        peerCompleted = true;
-        logger.debug("complete this:" + completed + ", peer:" + peerCompleted);
-        if (this.completed)
+        if (state == State.WAIT_COMPLETE)
         {
+            state(State.COMPLETE);
             handler.close();
             streamResult.handleSessionComplete(this);
+        }
+        else
+        {
+            state(State.WAIT_COMPLETE);
         }
     }
 
     /**
      * Call back on receiving {@code StreamMessage.Type.SESSION_FAILED} message.
      */
-    public synchronized void onSessionFailedReceived()
+    public synchronized void sessionFailed()
     {
-        logger.debug("onSessionReceived");
         handler.close();
         streamResult.handleSessionComplete(this);
     }
@@ -434,20 +470,18 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
             handler.sendMessage(new RetryMessage(header.cfId, header.sequenceNumber));
     }
 
-    public List<StreamSummary> getReceivingSummaries()
+    /**
+     * @return Current snapshot of this session info.
+     */
+    public SessionInfo getSessionInfo()
     {
-        List<StreamSummary> summaries = Lists.newArrayList();
+        List<StreamSummary> receivingSummaries = Lists.newArrayList();
         for (StreamTask receiver : receivers.values())
-            summaries.add(receiver.getSummary());
-        return summaries;
-    }
-
-    public List<StreamSummary> getTransferSummaries()
-    {
-        List<StreamSummary> summaries = Lists.newArrayList();
+            receivingSummaries.add(receiver.getSummary());
+        List<StreamSummary> transferSummaries = Lists.newArrayList();
         for (StreamTask transfer : transfers.values())
-            summaries.add(transfer.getSummary());
-        return summaries;
+            transferSummaries.add(transfer.getSummary());
+        return new SessionInfo(peer, receivingSummaries, transferSummaries, state);
     }
 
     public synchronized void taskCompleted(StreamReceiveTask completedTask)
@@ -460,33 +494,6 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     {
         transfers.remove(completedTask.cfId);
         maybeCompleted();
-    }
-
-    private void maybeCompleted()
-    {
-        logger.debug((receivers.size() + transfers.size()) + " remaining...");
-        if (receivers.isEmpty() && transfers.isEmpty())
-        {
-            this.completed = true;
-            logger.debug("onAllTaskComplete this:" + completed + ", peer:" + peerCompleted);
-            handler.sendMessage(new CompleteMessage());
-            if (peerCompleted)
-            {
-                handler.close();
-                streamResult.handleSessionComplete(this);
-            }
-        }
-    }
-
-    public ByteBuffer createStreamInitMessage(int version)
-    {
-        StreamInitMessage message = new StreamInitMessage(streamResult.planId, streamResult.type);
-        return message.createMessage(false, version);
-    }
-
-    protected void fireStreamEvent(StreamEvent event)
-    {
-        streamResult.fireStreamEvent(event);
     }
 
     public void onJoin(InetAddress endpoint, EndpointState epState) {}
@@ -513,8 +520,31 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
         if (phi < 2 * DatabaseDescriptor.getPhiConvictThreshold())
             return;
 
+        state(State.FAILED);
         streamResult.handleSessionComplete(this);
     }
+
+    private boolean maybeCompleted()
+    {
+        boolean completed = receivers.isEmpty() && transfers.isEmpty();
+        if (completed)
+        {
+            if (state == State.WAIT_COMPLETE)
+            {
+                state(State.COMPLETE);
+                handler.close();
+                streamResult.handleSessionComplete(this);
+            }
+            else
+            {
+                // notify peer that this session is completed
+                handler.sendMessage(new CompleteMessage());
+                state(State.WAIT_COMPLETE);
+            }
+        }
+        return completed;
+    }
+
 
     /**
      * Flushes matching column families from the given keyspace, or all columnFamilies
@@ -538,15 +568,15 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
 
     private void startStreamingFiles()
     {
-        state = State.STREAMING;
+        streamResult.handleSessionPrepared(this);
 
-        fireStreamEvent(new StreamEvent.SessionPreparedEvent(this));
+        state(State.STREAMING);
         for (StreamTransferTask task : transfers.values())
         {
             if (task.getFileMessages().size() > 0)
                 handler.sendMessages(task.getFileMessages());
             else
-                taskCompleted(task);
+                taskCompleted(task); // there is no file to send
         }
     }
 }

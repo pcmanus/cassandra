@@ -29,27 +29,6 @@ public abstract class StreamEvent
         FILE_PROGRESS,
     }
 
-    /**
-     * Direction of the stream.
-     */
-    public static enum Direction
-    {
-        OUT(0),
-        IN(1);
-
-        public final byte code;
-
-        private Direction(int code)
-        {
-            this.code = (byte) code;
-        }
-
-        public static Direction fromByte(byte direction)
-        {
-            return direction == 0 ? OUT : IN;
-        }
-    }
-
     public final Type eventType;
     public final UUID planId;
 
@@ -76,10 +55,10 @@ public abstract class StreamEvent
     {
         public final ProgressInfo progress;
 
-        public ProgressEvent(StreamSession session, String fileName, Direction direction, long currentBytes, long totalBytes)
+        public ProgressEvent(UUID planId, ProgressInfo progress)
         {
-            super(Type.FILE_PROGRESS, session.planId());
-            this.progress = new ProgressInfo(session.peer, fileName, direction, currentBytes, totalBytes);
+            super(Type.FILE_PROGRESS, planId);
+            this.progress = progress;
         }
 
         @Override
@@ -93,10 +72,10 @@ public abstract class StreamEvent
     {
         public final SessionInfo session;
 
-        public SessionPreparedEvent(StreamSession session)
+        public SessionPreparedEvent(UUID planId, SessionInfo session)
         {
-            super(Type.STREAM_PREPARED, session.planId());
-            this.session = new SessionInfo(session.peer, session.getReceivingSummaries(), session.getTransferSummaries());
+            super(Type.STREAM_PREPARED, planId);
+            this.session = session;
         }
     }
 }

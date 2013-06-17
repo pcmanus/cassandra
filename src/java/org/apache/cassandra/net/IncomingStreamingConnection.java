@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.streaming.StreamPlan;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
+import org.apache.cassandra.streaming.messages.StreamMessage;
 
 /**
  * Thread to consume stream init messages.
@@ -50,15 +51,14 @@ public class IncomingStreamingConnection extends Thread
     {
         try
         {
-            // TODO versioning
-            if (version == MessagingService.current_version)
+            if (version == StreamMessage.CURRENT_VERSION)
             {
                 DataInput input = new DataInputStream(socket.getInputStream());
                 StreamInitMessage init = StreamInitMessage.serializer.deserialize(input, version);
 
-                new StreamPlan(init.operationType).planId(init.planId)
-                                                  .bind(socket)
-                                                  .execute();
+                new StreamPlan(init.planId).description(init.description)
+                                           .bind(socket, version)
+                                           .execute();
             }
             else
             {

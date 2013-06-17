@@ -30,23 +30,23 @@ import com.google.common.collect.Iterables;
 public class StreamState implements Serializable
 {
     public final UUID planId;
-    public final OperationType type;
+    public final String description;
     public final Set<SessionInfo> sessions;
 
-    public StreamState(UUID planId, OperationType type, Set<SessionInfo> sessions)
+    public StreamState(UUID planId, String description, Set<SessionInfo> sessions)
     {
         this.planId = planId;
-        this.type = type;
+        this.description = description;
         this.sessions = sessions;
     }
 
-    public boolean isFailed()
+    public boolean hasFailedSession()
     {
         return Iterables.any(sessions, new Predicate<SessionInfo>()
         {
-            public boolean apply(SessionInfo input)
+            public boolean apply(SessionInfo session)
             {
-                return false;
+                return session.isFailed();
             }
         });
     }

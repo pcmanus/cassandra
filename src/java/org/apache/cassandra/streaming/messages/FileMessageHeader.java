@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.compress.CompressionInfo;
@@ -37,7 +37,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
  */
 public class FileMessageHeader
 {
-    public static ISerializer<FileMessageHeader> serializer = new FileMessageHeaderSerializer();
+    public static IVersionedSerializer<FileMessageHeader> serializer = new FileMessageHeaderSerializer();
 
     public final UUID cfId;
     public final int sequenceNumber;
@@ -99,11 +99,11 @@ public class FileMessageHeader
         return result;
     }
 
-    static class FileMessageHeaderSerializer implements ISerializer<FileMessageHeader>
+    static class FileMessageHeaderSerializer implements IVersionedSerializer<FileMessageHeader>
     {
-        public void serialize(FileMessageHeader header, DataOutput out) throws IOException
+        public void serialize(FileMessageHeader header, DataOutput out, int version) throws IOException
         {
-            UUIDSerializer.serializer.serialize(header.cfId, out, MessagingService.current_version);
+            UUIDSerializer.serializer.serialize(header.cfId, out, version);
             out.writeInt(header.sequenceNumber);
             out.writeUTF(header.version);
             out.writeLong(header.estimatedKeys);
@@ -114,27 +114,38 @@ public class FileMessageHeader
                 out.writeLong(section.left);
                 out.writeLong(section.right);
             }
-            CompressionInfo.serializer.serialize(header.compressionInfo, out, MessagingService.current_version);
+            CompressionInfo.serializer.serialize(header.compressionInfo, out, version);
         }
 
-        public FileMessageHeader deserialize(DataInput in) throws IOException
+        public FileMessageHeader deserialize(DataInput in, int version) throws IOException
         {
             UUID cfId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             int sequenceNumber = in.readInt();
-            String version = in.readUTF();
+            String sstableVersion = in.readUTF();
             long estimatedKeys = in.readLong();
             int count = in.readInt();
             List<Pair<Long, Long>> sections = new ArrayList<>(count);
             for (int k = 0; k < count; k++)
                 sections.add(Pair.create(in.readLong(), in.readLong()));
             CompressionInfo compressionInfo = CompressionInfo.serializer.deserialize(in, MessagingService.current_version);
-            return new FileMessageHeader(cfId, sequenceNumber, version, estimatedKeys, sections, compressionInfo);
+            return new FileMessageHeader(cfId, sequenceNumber, sstableVersion, estimatedKeys, sections, compressionInfo);
         }
 
-        public long serializedSize(FileMessageHeader header, TypeSizes type)
+        public long serializedSize(FileMessageHeader header, int version)
         {
-            // TODO
-            return 0;
+            long size = UUIDSerializer.serializer.serializedSize(header.cfId, version);
+            size += TypeSizes.NATIVE.sizeof(header.sequenceNumber);
+            size += TypeSizes.NATIVE.sizeof(header.version);
+            size += TypeSizes.NATIVE.sizeof(header.estimatedKeys);
+
+            size += TypeSizes.NATIVE.sizeof(header.sections.size());
+            for (Pair<Long, Long> section : header.sections)
+            {
+                size += TypeSizes.NATIVE.sizeof(section.left);
+                size += TypeSizes.NATIVE.sizeof(section.right);
+            }
+            size += CompressionInfo.serializer.serializedSize(header.compressionInfo, version);
+            return size;
         }
     }
 }

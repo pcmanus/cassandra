@@ -27,14 +27,37 @@ import com.google.common.base.Objects;
  */
 public class ProgressInfo implements Serializable
 {
+    /**
+     * Direction of the stream.
+     */
+    public static enum Direction
+    {
+        OUT(0),
+        IN(1);
+
+        public final byte code;
+
+        private Direction(int code)
+        {
+            this.code = (byte) code;
+        }
+
+        public static Direction fromByte(byte direction)
+        {
+            return direction == 0 ? OUT : IN;
+        }
+    }
+
     public final InetAddress peer;
     public final String fileName;
-    public final StreamEvent.Direction direction;
+    public final Direction direction;
     public final long currentBytes;
     public final long totalBytes;
 
-    public ProgressInfo(InetAddress peer, String fileName, StreamEvent.Direction direction, long currentBytes, long totalBytes)
+    public ProgressInfo(InetAddress peer, String fileName, Direction direction, long currentBytes, long totalBytes)
     {
+        assert totalBytes > 0;
+
         this.peer = peer;
         this.fileName = fileName;
         this.direction = direction;
@@ -78,8 +101,9 @@ public class ProgressInfo implements Serializable
     {
         StringBuilder sb = new StringBuilder(fileName);
         sb.append(" ").append(currentBytes);
-        sb.append(" of ").append(totalBytes).append(" bytes ");
-        sb.append(direction == StreamEvent.Direction.OUT ? "sent to " : "received from ");
+        sb.append("/").append(totalBytes).append(" bytes");
+        sb.append("(").append(currentBytes*100/totalBytes).append("%) ");
+        sb.append(direction == Direction.OUT ? "sent to " : "received from ");
         sb.append(peer);
         return sb.toString();
     }

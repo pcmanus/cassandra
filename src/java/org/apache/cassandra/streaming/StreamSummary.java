@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming.messages;
+package org.apache.cassandra.streaming;
 
 import java.io.DataInput;
 import java.io.DataOutput;
@@ -26,7 +26,8 @@ import java.util.UUID;
 import com.google.common.base.Objects;
 
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
@@ -34,7 +35,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
  */
 public class StreamSummary implements Serializable
 {
-    public static final ISerializer<StreamSummary> serializer = new StreamSummarySerializer();
+    public static final IVersionedSerializer<StreamSummary> serializer = new StreamSummarySerializer();
 
     public final UUID cfId;
 
@@ -77,28 +78,29 @@ public class StreamSummary implements Serializable
         return sb.toString();
     }
 
-    public static class StreamSummarySerializer implements ISerializer<StreamSummary>
+    public static class StreamSummarySerializer implements IVersionedSerializer<StreamSummary>
     {
-        public void serialize(StreamSummary summary, DataOutput out) throws IOException
+        // arbitrary version is fine for UUIDSerializer for now...
+        public void serialize(StreamSummary summary, DataOutput out, int version) throws IOException
         {
-            UUIDSerializer.serializer.serialize(summary.cfId, out, 0);
+            UUIDSerializer.serializer.serialize(summary.cfId, out, MessagingService.current_version);
             out.writeInt(summary.files);
             out.writeLong(summary.totalSize);
         }
 
-        public StreamSummary deserialize(DataInput in) throws IOException
+        public StreamSummary deserialize(DataInput in, int version) throws IOException
         {
-            UUID cfId = UUIDSerializer.serializer.deserialize(in, 0);
+            UUID cfId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             int files = in.readInt();
             long totalSize = in.readLong();
             return new StreamSummary(cfId, files, totalSize);
         }
 
-        public long serializedSize(StreamSummary summary, TypeSizes type)
+        public long serializedSize(StreamSummary summary, int version)
         {
-            long size = UUIDSerializer.serializer.serializedSize(summary.cfId, 0);
-            size += type.sizeof(summary.files);
-            size += type.sizeof(summary.totalSize);
+            long size = UUIDSerializer.serializer.serializedSize(summary.cfId, MessagingService.current_version);
+            size += TypeSizes.NATIVE.sizeof(summary.files);
+            size += TypeSizes.NATIVE.sizeof(summary.totalSize);
             return size;
         }
     }
