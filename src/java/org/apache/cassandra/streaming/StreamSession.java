@@ -42,6 +42,7 @@ import org.apache.cassandra.metrics.StreamingMetrics;
 import org.apache.cassandra.streaming.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.UUIDGen;
 
 /**
  * StreamSession is the center of Cassandra Streaming API.
@@ -77,6 +78,7 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamSession.class);
 
+    public final UUID id = UUIDGen.getTimeUUID();
     public final InetAddress peer;
 
     // should not be null when session is started
@@ -139,6 +141,13 @@ public class StreamSession implements Runnable, IEndpointStateChangeSubscriber, 
     public String description()
     {
         return streamResult == null ? null : streamResult.description;
+    }
+
+    public static StreamSession startReceivingStreamAsync(UUID planId, String description, Socket socket, int version)
+    {
+        StreamSession session = new StreamSession(socket, version);
+        StreamResultFuture.startStreamingAsync(planId, description, Collections.singleton(session));
+        return session;
     }
 
     /**

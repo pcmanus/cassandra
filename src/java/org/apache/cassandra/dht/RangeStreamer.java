@@ -35,6 +35,7 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.streaming.StreamPlan;
+import org.apache.cassandra.streaming.StreamResultFuture;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -214,7 +215,7 @@ public class RangeStreamer
         return toFetch;
     }
 
-    public void fetch()
+    public StreamResultFuture fetchAsync()
     {
         for (Map.Entry<String, Map.Entry<InetAddress, Collection<Range<Token>>>> entry : toFetch.entries())
         {
@@ -227,13 +228,6 @@ public class RangeStreamer
             streamPlan.requestRanges(source, keyspace, ranges);
         }
 
-        try
-        {
-            streamPlan.execute().get();
-        }
-        catch (Exception e)
-        {
-            throw new AssertionError(e);
-        }
+        return streamPlan.execute();
     }
 }

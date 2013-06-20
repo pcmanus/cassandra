@@ -797,7 +797,20 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (String table : Schema.instance.getNonSystemTables())
             streamer.addRanges(table, getLocalRanges(table));
 
-        streamer.fetch();
+        try
+        {
+            streamer.fetchAsync().get();
+        }
+        catch (InterruptedException e)
+        {
+            throw new RuntimeException("Interrupted while waiting on rebuild streaming");
+        }
+        catch (ExecutionException e)
+        {
+            // This is used exclusively through JMX, so log the full trace but only throw a simple RTE
+            logger.error("Error while rebuilding node", e.getCause());
+            throw new RuntimeException("Error while rebuilding node: " + e.getCause().getMessage());
+        }
     }
 
     public void setStreamThroughputMbPerSec(int value)
@@ -1814,6 +1827,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             public void onFailure(Throwable t)
             {
+                logger.warn("Streaming to restore replica count failed", t);
+                // We still want to send the notification
+                sendReplicationNotification(notifyEndpoint);
             }
         });
     }

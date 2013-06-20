@@ -20,11 +20,21 @@ package org.apache.cassandra.streaming;
 import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.AbstractFuture;
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+
+import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.gms.FailureDetector;
+import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * StreamResultFuture asynchronously returns the final {@link StreamState} of execution of {@link StreamPlan}.
@@ -33,10 +43,15 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
  */
 public final class StreamResultFuture extends AbstractFuture<StreamState>
 {
+    // Executor that establish the streaming connection. Once we're connected to the other end, the rest of the streaming
+    // is directly handled by the ConnectionHandler incoming and outgoing threads.
+    private static final DebuggableThreadPoolExecutor streamExecutor = DebuggableThreadPoolExecutor.createWithFixedPoolSize("StreamConnectionEstablisher",
+                                                                                                                            FBUtilities.getAvailableProcessors());
+
     public final UUID planId;
     public final String description;
     private final List<StreamEventHandler> eventListeners = Collections.synchronizedList(new ArrayList<StreamEventHandler>());
-    private final AtomicInteger remainingSession;
+    private final Set<UUID> ongoingSessions;
     private final Map<InetAddress, SessionInfo> sessionStates = new NonBlockingHashMap<>();
 
     /**
@@ -48,14 +63,37 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
      * @param description Stream description
      * @param numberOfSessions number of sessions to wait for complete
      */
-    StreamResultFuture(UUID planId, String description, int numberOfSessions)
+    private StreamResultFuture(UUID planId, String description, Set<UUID> sessions)
     {
         this.planId = planId;
         this.description = description;
-        this.remainingSession = new AtomicInteger(numberOfSessions);
+        this.ongoingSessions = sessions;
+
         // if there is no session to listen to, we immediately set result for returning
-        if (numberOfSessions == 0)
+        if (sessions.isEmpty())
             set(getCurrentState());
+    }
+
+    static StreamResultFuture startStreamingAsync(UUID planId, String description, Collection<StreamSession> sessions)
+    {
+        Set<UUID> sessionsIds = new HashSet<>(sessions.size());
+        for (StreamSession session : sessions)
+            sessionsIds.add(session.id);
+
+        StreamResultFuture future = new StreamResultFuture(planId, description, sessionsIds);
+
+        StreamManager.instance.register(future);
+
+        // start sessions
+        for (StreamSession session : sessions)
+        {
+            session.register(future);
+            // register to gossiper/FD to fail on node failure
+            Gossiper.instance.register(session);
+            FailureDetector.instance.registerFailureDetectionEventListener(session);
+            streamExecutor.submit(session);
+        }
+        return future;
     }
 
     public void addEventListener(StreamEventHandler listener)
@@ -97,10 +135,13 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
 
     void handleSessionComplete(StreamSession session)
     {
+        Gossiper.instance.unregister(session);
+        FailureDetector.instance.unregisterFailureDetectionEventListener(session);
+
         SessionInfo sessionInfo = session.getSessionInfo();
         sessionStates.put(sessionInfo.peer, sessionInfo);
         fireStreamEvent(new StreamEvent.SessionCompleteEvent(session));
-        maybeComplete();
+        maybeComplete(session.id);
     }
 
     public void handleProgress(ProgressInfo progress)
@@ -116,9 +157,10 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
             listener.handleStreamEvent(event);
     }
 
-    private void maybeComplete()
+    private synchronized void maybeComplete(UUID sessionId)
     {
-        if (remainingSession.decrementAndGet() == 0)
+        ongoingSessions.remove(sessionId);
+        if (ongoingSessions.isEmpty())
         {
             StreamState finalState = getCurrentState();
             if (finalState.hasFailedSession())

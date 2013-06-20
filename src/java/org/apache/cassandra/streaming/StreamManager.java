@@ -29,6 +29,7 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.RateLimiter;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -38,7 +39,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
  *
  * All stream operation should be created through this class to track streaming status and progress.
  */
-public class StreamManager implements StreamManagerMBean, FutureCallback<StreamState>
+public class StreamManager implements StreamManagerMBean
 {
     public static final StreamManager instance = new StreamManager();
 
@@ -66,12 +67,7 @@ public class StreamManager implements StreamManagerMBean, FutureCallback<StreamS
     /** Currently running stream plans. Removed after completion/failure. */
     private final Map<UUID, StreamResultFuture> currentStreams = new NonBlockingHashMap<>();
 
-    public List<UUID> getCurrentStreamPlans()
-    {
-        return Lists.newArrayList(currentStreams.keySet());
-    }
-
-    public Set<StreamState> getCurrentStatus()
+    public Set<StreamState> getCurrentStreams()
     {
         return Sets.newHashSet(Iterables.transform(currentStreams.values(), new Function<StreamResultFuture, StreamState>()
         {
@@ -82,22 +78,17 @@ public class StreamManager implements StreamManagerMBean, FutureCallback<StreamS
         }));
     }
 
-    public void onSuccess(StreamState finalState)
+    public void register(final StreamResultFuture result)
     {
-        currentStreams.remove(finalState.planId);
-    }
-
-    public void onFailure(Throwable t)
-    {
-        if (t instanceof StreamException)
+        // Make sure we remove the stream on completion (whether successful or not)
+        result.addListener(new Runnable()
         {
-            currentStreams.remove(((StreamException) t).finalState.planId);
-        }
-    }
+            public void run()
+            {
+                currentStreams.remove(result.planId);
+            }
+        }, MoreExecutors.sameThreadExecutor());
 
-    public void register(StreamResultFuture result)
-    {
-        Futures.addCallback(result, this);
         currentStreams.put(result.planId, result);
     }
 }

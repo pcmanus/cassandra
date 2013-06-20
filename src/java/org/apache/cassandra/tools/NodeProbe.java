@@ -547,7 +547,7 @@ public class NodeProbe
 
     public Set<StreamState> getStreamStatus()
     {
-        return streamProxy.getCurrentStatus();
+        return streamProxy.getCurrentStreams();
     }
 
     public String getOperationMode()

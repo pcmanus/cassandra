@@ -20,20 +20,10 @@ package org.apache.cassandra.streaming;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.*;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-
-import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
-import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.gms.FailureDetector;
-import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
@@ -43,33 +33,13 @@ import org.apache.cassandra.utils.UUIDGen;
  */
 public class StreamPlan
 {
-    // global stream operation manager
-    private static final StreamManager MANAGER = StreamManager.instance;
-    private static final ListeningExecutorService streamExecutor = MoreExecutors.listeningDecorator(
-                                                       new DebuggableThreadPoolExecutor(FBUtilities.getAvailableProcessors(),
-                                                                                        Integer.MAX_VALUE,
-                                                                                        TimeUnit.MILLISECONDS,
-                                                                                        new LinkedBlockingQueue<Runnable>(),
-                                                                                        new NamedThreadFactory("StreamSession")));
-
-    // plan ID will be auto generated when not given
-    private UUID planId;
-    private String description;
+    private final UUID planId = UUIDGen.getTimeUUID();
+    private final String description;
 
     // sessions per InetAddress of the other end.
     private final Map<InetAddress, StreamSession> sessions = new HashMap<>();
 
     private boolean flushBeforeTransfer = true;
-
-    /**
-     * Start building stream plan of specific planId.
-     *
-     * @param planId Plan ID
-     */
-    public StreamPlan(UUID planId)
-    {
-        this.planId = planId;
-    }
 
     /**
      * Start building stream plan.
@@ -79,18 +49,6 @@ public class StreamPlan
     public StreamPlan(String description)
     {
         this.description = description;
-    }
-
-    /**
-     * Add description to this plan.
-     *
-     * @param description description to set
-     * @return this object for chaining
-     */
-    public StreamPlan description(String description)
-    {
-        this.description = description;
-        return this;
     }
 
     /**
@@ -166,16 +124,6 @@ public class StreamPlan
         return this;
     }
 
-    public StreamPlan bind(Socket socket, int protocolVersion)
-    {
-        if (!sessions.containsKey(socket.getInetAddress()))
-        {
-            StreamSession session = new StreamSession(socket, protocolVersion);
-            sessions.put(socket.getInetAddress(), session);
-        }
-        return this;
-    }
-
     /**
      * @return true if this plan has no plan to execute
      */
@@ -191,22 +139,7 @@ public class StreamPlan
      */
     public StreamResultFuture execute()
     {
-        if (planId == null)
-            planId = UUIDGen.getTimeUUID();
-        StreamResultFuture streamResult = new StreamResultFuture(planId, description, sessions.size());
-
-        MANAGER.register(streamResult);
-
-        // start sessions
-        for (StreamSession session : sessions.values())
-        {
-            session.register(streamResult);
-            // register to gossiper/FD to fail on node failure
-            Gossiper.instance.register(session);
-            FailureDetector.instance.registerFailureDetectionEventListener(session);
-            streamExecutor.submit(session);
-        }
-        return streamResult;
+        return StreamResultFuture.startStreamingAsync(planId, description, sessions.values());
     }
 
     /**

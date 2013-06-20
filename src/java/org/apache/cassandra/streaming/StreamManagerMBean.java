@@ -26,9 +26,7 @@ public interface StreamManagerMBean
     public static final String OBJECT_NAME = "org.apache.cassandra.net:type=StreamManager";
 
     /**
-     * @return List of plan IDs of currently running stream plans
+     * Returns the current state of all ongoing streams.
      */
-    List<UUID> getCurrentStreamPlans();
-
-    Set<StreamState> getCurrentStatus();
+    Set<StreamState> getCurrentStreams();
 }

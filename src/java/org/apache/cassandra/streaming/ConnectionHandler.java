@@ -177,24 +177,21 @@ public class ConnectionHandler
      */
     public void sendMessages(Collection<? extends StreamMessage> messages)
     {
-        if (isConnected())
-        {
-            for (StreamMessage message : messages)
-                sendMessage(message);
-        }
+        for (StreamMessage message : messages)
+            sendMessage(message);
     }
 
     public void sendMessage(StreamMessage message)
     {
-        if (isConnected())
-            outgoing.enqueue(message);
+        assert isConnected();
+        outgoing.enqueue(message);
     }
 
     abstract static class MessageHandler implements Runnable
     {
         protected final StreamSession session;
         protected final int protocolVersion;
-        protected final AtomicBoolean terminated = new AtomicBoolean(false);
+        private volatile boolean terminated;
 
         protected MessageHandler(StreamSession session, int protocolVersion)
         {
@@ -204,12 +201,12 @@ public class ConnectionHandler
 
         public void terminate()
         {
-            terminated.set(true);
+            terminated = true;
         }
 
         public boolean terminated()
         {
-            return terminated.get();
+            return terminated;
         }
     }
 
@@ -234,8 +231,8 @@ public class ConnectionHandler
                 {
                     // receive message
                     StreamMessage message = StreamMessage.deserialize(in, protocolVersion, session);
-                    if (message != null)
-                        session.messageReceived(message);
+                    assert message != null;
+                    session.messageReceived(message);
                 }
                 catch (SocketException e)
                 {
@@ -296,13 +293,10 @@ public class ConnectionHandler
                         if (next.type == StreamMessage.Type.SESSION_FAILED)
                             terminate();
                     }
-                    else if (terminated())
-                    {
-                        break;
-                    }
                 }
                 catch (SocketException e)
                 {
+                    session.onError(e);
                     terminate();
                 }
                 catch (InterruptedException | IOException e)

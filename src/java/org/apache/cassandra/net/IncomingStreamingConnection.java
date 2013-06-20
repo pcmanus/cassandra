@@ -25,7 +25,7 @@ import java.net.Socket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.streaming.StreamPlan;
+import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 
@@ -51,20 +51,14 @@ public class IncomingStreamingConnection extends Thread
     {
         try
         {
-            if (version == StreamMessage.CURRENT_VERSION)
-            {
-                DataInput input = new DataInputStream(socket.getInputStream());
-                StreamInitMessage init = StreamInitMessage.serializer.deserialize(input, version);
-
-                new StreamPlan(init.planId).description(init.description)
-                                           .bind(socket, version)
-                                           .execute();
-            }
-            else
-            {
-                // streaming connections are per-session and have a fixed version.  we can't do anything with a wrong-version stream connection, so drop it.
+            // streaming connections are per-session and have a fixed version.  we can't do anything with a wrong-version stream connection, so drop it.
+            if (version != StreamMessage.CURRENT_VERSION)
                 throw new IOException(String.format("Received stream using protocol version %d (my version %d). Terminating connection", version, MessagingService.current_version));
-            }
+
+            DataInput input = new DataInputStream(socket.getInputStream());
+            StreamInitMessage init = StreamInitMessage.serializer.deserialize(input, version);
+
+            StreamSession.startReceivingStreamAsync(init.planId, init.description, socket, version);
         }
         catch (IOException e)
         {

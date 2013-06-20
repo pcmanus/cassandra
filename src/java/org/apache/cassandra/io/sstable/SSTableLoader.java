@@ -117,7 +117,7 @@ public class SSTableLoader implements StreamEventHandler
     {
         client.init(keyspace);
 
-        StreamPlan plan = new StreamPlan("Bulk load");
+        StreamPlan plan = new StreamPlan("Bulk Load");
         Collection<SSTableReader> sstables = openSSTables();
         if (sstables.isEmpty())
         {
