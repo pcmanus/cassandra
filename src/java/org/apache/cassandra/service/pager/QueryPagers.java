@@ -23,7 +23,9 @@ import java.util.List;
 
 import com.google.common.collect.AbstractIterator;
 
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.filter.ColumnCounter;
 import org.apache.cassandra.db.filter.NamesQueryFilter;
 import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
@@ -157,49 +159,26 @@ public class QueryPagers
     }
 
     /**
-     * Convenience method that return a column iterator on a given slice of a row, but page underneath.
-     *
-     * The hasNext() and next() method of the returned iterator might throw RuntimeException whose cause
-     * can be the underlying RequestValidationException or RequestExecutionException.
+     * Convenience method that count (live) cells/rows for a given slice of a row, but page underneath.
      */
-    public static Iterator<Column> pageQuery(String keyspace,
-                                             String columnFamily,
-                                             ByteBuffer key,
-                                             SliceQueryFilter filter,
-                                             ConsistencyLevel consistencyLevel,
-                                             final int pageSize,
-                                             long now)
+    public static int countPaged(String keyspace,
+                                String columnFamily,
+                                ByteBuffer key,
+                                SliceQueryFilter filter,
+                                ConsistencyLevel consistencyLevel,
+                                final int pageSize,
+                                long now) throws RequestValidationException, RequestExecutionException
     {
         SliceFromReadCommand command = new SliceFromReadCommand(keyspace, key, columnFamily, now, filter);
         final SliceQueryPager pager = new SliceQueryPager(command, consistencyLevel, false);
 
-        return new AbstractIterator<Column>()
+        ColumnCounter counter = filter.columnCounter(Schema.instance.getComparator(keyspace, columnFamily), now);
+        while (!pager.isExhausted())
         {
-            private Iterator<Column> currentPage;
-
-            protected Column computeNext()
-            {
-                if (currentPage != null && currentPage.hasNext())
-                    return currentPage.next();
-
-                if (pager.isExhausted())
-                    return endOfData();
-
-                try
-                {
-                    List<Row> next = pager.fetchPage(pageSize);
-                    currentPage = next.get(0).cf.iterator();
-                    return computeNext();
-                }
-                catch (RequestExecutionException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (RequestValidationException e)
-                {
-                    throw new RuntimeException(e);
-                }
-            }
-        };
+            List<Row> next = pager.fetchPage(pageSize);
+            if (!next.isEmpty())
+                counter.countAll(next.get(0).cf);
+        }
+        return counter.live();
     }
 }

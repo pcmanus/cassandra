@@ -279,7 +279,7 @@ Table of Contents
 4.1.4. QUERY
 
   Performs a CQL query. The body of the message must be:
-    <query><consistency>[<n><value_1>...<value_n>]
+    <query><consistency><result_page_size>[<n><value_1>...<value_n>]
   where:
     - <query> the query, [long string].
     - <consistency> is the [consistency] level for the operation.
@@ -651,9 +651,9 @@ Table of Contents
 
 7. Result paging
 
-  The protocol allows for paging the result of queries. For that, the QUERY,
-  EXECUTE and BATCH messages have a <result_page_size> value that indicate the
-  desired page size in CQL3 rows.
+  The protocol allows for paging the result of queries. For that, the QUERY and
+  EXECUTE messages have a <result_page_size> value that indicate the desired
+  page size in CQL3 rows.
 
   If a positive value is provided for <result_page_size>, the result set of the
   RESULT message returned for the query will contain at most the

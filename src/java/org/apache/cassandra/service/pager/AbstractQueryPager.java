@@ -65,15 +65,15 @@ abstract class AbstractQueryPager implements QueryPager
     public List<Row> fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException
     {
         if (isExhausted())
-            return Collections.<Row>emptyList();
+            return Collections.emptyList();
 
         int currentPageSize = nextPageSize(pageSize);
-        List<Row> rows = queryNextPage(currentPageSize, consistencyLevel, localQuery);
+        List<Row> rows = filterEmpty(queryNextPage(currentPageSize, consistencyLevel, localQuery));
 
         if (rows.isEmpty())
         {
             exhausted = true;
-            return Collections.<Row>emptyList();
+            return Collections.emptyList();
         }
 
         int liveCount = getPageLiveCount(rows);
@@ -86,21 +86,46 @@ abstract class AbstractQueryPager implements QueryPager
 
         // If it's not the first query and the first column is the last one returned (likely
         // but not certain since paging can race with deletes/expiration), then remove the
-        // first column. Otherwise, we can return what we got as is.
+        // first column.
         if (containsPreviousLast(rows.get(0)))
         {
             rows = discardFirst(rows);
+            remaining++;
         }
+        // Otherwise, if 'lastWasRecorded', we queried for one more than the page size,
+        // so if the page was is full, trim the last entry
         else if (lastWasRecorded && !exhausted)
         {
             // We've asked for one more than necessary
             rows = discardLast(rows);
+            remaining++;
         }
 
-        if (!exhausted)
+        if (!isExhausted())
             lastWasRecorded = recordLast(rows.get(rows.size() - 1));
 
         return rows;
+    }
+
+    private List<Row> filterEmpty(List<Row> result)
+    {
+        boolean doCopy = false;
+        for (Row row : result)
+        {
+            if (row.cf == null || row.cf.getColumnCount() == 0)
+            {
+                List<Row> newResult = new ArrayList<Row>(result.size() - 1);
+                for (Row row2 : result)
+                {
+                    if (row.cf == null || row.cf.getColumnCount() == 0)
+                        continue;
+
+                    newResult.add(row2);
+                }
+                return newResult;
+            }
+        }
+        return result;
     }
 
     public boolean isExhausted()
@@ -198,7 +223,6 @@ abstract class AbstractQueryPager implements QueryPager
         int liveCount = columnCounter().countAll(cf).live();
 
         ColumnCounter counter = columnCounter();
-        Iterator<Column> iter = cf.iterator();
         // Discard the first live
         for (Column c : cf)
         {

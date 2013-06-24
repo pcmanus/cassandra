@@ -543,24 +543,22 @@ public class CassandraServer implements Cassandra.Iface
                 pageSize = COUNT_PAGE_SIZE;
             }
 
-            SliceQueryFilter filter = predicate.slice_range == null
-                                    ? new IdentityQueryFilter()
-                                    : toInternalFilter(cfs.metadata, column_parent, predicate.slice_range);
+            SliceRange sliceRange = predicate.slice_range == null
+                                  ? new SliceRange(ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBufferUtil.EMPTY_BYTE_BUFFER, false, Integer.MAX_VALUE)
+                                  : predicate.slice_range;
+            SliceQueryFilter filter = toInternalFilter(cfs.metadata, column_parent, sliceRange);
 
-            int count = 0;
-            Iterator<org.apache.cassandra.db.Column> iter = QueryPagers.pageQuery(keyspace,
-                                                                                  column_parent.column_family,
-                                                                                  key,
-                                                                                  filter,
-                                                                                  ThriftConversion.fromThrift(consistency_level),
-                                                                                  COUNT_PAGE_SIZE,
-                                                                                  timestamp);
-            while (iter.hasNext())
-            {
-                if (!iter.next().isMarkedForDelete(timestamp))
-                    count++;
-            }
-            return count;
+            return QueryPagers.countPaged(keyspace,
+                                          column_parent.column_family,
+                                          key,
+                                          filter,
+                                          ThriftConversion.fromThrift(consistency_level),
+                                          pageSize,
+                                          timestamp);
+        }
+        catch (RequestExecutionException e)
+        {
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
@@ -765,8 +763,7 @@ public class CassandraServer implements Cassandra.Iface
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null; // makes javac happy -- it can't tell that rethrow always throws
+            throw ThriftConversion.rethrow(e);
         }
         finally
         {
@@ -1863,8 +1860,7 @@ public class CassandraServer implements Cassandra.Iface
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null;
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
@@ -1898,8 +1894,7 @@ public class CassandraServer implements Cassandra.Iface
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null;
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
@@ -1979,8 +1974,7 @@ public class CassandraServer implements Cassandra.Iface
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null;
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
@@ -2027,8 +2021,7 @@ public class CassandraServer implements Cassandra.Iface
         }
         catch (RequestExecutionException e)
         {
-            ThriftConversion.rethrow(e);
-            return null;
+            throw ThriftConversion.rethrow(e);
         }
         catch (RequestValidationException e)
         {
