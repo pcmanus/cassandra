@@ -152,12 +152,12 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
         else
         {
             assert atom instanceof RangeTombstone;
-            delete(new DeletionInfo((RangeTombstone)atom, getComparator()));
+            delete((RangeTombstone)atom);
         }
     }
 
     /**
-     * Clear this column map, removing all columns.
+     * Clear this column family, removing all columns and deletion info.
      */
     public abstract void clear();
 
@@ -170,12 +170,10 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
     public abstract void setDeletionInfo(DeletionInfo info);
 
     public abstract void delete(DeletionInfo info);
-    public abstract void maybeResetDeletionTimes(int gcBefore);
+    public abstract void delete(DeletionTime deletionTime);
+    protected abstract void delete(RangeTombstone tombstone);
 
-    public void delete(DeletionTime deletionTime)
-    {
-        delete(new DeletionInfo(deletionTime));
-    }
+    public abstract void maybeResetDeletionTimes(int gcBefore);
 
     /**
      * Adds a column to this column map.
@@ -392,7 +390,7 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
 
     public ColumnStats getColumnStats()
     {
-        long minTimestampSeen = deletionInfo() == DeletionInfo.LIVE ? Long.MAX_VALUE : deletionInfo().minTimestamp();
+        long minTimestampSeen = deletionInfo().isLive() ? Long.MAX_VALUE : deletionInfo().minTimestamp();
         long maxTimestampSeen = deletionInfo().maxTimestamp();
         StreamingHistogram tombstones = new StreamingHistogram(SSTable.TOMBSTONE_HISTOGRAM_BIN_SIZE);
         int maxLocalDeletionTime = Integer.MIN_VALUE;
@@ -441,7 +439,7 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
     public boolean hasIrrelevantData(int gcBefore)
     {
         // Do we have gcable deletion infos?
-        if (!deletionInfo().purge(gcBefore).equals(deletionInfo()))
+        if (deletionInfo().hasIrrelevantData(gcBefore))
             return true;
 
         // Do we have colums that are either deleted by the container or gcable tombstone?
