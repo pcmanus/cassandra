@@ -20,6 +20,7 @@ package org.apache.cassandra.transport.messages;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +39,31 @@ import org.apache.cassandra.utils.UUIDGen;
 
 public class ExecuteMessage extends Message.Request
 {
+    public static enum Flag
+    {
+        // The order of that enum matters!!
+        PAGE_SIZE;
+
+        public static EnumSet<Flag> deserialize(int flags)
+        {
+            EnumSet<Flag> set = EnumSet.noneOf(Flag.class);
+            Flag[] values = Flag.values();
+            for (int n = 0; n < values.length; n++)
+            {
+                if ((flags & (1 << n)) != 0)
+                    set.add(values[n]);
+            }
+            return set;
+        }
+
+        public static int serialize(EnumSet<Flag> flags)
+        {
+            int i = 0;
+            for (Flag flag : flags)
+                i |= 1 << flag.ordinal();
+            return i;
+        }
+    }
     public static final Message.Codec<ExecuteMessage> codec = new Message.Codec<ExecuteMessage>()
     {
         public ExecuteMessage decode(ChannelBuffer body, int version)
@@ -53,7 +79,11 @@ public class ExecuteMessage extends Message.Request
 
             int resultPageSize = -1;
             if (version >= 2)
-                resultPageSize = body.readInt();
+            {
+                EnumSet<Flag> flags = Flag.deserialize((int)body.readByte());
+                if (flags.contains(Flag.PAGE_SIZE))
+                    resultPageSize = body.readInt();
+            }
             return new ExecuteMessage(id, values, consistency, resultPageSize);
         }
 
@@ -65,7 +95,21 @@ public class ExecuteMessage extends Message.Request
             //   - The values
             //   - options
             int vs = msg.values.size();
-            CBUtil.BufferBuilder builder = new CBUtil.BufferBuilder(4, 0, vs);
+
+            EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
+            if (msg.resultPageSize >= 0)
+                flags.add(Flag.PAGE_SIZE);
+
+            assert flags.isEmpty() || version >= 2;
+
+            int nbBuff = 3;
+            if (version >= 2)
+            {
+                nbBuff++; // the flags themselves
+                if (flags.contains(Flag.PAGE_SIZE))
+                    nbBuff++;
+            }
+            CBUtil.BufferBuilder builder = new CBUtil.BufferBuilder(nbBuff, 0, vs);
             builder.add(CBUtil.bytesToCB(msg.statementId.bytes));
             builder.add(CBUtil.shortToCB(vs));
 
@@ -75,9 +119,12 @@ public class ExecuteMessage extends Message.Request
 
             builder.add(CBUtil.consistencyLevelToCB(msg.consistency));
 
-            assert msg.resultPageSize == -1 || version >= 2;
             if (version >= 2)
-                builder.add(CBUtil.intToCB(msg.resultPageSize));
+            {
+                builder.add(CBUtil.byteToCB((byte)Flag.serialize(flags)));
+                if (flags.contains(Flag.PAGE_SIZE))
+                    builder.add(CBUtil.intToCB(msg.resultPageSize));
+            }
             return builder.build();
         }
     };

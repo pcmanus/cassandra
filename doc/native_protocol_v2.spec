@@ -279,15 +279,19 @@ Table of Contents
 4.1.4. QUERY
 
   Performs a CQL query. The body of the message must be:
-    <query><consistency><result_page_size>[<n><value_1>...<value_n>]
+    <query><consistency><flags>[<result_page_size>][<n><value_1>...<value_n>]
   where:
+    - <flags> is a [byte] whose bits indicates which options are present in the
+      remainder of the message. A flag is set if the bit corresponding to its
+      `mask` is set. Supported flags are, given there mask:
+        0x01: Page size. In that case, <result_page_size> is an [int]
+              controlling the desired page size of the result (in CQL3 rows).
+              See the section on paging (Section 7) for more details.
+        0x02: Values. In that case, a [short] <n> followed by <n> [bytes]
+              values are provided. Those value are used for bound variables in
+              the query.
     - <query> the query, [long string].
     - <consistency> is the [consistency] level for the operation.
-    - <result_page_size> is an [int] controlling the desired page size of the
-      result (in CQL3 rows). A negative value disable paging of the result. See the
-      section on paging (Section 7) for more details.
-    - optional: <n> [short], the number of following values.
-    - optional: <value_1>...<value_n> are [bytes] to use for bound variables in the query.
 
   Note that the consistency is ignored by some queries (USE, CREATE, ALTER,
   TRUNCATE, ...).
@@ -308,7 +312,7 @@ Table of Contents
 4.1.6. EXECUTE
 
   Executes a prepared query. The body of the message must be:
-    <id><n><value_1>....<value_n><consistency><result_page_size>
+    <id><n><value_1>....<value_n><consistency><flags><result_page_size>
   where:
     - <id> is the prepared query ID. It's the [short bytes] returned as a
       response to a PREPARE message.
@@ -316,9 +320,12 @@ Table of Contents
     - <value_1>...<value_n> are the [bytes] to use for bound variables in the
       prepared query.
     - <consistency> is the [consistency] level for the operation.
-    - <result_page_size> is an [int] controlling the desired page size of the
-      result (in CQL3 rows). A negative value disable paging of the result. See the
-      section on paging (Section 7) for more details.
+    - <flags> is a [byte] whose bits indicates which options are present in the
+      remainder of the message. A flag is set if the bit corresponding to its
+      `mask` is set. Supported flags are, given there mask:
+        0x01: Page size. In that case, <result_page_size> is an [int]
+              controlling the desired page size of the result (in CQL3 rows).
+              See the section on paging (Section 7) for more details.
 
   Note that the consistency is ignored by some (prepared) queries (USE, CREATE,
   ALTER, TRUNCATE, ...).
