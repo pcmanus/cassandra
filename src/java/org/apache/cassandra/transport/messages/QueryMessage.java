@@ -44,7 +44,8 @@ public class QueryMessage extends Message.Request
     {
         // The order of that enum matters!!
         PAGE_SIZE,
-        VALUES;
+        VALUES,
+        SKIP_METADATA;
 
         public static EnumSet<Flag> deserialize(int flags)
         {
@@ -76,7 +77,7 @@ public class QueryMessage extends Message.Request
 
             int resultPageSize = -1;
             List<ByteBuffer> values = Collections.emptyList();
-
+            boolean skipMetadata = false;
             if (version >= 2)
             {
                 EnumSet<Flag> flags = Flag.deserialize((int)body.readByte());
@@ -91,8 +92,10 @@ public class QueryMessage extends Message.Request
                     for (int i = 0; i < paramCount; i++)
                         values.add(CBUtil.readValue(body));
                 }
+
+                skipMetadata = flags.contains(Flag.SKIP_METADATA);
             }
-            return new QueryMessage(query, consistency, values, resultPageSize);
+            return new QueryMessage(query, consistency, values, resultPageSize, skipMetadata);
         }
 
         public ChannelBuffer encode(QueryMessage msg, int version)
@@ -110,6 +113,8 @@ public class QueryMessage extends Message.Request
                 flags.add(Flag.PAGE_SIZE);
             if (vs > 0)
                 flags.add(Flag.VALUES);
+            if (msg.skipMetadata)
+                flags.add(Flag.SKIP_METADATA);
 
             assert flags.isEmpty() || version >= 2 : "Version 1 of the protocol supports no option after the consistency level";
 
@@ -145,19 +150,26 @@ public class QueryMessage extends Message.Request
     public final ConsistencyLevel consistency;
     public final int resultPageSize;
     public final List<ByteBuffer> values;
+    public final boolean skipMetadata;
 
     public QueryMessage(String query, ConsistencyLevel consistency)
     {
         this(query, consistency, Collections.<ByteBuffer>emptyList(), -1);
     }
 
-    public QueryMessage(String query, ConsistencyLevel consistency, List<ByteBuffer> values,  int resultPageSize)
+    public QueryMessage(String query, ConsistencyLevel consistency, List<ByteBuffer> values, int resultPageSize)
+    {
+        this(query, consistency, values, resultPageSize, false);
+    }
+
+    public QueryMessage(String query, ConsistencyLevel consistency, List<ByteBuffer> values, int resultPageSize, boolean skipMetadata)
     {
         super(Type.QUERY);
         this.query = query;
         this.consistency = consistency;
         this.resultPageSize = resultPageSize;
         this.values = values;
+        this.skipMetadata = skipMetadata;
     }
 
     public ChannelBuffer encode()

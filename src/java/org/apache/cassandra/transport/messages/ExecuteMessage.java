@@ -42,7 +42,8 @@ public class ExecuteMessage extends Message.Request
     public static enum Flag
     {
         // The order of that enum matters!!
-        PAGE_SIZE;
+        PAGE_SIZE,
+        SKIP_METADATA;
 
         public static EnumSet<Flag> deserialize(int flags)
         {
@@ -64,6 +65,7 @@ public class ExecuteMessage extends Message.Request
             return i;
         }
     }
+
     public static final Message.Codec<ExecuteMessage> codec = new Message.Codec<ExecuteMessage>()
     {
         public ExecuteMessage decode(ChannelBuffer body, int version)
@@ -78,13 +80,15 @@ public class ExecuteMessage extends Message.Request
             ConsistencyLevel consistency = CBUtil.readConsistencyLevel(body);
 
             int resultPageSize = -1;
+            boolean skipMetadata = false;
             if (version >= 2)
             {
                 EnumSet<Flag> flags = Flag.deserialize((int)body.readByte());
                 if (flags.contains(Flag.PAGE_SIZE))
                     resultPageSize = body.readInt();
+                skipMetadata = flags.contains(Flag.SKIP_METADATA);
             }
-            return new ExecuteMessage(id, values, consistency, resultPageSize);
+            return new ExecuteMessage(MD5Digest.wrap(id), values, consistency, resultPageSize, skipMetadata);
         }
 
         public ChannelBuffer encode(ExecuteMessage msg, int version)
@@ -99,6 +103,8 @@ public class ExecuteMessage extends Message.Request
             EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
             if (msg.resultPageSize >= 0)
                 flags.add(Flag.PAGE_SIZE);
+            if (msg.skipMetadata)
+                flags.add(Flag.SKIP_METADATA);
 
             assert flags.isEmpty() || version >= 2;
 
@@ -133,19 +139,21 @@ public class ExecuteMessage extends Message.Request
     public final List<ByteBuffer> values;
     public final ConsistencyLevel consistency;
     public final int resultPageSize;
+    public final boolean skipMetadata;
 
     public ExecuteMessage(byte[] statementId, List<ByteBuffer> values, ConsistencyLevel consistency, int resultPageSize)
     {
-        this(MD5Digest.wrap(statementId), values, consistency, resultPageSize);
+        this(MD5Digest.wrap(statementId), values, consistency, resultPageSize, false);
     }
 
-    public ExecuteMessage(MD5Digest statementId, List<ByteBuffer> values, ConsistencyLevel consistency, int resultPageSize)
+    public ExecuteMessage(MD5Digest statementId, List<ByteBuffer> values, ConsistencyLevel consistency, int resultPageSize, boolean skipMetadata)
     {
         super(Message.Type.EXECUTE);
         this.statementId = statementId;
         this.values = values;
         this.consistency = consistency;
         this.resultPageSize = resultPageSize;
+        this.skipMetadata = skipMetadata;
     }
 
     public ChannelBuffer encode()
