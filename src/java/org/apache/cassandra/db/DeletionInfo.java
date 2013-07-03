@@ -120,6 +120,23 @@ public class DeletionInfo
     }
 
     /**
+     * Returns a new {@link InOrderTester} in forward order.
+     */
+    InOrderTester inOrderTester()
+    {
+        return inOrderTester(false);
+    }
+
+    /**
+     * Returns a new {@link InOrderTester} given the order in which
+     * columns will be passed to it.
+     */
+    public InOrderTester inOrderTester(boolean reversed)
+    {
+        return new InOrderTester(reversed);
+    }
+
+    /**
      * Purge every tombstones that are older than {@code gcbefore}.
      *
      * @param gcBefore timestamp (in seconds) before which tombstones should
@@ -291,6 +308,45 @@ public class DeletionInfo
         public long serializedSize(DeletionInfo info, int version)
         {
             return serializedSize(info, TypeSizes.NATIVE, version);
+        }
+    }
+
+    /**
+     * This object allow testing whether a given column (name/timestamp) is deleted
+     * or not by this DeletionInfo, assuming that the column given to this
+     * object are passed in forward or reversed comparator sorted order.
+     *
+     * This is more efficient that calling DeletionInfo.isDeleted() repeatedly
+     * in that case.
+     */
+    public class InOrderTester
+    {
+        private final RangeTombstoneList.InOrderTester tester;
+        private final boolean reversed;
+
+        private InOrderTester(boolean reversed)
+        {
+            this.reversed = reversed;
+            this.tester = ranges == null || reversed ? null : ranges.inOrderTester();
+        }
+
+        public boolean isDeleted(Column column)
+        {
+            return isDeleted(column.name(), column.timestamp());
+        }
+
+        public boolean isDeleted(ByteBuffer name, long timestamp)
+        {
+            if (timestamp <= topLevel.markedForDeleteAt)
+                return true;
+
+            /*
+             * We don't optimize the reversed case for now because RangeTombstoneList
+             * is always in forward sorted order.
+             */
+            return reversed
+                 ? DeletionInfo.this.isDeleted(name, timestamp)
+                 : tester != null && tester.isDeleted(name, timestamp);
         }
     }
 }

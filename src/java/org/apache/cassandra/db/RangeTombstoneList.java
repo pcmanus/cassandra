@@ -217,11 +217,18 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>
     }
 
     /**
+     * Returns a new {@link InOrderTester}.
+     */
+    InOrderTester inOrderTester()
+    {
+        return new InOrderTester();
+    }
+
+    /**
      * Returns the DeletionTime for the tombstone overlapping {@code name} (there can't be more than one),
      * or null if {@code name} is not covered by any tombstone.
      */
-    public DeletionTime search(ByteBuffer name)
-    {
+    public DeletionTime search(ByteBuffer name) {
         int idx = searchInternal(name);
         return idx < 0 ? null : new DeletionTime(markedAts[idx], delTimes[idx]);
     }
@@ -692,6 +699,48 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>
         public long serializedSize(RangeTombstoneList tombstones, int version)
         {
             return serializedSize(tombstones, TypeSizes.NATIVE, version);
+        }
+    }
+
+    /**
+     * This object allow testing whether a given column (name/timestamp) is deleted
+     * or not by this RangeTombstoneList, assuming that the column given to this
+     * object are passed in (comparator) sorted order.
+     *
+     * This is more efficient that calling RangeTombstoneList.isDeleted() repeatedly
+     * in that case since we're able to take the sorted nature of the RangeTombstoneList
+     * into account.
+     */
+    public class InOrderTester
+    {
+        private int idx;
+
+        public boolean isDeleted(ByteBuffer name, long timestamp)
+        {
+            while (idx < size)
+            {
+                int cmp = comparator.compare(name, starts[idx]);
+                if (cmp == 0)
+                {
+                    // As for searchInternal, we need to check the previous end
+                    if (idx > 0 && comparator.compare(name, ends[idx-1]) == 0 && markedAts[idx-1] > markedAts[idx])
+                        return markedAts[idx-1] >= timestamp;
+                    else
+                        return markedAts[idx] >= timestamp;
+                }
+                else if (cmp < 0)
+                {
+                    return false;
+                }
+                else
+                {
+                    if (comparator.compare(name, ends[idx]) < 0)
+                        return markedAts[idx] >= timestamp;
+                    else
+                        idx++;
+                }
+            }
+            return false;
         }
     }
 }

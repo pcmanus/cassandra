@@ -100,12 +100,12 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
         return metadata;
     }
 
-    public void addIfRelevant(Column column, int gcBefore)
+    public void addIfRelevant(Column column, DeletionInfo.InOrderTester tester, int gcBefore)
     {
         // the column itself must be not gc-able (it is live, or a still relevant tombstone), (1)
         // and if its container is deleted, the column must be changed more recently than the container tombstone (2)
         if ((column.getLocalDeletionTime() >= gcBefore) // (1)
-            && (!deletionInfo().isDeleted(column.name(), column.timestamp())))                                // (2)
+            && (!tester.isDeleted(column.name(), column.timestamp())))                                // (2)
         {
             addColumn(column);
         }
@@ -160,6 +160,18 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
      * Clear this column family, removing all columns and deletion info.
      */
     public abstract void clear();
+
+    /**
+     * Returns a {@link DeletionInfo.InOrderTester} for the deletionInfo() of
+     * this column family. Please note that for ThreadSafe implementation of ColumnFamily,
+     * this tester will remain valid even if new tombstones are added to this ColumnFamily
+     * *as long as said addition is done in comparator order*. For AtomicSortedColumns,
+     * the tester will correspond to the state of when this method is called.
+     */
+    public DeletionInfo.InOrderTester inOrderDeletionTester()
+    {
+        return deletionInfo().inOrderTester();
+    }
 
     /**
      * Returns the factory used for this ISortedColumns implementation.
@@ -443,8 +455,9 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
             return true;
 
         // Do we have colums that are either deleted by the container or gcable tombstone?
+        DeletionInfo.InOrderTester tester = inOrderDeletionTester();
         for (Column column : this)
-            if (deletionInfo().isDeleted(column) || column.hasIrrelevantData(gcBefore))
+            if (tester.isDeleted(column) || column.hasIrrelevantData(gcBefore))
                 return true;
 
         return false;
@@ -502,4 +515,5 @@ public abstract class ColumnFamily implements Iterable<Column>, IRowCacheEntry
             return create(Schema.instance.getCFMetaData(keyspace, cfName));
         }
     }
+
 }
