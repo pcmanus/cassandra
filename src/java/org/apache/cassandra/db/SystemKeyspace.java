@@ -92,7 +92,7 @@ public class SystemKeyspace
                                                                   SCHEMA_COLUMNFAMILIES_CF,
                                                                   SCHEMA_COLUMNS_CF,
                                                                   SCHEMA_TRIGGERS_CF,
-                                                                  SCHEMA_TRIGGERS_CF);
+                                                                  SCHEMA_USER_TYPES_CF);
 
     public enum BootstrapState
     {
