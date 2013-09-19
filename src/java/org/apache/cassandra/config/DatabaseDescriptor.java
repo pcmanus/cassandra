@@ -461,6 +461,7 @@ public class DatabaseDescriptor
                 Schema.instance.load(cfm);
             Schema.instance.setKeyspaceDefinition(ksmd);
         }
+        Schema.instance.loadUserTypes();
 
         /* Load the seeds for node contact points */
         if (conf.seed_provider == null)

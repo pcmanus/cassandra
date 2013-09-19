@@ -37,8 +37,10 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.config.UTMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.AlreadyExistsException;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.*;
@@ -225,6 +227,11 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         announce(cfm.toSchema(FBUtilities.timestampMicros()));
     }
 
+    public static void announceNewType(UserType newType)
+    {
+        announce(UTMetaData.toSchema(newType, FBUtilities.timestampMicros()));
+    }
+
     public static void announceKeyspaceUpdate(KSMetaData ksm) throws ConfigurationException
     {
         ksm.validate();
@@ -251,6 +258,12 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         announce(oldCfm.toSchemaUpdate(cfm, FBUtilities.timestampMicros(), fromThrift));
     }
 
+    public static void announceTypeUpdate(UserType updatedType)
+    {
+        // We don't make a difference with a new type. DefsTable.mergeType will make sure we keep the updated version.
+        announceNewType(updatedType);
+    }
+
     public static void announceKeyspaceDrop(String ksName) throws ConfigurationException
     {
         KSMetaData oldKsm = Schema.instance.getKSMetaData(ksName);
@@ -269,6 +282,12 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
 
         logger.info(String.format("Drop ColumnFamily '%s/%s'", oldCfm.ksName, oldCfm.cfName));
         announce(oldCfm.dropFromSchema(FBUtilities.timestampMicros()));
+    }
+
+    public static void announceTypeDrop(UserType droppedType)
+    {
+        // We don't make a difference with a new type. DefsTable.mergeType will make sure we keep the updated version.
+        announce(UTMetaData.dropFromSchema(droppedType, FBUtilities.timestampMicros()));
     }
 
     /**

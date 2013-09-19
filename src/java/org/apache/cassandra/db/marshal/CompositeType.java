@@ -87,7 +87,7 @@ public class CompositeType extends AbstractCompositeType
         return ct;
     }
 
-    private CompositeType(List<AbstractType<?>> types)
+    protected CompositeType(List<AbstractType<?>> types)
     {
         this.types = ImmutableList.copyOf(types);
     }
