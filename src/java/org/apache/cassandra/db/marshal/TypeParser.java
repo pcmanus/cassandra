@@ -32,6 +32,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Parse a string containing an Type definition.
@@ -292,6 +293,60 @@ public class TypeParser
         throw new SyntaxException(String.format("Syntax error parsing '%s' at char %d: unexpected end of string", str, idx));
     }
 
+    private String stringFromHex(String hex) throws SyntaxException
+    {
+        try
+        {
+            return UTF8Type.instance.compose(ByteBufferUtil.hexToBytes(hex));
+        }
+        catch (NumberFormatException e)
+        {
+            throwSyntaxError(e.getMessage());
+            return null;
+        }
+    }
+
+    public Pair<String, List<Pair<String, AbstractType>>> getUserTypeParameters() throws SyntaxException, ConfigurationException
+    {
+
+        if (isEOS() || str.charAt(idx) != '(')
+            throw new IllegalStateException();
+
+        ++idx; // skipping '('
+
+        skipBlankAndComma();
+        String typeName = stringFromHex(readNextIdentifier());
+        List<Pair<String, AbstractType>> defs = new ArrayList<>();
+
+        while (skipBlankAndComma())
+        {
+            if (str.charAt(idx) == ')')
+            {
+                ++idx;
+                return Pair.create(typeName, defs);
+            }
+
+            String name = stringFromHex(readNextIdentifier());
+            skipBlank();
+            if (str.charAt(idx) != ':')
+                throwSyntaxError("expecting ':' token");
+            ++idx;
+            skipBlank();
+            try
+            {
+                AbstractType type = parse();
+                defs.add(Pair.create(name, type));
+            }
+            catch (SyntaxException e)
+            {
+                SyntaxException ex = new SyntaxException(String.format("Exception while parsing '%s' around char %d", str, idx));
+                ex.initCause(e);
+                throw ex;
+            }
+        }
+        throw new SyntaxException(String.format("Syntax error parsing '%s' at char %d: unexpected end of string", str, idx));
+    }
+
     private static AbstractType<?> getAbstractType(String compareWith) throws ConfigurationException
     {
         String className = compareWith.contains(".") ? compareWith : "org.apache.cassandra.db.marshal." + compareWith;
@@ -510,6 +565,21 @@ public class TypeParser
             first = false;
             sb.append(ByteBufferUtil.bytesToHex(entry.getKey())).append(":");
             entry.getValue().appendToStringBuilder(sb);
+        }
+        sb.append(')');
+        return sb.toString();
+    }
+
+    public static String stringifyUserTypeParameters(String typeName, List<String> columnNames, List<AbstractType<?>> columnTypes)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append('(').append(ByteBufferUtil.bytesToHex(UTF8Type.instance.decompose(typeName)));
+
+        for (int i = 0; i < columnNames.size(); i++)
+        {
+            sb.append(',');
+            sb.append(ByteBufferUtil.bytesToHex(UTF8Type.instance.decompose(columnNames.get(i)))).append(":");
+            sb.append(columnTypes.get(i).toString());
         }
         sb.append(')');
         return sb.toString();
