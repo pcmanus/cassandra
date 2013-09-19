@@ -259,16 +259,7 @@ public class TypeParser
                 return map;
             }
 
-            String bbHex = readNextIdentifier();
-            ByteBuffer bb = null;
-            try
-            {
-                 bb = ByteBufferUtil.hexToBytes(bbHex);
-            }
-            catch (NumberFormatException e)
-            {
-                throwSyntaxError(e.getMessage());
-            }
+            ByteBuffer bb = fromHex(readNextIdentifier());
 
             skipBlank();
             if (str.charAt(idx) != ':')
@@ -293,11 +284,11 @@ public class TypeParser
         throw new SyntaxException(String.format("Syntax error parsing '%s' at char %d: unexpected end of string", str, idx));
     }
 
-    private String stringFromHex(String hex) throws SyntaxException
+    private ByteBuffer fromHex(String hex) throws SyntaxException
     {
         try
         {
-            return UTF8Type.instance.compose(ByteBufferUtil.hexToBytes(hex));
+            return ByteBufferUtil.hexToBytes(hex);
         }
         catch (NumberFormatException e)
         {
@@ -306,7 +297,7 @@ public class TypeParser
         }
     }
 
-    public Pair<String, List<Pair<String, AbstractType>>> getUserTypeParameters() throws SyntaxException, ConfigurationException
+    public Pair<ByteBuffer, List<Pair<ByteBuffer, AbstractType>>> getUserTypeParameters() throws SyntaxException, ConfigurationException
     {
 
         if (isEOS() || str.charAt(idx) != '(')
@@ -315,8 +306,8 @@ public class TypeParser
         ++idx; // skipping '('
 
         skipBlankAndComma();
-        String typeName = stringFromHex(readNextIdentifier());
-        List<Pair<String, AbstractType>> defs = new ArrayList<>();
+        ByteBuffer typeName = fromHex(readNextIdentifier());
+        List<Pair<ByteBuffer, AbstractType>> defs = new ArrayList<>();
 
         while (skipBlankAndComma())
         {
@@ -326,7 +317,7 @@ public class TypeParser
                 return Pair.create(typeName, defs);
             }
 
-            String name = stringFromHex(readNextIdentifier());
+            ByteBuffer name = fromHex(readNextIdentifier());
             skipBlank();
             if (str.charAt(idx) != ':')
                 throwSyntaxError("expecting ':' token");
@@ -570,15 +561,15 @@ public class TypeParser
         return sb.toString();
     }
 
-    public static String stringifyUserTypeParameters(String typeName, List<String> columnNames, List<AbstractType<?>> columnTypes)
+    public static String stringifyUserTypeParameters(ByteBuffer typeName, List<ByteBuffer> columnNames, List<AbstractType<?>> columnTypes)
     {
         StringBuilder sb = new StringBuilder();
-        sb.append('(').append(ByteBufferUtil.bytesToHex(UTF8Type.instance.decompose(typeName)));
+        sb.append('(').append(ByteBufferUtil.bytesToHex(typeName));
 
         for (int i = 0; i < columnNames.size(); i++)
         {
             sb.append(',');
-            sb.append(ByteBufferUtil.bytesToHex(UTF8Type.instance.decompose(columnNames.get(i)))).append(":");
+            sb.append(ByteBufferUtil.bytesToHex(columnNames.get(i))).append(":");
             sb.append(columnTypes.get(i).toString());
         }
         sb.append(')');

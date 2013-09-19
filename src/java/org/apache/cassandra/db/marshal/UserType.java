@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.db.marshal;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,10 +36,10 @@ import org.apache.cassandra.utils.Pair;
  */
 public class UserType extends CompositeType
 {
-    public final String name;
-    public final List<String> columnNames;
+    public final ByteBuffer name;
+    public final List<ByteBuffer> columnNames;
 
-    public UserType(String name, List<String> columnNames, List<AbstractType<?>> types)
+    public UserType(ByteBuffer name, List<ByteBuffer> columnNames, List<AbstractType<?>> types)
     {
         super(types);
         this.name = name;
@@ -47,11 +48,11 @@ public class UserType extends CompositeType
 
     public static UserType getInstance(TypeParser parser) throws ConfigurationException, SyntaxException
     {
-        Pair<String, List<Pair<String, AbstractType>>> params = parser.getUserTypeParameters();
-        String name = params.left;
-        List<String> columnNames = new ArrayList<>(params.right.size());
+        Pair<ByteBuffer, List<Pair<ByteBuffer, AbstractType>>> params = parser.getUserTypeParameters();
+        ByteBuffer name = params.left;
+        List<ByteBuffer> columnNames = new ArrayList<>(params.right.size());
         List<AbstractType<?>> columnTypes = new ArrayList<>(params.right.size());
-        for (Pair<String, AbstractType> p : params.right)
+        for (Pair<ByteBuffer, AbstractType> p : params.right)
         {
             columnNames.add(p.left);
             columnTypes.add(p.right);
