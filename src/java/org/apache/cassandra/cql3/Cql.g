@@ -209,6 +209,7 @@ cqlStatement returns [ParsedStatement stmt]
     | st22=listUsersStatement          { $stmt = st22; }
     | st23=createTriggerStatement      { $stmt = st23; }
     | st24=dropTriggerStatement        { $stmt = st24; }
+    | st25=createTypeStatement         { $stmt = st25; }
     ;
 
 /*
@@ -498,6 +499,26 @@ cfamOrdering[CreateTableStatement.RawStatement expr]
     : k=cident (K_ASC | K_DESC { reversed=true;} ) { $expr.setOrdering(k, reversed); }
     ;
 
+
+/**
+ * CREATE TYPE foo (
+ *    <name1> <type1>,
+ *    <name2> <type2>,
+ *    ....
+ * )
+ */
+createTypeStatement returns [CreateTypeStatement expr]
+    @init { boolean ifNotExists = false; }
+    : K_CREATE K_TYPE (K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
+         tn=non_type_ident { $expr = new CreateTypeStatement(tn, ifNotExists); }
+         '(' typeColumns[expr] ( ',' typeColumns[expr]? )* ')'
+    ;
+
+typeColumns[CreateTypeStatement expr]
+    : k=cident v=comparatorType { $expr.addDefinition(k, v); }
+    ;
+
+
 /**
  * CREATE INDEX [IF NOT EXISTS] [indexName] ON <columnFamily> (<columnName>);
  * CREATE CUSTOM INDEX [IF NOT EXISTS] [indexName] ON <columnFamily> (<columnName>) USING <indexClass>;
@@ -769,9 +790,17 @@ collection_literal returns [Term.Raw value]
     | '{' '}' { $value = new Sets.Literal(Collections.<Term.Raw>emptyList()); }
     ;
 
+usertype_literal returns [UserTypes.Literal ut]
+    @init{ Map<ColumnIdentifier, Term.Raw> m = new HashMap<ColumnIdentifier, Term.Raw>(); }
+    @after{ $ut = new UserTypes.Literal(m); }
+    // We don't allow empty literals because that conflicts with sets/maps and is currently useless since we don't allow empty user types
+    : '{' k1=cident ':' v1=term { m.put(k1, v1); } ( ',' kn=cident ':' vn=term { m.put(kn, vn); } )* '}'
+    ;
+
 value returns [Term.Raw value]
     : c=constant           { $value = c; }
     | l=collection_literal { $value = l; }
+    | u=usertype_literal   { $value = u; }
     | K_NULL               { $value = Constants.NULL_LITERAL; }
     | ':' id=cident        { $value = newBindVariables(id); }
     | QMARK                { $value = newBindVariables(null); }
@@ -879,6 +908,7 @@ relation[List<Relation> clauses]
 comparatorType returns [CQL3Type t]
     : c=native_type     { $t = c; }
     | c=collection_type { $t = c; }
+    | id=non_type_ident  { try { $t = CQL3Type.UserDefined.create(id); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); }}
     | s=STRING_LITERAL
       {
         try {
@@ -928,12 +958,25 @@ username
     | STRING_LITERAL
     ;
 
+// Basically the same than cident, but we need to exlude existing CQL3 types
+// (which for some reason are not reserved otherwise)
+non_type_ident returns [ColumnIdentifier id]
+    : t=IDENT                    { $id = new ColumnIdentifier($t.text, false); }
+    | t=QUOTED_NAME              { $id = new ColumnIdentifier($t.text, true); }
+    | k=basic_unreserved_keyword { $id = new ColumnIdentifier(k, false); }
+    ;
+
 unreserved_keyword returns [String str]
     : u=unreserved_function_keyword     { $str = u; }
     | k=(K_TTL | K_COUNT | K_WRITETIME) { $str = $k.text; }
     ;
 
 unreserved_function_keyword returns [String str]
+    : u=basic_unreserved_keyword { $str = u; }
+    | t=native_type              { $str = t.toString(); }
+    ;
+
+basic_unreserved_keyword returns [String str]
     : k=( K_KEY
         | K_AS
         | K_CLUSTERING
@@ -958,7 +1001,6 @@ unreserved_function_keyword returns [String str]
         | K_TRIGGER
         | K_DISTINCT
         ) { $str = $k.text; }
-    | t=native_type { $str = t.toString(); }
     ;
 
 

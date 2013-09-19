@@ -328,8 +328,8 @@ public class DefsTables
 
     private static void mergeTypes(List<Row> old, List<Row> updated)
     {
-        MapDifference<String, UserType> diff = Maps.difference(UTMetaData.fromSchema(old).getAllTypes(),
-                                                               UTMetaData.fromSchema(updated).getAllTypes());
+        MapDifference<ByteBuffer, UserType> diff = Maps.difference(UTMetaData.fromSchema(old).getAllTypes(),
+                                                                   UTMetaData.fromSchema(updated).getAllTypes());
 
         // New types
         for (UserType newType : diff.entriesOnlyOnRight().values())
@@ -357,9 +357,8 @@ public class DefsTables
             }
             else
             {
-                ByteBuffer key = UTF8Type.instance.fromString(u1.name);
-                long leftTimestamp = firstTimestampOf(key, old);
-                long rightTimestamp = firstTimestampOf(key, updated);
+                long leftTimestamp = firstTimestampOf(u1.name, old);
+                long rightTimestamp = firstTimestampOf(u1.name, updated);
                 Schema.instance.loadType(leftTimestamp > rightTimestamp ? u1 : u2);
             }
         }

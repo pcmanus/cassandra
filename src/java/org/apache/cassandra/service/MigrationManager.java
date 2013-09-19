@@ -357,10 +357,8 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
         logger.debug("Truncating schema tables...");
 
         // truncate schema tables
-        SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_KEYSPACES_CF).truncateBlocking();
-        SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF).truncateBlocking();
-        SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_COLUMNS_CF).truncateBlocking();
-        SystemKeyspace.schemaCFS(SystemKeyspace.SCHEMA_TRIGGERS_CF).truncateBlocking();
+        for (String cf : SystemKeyspace.allSchemaCfs)
+            SystemKeyspace.schemaCFS(cf).truncateBlocking();
 
         logger.debug("Clearing local schema keyspace definitions...");
 

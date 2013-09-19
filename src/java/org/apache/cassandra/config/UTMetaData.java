@@ -35,7 +35,7 @@ import org.apache.cassandra.utils.UUIDGen;
  */
 public final class UTMetaData
 {
-    private final Map<String, UserType> userTypes = new HashMap<>();
+    private final Map<ByteBuffer, UserType> userTypes = new HashMap<>();
 
     // Only for Schema. You should generally not create instance of this, but rather use
     // the global reference Schema.instance().userTypes;
@@ -53,9 +53,13 @@ public final class UTMetaData
     {
         try
         {
-            String name = row.getString("type_name");
-            List<String> columns = row.getList("column_names", UTF8Type.instance);
+            ByteBuffer name = ByteBufferUtil.bytes(row.getString("type_name"));
+            List<String> rawColumns = row.getList("column_names", UTF8Type.instance);
             List<String> rawTypes = row.getList("column_types", UTF8Type.instance);
+
+            List<ByteBuffer> columns = new ArrayList<>(rawColumns.size());
+            for (String rawColumn : rawColumns)
+                columns.add(ByteBufferUtil.bytes(rawColumn));
 
             List<AbstractType<?>> types = new ArrayList<>(rawTypes.size());
             for (String rawType : rawTypes)
@@ -78,7 +82,7 @@ public final class UTMetaData
 
     public static RowMutation toSchema(UserType newType, long timestamp)
     {
-        RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, UTF8Type.instance.fromString(newType.name));
+        RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, newType.name);
         ColumnFamily cf = rm.addOrGet(SystemKeyspace.SCHEMA_USER_TYPES_CF);
 
         ColumnNameBuilder builder = CFMetaData.SchemaUserTypesCf.getCfDef().getColumnNameBuilder();
@@ -103,7 +107,7 @@ public final class UTMetaData
 
     public static RowMutation dropFromSchema(UserType droppedType, long timestamp)
     {
-        RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, UTF8Type.instance.fromString(droppedType.name));
+        RowMutation rm = new RowMutation(Keyspace.SYSTEM_KS, droppedType.name);
         rm.delete(SystemKeyspace.SCHEMA_USER_TYPES_CF, timestamp);
         return rm;
     }
@@ -114,12 +118,17 @@ public final class UTMetaData
             addType(type);
     }
 
-    public UserType getType(String typeName)
+    public UserType getType(ColumnIdentifier typeName)
+    {
+        return getType(typeName.key);
+    }
+
+    public UserType getType(ByteBuffer typeName)
     {
         return userTypes.get(typeName);
     }
 
-    public Map<String, UserType> getAllTypes()
+    public Map<ByteBuffer, UserType> getAllTypes()
     {
         return userTypes;
     }
