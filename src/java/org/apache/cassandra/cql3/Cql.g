@@ -262,17 +262,19 @@ selector returns [RawSelector s]
     ;
 
 unaliasedSelector returns [Selectable s]
-    : c=cident                                  { $s = c; }
-    | K_WRITETIME '(' c=cident ')'              { $s = new Selectable.WritetimeOrTTL(c, true); }
-    | K_TTL       '(' c=cident ')'              { $s = new Selectable.WritetimeOrTTL(c, false); }
-    | f=functionName args=selectionFunctionArgs { $s = new Selectable.WithFunction(f, args); }
+    @init { Selectable tmp = null; }
+    :  ( c=cident                                    { tmp = c; }
+       | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, true); }
+       | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, false); }
+       | f=functionName args=selectionFunctionArgs { tmp = new Selectable.WithFunction(f, args); }
+       ) ( '.' fi=cident { tmp = new Selectable.WithFieldSelection(tmp, fi); } )* { $s = tmp; }
     ;
 
 selectionFunctionArgs returns [List<Selectable> a]
     : '(' ')' { $a = Collections.emptyList(); }
     | '(' s1=unaliasedSelector { List<Selectable> args = new ArrayList<Selectable>(); args.add(s1); }
           ( ',' sn=unaliasedSelector { args.add(sn); } )*
-       ')' { $a = args; }
+      ')' { $a = args; }
     ;
 
 selectCountClause returns [List<RawSelector> expr]
