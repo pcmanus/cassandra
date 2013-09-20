@@ -24,6 +24,7 @@ import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
@@ -68,6 +69,21 @@ public class CreateTypeStatement extends SchemaAlteringStatement
         }
     }
 
+    public static void checkForDuplicateNames(UserType type) throws InvalidRequestException
+    {
+        for (int i = 0; i < type.types.size() - 1; i++)
+        {
+            ByteBuffer fieldName = type.columnNames.get(i);
+            for (int j = i+1; j < type.types.size(); j++)
+            {
+                if (fieldName.equals(type.columnNames.get(j)))
+                    throw new InvalidRequestException(String.format("Duplicate field name %s in type %s",
+                                                                    UTF8Type.instance.getString(fieldName),
+                                                                    UTF8Type.instance.getString(type.name)));
+            }
+        }
+    }
+
     public ResultMessage.SchemaChange.Change changeType()
     {
         return ResultMessage.SchemaChange.Change.CREATED;
@@ -76,8 +92,8 @@ public class CreateTypeStatement extends SchemaAlteringStatement
     @Override
     public String keyspace()
     {
-        // Not really a legit keyspace name, but SchemaAlteringStatement use that for schema change notification so
-        // leave that for now; TODO: we need to change that
+        // Kind of ugly, but SchemaAlteringStatement uses that for notifying change, and an empty keyspace
+        // there kind of make sense
         return "";
     }
 
@@ -100,6 +116,8 @@ public class CreateTypeStatement extends SchemaAlteringStatement
         if (Schema.instance.userTypes.getType(name.key) != null)
             return;
 
-        MigrationManager.announceNewType(createType());
+        UserType type = createType();
+        checkForDuplicateNames(type);
+        MigrationManager.announceNewType(type);
     }
 }

@@ -23,6 +23,7 @@ import java.util.List;
 
 import com.google.common.base.Objects;
 
+import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.utils.Pair;
@@ -118,6 +119,12 @@ public class UserType extends CompositeType
                 return false;
         }
         return true;
+    }
+
+    @Override
+    public CQL3Type asCQL3Type()
+    {
+        return CQL3Type.UserDefined.create(name, this);
     }
 
     @Override

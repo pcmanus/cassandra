@@ -210,6 +210,8 @@ cqlStatement returns [ParsedStatement stmt]
     | st23=createTriggerStatement      { $stmt = st23; }
     | st24=dropTriggerStatement        { $stmt = st24; }
     | st25=createTypeStatement         { $stmt = st25; }
+    | st26=alterTypeStatement          { $stmt = st26; }
+    | st27=dropTypeStatement           { $stmt = st27; }
     ;
 
 /*
@@ -590,6 +592,25 @@ alterTableStatement returns [AlterTableStatement expr]
     ;
 
 /**
+ * ALTER TYPE <name> ALTER <field> TYPE <newtype>;
+ * ALTER TYPE <name> ADD <field> <newtype>;
+ * ALTER TYPE <name> RENAME <field> TO <newtype> AND ...;
+ */
+alterTypeStatement returns [AlterTypeStatement expr]
+    : K_ALTER K_TYPE name=non_type_ident
+          ( K_ALTER f=cident K_TYPE v=comparatorType { $expr = AlterTypeStatement.alter(name, f, v); }
+          | K_ADD   f=cident v=comparatorType        { $expr = AlterTypeStatement.addition(name, f, v); }
+          | K_RENAME K_TO new_name=non_type_ident    { $expr = AlterTypeStatement.typeRename(name, new_name); }
+          | K_RENAME
+               { Map<ColumnIdentifier, ColumnIdentifier> renames = new HashMap<ColumnIdentifier, ColumnIdentifier>(); }
+                 id1=cident K_TO toId1=cident { renames.put(id1, toId1); }
+                 ( K_AND idn=cident K_TO toIdn=cident { renames.put(idn, toIdn); } )*
+               { $expr = AlterTypeStatement.renames(name, renames); }
+          )
+    ;
+
+
+/**
  * DROP KEYSPACE [IF EXISTS] <KSP>;
  */
 dropKeyspaceStatement returns [DropKeyspaceStatement ksp]
@@ -603,6 +624,14 @@ dropKeyspaceStatement returns [DropKeyspaceStatement ksp]
 dropTableStatement returns [DropTableStatement stmt]
     @init { boolean ifExists = false; }
     : K_DROP K_COLUMNFAMILY (K_IF K_EXISTS { ifExists = true; } )? cf=columnFamilyName { $stmt = new DropTableStatement(cf, ifExists); }
+    ;
+
+/**
+ * DROP TYPE <name>;
+ */
+dropTypeStatement returns [DropTypeStatement stmt]
+    @init { boolean ifExists = false; }
+    : K_DROP K_TYPE (K_IF K_EXISTS { ifExists = true; } )? name=non_type_ident { $stmt = new DropTypeStatement(name, ifExists); }
     ;
 
 /**
