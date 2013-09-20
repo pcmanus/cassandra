@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.cql3;
 
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -242,6 +244,11 @@ public interface CQL3Type
         {
             this.name = name;
             this.type = type;
+        }
+
+        public static UserDefined create(ByteBuffer name, UserType type)
+        {
+            return new UserDefined(new ColumnIdentifier(name, UTF8Type.instance), type);
         }
 
         public static UserDefined create(ColumnIdentifier name) throws InvalidRequestException
