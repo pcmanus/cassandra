@@ -133,6 +133,23 @@ public class CompositeType extends AbstractCompositeType
         return build(serialized);
     }
 
+    // Overriding the one of AbstractCompositeType because we can do a tad better
+    @Override
+    public ByteBuffer[] split(ByteBuffer name)
+    {
+        // Assume all components, we'll trunk the array afterwards if need be, but
+        // most names will be complete.
+        ByteBuffer[] l = new ByteBuffer[types.size()];
+        ByteBuffer bb = name.duplicate();
+        int i = 0;
+        while (bb.remaining() > 0)
+        {
+            l[i++] = getWithShortLength(bb);
+            bb.get(); // skip end-of-component
+        }
+        return i == l.length ? l : Arrays.copyOfRange(l, 0, i);
+    }
+
     // Extract component idx from bb. Return null if there is not enough component.
     public static ByteBuffer extractComponent(ByteBuffer bb, int idx)
     {
