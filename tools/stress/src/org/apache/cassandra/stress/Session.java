@@ -23,6 +23,7 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeUnit;
 
 import com.yammer.metrics.Metrics;
 
@@ -61,7 +62,7 @@ public class Session implements Serializable
 
     public final AtomicInteger operations = new AtomicInteger();
     public final AtomicInteger keys = new AtomicInteger();
-    public final com.yammer.metrics.core.Timer latency = Metrics.newTimer(Session.class, "latency");
+    public final com.yammer.metrics.core.Timer latency = Metrics.newTimer(Session.class, "latency", TimeUnit.MICROSECONDS, TimeUnit.SECONDS);
 
     private static final String SSL_TRUSTSTORE = "truststore";
     private static final String SSL_TRUSTSTORE_PW = "truststore-password";

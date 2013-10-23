@@ -139,7 +139,7 @@ public class StressAction extends Thread
 
                 long currentTimeInSeconds = (System.currentTimeMillis() - testStartTime) / 1000;
 
-                output.println(String.format("%d,%d,%d,%.1f,%.1f,%.1f,%d",
+                output.println(String.format("%d,%d,%d,%.3f,%.3f,%.3f,%d",
                                              total,
                                              opDelta / interval,
                                              keyDelta / interval,
