@@ -133,10 +133,11 @@ public class QueryProcessor
     public static ResultMessage process(String queryString, ConsistencyLevel cl, QueryState queryState)
     throws RequestExecutionException, RequestValidationException
     {
-        CQLStatement prepared = getStatement(queryString, queryState.getClientState()).statement;
-        if (prepared.getBoundsTerms() > 0)
-            throw new InvalidRequestException("Cannot execute query with bind variables");
-        return processStatement(prepared, cl, queryState, Collections.<ByteBuffer>emptyList());
+        return new ResultMessage.Void();
+        //CQLStatement prepared = getStatement(queryString, queryState.getClientState()).statement;
+        //if (prepared.getBoundsTerms() > 0)
+        //    throw new InvalidRequestException("Cannot execute query with bind variables");
+        //return processStatement(prepared, cl, queryState, Collections.<ByteBuffer>emptyList());
     }
 
     public static UntypedResultSet process(String query, ConsistencyLevel cl) throws RequestExecutionException
