@@ -20,6 +20,7 @@ package org.apache.cassandra.transport;
 
 import java.io.IOException;
 import java.util.EnumSet;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -29,6 +30,11 @@ import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
 import org.jboss.netty.handler.codec.frame.*;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
+
+import java.lang.management.ManagementFactory;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+import javax.management.StandardMBean;
 
 public class Frame
 {
@@ -137,6 +143,38 @@ public class Frame
         return new Frame(header, newBody, connection);
     }
 
+    private static final AtomicLong duration = new AtomicLong();
+    private static final AtomicLong ops = new AtomicLong();
+    private static volatile long lastDecode;
+
+    private static FrameMBean bean = new FrameMBean()
+    {
+        public double getLatencyMicros()
+        {
+            long d = duration.get();
+            long n = ops.get();
+            return (double)d/(n * 1000);
+        }
+    };
+    static {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        try
+        {
+            mbs.registerMBean(new StandardMBean(bean, FrameMBean.class), new ObjectName("org.apache.cassandra.transport:type=Frame"));
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public interface FrameMBean
+    {
+        public double getLatencyMicros();
+    }
+
+
+
     public static class Decoder extends LengthFieldBasedFrameDecoder
     {
         private static final int MAX_FRAME_LENTH = 256 * 1024 * 1024; // 256 MB
@@ -183,6 +221,7 @@ public class Frame
                 {
                     return null;
                 }
+                lastDecode = System.nanoTime();
                 return Frame.create(frame, connection);
             }
             catch (CorruptedFrameException e)
@@ -213,7 +252,10 @@ public class Frame
             header.writeByte(type.opcode);
             header.writeInt(frame.body.readableBytes());
 
-            return ChannelBuffers.wrappedBuffer(header, frame.body);
+            ChannelBuffer f = ChannelBuffers.wrappedBuffer(header, frame.body);
+            duration.addAndGet(System.nanoTime() - lastDecode);
+            ops.incrementAndGet();
+            return f;
         }
     }
 
