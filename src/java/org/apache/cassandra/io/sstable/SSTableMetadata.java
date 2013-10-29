@@ -21,7 +21,7 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.StreamingHistogram;
@@ -115,14 +115,14 @@ public class SSTableMetadata
         this.maxColumnNames = maxColumnNames;
     }
 
-    public static Collector createCollector(AbstractType<?> columnNameComparator)
+    public static Collector createCollector(CellNameType comparator)
     {
-        return new Collector(columnNameComparator);
+        return new Collector(comparator);
     }
 
-    public static Collector createCollector(Collection<SSTableReader> sstables, AbstractType<?> columnNameComparator, int level)
+    public static Collector createCollector(Collection<SSTableReader> sstables, CellNameType comparator, int level)
     {
-        Collector collector = new Collector(columnNameComparator);
+        Collector collector = new Collector(comparator);
 
         collector.replayPosition(ReplayPosition.getReplayPosition(sstables));
         collector.sstableLevel(level);
@@ -222,11 +222,11 @@ public class SSTableMetadata
         protected int sstableLevel;
         protected List<ByteBuffer> minColumnNames = Collections.emptyList();
         protected List<ByteBuffer> maxColumnNames = Collections.emptyList();
-        private final AbstractType<?> columnNameComparator;
+        private final CellNameType comparator;
 
-        private Collector(AbstractType<?> columnNameComparator)
+        private Collector(CellNameType comparator)
         {
-            this.columnNameComparator = columnNameComparator;
+            this.comparator = comparator;
         }
         public void addRowSize(long rowSize)
         {
@@ -336,14 +336,14 @@ public class SSTableMetadata
         public Collector updateMinColumnNames(List<ByteBuffer> minColumnNames)
         {
             if (minColumnNames.size() > 0)
-                this.minColumnNames = ColumnNameHelper.mergeMin(this.minColumnNames, minColumnNames, columnNameComparator);
+                this.minColumnNames = ColumnNameHelper.mergeMin(this.minColumnNames, minColumnNames, comparator);
             return this;
         }
 
         public Collector updateMaxColumnNames(List<ByteBuffer> maxColumnNames)
         {
             if (maxColumnNames.size() > 0)
-                this.maxColumnNames = ColumnNameHelper.mergeMax(this.maxColumnNames, maxColumnNames, columnNameComparator);
+                this.maxColumnNames = ColumnNameHelper.mergeMax(this.maxColumnNames, maxColumnNames, comparator);
             return this;
         }
     }

@@ -51,7 +51,7 @@ public abstract class CollectionType<T> extends AbstractType<T>
 
     protected abstract void appendToStringBuilder(StringBuilder sb);
 
-    public abstract ByteBuffer serialize(List<Pair<ByteBuffer, Column>> columns);
+    public abstract ByteBuffer serialize(List<Column> columns);
 
     @Override
     public String toString()

@@ -27,11 +27,8 @@ import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 
-import org.apache.cassandra.db.filter.ColumnSlice;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
-import org.apache.cassandra.cql3.ColumnNameBuilder;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.Relation;
 import org.apache.cassandra.io.util.DataOutputBuffer;
@@ -234,26 +231,6 @@ public class CompositeType extends AbstractCompositeType
         return true;
     }
 
-    @Override
-    public boolean intersects(List<ByteBuffer> minColumnNames, List<ByteBuffer> maxColumnNames, SliceQueryFilter filter)
-    {
-        assert minColumnNames.size() == maxColumnNames.size();
-        for (ColumnSlice slice : filter.slices)
-        {
-            ByteBuffer[] start = split(filter.isReversed() ? slice.finish : slice.start);
-            ByteBuffer[] finish = split(filter.isReversed() ? slice.start : slice.finish);
-            for (int i = 0; i < minColumnNames.size(); i++)
-            {
-                AbstractType<?> t = types.get(i);
-                ByteBuffer s = i < start.length ? start[i] : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-                ByteBuffer f = i < finish.length ? finish[i] : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-                if (t.intersects(minColumnNames.get(i), maxColumnNames.get(i), s, f))
-                    return true;
-            }
-        }
-        return false;
-    }
-
     private static class StaticParsedComparator implements ParsedComparator
     {
         final AbstractType<?> type;
@@ -311,7 +288,7 @@ public class CompositeType extends AbstractCompositeType
         return out;
     }
 
-    public static class Builder implements ColumnNameBuilder
+    public static class Builder
     {
         private final CompositeType composite;
 
@@ -372,13 +349,11 @@ public class CompositeType extends AbstractCompositeType
             return this;
         }
 
-        @Override
         public Builder add(ByteBuffer bb)
         {
             return add(bb, Relation.Type.EQ);
         }
 
-        @Override
         public Builder add(ColumnIdentifier name)
         {
             return add(name.bytes);

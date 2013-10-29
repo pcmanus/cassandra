@@ -20,19 +20,17 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
 
-import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.composites.CType;
+import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
 
 public class DeletionInfo
 {
-    private static final Serializer serializer = new Serializer();
-
     // We don't have way to represent the full interval of keys (Interval don't support the minimum token as the right bound),
     // so we keep the topLevel deletion info separatly. This also slightly optimize the case of full row deletion which is rather common.
     private DeletionTime topLevel;
@@ -50,13 +48,13 @@ public class DeletionInfo
         this(topLevel, null);
     }
 
-    public DeletionInfo(ByteBuffer start, ByteBuffer end, Comparator<ByteBuffer> comparator, long markedForDeleteAt, int localDeletionTime)
+    public DeletionInfo(Composite start, Composite end, Comparator<Composite> comparator, long markedForDeleteAt, int localDeletionTime)
     {
         this(DeletionTime.LIVE, new RangeTombstoneList(comparator, 1));
         ranges.add(start, end, markedForDeleteAt, localDeletionTime);
     }
 
-    public DeletionInfo(RangeTombstone rangeTombstone, Comparator<ByteBuffer> comparator)
+    public DeletionInfo(RangeTombstone rangeTombstone, Comparator<Composite> comparator)
     {
         this(rangeTombstone.min, rangeTombstone.max, comparator, rangeTombstone.data.markedForDeleteAt, rangeTombstone.data.localDeletionTime);
     }
@@ -70,11 +68,6 @@ public class DeletionInfo
     {
         this.topLevel = topLevel;
         this.ranges = ranges;
-    }
-
-    public static Serializer serializer()
-    {
-        return serializer;
     }
 
     public DeletionInfo copy()
@@ -104,7 +97,7 @@ public class DeletionInfo
         return isDeleted(column.name(), column.timestamp());
     }
 
-    public boolean isDeleted(ByteBuffer name, long timestamp)
+    public boolean isDeleted(Composite name, long timestamp)
     {
         // We do rely on this test: if topLevel.markedForDeleteAt is MIN_VALUE, we should not
         // consider the column deleted even if timestamp=MIN_VALUE, otherwise this break QueryFilter.isRelevant
@@ -166,7 +159,7 @@ public class DeletionInfo
             topLevel = newInfo;
     }
 
-    public void add(RangeTombstone tombstone, Comparator<ByteBuffer> comparator)
+    public void add(RangeTombstone tombstone, Comparator<Composite> comparator)
     {
         if (ranges == null)
             ranges = new RangeTombstoneList(comparator, 1);
@@ -219,7 +212,7 @@ public class DeletionInfo
         return ranges == null ? Iterators.<RangeTombstone>emptyIterator() : ranges.iterator();
     }
 
-    public DeletionTime rangeCovering(ByteBuffer name)
+    public DeletionTime rangeCovering(Composite name)
     {
         return ranges == null ? null : ranges.search(name);
     }
@@ -248,15 +241,15 @@ public class DeletionInfo
     {
         assert !ranges.isEmpty();
         StringBuilder sb = new StringBuilder();
-        AbstractType at = (AbstractType)ranges.comparator();
-        assert at != null;
+        CType type = (CType)ranges.comparator();
+        assert type != null;
         Iterator<RangeTombstone> iter = rangeIterator();
         while (iter.hasNext())
         {
             RangeTombstone i = iter.next();
             sb.append("[");
-            sb.append(at.getString(i.min)).append("-");
-            sb.append(at.getString(i.max)).append(", ");
+            sb.append(type.getString(i.min)).append("-");
+            sb.append(type.getString(i.max)).append(", ");
             sb.append(i.data);
             sb.append("]");
         }
@@ -290,32 +283,30 @@ public class DeletionInfo
 
     public static class Serializer implements IVersionedSerializer<DeletionInfo>
     {
+        private final RangeTombstoneList.Serializer rtlSerializer;
+
+        public Serializer(CType type)
+        {
+            this.rtlSerializer = new RangeTombstoneList.Serializer(type);
+        }
+
         public void serialize(DeletionInfo info, DataOutput out, int version) throws IOException
         {
             DeletionTime.serializer.serialize(info.topLevel, out);
-            RangeTombstoneList.serializer.serialize(info.ranges, out, version);
+            rtlSerializer.serialize(info.ranges, out, version);
         }
 
-        /*
-         * Range tombstones internally depend on the column family serializer, but it is not serialized.
-         * Thus deserialize(DataInput, int, Comparator<ByteBuffer>) should be used instead of this method.
-         */
         public DeletionInfo deserialize(DataInput in, int version) throws IOException
         {
-            throw new UnsupportedOperationException();
-        }
-
-        public DeletionInfo deserialize(DataInput in, int version, Comparator<ByteBuffer> comparator) throws IOException
-        {
             DeletionTime topLevel = DeletionTime.serializer.deserialize(in);
-            RangeTombstoneList ranges = RangeTombstoneList.serializer.deserialize(in, version, comparator);
+            RangeTombstoneList ranges = rtlSerializer.deserialize(in, version);
             return new DeletionInfo(topLevel, ranges);
         }
 
         public long serializedSize(DeletionInfo info, TypeSizes typeSizes, int version)
         {
             long size = DeletionTime.serializer.serializedSize(info.topLevel, typeSizes);
-            return size + RangeTombstoneList.serializer.serializedSize(info.ranges, typeSizes, version);
+            return size + rtlSerializer.serializedSize(info.ranges, typeSizes, version);
         }
 
         public long serializedSize(DeletionInfo info, int version)
@@ -353,7 +344,7 @@ public class DeletionInfo
             return isDeleted(column.name(), column.timestamp());
         }
 
-        public boolean isDeleted(ByteBuffer name, long timestamp)
+        public boolean isDeleted(Composite name, long timestamp)
         {
             if (timestamp <= topLevel.markedForDeleteAt)
                 return true;
