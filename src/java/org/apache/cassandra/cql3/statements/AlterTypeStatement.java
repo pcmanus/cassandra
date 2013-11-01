@@ -96,7 +96,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         UserType updated = makeUpdatedType(toUpdate);
 
         // Now, we need to announce the type update to basically change it for new tables using this type,
-        // but we also need to find all existing CF using it and change them.
+        // but we also need to find all existing user types and CF using it and change them.
         MigrationManager.announceTypeUpdate(updated);
 
         for (KSMetaData ksm : Schema.instance.getKeyspaceDefinitions())
@@ -110,6 +110,22 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
                 if (modified)
                     MigrationManager.announceColumnFamilyUpdate(copy, false);
             }
+        }
+
+        // Other user types potentially using the updated type
+        for (UserType ut : Schema.instance.userTypes.getAllTypes().values())
+        {
+            // Re-updating the type we've just updated would be harmless but useless so we avoid it.
+            // Besides, we use the occasion to drop the old version of the type if it's a type rename
+            if (ut.name.equals(toUpdate.name))
+            {
+                if (!ut.name.equals(updated.name))
+                    MigrationManager.announceTypeDrop(ut);
+                continue;
+            }
+            AbstractType<?> upd = updateWith(ut, toUpdate.name, updated);
+            if (upd != null)
+                MigrationManager.announceTypeUpdate((UserType)upd);
         }
     }
 

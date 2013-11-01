@@ -129,7 +129,8 @@ public final class UTMetaData
 
     public Map<ByteBuffer, UserType> getAllTypes()
     {
-        return userTypes;
+        // Copy to avoid concurrent modification while iterating. Not intended to be called on a criticial path anyway
+        return new HashMap<>(userTypes);
     }
 
     // This is *not* thread safe. As far as the global instance is concerned, only

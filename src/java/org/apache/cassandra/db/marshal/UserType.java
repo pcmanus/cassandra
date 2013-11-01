@@ -78,21 +78,6 @@ public class UserType extends CompositeType
     }
 
     @Override
-    public boolean isCompatibleWith(AbstractType<?> previous)
-    {
-        /*
-         * The rules are:
-         *  1. We allow 'upgrading' from a CompositeType, provided the types match.
-         *  2. We allow adding new components to an existing UserType.
-         *  3. We allow renaming a column/field name.
-         */
-        if (previous instanceof UserType && !name.equals(((UserType) previous).name))
-            return false;
-
-        return super.isCompatibleWith(previous);
-    }
-
-    @Override
     public CQL3Type asCQL3Type()
     {
         return CQL3Type.UserDefined.create(name, this);
