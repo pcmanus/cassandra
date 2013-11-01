@@ -292,7 +292,6 @@ public class MigrationManager implements IEndpointStateChangeSubscriber
 
     public static void announceTypeDrop(UserType droppedType)
     {
-        // We don't make a difference with a new type. DefsTable.mergeType will make sure we keep the updated version.
         announce(UTMetaData.dropFromSchema(droppedType, FBUtilities.timestampMicros()));
     }
 

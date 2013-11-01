@@ -347,11 +347,11 @@ public class DefsTables
             UserType u1 = modified.leftValue();
             UserType u2 = modified.rightValue();
             // Note that that loadType is a 'load or update'
-            if (u1.isCompatibleWith(u2))
+            if (u1.isCompatibleWith(u2) && !u2.isCompatibleWith(u1))
             {
                 Schema.instance.loadType(u1);
             }
-            else if (u2.isCompatibleWith(u1))
+            else if (u2.isCompatibleWith(u1) && !u1.isCompatibleWith(u2))
             {
                 Schema.instance.loadType(u2);
             }
@@ -367,10 +367,8 @@ public class DefsTables
     private static long firstTimestampOf(ByteBuffer key, List<Row> rows)
     {
         for (Row row : rows)
-        {
             if (row.key.key.equals(key))
                 return row.cf.iterator().next().timestamp();
-        }
         return -1;
     }
 

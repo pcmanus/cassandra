@@ -18,10 +18,7 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.UserType;
@@ -56,7 +53,7 @@ public abstract class UserTypes
 
             UserType ut = (UserType)receiver.type;
             boolean allTerminal = true;
-            List<Term> values = new ArrayList<Term>(entries.size());
+            List<Term> values = new ArrayList<>(entries.size());
             for (int i = 0; i < ut.types.size(); i++)
             {
                 ColumnIdentifier field = new ColumnIdentifier(ut.columnNames.get(i), UTF8Type.instance);
@@ -108,11 +105,13 @@ public abstract class UserTypes
         {
             StringBuilder sb = new StringBuilder();
             sb.append("{");
-            boolean isFirst = true;
-            for (Map.Entry<ColumnIdentifier, Term.Raw> entry : entries.entrySet())
+            Iterator<Map.Entry<ColumnIdentifier, Term.Raw>> iter = entries.entrySet().iterator();
+            while (iter.hasNext())
             {
-                if (isFirst) sb.append(", "); else isFirst = false;
+                Map.Entry<ColumnIdentifier, Term.Raw> entry = iter.next();
                 sb.append(entry.getKey()).append(":").append(entry.getValue());
+                if (iter.hasNext())
+                    sb.append(", ");
             }
             sb.append("}");
             return sb.toString();
@@ -134,10 +133,8 @@ public abstract class UserTypes
         public boolean containsBindMarker()
         {
             for (Term t : values)
-            {
                 if (t.containsBindMarker())
                     return true;
-            }
             return false;
         }
 

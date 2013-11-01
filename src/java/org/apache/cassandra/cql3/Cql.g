@@ -278,7 +278,7 @@ selector returns [RawSelector s]
 
 unaliasedSelector returns [Selectable s]
     @init { Selectable tmp = null; }
-    :  ( c=cident                                    { tmp = c; }
+    :  ( c=cident                                  { tmp = c; }
        | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, true); }
        | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL(c, false); }
        | f=functionName args=selectionFunctionArgs { tmp = new Selectable.WithFunction(f, args); }

@@ -59,14 +59,8 @@ public class CreateTypeStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws RequestValidationException
     {
-        UserType old = Schema.instance.userTypes.getType(name);
-        if (old != null)
-        {
-            if (ifNotExists)
-                return;
-            else
-                throw new InvalidRequestException(String.format("A user type of name %s already exists.", name));
-        }
+        if (Schema.instance.userTypes.getType(name) != null && !ifNotExists)
+            throw new InvalidRequestException(String.format("A user type of name %s already exists.", name));
     }
 
     public static void checkForDuplicateNames(UserType type) throws InvalidRequestException

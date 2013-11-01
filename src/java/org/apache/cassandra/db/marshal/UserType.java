@@ -80,45 +80,16 @@ public class UserType extends CompositeType
     @Override
     public boolean isCompatibleWith(AbstractType<?> previous)
     {
-        if (this == previous)
-            return true;
-
         /*
          * The rules are:
          *  1. We allow 'upgrading' from a CompositeType, provided the types match.
          *  2. We allow adding new components to an existing UserType.
          *  3. We allow renaming a column/field name.
          */
-        if (previous instanceof UserType)
-        {
-            UserType ut = (UserType)previous;
-            if (!name.equals(ut.name) || ut.types.size() > types.size())
-                return false;
-
-            for (int i = 0; i < ut.types.size(); i++)
-            {
-                AbstractType tprev = ut.types.get(i);
-                AbstractType tnew = types.get(i);
-                if (!tnew.isCompatibleWith(tprev))
-                    return false;
-            }
-        }
-
-        if (!(previous instanceof CompositeType))
+        if (previous instanceof UserType && !name.equals(((UserType) previous).name))
             return false;
 
-        CompositeType cp = (CompositeType)previous;
-        if (cp.types.size() > types.size())
-            return false;
-
-        for (int i = 0; i < cp.types.size(); i++)
-        {
-            AbstractType tprev = cp.types.get(i);
-            AbstractType tnew = types.get(i);
-            if (!tnew.isCompatibleWith(tprev))
-                return false;
-        }
-        return true;
+        return super.isCompatibleWith(previous);
     }
 
     @Override

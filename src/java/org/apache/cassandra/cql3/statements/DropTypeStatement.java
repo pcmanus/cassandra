@@ -56,10 +56,10 @@ public class DropTypeStatement extends SchemaAlteringStatement
         }
 
         // We don't want to drop a type unless it's not used anymore (mainly because
-        // if some drops a type and recreate one with the same name but differente
-        // definition while the previous one is still used, that could get messy).
+        // if someone drops a type and recreates one with the same name but different
+        // definition with the previous name still in use, things can get messy).
         // We have two places to check: 1) other user type that can nest the one
-        // we drop and 2) existing tables for reference of the type (maybe in a nested
+        // we drop and 2) existing tables referencing the type (maybe in a nested
         // way).
         for (UserType ut : Schema.instance.userTypes.getAllTypes().values())
         {
@@ -73,7 +73,7 @@ public class DropTypeStatement extends SchemaAlteringStatement
             for (CFMetaData cfm : ksm.cfMetaData().values())
                 for (ColumnDefinition def : cfm.allColumns())
                     if (isUsedBy(def.type))
-                            throw new InvalidRequestException(String.format("Cannot drop user type %s as it is still used by table %s.%s", name, cfm.ksName, cfm.cfName));
+                        throw new InvalidRequestException(String.format("Cannot drop user type %s as it is still used by table %s.%s", name, cfm.ksName, cfm.cfName));
     }
 
     private boolean isUsedBy(AbstractType<?> toCheck) throws RequestValidationException
@@ -124,10 +124,8 @@ public class DropTypeStatement extends SchemaAlteringStatement
     public void announceMigration() throws InvalidRequestException, ConfigurationException
     {
         UserType toDrop = Schema.instance.userTypes.getType(name);
-        // Can happen with ifExists
-        if (toDrop == null)
-            return;
-
-        MigrationManager.announceTypeDrop(toDrop);
+        // Can be null with ifExists
+        if (toDrop != null)
+            MigrationManager.announceTypeDrop(toDrop);
     }
 }
