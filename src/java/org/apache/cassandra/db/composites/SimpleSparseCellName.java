@@ -79,7 +79,7 @@ public class SimpleSparseCellName extends AbstractComposite implements CellName
         return false;
     }
 
-    public boolean isSameCQL3RowThan(CellName other)
+    public boolean isSameCQL3RowAs(CellName other)
     {
         return true;
     }

@@ -1064,11 +1064,11 @@ public final class CFMetaData
     /**
      * Updates CFMetaData in-place to match cf_def
      *
-     * *Note*: This method left public only for DefsTest, don't use directly!
+     * *Note*: This method left package-private only for DefsTest, don't use directly!
      *
      * @throws ConfigurationException if ks/cf names or cf ids didn't match
      */
-    public void apply(CFMetaData cfm) throws ConfigurationException
+    void apply(CFMetaData cfm) throws ConfigurationException
     {
         logger.debug("applying {} to {}", cfm, this);
 
@@ -1896,7 +1896,7 @@ public final class CFMetaData
         List<ColumnDefinition> pkCols = nullInitializedList(keyValidator.componentsCount());
         List<ColumnDefinition> ckCols = nullInitializedList(comparator.clusteringPrefixSize());
         // We keep things sorted to get consistent/predicatable order in select queries
-        SortedSet<ColumnDefinition> regCols = new TreeSet<ColumnDefinition>(regularColumnComparator);
+        SortedSet<ColumnDefinition> regCols = new TreeSet<>(regularColumnComparator);
         ColumnDefinition compactCol = null;
 
         for (ColumnDefinition def : allColumns())

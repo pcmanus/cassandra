@@ -278,7 +278,7 @@ public abstract class AbstractCellNameType extends AbstractCType implements Cell
 
                             CQL3Row toReturn = null;
                             CellName current = cell.name();
-                            if (currentRow == null || !current.isSameCQL3RowThan(previous))
+                            if (currentRow == null || !current.isSameCQL3RowAs(previous))
                             {
                                 toReturn = currentRow;
                                 currentRow = new CQL3RowOfSparse(current);

@@ -146,7 +146,7 @@ public class QueryProcessor
     {
         String keyString = metadata.getCQL2KeyName();
         List<Term> selectColumnNames = select.getColumnNames();
-        SortedSet<CellName> columnNames = new TreeSet<CellName>(metadata.comparator);
+        SortedSet<CellName> columnNames = new TreeSet<>(metadata.comparator);
         for (Term column : selectColumnNames)
         {
             // skip the key for the slice op; we'll add it to the resultset in extractThriftColumns

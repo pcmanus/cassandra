@@ -31,7 +31,6 @@ import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.db.compaction.CompactionHistoryTabularData;
-import org.apache.cassandra.db.composites.CellNames;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.metrics.RestorableMeter;

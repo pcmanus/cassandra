@@ -27,7 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 
 public class SimpleSparseCellNameType extends AbstractSimpleCellNameType
 {
-    // Simple sparse means static thrift CF. This means that cell names will mainly
+    // Simple sparse means static thrift CF or non-clustered CQL3. This means that cell names will mainly
     // be those that have been declared and we can intern the whole CellName instances.
     private final Map<ByteBuffer, CellName> internedNames;
 

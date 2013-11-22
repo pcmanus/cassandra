@@ -282,7 +282,6 @@ public class ColumnDefinition extends ColumnSpecification
      * Drop specified column from the schema using given row.
      *
      * @param rm         The schema row mutation
-     * @param cfName     The name of the parent ColumnFamily
      * @param timestamp  The timestamp to use for column modification
      */
     public void deleteFromSchema(RowMutation rm, long timestamp)

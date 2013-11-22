@@ -215,7 +215,7 @@ public class RowMutation implements IMutation
 
     public MessageOut<RowMutation> createMessage(MessagingService.Verb verb)
     {
-        return new MessageOut<RowMutation>(verb, this, serializer);
+        return new MessageOut<>(verb, this, serializer);
     }
 
     public String toString()

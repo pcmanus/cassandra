@@ -81,7 +81,7 @@ public class SuperColumns
     {
         CellNameType type = scf.getComparator();
         // The order of insertion matters!
-        Map<CellName, List<Column>> scMap = new LinkedHashMap<CellName, List<Column>>();
+        Map<CellName, List<Column>> scMap = new LinkedHashMap<>();
 
         CellName scName = null;
         List<Column> subColumns = null;
@@ -96,7 +96,7 @@ public class SuperColumns
             {
                 // new super column
                 scName = newScName;
-                subColumns = new ArrayList<Column>();
+                subColumns = new ArrayList<>();
                 scMap.put(scName, subColumns);
             }
 
@@ -188,7 +188,7 @@ public class SuperColumns
 
                 /* read the number of columns */
                 int size = in.readInt();
-                List<Column> subColumns = new ArrayList<Column>(size);
+                List<Column> subColumns = new ArrayList<>(size);
 
                 ColumnSerializer colSer = subType(type).columnSerializer();
                 for (int i = 0; i < size; ++i)

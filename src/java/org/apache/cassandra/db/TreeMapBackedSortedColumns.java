@@ -52,13 +52,13 @@ public class TreeMapBackedSortedColumns extends AbstractThreadUnsafeSortedColumn
     private TreeMapBackedSortedColumns(CFMetaData metadata)
     {
         super(metadata);
-        this.map = new TreeMap<CellName, Column>(metadata.comparator);
+        this.map = new TreeMap<>(metadata.comparator);
     }
 
     private TreeMapBackedSortedColumns(CFMetaData metadata, SortedMap<CellName, Column> columns)
     {
         super(metadata);
-        this.map = new TreeMap<CellName, Column>(columns);
+        this.map = new TreeMap<>(columns);
     }
 
     public ColumnFamily.Factory getFactory()

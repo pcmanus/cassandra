@@ -22,14 +22,12 @@ import java.util.*;
 
 import com.google.common.base.Objects;
 
-import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.thrift.TriggerDef;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class TriggerDefinition
 {
@@ -67,7 +65,7 @@ public class TriggerDefinition
         for (UntypedResultSet.Row row : QueryProcessor.resultify(query, serializedTriggers))
         {
             String name = row.getString(TRIGGER_NAME);
-            String classOption = row.getMap(TRIGGER_OPTIONS.toString(), UTF8Type.instance, UTF8Type.instance).get(CLASS);
+            String classOption = row.getMap(TRIGGER_OPTIONS, UTF8Type.instance, UTF8Type.instance).get(CLASS);
             triggers.add(new TriggerDefinition(name, classOption));
         }
         return triggers;

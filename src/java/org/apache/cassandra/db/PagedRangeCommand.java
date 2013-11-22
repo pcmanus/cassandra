@@ -59,7 +59,7 @@ public class PagedRangeCommand extends AbstractRangeCommand
 
     public MessageOut<PagedRangeCommand> createMessage()
     {
-        return new MessageOut<PagedRangeCommand>(MessagingService.Verb.PAGED_RANGE, this, serializer);
+        return new MessageOut<>(MessagingService.Verb.PAGED_RANGE, this, serializer);
     }
 
     public AbstractRangeCommand forSubRange(AbstractBounds<RowPosition> subRange)

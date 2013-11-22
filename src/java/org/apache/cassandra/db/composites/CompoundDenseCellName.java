@@ -51,7 +51,7 @@ public class CompoundDenseCellName extends CompoundComposite implements CellName
         return false;
     }
 
-    public boolean isSameCQL3RowThan(CellName other)
+    public boolean isSameCQL3RowAs(CellName other)
     {
         // Dense cell imply one cell by CQL row so no other cell will be the same row.
         return equals(other);

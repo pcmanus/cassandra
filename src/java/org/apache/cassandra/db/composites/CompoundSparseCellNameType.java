@@ -185,7 +185,7 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
         @Override
         public CellNameType addCollection(ColumnIdentifier columnName, CollectionType newCollection)
         {
-            Map<ByteBuffer, CollectionType> newMap = new HashMap<ByteBuffer, CollectionType>(collectionType.defined);
+            Map<ByteBuffer, CollectionType> newMap = new HashMap<>(collectionType.defined);
             newMap.put(columnName.bytes, newCollection);
             return new WithCollection(clusteringType, ColumnToCollectionType.getInstance(newMap), internedIds);
         }
