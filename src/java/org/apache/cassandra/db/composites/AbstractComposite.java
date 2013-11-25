@@ -50,9 +50,9 @@ public abstract class AbstractComposite implements Composite
         switch (newEoc)
         {
             case START:
-                return CompositeBound.startOf(this);
+                return BoundedComposite.startOf(this);
             case END:
-                return CompositeBound.endOf(this);
+                return BoundedComposite.endOf(this);
             default:
                 return this;
         }

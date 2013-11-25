@@ -23,12 +23,12 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ObjectSizes;
 
-public class CompositeBound extends AbstractComposite
+public class BoundedComposite extends AbstractComposite
 {
     private final Composite wrapped;
     private final boolean isStart;
 
-    private CompositeBound(Composite wrapped, boolean isStart)
+    private BoundedComposite(Composite wrapped, boolean isStart)
     {
         this.wrapped = wrapped;
         this.isStart = isStart;
@@ -36,12 +36,12 @@ public class CompositeBound extends AbstractComposite
 
     static Composite startOf(Composite c)
     {
-        return new CompositeBound(c, true);
+        return new BoundedComposite(c, true);
     }
 
     static Composite endOf(Composite c)
     {
-        return new CompositeBound(c, false);
+        return new BoundedComposite(c, false);
     }
 
     public int size()
@@ -90,6 +90,6 @@ public class CompositeBound extends AbstractComposite
 
     public Composite copy(Allocator allocator)
     {
-        return new CompositeBound(wrapped.copy(allocator), isStart);
+        return new BoundedComposite(wrapped.copy(allocator), isStart);
     }
 }

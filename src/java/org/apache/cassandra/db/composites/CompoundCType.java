@@ -64,7 +64,7 @@ public class CompoundCType extends AbstractCType
         while (idx < bytes.limit())
         {
             checkRemaining(bytes, idx, 2);
-            int length = bytes.getShort(idx) & 0xFF;
+            int length = bytes.getShort(idx) & 0xFFFF;
             idx += 2;
 
             checkRemaining(bytes, idx, length + 1);
