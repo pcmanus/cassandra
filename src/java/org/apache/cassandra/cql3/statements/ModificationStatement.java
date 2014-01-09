@@ -24,6 +24,7 @@ import org.github.jamm.MemoryMeter;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnSlice;
@@ -57,6 +58,10 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     private int boundTerms;
     private List<Operation> columnConditions;
     private boolean ifNotExists;
+
+    private boolean hasNoClusteringColumns = true;
+    private boolean setsOnlyStaticColumns;
+    private boolean hasOnlyStaticConditions;
 
     public ModificationStatement(CFMetaData cfm, Attributes attrs)
     {
@@ -124,6 +129,15 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     public void addOperation(Operation op)
     {
+        if (op.isStatic(cfm))
+        {
+            if (columnOperations.isEmpty())
+                setsOnlyStaticColumns = true;
+        }
+        else
+        {
+            setsOnlyStaticColumns = false;
+        }
         columnOperations.add(op);
     }
 
@@ -132,10 +146,18 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return columnOperations;
     }
 
-    public void addCondition(Operation op)
+    public void addCondition(Operation op) throws InvalidRequestException
     {
+        // We currently only allow either all conditions on static columns or none of them. See executeWithCondition.
         if (columnConditions == null)
+        {
             columnConditions = new ArrayList<Operation>();
+            hasOnlyStaticConditions = op.isStatic(cfm);
+        }
+        else if (hasOnlyStaticConditions != op.isStatic(cfm))
+        {
+            throw new InvalidRequestException("All conditions must be on static columns, or none should be");
+        }
 
         columnConditions.add(op);
     }
@@ -145,13 +167,15 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         ifNotExists = true;
     }
 
-    private void addKeyValues(ColumnIdentifier name, Restriction values) throws InvalidRequestException
+    private void addKeyValues(CFDefinition.Name name, Restriction values) throws InvalidRequestException
     {
-        if (processedKeys.put(name, values) != null)
-            throw new InvalidRequestException(String.format("Multiple definitions found for PRIMARY KEY part %s", name));
+        if (name.kind == CFDefinition.Name.Kind.COLUMN_ALIAS)
+            hasNoClusteringColumns = false;
+        if (processedKeys.put(name.name, values) != null)
+            throw new InvalidRequestException(String.format("Multiple definitions found for PRIMARY KEY part %s", name.name));
     }
 
-    public void addKeyValue(ColumnIdentifier name, Term value) throws InvalidRequestException
+    public void addKeyValue(CFDefinition.Name name, Term value) throws InvalidRequestException
     {
         addKeyValues(name, new Restriction.EQ(value, false));
     }
@@ -202,7 +226,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                         throw new InvalidRequestException(String.format("Invalid operator %s for PRIMARY KEY part %s", rel.operator(), name));
                     }
 
-                    addKeyValues(name.name, restriction);
+                    addKeyValues(name, restriction);
                     break;
                 case VALUE_ALIAS:
                 case COLUMN_METADATA:
@@ -248,6 +272,29 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     }
 
     public ColumnNameBuilder createClusteringPrefixBuilder(List<ByteBuffer> variables)
+    throws InvalidRequestException
+    {
+        // The one case where we don't need the clustering prefix (and thus don't want to do any validation),
+        // is when the only inserted columns are static ones (the partition key still need to be given, but
+        // buildPartitionKeyNames checks that anyway).
+        if (setsOnlyStaticColumns && hasNoClusteringColumns && (!hasConditions() || ifNotExists || hasOnlyStaticConditions))
+            return cfm.getStaticColumnNameBuilder();
+
+        return createClusteringPrefixBuilderInternal(variables);
+    }
+
+    private ColumnNameBuilder updatePrefixFor(ByteBuffer name, ColumnNameBuilder prefix)
+    {
+        return isStatic(name) ? cfm.getStaticColumnNameBuilder() : prefix;
+    }
+
+    public boolean isStatic(ByteBuffer name)
+    {
+        ColumnDefinition def = cfm.getColumnDefinition(name);
+        return def != null && def.isStatic;
+    }
+
+    private ColumnNameBuilder createClusteringPrefixBuilderInternal(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
         CFDefinition cfDef = cfm.getCfDef();
@@ -323,8 +370,9 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         int i = 0;
         for (ByteBuffer name : toRead)
         {
-            ByteBuffer start = clusteringPrefix.copy().add(name).build();
-            ByteBuffer finish = clusteringPrefix.copy().add(name).buildAsEndOfRange();
+            ColumnNameBuilder prefix = updatePrefixFor(name, clusteringPrefix);
+            ByteBuffer start = prefix.copy().add(name).build();
+            ByteBuffer finish = prefix.copy().add(name).buildAsEndOfRange();
             slices[i++] = new ColumnSlice(start, finish);
         }
 
@@ -414,6 +462,13 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         // When building the conditions, we should not use the TTL. It's not useful, and if a very low ttl (1 seconds) is used, it's possible
         // for it to expire before actually build the conditions which would break since we would then test for the presence of tombstones.
         UpdateParameters condParams = new UpdateParameters(cfm, variables, queryState.getTimestamp(), 0, null);
+
+        // We currently require that conditions are all on the static columns, or none are. We could lift that restriction, but we'd need to
+        // update StorageProxy.cas a bit. Until someone comes up with a good use case for mixing both type of condition, we keep it simple.
+        // Regarding ifNotExists, if the statement applies to any non static columns, then the condition is on the row of the non-static
+        // columns. But if only static columns are set, then the ifNotExists apply to the existence of any static columns.
+        if (hasOnlyStaticConditions || (ifNotExists && setsOnlyStaticColumns))
+            clusteringPrefix = cfm.getStaticColumnNameBuilder();
         ColumnFamily expected = buildConditions(key, clusteringPrefix, condParams);
 
         ColumnFamily result = StorageProxy.cas(keyspace(),
@@ -548,7 +603,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
         // CQL row marker
         CFDefinition cfDef = cfm.getCfDef();
-        if (cfDef.isComposite && !cfDef.isCompact && !cfm.isSuper())
+        if (cfDef.isComposite && !cfDef.isCompact && !cfm.isSuper() && !hasOnlyStaticConditions)
         {
             ByteBuffer name = clusteringPrefix.copy().add(ByteBufferUtil.EMPTY_BYTE_BUFFER).build();
             cf.addColumn(params.makeColumn(name, ByteBufferUtil.EMPTY_BYTE_BUFFER));
