@@ -47,6 +47,7 @@ import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.*;
 import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
@@ -335,7 +336,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         data.unreferenceSSTables();
         indexManager.invalidate();
 
-        invalidateCaches();
+        CacheService.instance.invalidateRowCacheForCf(metadata.cfId);
     }
 
     /**
@@ -1282,12 +1283,18 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     }
 
     /**
-     * fetch the row given by filter.key if it is in the cache; if not, read it from disk and cache it
+     * Fetch the row and columns given by filter.key if it is in the cache; if not, read it from disk and cache it
+     *
+     * If the columns cached are not covered by the filter, we fall back to reading from disk
+     *
+     * If row is cached, and the filter given is within its bounds, we return from cache, otherwise from disk
+     *
+     * If row is not cached, we figure out what filter is "biggest", read that from disk, then
+     * filter the result and either cache that or return it.
+     *
      * @param cfId the column family to read the row from
-     * @param filter the columns being queried.  Note that we still cache entire rows, but if a row is uncached
-     *               and we race to cache it, only the winner will read the entire row
-     * @return the entire row for filter.key, if present in the cache (or we can cache it), or just the column
-     *         specified by filter otherwise
+     * @param filter the columns being queried.
+     * @return the requested data for the filter provided
      */
     private ColumnFamily getThroughCache(UUID cfId, QueryFilter filter)
     {
@@ -1298,6 +1305,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         // attempt a sentinel-read-cache sequence.  if a write invalidates our sentinel, we'll return our
         // (now potentially obsolete) data, but won't cache it. see CASSANDRA-3862
+        // TODO(2864): don't evict entire rows on writes
+        // TODO: make it possible to have custom cache-filters
         IRowCacheEntry cached = CacheService.instance.rowCache.get(key);
         if (cached != null)
         {
@@ -1307,26 +1316,77 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 Tracing.trace("Row cache miss (race)");
                 return getTopLevelColumns(filter, Integer.MIN_VALUE);
             }
+
+            boolean wholePartitionCached = ((ColumnFamily)cached).getColumnCount() < metadata.getCellsPerPartitionToCache();
+            ColumnFamily cachedCf = filterColumnFamily((ColumnFamily) cached, filter);
+            metric.rowCacheHit.inc();
             Tracing.trace("Row cache hit");
-            return (ColumnFamily) cached;
+
+            if (wholePartitionCached || filter.filter.getCount() * (metadata.regularColumns().size() + 1)  <= cachedCf.getColumnCount())
+            {
+                return cachedCf;
+            }
+            metric.rowCacheHitOutOfRange.inc();
+            Tracing.trace("Cached value could not satisfy query");
+            return getTopLevelColumns(filter, Integer.MIN_VALUE);
         }
 
+        metric.rowCacheMiss.inc();
         Tracing.trace("Row cache miss");
         RowCacheSentinel sentinel = new RowCacheSentinel();
         boolean sentinelSuccess = CacheService.instance.rowCache.putIfAbsent(key, sentinel);
-
+        ColumnFamily data = null;
+        ColumnFamily toCache = null;
         try
         {
-            ColumnFamily data = getTopLevelColumns(QueryFilter.getIdentityFilter(filter.key, name, filter.timestamp),
-                                                   Integer.MIN_VALUE);
-            if (sentinelSuccess && data != null)
-                CacheService.instance.rowCache.replace(key, sentinel, data);
+            if (metadata.getRowsPerPartitionToCache().type == CFMetaData.RowsPerPartitionToCache.Type.ALL)
+            {
+                data = getTopLevelColumns(QueryFilter.getIdentityFilter(filter.key, name, filter.timestamp), Integer.MIN_VALUE);
+                toCache = data;
+                Tracing.trace("Populating row cache with the whole partition");
+                if (sentinelSuccess && toCache != null)
+                    CacheService.instance.rowCache.replace(key, sentinel, toCache);
+                return filterColumnFamily(data, filter);
+            }
+            else if (filter.filter.isHeadFilter())
+            {
+                QueryFilter cacheFilter = QueryFilter.getSliceFilter(filter.key,
+                                                               name,
+                                                               Composites.EMPTY,
+                                                               Composites.EMPTY,
+                                                               false,
+                                                               metadata.getCellsPerPartitionToCache(),
+                                                               filter.timestamp);
 
-            return data;
+                if (filter.filter.getCount() > metadata.getRowsPerPartitionToCache().rowsToCache)
+                {
+                    Tracing.trace("Requesting more rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
+                    data = getTopLevelColumns(filter, Integer.MIN_VALUE);
+                    if (data != null)
+                        toCache = filterColumnFamily(data.cloneMe(), cacheFilter);
+                }
+                else
+                {
+                    Tracing.trace("Requesting less rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
+                    toCache = getTopLevelColumns(cacheFilter, Integer.MIN_VALUE);
+                    if (toCache != null)
+                        data = filterColumnFamily(toCache.cloneMe(), filter);
+                }
+
+                Tracing.trace("Populating row cache");
+                if (sentinelSuccess && toCache != null)
+                    CacheService.instance.rowCache.replace(key, sentinel, toCache);
+                return data;
+            }
+            else
+            {
+                Tracing.trace("Returning data, not populating cache");
+                return getTopLevelColumns(filter, Integer.MIN_VALUE);
+            }
         }
         finally
         {
-            if (sentinelSuccess && data == null)
+            if (sentinelSuccess && toCache == null)
                 invalidateCachedRow(key);
         }
     }
@@ -1363,7 +1423,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     return null;
                 }
 
-                result = filterColumnFamily(cached, filter);
+                result = cached;
             }
             else
             {
@@ -2081,7 +2141,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                 SystemKeyspace.saveTruncationRecord(ColumnFamilyStore.this, truncatedAt, replayAfter);
 
-                invalidateCaches();
+                logger.debug("cleaning out row cache");
+                CacheService.instance.invalidateRowCacheForCf(metadata.cfId);
             }
         };
 

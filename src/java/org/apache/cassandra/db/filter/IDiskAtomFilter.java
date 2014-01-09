@@ -25,6 +25,7 @@ import java.util.Iterator;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -80,6 +81,10 @@ public interface IDiskAtomFilter
     public boolean maySelectPrefix(Comparator<Composite> cmp, Composite prefix);
 
     boolean shouldInclude(SSTableReader sstable);
+
+    int getCount();
+
+    boolean isHeadFilter();
 
     public static class Serializer implements IVersionedSerializer<IDiskAtomFilter>
     {

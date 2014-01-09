@@ -24,8 +24,11 @@ import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.Lock;
@@ -289,6 +292,17 @@ public class CacheService implements CacheServiceMBean
         rowCache.clear();
     }
 
+    public void invalidateRowCacheForCf(UUID cfId)
+    {
+        Iterator<RowCacheKey> rowCacheIterator = rowCache.getKeySet().iterator();
+        while (rowCacheIterator.hasNext())
+        {
+            RowCacheKey rowCacheKey = rowCacheIterator.next();
+            if (rowCacheKey.cfId.equals(cfId))
+                rowCacheIterator.remove();
+        }
+    }
+
     public void invalidateCounterCache()
     {
         counterCache.clear();
@@ -429,7 +443,14 @@ public class CacheService implements CacheServiceMBean
                 public Pair<RowCacheKey, IRowCacheEntry> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
-                    ColumnFamily data = cfs.getTopLevelColumns(QueryFilter.getIdentityFilter(key, cfs.name, Long.MIN_VALUE), Integer.MIN_VALUE);
+                    ColumnFamily data = cfs.getTopLevelColumns(QueryFilter.getSliceFilter(key,
+                                                                                          cfs.name,
+                                                                                          Composites.EMPTY,
+                                                                                          Composites.EMPTY,
+                                                                                          false,
+                                                                                          cfs.metadata.getCellsPerPartitionToCache(),
+                                                                                          Integer.MIN_VALUE),
+                                                                Integer.MIN_VALUE);
                     return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry) data);
                 }
             });

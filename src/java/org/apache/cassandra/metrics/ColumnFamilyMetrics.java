@@ -86,6 +86,12 @@ public class ColumnFamilyMetrics
     public final Histogram liveScannedHistogram;
     /** Disk space used by snapshot files which */
     public final Gauge<Long> trueSnapshotsSize;
+    /** Row cache hits, but result out of range */
+    public final Counter rowCacheHitOutOfRange;
+    /** Number of row cache hits */
+    public final Counter rowCacheHit;
+    /** Number of row cache misses */
+    public final Counter rowCacheMiss;
 
     public final Timer coordinatorReadLatency;
     public final Timer coordinatorScanLatency;
@@ -97,6 +103,7 @@ public class ColumnFamilyMetrics
     // for backward compatibility
     @Deprecated public final EstimatedHistogram sstablesPerRead = new EstimatedHistogram(35);
     @Deprecated public final EstimatedHistogram recentSSTablesPerRead = new EstimatedHistogram(35);
+
 
     /**
      * Creates metrics for given {@link ColumnFamilyStore}.
@@ -327,6 +334,9 @@ public class ColumnFamilyMetrics
                 return cfs.trueSnapshotsSize();
             }
         });
+        rowCacheHitOutOfRange = Metrics.newCounter(factory.createMetricName("RowCacheHitOutOfRange"));
+        rowCacheHit = Metrics.newCounter(factory.createMetricName("RowCacheHit"));
+        rowCacheMiss = Metrics.newCounter(factory.createMetricName("RowCacheMiss"));
     }
 
     public void updateSSTableIterated(int count)
@@ -370,6 +380,7 @@ public class ColumnFamilyMetrics
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CoordinatorReadLatency"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CoordinatorScanLatency"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("SnapshotsSize"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHitOutOfRange"));
     }
 
     class ColumnFamilyMetricNameFactory implements MetricNameFactory

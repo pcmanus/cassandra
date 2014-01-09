@@ -31,6 +31,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
 import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
 import org.apache.cassandra.db.composites.CType;
+import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -338,6 +339,21 @@ public class SliceQueryFilter implements IDiskAtomFilter
                 return true;
 
         return false;
+    }
+
+    public int getCount()
+    {
+        return count;
+    }
+
+    public boolean isHeadFilter()
+    {
+        for (ColumnSlice slice : slices)
+        {
+            if (!slice.start.isEmpty())
+                return false;
+        }
+        return true;
     }
 
     public static class Serializer implements IVersionedSerializer<SliceQueryFilter>

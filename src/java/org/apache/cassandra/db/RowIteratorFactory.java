@@ -93,18 +93,7 @@ public class RowIteratorFactory
 
             protected Row getReduced()
             {
-                // First check if this row is in the rowCache. If it is we can skip the rest
-                ColumnFamily cached = cfs.getRawCachedRow(key);
-                if (cached == null)
-                {
-                    // not cached: collate
-                    QueryFilter.collateOnDiskAtom(returnCF, colIters, range.columnFilter(key.key), gcBefore, now);
-                }
-                else
-                {
-                    QueryFilter keyFilter = new QueryFilter(key, cfs.name, range.columnFilter(key.key), now);
-                    returnCF = cfs.filterColumnFamily(cached, keyFilter);
-                }
+                QueryFilter.collateOnDiskAtom(returnCF, colIters, range.columnFilter(key.key), gcBefore, now);
 
                 Row rv = new Row(key, returnCF);
                 colIters.clear();
