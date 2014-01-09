@@ -81,8 +81,19 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     private Map<CFDefinition.Name, Integer> orderingIndexes;
 
+    private boolean selectsStaticColumns;
+    private boolean selectsOnlyStaticColumns;
+
     // Used by forSelection below
     private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier, Boolean>emptyMap(), false, false, null, false);
+
+    private static final Predicate<CFDefinition.Name> isStaticFilter = new Predicate<CFDefinition.Name>()
+    {
+        public boolean apply(CFDefinition.Name name)
+        {
+            return name.isStatic;
+        }
+    };
 
     public SelectStatement(CFDefinition cfDef, int boundTerms, Parameters parameters, Selection selection, Term limit)
     {
@@ -93,6 +104,32 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         this.columnRestrictions = new Restriction[cfDef.columns.size()];
         this.parameters = parameters;
         this.limit = limit;
+
+        // Now gather a few info on whether we should bother with static columns or not for this statement
+        initStaticColumnsInfo();
+    }
+
+    private void initStaticColumnsInfo()
+    {
+        if (!cfDef.cfm.hasStaticColumns())
+            return;
+
+        // If it's a wildcard, we do select static but not only them
+        if (selection.isWildcard())
+        {
+            selectsStaticColumns = true;
+            return;
+        }
+
+        // Otherwise, check the selected columns
+        selectsOnlyStaticColumns = true;
+        for (CFDefinition.Name name : Iterables.filter(selection.getColumnsList(), isStaticFilter))
+        {
+            if (name.isStatic)
+                selectsStaticColumns = true;
+            else if (name.kind != CFDefinition.Name.Kind.KEY_ALIAS)
+                selectsOnlyStaticColumns = false;
+        }
     }
 
     // Creates a simple select based on the given selection.
@@ -385,6 +422,20 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             List<ByteBuffer> endBounds = getRequestedBound(Bound.END, variables);
             assert startBounds.size() == endBounds.size();
 
+            ColumnSlice staticSlice = null;
+            if (selectsStaticColumns)
+            {
+                ColumnNameBuilder staticPrefix = cfDef.cfm.getStaticColumnNameBuilder();
+                // Note: we could use staticPrefix.build() for the start bound, but EMPTY_BYTE_BUFFER gives us the
+                // same effect while saving a few CPU cycles.
+                staticSlice = new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, staticPrefix.buildAsEndOfRange());
+
+                // In the case where we only select static columns, we want to really only check the static columns.
+                // So we return early as the rest of that method would actually make us query everything
+                if (selectsOnlyStaticColumns)
+                    return new SliceQueryFilter(new ColumnSlice[]{ staticSlice }, isReversed, limit, toGroup);
+            }
+
             // The case where startBounds == 1 is common enough that it's worth optimizing
             ColumnSlice[] slices;
             if (startBounds.size() == 1)
@@ -392,11 +443,16 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 ColumnSlice slice = new ColumnSlice(startBounds.get(0), endBounds.get(0));
                 if (slice.isAlwaysEmpty(cfDef.cfm.comparator, isReversed))
                     return null;
-                slices = new ColumnSlice[]{slice};
+                slices = staticSlice == null
+                       ? new ColumnSlice[]{ slice }
+                       : (slice.includes(cfDef.cfm.comparator, staticSlice.finish) ? new ColumnSlice[]{ new ColumnSlice(staticSlice.start, slice.finish) }
+                                                                                   : new ColumnSlice[]{ staticSlice, slice });
             }
             else
             {
-                List<ColumnSlice> l = new ArrayList<ColumnSlice>(startBounds.size());
+                List<ColumnSlice> l = new ArrayList<ColumnSlice>(startBounds.size() + (staticSlice == null ? 0 : 1));
+                if (staticSlice != null)
+                    l.add(staticSlice);
                 for (int i = 0; i < startBounds.size(); i++)
                 {
                     ColumnSlice slice = new ColumnSlice(startBounds.get(i), endBounds.get(i));
@@ -405,7 +461,20 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 }
                 if (l.isEmpty())
                     return null;
-                slices = l.toArray(new ColumnSlice[l.size()]);
+                // The slices should not overlap. We know the slices built from startBounds/endBounds don't, but
+                // if there is a static slice, it could overlap with the 2nd slice. Check for it and correct if
+                // that's the case
+                if (staticSlice != null && l.size() > 1 && l.get(1).includes(cfDef.cfm.comparator, l.get(0).finish))
+                {
+                    slices = new ColumnSlice[l.size() - 1];
+                    slices[0] = new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, l.get(1).finish);
+                    for (int i = 2; i < l.size(); i++)
+                        slices[i-1] = l.get(i);
+                }
+                else
+                {
+                    slices = l.toArray(new ColumnSlice[l.size()]);
+                }
             }
 
             return new SliceQueryFilter(slices, isReversed, limit, toGroup);
@@ -553,6 +622,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     private SortedSet<ByteBuffer> getRequestedColumns(List<ByteBuffer> variables) throws InvalidRequestException
     {
+        // Note: getRequestedColumns don't handle static columns, but due to CASSANDRA-5762
+        // we always do a slice for CQL3 tables, so it's ok to ignore them here
         assert !isColumnRange();
 
         ColumnNameBuilder builder = cfDef.getColumnNameBuilder();
@@ -793,7 +864,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return expressions;
     }
 
-
     private Iterable<Column> columnsInOrder(final ColumnFamily cf, final List<ByteBuffer> variables) throws InvalidRequestException
     {
         if (columnRestrictions.length == 0)
@@ -949,8 +1019,35 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 builder.add(c);
             }
 
+            Map<CFDefinition.Name, ByteBuffer> staticValues = Collections.emptyMap();
+            // Gather up static values first
+            if (selectsStaticColumns && !builder.isEmpty() && builder.firstGroup().isStatic)
+            {
+                staticValues = new HashMap<>();
+                ColumnGroupMap group = builder.firstGroup();
+                for (CFDefinition.Name name : Iterables.filter(selection.getColumnsList(), isStaticFilter))
+                    staticValues.put(name, name.type.isCollection() ? getCollectionValue(name, group) : getSimpleValue(name, group));
+                builder.discardFirst();
+
+                // If there was static columns but there is no actual row, then provided the select was a full
+                // partition selection (i.e. not a 2ndary index search and there was no condition on clustering columns)
+                // then we want to include the static columns in the result set.
+                if (!staticValues.isEmpty() && builder.isEmpty() && restrictedNames.isEmpty() && hasNoClusteringColumnsRestriction())
+                {
+                    result.newRow();
+                    for (CFDefinition.Name name : selection.getColumnsList())
+                    {
+                        if (name.kind == CFDefinition.Name.Kind.KEY_ALIAS)
+                            result.add(keyComponents[name.position]);
+                        else
+                            result.add(name.isStatic ? staticValues.get(name) : null);
+                    }
+                    return;
+                }
+            }
+
             for (ColumnGroupMap group : builder.groups())
-                handleGroup(selection, result, keyComponents, group);
+                handleGroup(selection, result, keyComponents, group, staticValues);
         }
         else
         {
@@ -967,6 +1064,14 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     result.add(cf.getColumn(name.name.key));
             }
         }
+    }
+
+    private boolean hasNoClusteringColumnsRestriction()
+    {
+        for (int i = 0; i < columnRestrictions.length; i++)
+            if (columnRestrictions[i] != null)
+                return false;
+        return true;
     }
 
     /**
@@ -1009,12 +1114,22 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         Collections.sort(cqlRows.rows, new CompositeComparator(types, positions));
     }
 
-    private void handleGroup(Selection selection, Selection.ResultSetBuilder result, ByteBuffer[] keyComponents, ColumnGroupMap columns) throws InvalidRequestException
+    private void handleGroup(Selection selection,
+                             Selection.ResultSetBuilder result,
+                             ByteBuffer[] keyComponents,
+                             ColumnGroupMap columns,
+                             Map<CFDefinition.Name, ByteBuffer> staticValues) throws InvalidRequestException
     {
         // Respect requested order
         result.newRow();
         for (CFDefinition.Name name : selection.getColumnsList())
         {
+            if (name.isStatic)
+            {
+                result.add(staticValues.get(name));
+                continue;
+            }
+
             switch (name.kind)
             {
                 case KEY_ALIAS:
@@ -1029,11 +1144,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 case COLUMN_METADATA:
                     if (name.type.isCollection())
                     {
-                        List<Pair<ByteBuffer, Column>> collection = columns.getCollection(name.name.key);
-                        ByteBuffer value = collection == null
-                                         ? null
-                                         : ((CollectionType)name.type).serialize(collection);
-                        result.add(value);
+                        result.add(getCollectionValue(name, columns));
                     }
                     else
                     {
@@ -1042,6 +1153,18 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     break;
             }
         }
+    }
+
+    private static ByteBuffer getCollectionValue(CFDefinition.Name name, ColumnGroupMap columns)
+    {
+        List<Pair<ByteBuffer, Column>> collection = columns.getCollection(name.name.key);
+        return collection == null ? null : ((CollectionType)name.type).serialize(collection);
+    }
+
+    private static ByteBuffer getSimpleValue(CFDefinition.Name name, ColumnGroupMap columns)
+    {
+        Column c = columns.getSimple(name.name.key);
+        return c == null ? null : c.value();
     }
 
     private static boolean isReversedType(CFDefinition.Name name)
