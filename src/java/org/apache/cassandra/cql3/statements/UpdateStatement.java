@@ -159,7 +159,7 @@ public class UpdateStatement extends ModificationStatement
                     case COLUMN_ALIAS:
                         Term t = value.prepare(name);
                         t.collectMarkerSpecification(boundNames);
-                        stmt.addKeyValue(name.name, t);
+                        stmt.addKeyValue(name, t);
                         break;
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
