@@ -90,22 +90,9 @@ public abstract class AbstractCompositeType extends AbstractType<ByteBuffer>
 
             byte b1 = bb1.get();
             byte b2 = bb2.get();
-            if (b1 < 0)
-            {
-                if (b2 >= 0)
-                    return -1;
-            }
-            else if (b1 > 0)
-            {
-                if (b2 <= 0)
-                    return 1;
-            }
-            else
-            {
-                // b1 == 0
-                if (b2 != 0)
-                    return -b2;
-            }
+            if (b1 != b2)
+                return b1 - b2;
+
             ++i;
         }
 
@@ -310,7 +297,7 @@ public abstract class AbstractCompositeType extends AbstractType<ByteBuffer>
             if (bb.remaining() == 0)
                 throw new MarshalException("Not enough bytes to read the end-of-component byte of component" + i);
             byte b = bb.get();
-            if (b != 0 && bb.remaining() != 0)
+            if (b != 0 && b != CompositeType.STATIC_MARKER && bb.remaining() != 0)
                 throw new MarshalException("Invalid bytes remaining after an end-of-component at component" + i);
 
             previous = value;

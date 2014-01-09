@@ -51,14 +51,21 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *   end   = <3><"foo".getBytes()><1>
  * then he will be sure to get *all* the columns whose first component is "foo".
  * If for a component, the 'end-of-component' is != 0, there should not be any
- * following component. The end-of-component can also be -1 to allow
- * non-inclusive query. For instance:
+ * following component (with one exception, see below). The end-of-component can
+ * also be -1 to allow non-inclusive query. For instance:
  *   start = <3><"foo".getBytes()><-1>
  * allows to query everything that is greater than <3><"foo".getBytes()>, but
  * not <3><"foo".getBytes()> itself.
+ *
+ * On top of that, CQL3 uses the specific value 0xFF for the 'end-of-component' byte
+ * to encode "static columns" (CASSANDRA-6561). We do set that "marker" on a non-terminal
+ * components (the first one), so this is the one exception to "if the  end-of-component
+ * is != 0, there should not be any following component".
  */
 public class CompositeType extends AbstractCompositeType
 {
+    public static final byte STATIC_MARKER = (byte)0xFF;
+
     public final List<AbstractType<?>> types;
 
     // interning instances
@@ -154,6 +161,13 @@ public class CompositeType extends AbstractCompositeType
     {
         int idx = types.get(types.size() - 1) instanceof ColumnToCollectionType ? types.size() - 2 : types.size() - 1;
         return extractComponent(bb, idx);
+    }
+
+    public boolean isStaticName(ByteBuffer bb)
+    {
+        int length = (bb.get(bb.position()) & 0xFF) << 8
+                   | (bb.get(bb.position() + 1) & 0xFF);
+        return bb.get(bb.position() + 2 + length) == STATIC_MARKER;
     }
 
     @Override
@@ -361,6 +375,13 @@ public class CompositeType extends AbstractCompositeType
         public Builder add(ByteBuffer bb)
         {
             return add(bb, Relation.Type.EQ);
+        }
+
+        public Builder addStatic(ByteBuffer bb)
+        {
+            add(bb);
+            endOfComponents[components.size() - 1] = STATIC_MARKER;
+            return this;
         }
 
         public int componentCount()
