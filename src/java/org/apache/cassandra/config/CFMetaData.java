@@ -151,6 +151,7 @@ public final class CFMetaData
                                                              + "index_name text,"
                                                              + "component_index int,"
                                                              + "type text,"
+                                                             + "is_static boolean,"
                                                              + "PRIMARY KEY(keyspace_name, columnfamily_name, column_name)"
                                                              + ") WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640");
 
@@ -409,6 +410,8 @@ public final class CFMetaData
     private volatile List<ColumnDefinition> clusteringKeyColumns; // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
     private volatile Set<ColumnDefinition> regularColumns;
     private volatile ColumnDefinition compactValueColumn;
+
+    private volatile boolean hasStaticColumns;
 
     public volatile Class<? extends AbstractCompactionStrategy> compactionStrategyClass = DEFAULT_COMPACTION_STRATEGY_CLASS;
     public volatile Map<String, String> compactionStrategyOptions = new HashMap<>();
@@ -1885,6 +1888,7 @@ public final class CFMetaData
         Set<ColumnDefinition> regCols = new HashSet<ColumnDefinition>();
         ColumnDefinition compactCol = null;
 
+        hasStaticColumns = false;
         for (ColumnDefinition def : column_metadata.values())
         {
             switch (def.type)
@@ -1899,6 +1903,8 @@ public final class CFMetaData
                     break;
                 case REGULAR:
                     regCols.add(def);
+                    if (def.isStatic)
+                        hasStaticColumns = true;
                     break;
                 case COMPACT_VALUE:
                     assert compactCol == null : "There shouldn't be more than one compact value defined: got " + compactCol + " and " + def;
@@ -2072,6 +2078,20 @@ public final class CFMetaData
                 return false;
         }
         return true;
+    }
+
+    public boolean hasStaticColumns()
+    {
+        return hasStaticColumns;
+    }
+
+    public ColumnNameBuilder getStaticColumnNameBuilder()
+    {
+        assert comparator instanceof CompositeType && clusteringKeyColumns().size() > 0;
+        CompositeType.Builder builder = CompositeType.Builder.staticBuilder((CompositeType)comparator);
+        for (int i = 0; i < clusteringKeyColumns().size(); i++)
+            builder.add(ByteBufferUtil.EMPTY_BYTE_BUFFER);
+        return builder;
     }
 
     public void validateColumns(Iterable<Column> columns)
