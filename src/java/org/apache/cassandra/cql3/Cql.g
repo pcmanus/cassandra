@@ -484,7 +484,8 @@ cfamDefinition[CreateTableStatement.RawStatement expr]
     ;
 
 cfamColumns[CreateTableStatement.RawStatement expr]
-    : k=cident v=comparatorType { $expr.addDefinition(k, v); } (K_PRIMARY K_KEY { $expr.addKeyAliases(Collections.singletonList(k)); })?
+    : k=cident v=comparatorType { boolean isStatic=false; } (K_STATIC {isStatic = true;})? { $expr.addDefinition(k, v, isStatic); }
+        (K_PRIMARY K_KEY { $expr.addKeyAliases(Collections.singletonList(k)); })?
     | K_PRIMARY K_KEY '(' pkDef[expr] (',' c=cident { $expr.addColumnAlias(c); } )* ')'
     ;
 
@@ -965,6 +966,7 @@ unreserved_function_keyword returns [String str]
         | K_CUSTOM
         | K_TRIGGER
         | K_DISTINCT
+        | K_STATIC
         ) { $str = $k.text; }
     | t=native_type { $str = t.toString(); }
     ;
@@ -1068,6 +1070,7 @@ K_NAN:         N A N;
 K_INFINITY:    I N F I N I T Y;
 
 K_TRIGGER:     T R I G G E R;
+K_STATIC:      S T A T I C;
 
 // Case-insensitive alpha characters
 fragment A: ('a'|'A');
