@@ -87,7 +87,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
             for (ColumnDefinition def : cfm.regularColumns())
             {
                 ColumnIdentifier id = new ColumnIdentifier(def.name, cfm.getColumnDefinitionComparator(def));
-                this.metadata.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_METADATA, def.getValidator()));
+                this.metadata.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_METADATA, def.getValidator(), def.isStatic));
             }
         }
     }
@@ -108,7 +108,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         // define a value' (see CreateTableStatement)
         return alias.key.equals(ByteBufferUtil.EMPTY_BYTE_BUFFER)
                ? null
-               : new Name(cfm.ksName, cfm.cfName, alias, Name.Kind.VALUE_ALIAS, cfm.getDefaultValidator());
+               : new Name(cfm.ksName, cfm.cfName, alias, Name.Kind.VALUE_ALIAS, cfm.getDefaultValidator(), false);
     }
 
     public Name get(ColumnIdentifier name)
@@ -176,20 +176,27 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
             KEY_ALIAS, COLUMN_ALIAS, VALUE_ALIAS, COLUMN_METADATA
         }
 
-        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, AbstractType<?> type)
+        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, AbstractType<?> type, boolean isStatic)
         {
-            this(ksName, cfName, name, kind, -1, type);
+            this(ksName, cfName, name, kind, -1, type, isStatic);
         }
 
         private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, int position, AbstractType<?> type)
         {
+            this(ksName, cfName, name, kind, position, type, false);
+        }
+
+        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, int position, AbstractType<?> type, boolean isStatic)
+        {
             super(ksName, cfName, name, type);
             this.kind = kind;
             this.position = position;
+            this.isStatic = isStatic;
         }
 
         public final Kind kind;
         public final int position; // only make sense for KEY_ALIAS and COLUMN_ALIAS
+        public final boolean isStatic;
 
         @Override
         public boolean equals(Object o)
@@ -202,13 +209,14 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
                 && Objects.equal(name, that.name)
                 && Objects.equal(type, that.type)
                 && kind == that.kind
-                && position == that.position;
+                && position == that.position
+                && isStatic == isStatic;
         }
 
         @Override
         public final int hashCode()
         {
-            return Objects.hashCode(ksName, cfName, name, type, kind, position);
+            return Objects.hashCode(ksName, cfName, name, type, kind, position, isStatic);
         }
     }
 
