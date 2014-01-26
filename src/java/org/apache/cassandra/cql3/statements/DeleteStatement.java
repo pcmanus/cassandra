@@ -44,8 +44,15 @@ public class DeleteStatement extends ModificationStatement
     public ColumnFamily updateForKey(ByteBuffer key, ColumnNameBuilder builder, UpdateParameters params)
     throws InvalidRequestException
     {
-        CFDefinition cfDef = cfm.getCfDef();
         ColumnFamily cf = TreeMapBackedSortedColumns.factory.create(cfm);
+        addUpdateForKey(cf, key, builder, params);
+        return cf;
+    }
+
+    public void addUpdateForKey(ColumnFamily cf, ByteBuffer key, ColumnNameBuilder builder, UpdateParameters params)
+    throws InvalidRequestException
+    {
+        CFDefinition cfDef = cfm.getCfDef();
         List<Operation> deletions = getOperations();
 
         boolean fullKey = builder.componentCount() == cfDef.columns.size();
@@ -83,8 +90,6 @@ public class DeleteStatement extends ModificationStatement
                 }
             }
         }
-
-        return cf;
     }
 
     public static class Parsed extends ModificationStatement.Parsed
