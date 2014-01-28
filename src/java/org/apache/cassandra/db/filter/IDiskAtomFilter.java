@@ -86,6 +86,8 @@ public interface IDiskAtomFilter
 
     boolean isHeadFilter();
 
+    boolean isTailFilter();
+
     public static class Serializer implements IVersionedSerializer<IDiskAtomFilter>
     {
         private final CellNameType type;

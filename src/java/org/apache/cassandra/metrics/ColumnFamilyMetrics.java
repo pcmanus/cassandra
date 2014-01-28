@@ -381,6 +381,8 @@ public class ColumnFamilyMetrics
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("CoordinatorScanLatency"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("SnapshotsSize"));
         Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHitOutOfRange"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHit"));
+        Metrics.defaultRegistry().removeMetric(factory.createMetricName("RowCacheHitMiss"));
     }
 
     class ColumnFamilyMetricNameFactory implements MetricNameFactory

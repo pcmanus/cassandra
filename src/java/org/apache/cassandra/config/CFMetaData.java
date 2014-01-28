@@ -860,13 +860,6 @@ public final class CFMetaData
         return rowsPerPartitionToCache;
     }
 
-    public int getCellsPerPartitionToCache()
-    {
-        if (rowsPerPartitionToCache.type == RowsPerPartitionToCache.Type.ALL)
-            return rowsPerPartitionToCache.rowsToCache;
-        return getRowsPerPartitionToCache().rowsToCache * (regularColumns.size() + 1);
-    }
-
     public int getIndexInterval()
     {
         return indexInterval;

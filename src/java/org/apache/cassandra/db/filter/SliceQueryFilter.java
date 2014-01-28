@@ -348,12 +348,12 @@ public class SliceQueryFilter implements IDiskAtomFilter
 
     public boolean isHeadFilter()
     {
-        for (ColumnSlice slice : slices)
-        {
-            if (!slice.start.isEmpty())
-                return false;
-        }
-        return true;
+        return slices.length == 1 && slices[0].start.isEmpty();
+    }
+
+    public boolean isTailFilter()
+    {
+        return slices.length == 1 && slices[0].finish.isEmpty();
     }
 
     public static class Serializer implements IVersionedSerializer<SliceQueryFilter>

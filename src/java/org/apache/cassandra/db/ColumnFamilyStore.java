@@ -1285,8 +1285,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     /**
      * Fetch the row and columns given by filter.key if it is in the cache; if not, read it from disk and cache it
      *
-     * If the columns cached are not covered by the filter, we fall back to reading from disk
-     *
      * If row is cached, and the filter given is within its bounds, we return from cache, otherwise from disk
      *
      * If row is not cached, we figure out what filter is "biggest", read that from disk, then
@@ -1316,13 +1314,14 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 Tracing.trace("Row cache miss (race)");
                 return getTopLevelColumns(filter, Integer.MIN_VALUE);
             }
-
-            boolean wholePartitionCached = ((ColumnFamily)cached).getColumnCount() < metadata.getCellsPerPartitionToCache();
+            // todo: cache this value:
+            int rowsInCachedCf = getRowCountInCachedCf((ColumnFamily) cached);
+            boolean wholePartitionCached = rowsInCachedCf < metadata.getRowsPerPartitionToCache().rowsToCache;
             ColumnFamily cachedCf = filterColumnFamily((ColumnFamily) cached, filter);
             metric.rowCacheHit.inc();
             Tracing.trace("Row cache hit");
 
-            if (wholePartitionCached || filter.filter.getCount() * (metadata.regularColumns().size() + 1)  <= cachedCf.getColumnCount())
+            if (wholePartitionCached || (filter.filter.isHeadFilter() && filter.filter.getCount() <= rowsInCachedCf))
             {
                 return cachedCf;
             }
@@ -1350,27 +1349,31 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             }
             else if (filter.filter.isHeadFilter())
             {
-                QueryFilter cacheFilter = QueryFilter.getSliceFilter(filter.key,
-                                                               name,
-                                                               Composites.EMPTY,
-                                                               Composites.EMPTY,
-                                                               false,
-                                                               metadata.getCellsPerPartitionToCache(),
-                                                               filter.timestamp);
+                SliceQueryFilter cacheSlice = new SliceQueryFilter(Composites.EMPTY,
+                                                                   Composites.EMPTY,
+                                                                   false,
+                                                                   metadata.getRowsPerPartitionToCache().rowsToCache,
+                                                                   metadata.comparator.isDense() ? -1 : metadata.clusteringColumns().size());
+
+                QueryFilter cacheFilter = new QueryFilter(filter.key, name, cacheSlice, filter.timestamp);
 
                 if (filter.filter.getCount() > metadata.getRowsPerPartitionToCache().rowsToCache)
                 {
                     Tracing.trace("Requesting more rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
                     data = getTopLevelColumns(filter, Integer.MIN_VALUE);
                     if (data != null)
-                        toCache = filterColumnFamily(data.cloneMe(), cacheFilter);
+                    {
+                        toCache = filterColumnFamily(data, cacheFilter);
+                        if (cacheSlice.lastCounted() <= metadata.getRowsPerPartitionToCache().rowsToCache && !filter.filter.isTailFilter())
+                            toCache = null;
+                    }
                 }
                 else
                 {
                     Tracing.trace("Requesting less rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
                     toCache = getTopLevelColumns(cacheFilter, Integer.MIN_VALUE);
                     if (toCache != null)
-                        data = filterColumnFamily(toCache.cloneMe(), filter);
+                        data = filterColumnFamily(toCache, filter);
                 }
 
                 Tracing.trace("Populating row cache");
@@ -1389,6 +1392,25 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (sentinelSuccess && toCache == null)
                 invalidateCachedRow(key);
         }
+    }
+
+    private int getRowCountInCachedCf(ColumnFamily cached)
+    {
+        if (!metadata.isCQL3Table())
+            return cached.getColumnCount();
+
+        SliceQueryFilter filter = new SliceQueryFilter(Composites.EMPTY,
+                                                       Composites.EMPTY,
+                                                       false,
+                                                       Integer.MAX_VALUE,
+                                                       metadata.comparator.isDense() ? -1 : metadata.clusteringColumns().size());
+
+        ColumnCounter counter = filter.columnCounter(metadata.comparator, 0);
+        DeletionInfo.InOrderTester tester = cached.deletionInfo().inOrderTester(false);
+        for (Cell cell : cached)
+            counter.count(cell, tester);
+
+        return counter.live();
     }
 
     public int gcBefore(long now)
@@ -1981,20 +2003,29 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             return null;
 
         IRowCacheEntry cached = CacheService.instance.rowCache.getInternal(new RowCacheKey(metadata.cfId, key));
-        return cached == null || cached instanceof RowCacheSentinel ? null : (ColumnFamily) cached;
+
+        if (cached == null || cached instanceof RowCacheSentinel)
+            return null;
+
+        if (metadata.getRowsPerPartitionToCache().type == CFMetaData.RowsPerPartitionToCache.Type.ALL ||
+            getRowCountInCachedCf((ColumnFamily) cached) < metadata.getRowsPerPartitionToCache().rowsToCache)
+        {
+            return (ColumnFamily) cached;
+        }
+
+        return null;
     }
 
     private void invalidateCaches()
     {
-        for (RowCacheKey key : CacheService.instance.rowCache.getKeySet())
-            if (key.cfId == metadata.cfId)
-                invalidateCachedRow(key);
+        CacheService.instance.invalidateRowCacheForCf(metadata.cfId);
 
         if (metadata.isCounter())
             for (CounterCacheKey key : CacheService.instance.counterCache.getKeySet())
                 if (key.cfId == metadata.cfId)
                     CacheService.instance.counterCache.remove(key);
     }
+
 
     /**
      * @return true if @param key is contained in the row cache
@@ -2140,9 +2171,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     index.truncateBlocking(truncatedAt);
 
                 SystemKeyspace.saveTruncationRecord(ColumnFamilyStore.this, truncatedAt, replayAfter);
-
                 logger.debug("cleaning out row cache");
-                CacheService.instance.invalidateRowCacheForCf(metadata.cfId);
+                invalidateCaches();
             }
         };
 

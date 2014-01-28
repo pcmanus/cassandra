@@ -145,17 +145,17 @@ public class NamesQueryFilter implements IDiskAtomFilter
         return true;
     }
 
-    public boolean shouldCache(int cellsToCache)
-    {
-        return false;
-    }
-
     public int getCount()
     {
         return columns.size();
     }
 
     public boolean isHeadFilter()
+    {
+        return false;
+    }
+
+    public boolean isTailFilter()
     {
         return false;
     }

@@ -28,14 +28,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.Lock;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
-import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.util.concurrent.Futures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,8 +47,10 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.composites.CellName;
+import org.apache.cassandra.db.composites.Composites;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -443,14 +443,12 @@ public class CacheService implements CacheServiceMBean
                 public Pair<RowCacheKey, IRowCacheEntry> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
-                    ColumnFamily data = cfs.getTopLevelColumns(QueryFilter.getSliceFilter(key,
-                                                                                          cfs.name,
-                                                                                          Composites.EMPTY,
-                                                                                          Composites.EMPTY,
-                                                                                          false,
-                                                                                          cfs.metadata.getCellsPerPartitionToCache(),
-                                                                                          Integer.MIN_VALUE),
-                                                                Integer.MIN_VALUE);
+                    SliceQueryFilter cacheFilter = new SliceQueryFilter(Composites.EMPTY,
+                                                                        Composites.EMPTY,
+                                                                        false,
+                                                                        cfs.metadata.getRowsPerPartitionToCache().rowsToCache,
+                                                                        cfs.getComparator().isDense() ? -1 : cfs.metadata.clusteringColumns().size());
+                    ColumnFamily data = cfs.getTopLevelColumns(new QueryFilter(key, cfs.getColumnFamilyName(), cacheFilter, Integer.MIN_VALUE), Integer.MIN_VALUE);
                     return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry) data);
                 }
             });
