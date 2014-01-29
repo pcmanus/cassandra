@@ -473,7 +473,7 @@ struct CfDef {
     41: optional i32 index_interval,
     42: optional string speculative_retry="NONE",
     43: optional list<TriggerDef> triggers,
-    44: optional string rows_per_partition_to_cache = "100",
+    44: optional string cells_per_row_to_cache = "100",
 
     /* All of the following are now ignored and unsupplied. */
 

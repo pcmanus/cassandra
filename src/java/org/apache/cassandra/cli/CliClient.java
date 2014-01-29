@@ -140,7 +140,7 @@ public class CliClient
         INDEX_INTERVAL,
         MEMTABLE_FLUSH_PERIOD_IN_MS,
         CACHING,
-        ROWS_PER_PARTITION_TO_CACHE,
+        CELLS_PER_ROW_TO_CACHE,
         DEFAULT_TIME_TO_LIVE,
         SPECULATIVE_RETRY,
         POPULATE_IO_CACHE_ON_FLUSH,
@@ -1349,8 +1349,8 @@ public class CliClient
             case CACHING:
                 cfDef.setCaching(CliUtils.unescapeSQLString(mValue));
                 break;
-            case ROWS_PER_PARTITION_TO_CACHE:
-                cfDef.setRows_per_partition_to_cache(mValue);
+            case CELLS_PER_ROW_TO_CACHE:
+                cfDef.setCells_per_row_to_cache(mValue);
                 break;
             case DEFAULT_TIME_TO_LIVE:
                 cfDef.setDefault_time_to_live(Integer.parseInt(mValue));
@@ -1823,7 +1823,7 @@ public class CliClient
         writeAttr(output, false, "replicate_on_write", cfDef.replicate_on_write);
         writeAttr(output, false, "compaction_strategy", cfDef.compaction_strategy);
         writeAttr(output, false, "caching", cfDef.caching);
-        writeAttr(output, false, "rows_per_partition_to_cache", cfDef.rows_per_partition_to_cache);
+        writeAttr(output, false, "cells_per_row_to_cache", cfDef.cells_per_row_to_cache);
         writeAttr(output, false, "default_time_to_live", cfDef.default_time_to_live);
         writeAttr(output, false, "speculative_retry", cfDef.speculative_retry);
 

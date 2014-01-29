@@ -1014,8 +1014,8 @@ public final class CFMetaData
             cf_def.setDefault_time_to_live(CFMetaData.DEFAULT_DEFAULT_TIME_TO_LIVE);
         if (!cf_def.isSetDclocal_read_repair_chance())
             cf_def.setDclocal_read_repair_chance(CFMetaData.DEFAULT_DCLOCAL_READ_REPAIR_CHANCE);
-        if (!cf_def.isSetRows_per_partition_to_cache())
-            cf_def.setRows_per_partition_to_cache(CFMetaData.DEFAULT_ROWS_PER_PARTITION_TO_CACHE.toString());
+        if (!cf_def.isSetCells_per_row_to_cache())
+            cf_def.setCells_per_row_to_cache(CFMetaData.DEFAULT_ROWS_PER_PARTITION_TO_CACHE.toString());
     }
 
     public static CFMetaData fromThrift(org.apache.cassandra.thrift.CfDef cf_def) throws InvalidRequestException, ConfigurationException
@@ -1074,8 +1074,8 @@ public final class CFMetaData
                 newCFMD.populateIoCacheOnFlush(cf_def.populate_io_cache_on_flush);
             if (cf_def.isSetTriggers())
                 newCFMD.triggers(TriggerDefinition.fromThrift(cf_def.triggers));
-            if (cf_def.isSetRows_per_partition_to_cache())
-                newCFMD.rowsPerPartitionToCache(RowsPerPartitionToCache.fromString(cf_def.rows_per_partition_to_cache));
+            if (cf_def.isSetCells_per_row_to_cache())
+                newCFMD.rowsPerPartitionToCache(RowsPerPartitionToCache.fromString(cf_def.cells_per_row_to_cache));
 
             CompressionParameters cp = CompressionParameters.create(cf_def.compression_options);
 
@@ -1320,7 +1320,7 @@ public final class CFMetaData
         def.setIndex_interval(indexInterval);
         def.setMemtable_flush_period_in_ms(memtableFlushPeriod);
         def.setCaching(caching.toString());
-        def.setRows_per_partition_to_cache(rowsPerPartitionToCache.toString());
+        def.setCells_per_row_to_cache(rowsPerPartitionToCache.toString());
         def.setDefault_time_to_live(defaultTimeToLive);
         def.setSpeculative_retry(speculativeRetry.toString());
         def.setTriggers(TriggerDefinition.toThrift(triggers));
