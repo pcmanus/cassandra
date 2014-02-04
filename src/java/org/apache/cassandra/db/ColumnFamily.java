@@ -39,6 +39,7 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.db.composites.CellNames;
+import org.apache.cassandra.db.filter.ColumnCounter;
 import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.io.sstable.ColumnNameHelper;
 import org.apache.cassandra.io.sstable.ColumnStats;
@@ -82,6 +83,14 @@ public abstract class ColumnFamily implements Iterable<Cell>, IRowCacheEntry
     public ColumnFamilyType getType()
     {
         return metadata.cfType;
+    }
+
+    public int liveCQL3RowCount(long now)
+    {
+        ColumnCounter counter = getComparator().isDense()
+                              ? new ColumnCounter(now)
+                              : new ColumnCounter.GroupByPrefix(now, getComparator(), metadata.clusteringColumns().size());
+        return counter.countAll(this).live();
     }
 
     /**

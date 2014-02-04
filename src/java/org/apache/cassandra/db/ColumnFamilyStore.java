@@ -1303,8 +1303,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         // attempt a sentinel-read-cache sequence.  if a write invalidates our sentinel, we'll return our
         // (now potentially obsolete) data, but won't cache it. see CASSANDRA-3862
-        // TODO(2864): don't evict entire rows on writes
-        // TODO: make it possible to have custom cache-filters
+        // TODO: don't evict entire rows on writes (#2864)
         IRowCacheEntry cached = CacheService.instance.rowCache.get(key);
         if (cached != null)
         {
@@ -1312,21 +1311,20 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             {
                 // Some other read is trying to cache the value, just do a normal non-caching read
                 Tracing.trace("Row cache miss (race)");
+                metric.rowCacheMiss.inc();
                 return getTopLevelColumns(filter, Integer.MIN_VALUE);
             }
-            // todo: cache this value:
-            int rowsInCachedCf = getRowCountInCachedCf((ColumnFamily) cached);
-            boolean wholePartitionCached = rowsInCachedCf < metadata.getRowsPerPartitionToCache().rowsToCache;
-            ColumnFamily cachedCf = filterColumnFamily((ColumnFamily) cached, filter);
-            metric.rowCacheHit.inc();
-            Tracing.trace("Row cache hit");
 
-            if (wholePartitionCached || (filter.filter.isHeadFilter() && filter.filter.getCount() <= rowsInCachedCf))
+            ColumnFamily cachedCf = (ColumnFamily)cached;
+            if (isFilterFullyCoveredBy(filter.filter, cachedCf, filter.timestamp))
             {
+                metric.rowCacheHit.inc();
+                Tracing.trace("Row cache hit");
                 return cachedCf;
             }
+
             metric.rowCacheHitOutOfRange.inc();
-            Tracing.trace("Cached value could not satisfy query");
+            Tracing.trace("Ignoring row cache as cached value could not satisfy query");
             return getTopLevelColumns(filter, Integer.MIN_VALUE);
         }
 
@@ -1338,7 +1336,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         ColumnFamily toCache = null;
         try
         {
-            if (metadata.getRowsPerPartitionToCache().type == CFMetaData.RowsPerPartitionToCache.Type.ALL)
+            // If we are explicitely asked to fill the cache with full partitions, we go ahead and query the whole thing
+            if (metadata.getRowsPerPartitionToCache().cacheFullPartitions())
             {
                 data = getTopLevelColumns(QueryFilter.getIdentityFilter(filter.key, name, filter.timestamp), Integer.MIN_VALUE);
                 toCache = data;
@@ -1347,43 +1346,64 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     CacheService.instance.rowCache.replace(key, sentinel, toCache);
                 return filterColumnFamily(data, filter);
             }
-            else if (filter.filter.isHeadFilter())
-            {
-                SliceQueryFilter cacheSlice = new SliceQueryFilter(Composites.EMPTY,
-                                                                   Composites.EMPTY,
-                                                                   false,
-                                                                   metadata.getRowsPerPartitionToCache().rowsToCache,
-                                                                   metadata.comparator.isDense() ? -1 : metadata.clusteringColumns().size());
 
+            // Otherwise, if we want to cache the result of the query we're about to do, we must make sure this query
+            // covers what needs to be cached. And if the user filter does not satisfy that, we sometimes extend said
+            // filter so we can populate the cache but only if:
+            //   1) we can guarantee it is a strict extension, i.e. that we will still fetch the data asked by the user.
+            //   2) the extension does not make us query more than getRowsPerPartitionToCache() (as a mean to limit the
+            //      amount of extra work we'll do on a user query for the purpose of populating the cache).
+            //
+            // In practice, we can only guarantee those 2 points if the filter is one that queries the head of the
+            // partition (and if that filter actually counts CQL3 rows since that's what we cache and it would be
+            // bogus to compare the filter count to the 'rows to cache' otherwise).
+            if (filter.filter.isHeadFilter() && filter.filter.countCQL3Rows(metadata.comparator))
+            {
+                SliceQueryFilter sliceFilter = (SliceQueryFilter)filter.filter;
+                int rowsToCache = metadata.getRowsPerPartitionToCache().rowsToCache;
+
+                SliceQueryFilter cacheSlice = readFilterForCache();
                 QueryFilter cacheFilter = new QueryFilter(filter.key, name, cacheSlice, filter.timestamp);
 
-                if (filter.filter.getCount() > metadata.getRowsPerPartitionToCache().rowsToCache)
+                // If the filter count is less than the number of rows cached, we simply extend it to make sure we do cover the
+                // number of rows to cache, and if that count is greater than the number of rows to cache, we simply filter what
+                // needs to be cached afterwards.
+                if (sliceFilter.count < rowsToCache)
                 {
-                    Tracing.trace("Requesting more rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
-                    data = getTopLevelColumns(filter, Integer.MIN_VALUE);
-                    if (data != null)
+                    toCache = getTopLevelColumns(cacheFilter, Integer.MIN_VALUE);
+                    if (toCache != null)
                     {
-                        toCache = filterColumnFamily(data, cacheFilter);
-                        if (cacheSlice.lastCounted() <= metadata.getRowsPerPartitionToCache().rowsToCache && !filter.filter.isTailFilter())
-                            toCache = null;
+                        Tracing.trace("Populating row cache ({} rows cached)", cacheSlice.lastCounted());
+                        data = filterColumnFamily(toCache, filter);
                     }
                 }
                 else
                 {
-                    Tracing.trace("Requesting less rows ({}) than we cache, caching {} rows", filter.filter.getCount(), metadata.getRowsPerPartitionToCache().rowsToCache);
-                    toCache = getTopLevelColumns(cacheFilter, Integer.MIN_VALUE);
-                    if (toCache != null)
-                        data = filterColumnFamily(toCache, filter);
+                    data = getTopLevelColumns(filter, Integer.MIN_VALUE);
+                    if (data != null)
+                    {
+                        // The filter limit was greater than the number of rows to cache. But, if the filter had a non-empty
+                        // finish bound, we may have gotten less than what needs to be cached, in which case we shouldn't cache it
+                        // (otherwise a cache hit would assume the whole partition is cached which is not the case).
+                        if (sliceFilter.finish().isEmpty() || sliceFilter.lastCounted() >= rowsToCache)
+                        {
+                            toCache = filterColumnFamily(data, cacheFilter);
+                            Tracing.trace("Caching {} rows (out of {} requested)", cacheSlice.lastCounted(), sliceFilter.count);
+                        }
+                        else
+                        {
+                            Tracing.trace("Not populating row cache, not enough rows fetched ({} fetched but {} required for the cache)", sliceFilter.lastCounted(), rowsToCache);
+                        }
+                    }
                 }
 
-                Tracing.trace("Populating row cache");
                 if (sentinelSuccess && toCache != null)
                     CacheService.instance.rowCache.replace(key, sentinel, toCache);
                 return data;
             }
             else
             {
-                Tracing.trace("Returning data, not populating cache");
+                Tracing.trace("Fetching data but not populating cache as query does not query from the start of the partition");
                 return getTopLevelColumns(filter, Integer.MIN_VALUE);
             }
         }
@@ -1394,23 +1414,32 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
     }
 
-    private int getRowCountInCachedCf(ColumnFamily cached)
+    public SliceQueryFilter readFilterForCache()
     {
-        if (!metadata.isCQL3Table())
-            return cached.getColumnCount();
+        // We create a new filter everytime before for now SliceQueryFilter is unfortunatly mutable.
+        return new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, false, metadata.getRowsPerPartitionToCache().rowsToCache, metadata.clusteringColumns().size());
+    }
 
-        SliceQueryFilter filter = new SliceQueryFilter(Composites.EMPTY,
-                                                       Composites.EMPTY,
-                                                       false,
-                                                       Integer.MAX_VALUE,
-                                                       metadata.comparator.isDense() ? -1 : metadata.clusteringColumns().size());
+    public boolean isFilterFullyCoveredBy(IDiskAtomFilter filter, ColumnFamily cachedCf, long now)
+    {
+        int rowsInCachedCf = cachedCf.liveCQL3RowCount(now);
 
-        ColumnCounter counter = filter.columnCounter(metadata.comparator, 0);
-        DeletionInfo.InOrderTester tester = cached.deletionInfo().inOrderTester(false);
-        for (Cell cell : cached)
-            counter.count(cell, tester);
+        // We can use the cached value only if we know that no data it doesn't contain could be covered
+        // by the query filter, that is if:
+        //   1) either the whole partition is cached
+        //   2) or we can ensure than any data the filter selects are in the cached partition
 
-        return counter.live();
+        // When counting rows to decide if the whole row is cached, we should be careful with expiring
+        // columns: if we use a timestamp newer than the one that was used when populating the cache, we might
+        // end up deciding the whole partition is cached when it's really not (just some rows expired since the
+        // cf was cached). This is the reason for Integer.MIN_VALUE below.
+        boolean wholePartitionCached = cachedCf.liveCQL3RowCount(Integer.MIN_VALUE) < metadata.getRowsPerPartitionToCache().rowsToCache;
+
+        // Contrarily to the "wholePartitionCached" check above, we do want isFullyCoveredBy to take the
+        // timestamp of the query into account when dealing with expired columns. Otherwise, we could think
+        // the cached partition has enough live rows to satisfy the filter when it doesn't because some
+        // are now expired.
+        return wholePartitionCached || filter.isFullyCoveredBy(cachedCf, now);
     }
 
     public int gcBefore(long now)
@@ -2003,17 +2032,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             return null;
 
         IRowCacheEntry cached = CacheService.instance.rowCache.getInternal(new RowCacheKey(metadata.cfId, key));
-
-        if (cached == null || cached instanceof RowCacheSentinel)
-            return null;
-
-        if (metadata.getRowsPerPartitionToCache().type == CFMetaData.RowsPerPartitionToCache.Type.ALL ||
-            getRowCountInCachedCf((ColumnFamily) cached) < metadata.getRowsPerPartitionToCache().rowsToCache)
-        {
-            return (ColumnFamily) cached;
-        }
-
-        return null;
+        return cached == null || cached instanceof RowCacheSentinel ? null : (ColumnFamily)cached;
     }
 
     private void invalidateCaches()

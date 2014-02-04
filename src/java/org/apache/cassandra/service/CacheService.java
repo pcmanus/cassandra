@@ -443,12 +443,8 @@ public class CacheService implements CacheServiceMBean
                 public Pair<RowCacheKey, IRowCacheEntry> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
-                    SliceQueryFilter cacheFilter = new SliceQueryFilter(Composites.EMPTY,
-                                                                        Composites.EMPTY,
-                                                                        false,
-                                                                        cfs.metadata.getRowsPerPartitionToCache().rowsToCache,
-                                                                        cfs.getComparator().isDense() ? -1 : cfs.metadata.clusteringColumns().size());
-                    ColumnFamily data = cfs.getTopLevelColumns(new QueryFilter(key, cfs.getColumnFamilyName(), cacheFilter, Integer.MIN_VALUE), Integer.MIN_VALUE);
+                    QueryFilter cacheFilter = new QueryFilter(key, cfs.getColumnFamilyName(), cfs.readFilterForCache(), Integer.MIN_VALUE);
+                    ColumnFamily data = cfs.getTopLevelColumns(cacheFilter, Integer.MIN_VALUE);
                     return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry) data);
                 }
             });

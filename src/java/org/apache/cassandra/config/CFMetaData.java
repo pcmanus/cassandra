@@ -322,6 +322,7 @@ public final class CFMetaData
         }
         public final int rowsToCache;
         public final Type type;
+
         private RowsPerPartitionToCache(int rowsToCache, Type type)
         {
             this.rowsToCache = rowsToCache;
@@ -333,6 +334,11 @@ public final class CFMetaData
             if (rpptc.equalsIgnoreCase("all"))
                 return new RowsPerPartitionToCache(Integer.MAX_VALUE, Type.ALL);
             return new RowsPerPartitionToCache(Integer.parseInt(rpptc), Type.HEAD);
+        }
+
+        public boolean cacheFullPartitions()
+        {
+            return type == Type.ALL;
         }
 
         public String toString()

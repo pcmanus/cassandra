@@ -341,19 +341,39 @@ public class SliceQueryFilter implements IDiskAtomFilter
         return false;
     }
 
-    public int getCount()
-    {
-        return count;
-    }
-
     public boolean isHeadFilter()
     {
-        return slices.length == 1 && slices[0].start.isEmpty();
+        return slices.length == 1 && slices[0].start.isEmpty() && !reversed;
     }
 
-    public boolean isTailFilter()
+    public boolean countCQL3Rows(CellNameType comparator)
     {
-        return slices.length == 1 && slices[0].finish.isEmpty();
+        // If comparator is dense a cell == a CQL3 rows so we're always counting CQL3 rows
+        // in particular. Otherwise, we do so only if we group the cells into CQL rows.
+        return comparator.isDense() || compositesToGroup >= 0;
+    }
+
+    public boolean isFullyCoveredBy(ColumnFamily cf, long now)
+    {
+        // cf is the beginning of a partition. It covers this filter if:
+        //   1) either this filter requests the head of the partition and request less
+        //      than what cf has to offer (note: we do need to use getLiveCount() for that
+        //      as it knows if the filter count cells or CQL3 rows).
+        //   2) the start and finish bound of this filter are included in cf.
+        if (isHeadFilter() && count <= getLiveCount(cf, now))
+            return true;
+
+        if (start().isEmpty() || finish().isEmpty() || cf.getColumnCount() == 0)
+            return false;
+
+        Composite low = isReversed() ? finish() : start();
+        Composite high = isReversed() ? start() : finish();
+
+        CellName first = cf.iterator(ColumnSlice.ALL_COLUMNS_ARRAY).next().name();
+        CellName last = cf.reverseIterator(ColumnSlice.ALL_COLUMNS_ARRAY).next().name();
+
+        return cf.getComparator().compare(first, low) <= 0
+            && cf.getComparator().compare(high, last) <= 0;
     }
 
     public static class Serializer implements IVersionedSerializer<SliceQueryFilter>

@@ -80,13 +80,17 @@ public interface IDiskAtomFilter
     public IDiskAtomFilter cloneShallow();
     public boolean maySelectPrefix(Comparator<Composite> cmp, Composite prefix);
 
-    boolean shouldInclude(SSTableReader sstable);
+    public boolean shouldInclude(SSTableReader sstable);
 
-    int getCount();
+    public boolean countCQL3Rows(CellNameType comparator);
 
-    boolean isHeadFilter();
+    public boolean isHeadFilter();
 
-    boolean isTailFilter();
+    /**
+     * Whether the provided cf, that is assumed to contain the head of the
+     * partition, contains enough data to cover this filter.
+     */
+    public boolean isFullyCoveredBy(ColumnFamily cf, long now);
 
     public static class Serializer implements IVersionedSerializer<IDiskAtomFilter>
     {
