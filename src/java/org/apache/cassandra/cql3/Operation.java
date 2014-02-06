@@ -65,7 +65,7 @@ public abstract class Operation
             return false;
 
         ColumnDefinition def = cfm.getColumnDefinition(columnName.key);
-        return def != null && def.isStatic;
+        return def != null && def.type == ColumnDefinition.Type.STATIC;
     }
 
     protected ColumnNameBuilder updatePrefix(CFMetaData cfm, ColumnNameBuilder prefix)
