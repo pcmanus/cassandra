@@ -289,6 +289,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                     break;
                 case VALUE_ALIAS:
                 case COLUMN_METADATA:
+                case STATIC:
                     throw new InvalidRequestException(String.format("Non PRIMARY KEY %s found in where clause", name));
             }
         }
@@ -300,7 +301,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         CFDefinition cfDef = cfm.getCfDef();
         ColumnNameBuilder keyBuilder = cfDef.getKeyNameBuilder();
         List<ByteBuffer> keys = new ArrayList<ByteBuffer>();
-        for (CFDefinition.Name name : cfDef.keys.values())
+        for (CFDefinition.Name name : cfDef.partitionKeys())
         {
             Restriction r = processedKeys.get(name.name);
             if (r == null)
@@ -352,7 +353,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     public boolean isStatic(ByteBuffer name)
     {
         ColumnDefinition def = cfm.getColumnDefinition(name);
-        return def != null && def.isStatic;
+        return def != null && def.type == ColumnDefinition.Type.STATIC;
     }
 
     private ColumnNameBuilder createClusteringPrefixBuilderInternal(List<ByteBuffer> variables)
@@ -361,7 +362,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         CFDefinition cfDef = cfm.getCfDef();
         ColumnNameBuilder builder = cfDef.getColumnNameBuilder();
         CFDefinition.Name firstEmptyKey = null;
-        for (CFDefinition.Name name : cfDef.columns.values())
+        for (CFDefinition.Name name : cfDef.clusteringColumns())
         {
             Restriction r = processedKeys.get(name.name);
             if (r == null)
@@ -389,7 +390,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     protected CFDefinition.Name getFirstEmptyKey()
     {
-        for (CFDefinition.Name name : cfm.getCfDef().columns.values())
+        for (CFDefinition.Name name : cfm.getCfDef().clusteringColumns())
         {
             if (processedKeys.get(name.name) == null)
                 return name;
@@ -613,8 +614,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             // of batches for compatibility sakes).
             if (isBatch)
             {
-                names.addAll(cfDef.keys.values());
-                names.addAll(cfDef.columns.values());
+                names.addAll(cfDef.partitionKeys());
+                names.addAll(cfDef.clusteringColumns());
             }
             for (ColumnIdentifier id : columnsWithConditions)
                 names.add(cfDef.get(id));
@@ -765,6 +766,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                                 throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.left));
                             case VALUE_ALIAS:
                             case COLUMN_METADATA:
+                            case STATIC:
                                 stmt.addCondition(condition);
                                 break;
                         }

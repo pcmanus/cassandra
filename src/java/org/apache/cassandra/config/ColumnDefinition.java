@@ -47,7 +47,6 @@ public class ColumnDefinition
     private static final String INDEX_NAME = "index_name";
     private static final String COMPONENT_INDEX = "component_index";
     private static final String TYPE = "type";
-    private static final String IS_STATIC = "is_static";
 
     /*
      * The type of CQL3 column this definition represents.
@@ -65,7 +64,8 @@ public class ColumnDefinition
         PARTITION_KEY,
         CLUSTERING_KEY,
         REGULAR,
-        COMPACT_VALUE
+        COMPACT_VALUE,
+        STATIC
     }
 
     public final ByteBuffer name;
@@ -74,7 +74,6 @@ public class ColumnDefinition
     private Map<String,String> indexOptions;
     private String indexName;
     public final Type type;
-    public final boolean isStatic; // Only valid for regular columns
 
     /*
      * If the column comparator is a composite type, indicates to which
@@ -95,12 +94,12 @@ public class ColumnDefinition
 
     public static ColumnDefinition regularDef(ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
     {
-        return regularDef(name, validator, componentIndex, false);
+        return new ColumnDefinition(name, validator, componentIndex, Type.REGULAR);
     }
 
-    public static ColumnDefinition regularDef(ByteBuffer name, AbstractType<?> validator, Integer componentIndex, boolean isStatic)
+    public static ColumnDefinition staticDef(ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
     {
-        return new ColumnDefinition(name, validator, componentIndex, Type.REGULAR, isStatic);
+        return new ColumnDefinition(name, validator, componentIndex, Type.STATIC);
     }
 
     public static ColumnDefinition compactValueDef(ByteBuffer name, AbstractType<?> validator)
@@ -110,12 +109,7 @@ public class ColumnDefinition
 
     public ColumnDefinition(ByteBuffer name, AbstractType<?> validator, Integer componentIndex, Type type)
     {
-        this(name, validator, componentIndex, type, false);
-    }
-
-    public ColumnDefinition(ByteBuffer name, AbstractType<?> validator, Integer componentIndex, Type type, boolean isStatic)
-    {
-        this(name, validator, null, null, null, componentIndex, type, isStatic);
+        this(name, validator, null, null, null, componentIndex, type);
     }
 
     @VisibleForTesting
@@ -127,18 +121,6 @@ public class ColumnDefinition
                             Integer componentIndex,
                             Type type)
     {
-        this(name, validator, indexType, indexOptions, indexName, componentIndex, type, false);
-    }
-
-    private ColumnDefinition(ByteBuffer name,
-                            AbstractType<?> validator,
-                            IndexType indexType,
-                            Map<String, String> indexOptions,
-                            String indexName,
-                            Integer componentIndex,
-                            Type type,
-                            boolean isStatic)
-    {
         assert name != null && validator != null;
         this.name = name;
         this.indexName = indexName;
@@ -146,17 +128,16 @@ public class ColumnDefinition
         this.componentIndex = componentIndex;
         this.setIndexType(indexType, indexOptions);
         this.type = type;
-        this.isStatic = isStatic;
     }
 
     public ColumnDefinition clone()
     {
-        return new ColumnDefinition(name, validator, indexType, indexOptions, indexName, componentIndex, type, isStatic);
+        return new ColumnDefinition(name, validator, indexType, indexOptions, indexName, componentIndex, type);
     }
 
     public ColumnDefinition cloneWithNewName(ByteBuffer newName)
     {
-        return new ColumnDefinition(newName, validator, indexType, indexOptions, indexName, componentIndex, type, isStatic);
+        return new ColumnDefinition(newName, validator, indexType, indexOptions, indexName, componentIndex, type);
     }
 
     @Override
@@ -175,14 +156,13 @@ public class ColumnDefinition
             && Objects.equal(componentIndex, cd.componentIndex)
             && Objects.equal(indexName, cd.indexName)
             && Objects.equal(indexType, cd.indexType)
-            && Objects.equal(indexOptions, cd.indexOptions)
-            && isStatic == cd.isStatic;
+            && Objects.equal(indexOptions, cd.indexOptions);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hashCode(name, validator, componentIndex, indexName, indexType, indexOptions, isStatic);
+        return Objects.hashCode(name, validator, componentIndex, indexName, indexType, indexOptions);
     }
 
     @Override
@@ -195,14 +175,13 @@ public class ColumnDefinition
                       .add("componentIndex", componentIndex)
                       .add("indexName", indexName)
                       .add("indexType", indexType)
-                      .add("isStatic", isStatic)
                       .toString();
     }
 
     public boolean isThriftCompatible()
     {
         // componentIndex == null should always imply isStatic in practice, but there is no harm in being too careful here.
-        return type == ColumnDefinition.Type.REGULAR && componentIndex == null && !isStatic;
+        return type == ColumnDefinition.Type.REGULAR && componentIndex == null;
     }
 
     public static List<ColumnDef> toThrift(Map<ByteBuffer, ColumnDefinition> columns)
@@ -286,12 +265,11 @@ public class ColumnDefinition
         cf.addColumn(componentIndex == null ? DeletedColumn.create(ldt, timestamp, cfName, comparator.getString(name), COMPONENT_INDEX)
                                             : Column.create(componentIndex, timestamp, cfName, comparator.getString(name), COMPONENT_INDEX));
         cf.addColumn(Column.create(type.toString().toLowerCase(), timestamp, cfName, comparator.getString(name), TYPE));
-        cf.addColumn(Column.create(isStatic, timestamp, cfName, comparator.getString(name), IS_STATIC));
     }
 
     public void apply(ColumnDefinition def, AbstractType<?> comparator)  throws ConfigurationException
     {
-        assert type == def.type && Objects.equal(componentIndex, def.componentIndex) && isStatic == def.isStatic;
+        assert type == def.type && Objects.equal(componentIndex, def.componentIndex);
 
         if (getIndexType() != null && def.getIndexType() != null)
         {
@@ -357,9 +335,7 @@ public class ColumnDefinition
             if (row.has(INDEX_NAME))
                 indexName = row.getString(INDEX_NAME);
 
-            boolean isStatic = row.has(IS_STATIC) && row.getBoolean(IS_STATIC);
-
-            cds.add(new ColumnDefinition(name, validator, indexType, indexOptions, indexName, componentIndex, type, isStatic));
+            cds.add(new ColumnDefinition(name, validator, indexType, indexOptions, indexName, componentIndex, type));
         }
 
         return cds;

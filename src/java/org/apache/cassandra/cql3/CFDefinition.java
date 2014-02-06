@@ -42,11 +42,12 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
 
     public final CFMetaData cfm;
     // LinkedHashMap because the order does matter (it is the order in the composite type)
-    public final LinkedHashMap<ColumnIdentifier, Name> keys = new LinkedHashMap<ColumnIdentifier, Name>();
-    public final LinkedHashMap<ColumnIdentifier, Name> columns = new LinkedHashMap<ColumnIdentifier, Name>();
-    public final Name value;
+    private final LinkedHashMap<ColumnIdentifier, Name> partitionKeys = new LinkedHashMap<ColumnIdentifier, Name>();
+    private final LinkedHashMap<ColumnIdentifier, Name> clusteringColumns = new LinkedHashMap<ColumnIdentifier, Name>();
+    private final Name compactValue;
     // Keep metadata lexicographically ordered so that wildcard expansion have a deterministic order
-    public final Map<ColumnIdentifier, Name> metadata = new TreeMap<ColumnIdentifier, Name>();
+    private final Map<ColumnIdentifier, Name> staticColumns = new TreeMap<ColumnIdentifier, Name>();
+    private final Map<ColumnIdentifier, Name> regularColumns = new TreeMap<ColumnIdentifier, Name>();
 
     public final boolean isComposite;
     public final boolean hasCompositeKey;
@@ -65,7 +66,7 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         for (int i = 0; i < cfm.partitionKeyColumns().size(); ++i)
         {
             ColumnIdentifier id = new ColumnIdentifier(cfm.partitionKeyColumns().get(i).name, definitionType);
-            this.keys.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.KEY_ALIAS, i, cfm.getKeyValidator().getComponents().get(i)));
+            this.partitionKeys.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.KEY_ALIAS, i, cfm.getKeyValidator().getComponents().get(i)));
         }
 
         this.isComposite = cfm.comparator instanceof CompositeType;
@@ -74,20 +75,25 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         for (int i = 0; i < cfm.clusteringKeyColumns().size(); ++i)
         {
             ColumnIdentifier id = new ColumnIdentifier(cfm.clusteringKeyColumns().get(i).name, definitionType);
-            this.columns.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_ALIAS, i, cfm.comparator.getComponents().get(i)));
+            this.clusteringColumns.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_ALIAS, i, cfm.comparator.getComponents().get(i)));
         }
 
         if (isCompact)
         {
-            this.value = createValue(cfm);
+            this.compactValue = createValue(cfm);
         }
         else
         {
-            this.value = null;
+            this.compactValue = null;
             for (ColumnDefinition def : cfm.regularColumns())
             {
                 ColumnIdentifier id = new ColumnIdentifier(def.name, cfm.getColumnDefinitionComparator(def));
-                this.metadata.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_METADATA, def.getValidator(), def.isStatic));
+                this.regularColumns.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.COLUMN_METADATA, def.getValidator()));
+            }
+            for (ColumnDefinition def : cfm.staticColumns())
+            {
+                ColumnIdentifier id = new ColumnIdentifier(def.name, cfm.getColumnDefinitionComparator(def));
+                this.staticColumns.put(id, new Name(cfm.ksName, cfm.cfName, id, Name.Kind.STATIC, def.getValidator()));
             }
         }
     }
@@ -108,47 +114,89 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
         // define a value' (see CreateTableStatement)
         return alias.key.equals(ByteBufferUtil.EMPTY_BYTE_BUFFER)
                ? null
-               : new Name(cfm.ksName, cfm.cfName, alias, Name.Kind.VALUE_ALIAS, cfm.getDefaultValidator(), false);
+               : new Name(cfm.ksName, cfm.cfName, alias, Name.Kind.VALUE_ALIAS, cfm.getDefaultValidator());
+    }
+
+    public int partitionKeyCount()
+    {
+        return partitionKeys.size();
+    }
+
+    public Collection<Name> partitionKeys()
+    {
+        return partitionKeys.values();
+    }
+
+    public int clusteringColumnsCount()
+    {
+        return clusteringColumns.size();
+    }
+
+    public Collection<Name> clusteringColumns()
+    {
+        return clusteringColumns.values();
+    }
+
+    public Collection<Name> regularColumns()
+    {
+        return regularColumns.values();
+    }
+
+    public Collection<Name> staticColumns()
+    {
+        return regularColumns.values();
+    }
+
+    public Name compactValue()
+    {
+        return compactValue;
     }
 
     public Name get(ColumnIdentifier name)
     {
-        CFDefinition.Name kdef = keys.get(name);
-        if (kdef != null)
-            return kdef;
-        if (value != null && name.equals(value.name))
-            return value;
-        CFDefinition.Name def = columns.get(name);
+        CFDefinition.Name def = partitionKeys.get(name);
         if (def != null)
             return def;
-        return metadata.get(name);
+        if (compactValue != null && name.equals(compactValue.name))
+            return compactValue;
+        def = clusteringColumns.get(name);
+        if (def != null)
+            return def;
+        def = regularColumns.get(name);
+        if (def != null)
+            return def;
+        return staticColumns.get(name);
     }
 
     public Iterator<Name> iterator()
     {
         return new AbstractIterator<Name>()
         {
-            private final Iterator<Name> keyIter = keys.values().iterator();
-            private final Iterator<Name> columnIter = columns.values().iterator();
+            private final Iterator<Name> keyIter = partitionKeys.values().iterator();
+            private final Iterator<Name> clusteringIter = clusteringColumns.values().iterator();
             private boolean valueDone;
-            private final Iterator<Name> metadataIter = metadata.values().iterator();
+            private final Iterator<Name> staticIter = staticColumns.values().iterator();
+            private final Iterator<Name> regularIter = regularColumns.values().iterator();
 
             protected Name computeNext()
             {
                 if (keyIter.hasNext())
                     return keyIter.next();
 
-                if (columnIter.hasNext())
-                    return columnIter.next();
+                if (clusteringIter.hasNext())
+                    return clusteringIter.next();
 
-                if (value != null && !valueDone)
+                if (compactValue != null && !valueDone)
                 {
                     valueDone = true;
-                    return value;
+                    return compactValue;
                 }
 
-                if (metadataIter.hasNext())
-                    return metadataIter.next();
+                if (staticIter.hasNext())
+                    return staticIter.next();
+
+                if (regularIter.hasNext())
+                    return regularIter.next();
 
                 return endOfData();
             }
@@ -173,30 +221,23 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
     {
         public static enum Kind
         {
-            KEY_ALIAS, COLUMN_ALIAS, VALUE_ALIAS, COLUMN_METADATA
+            KEY_ALIAS, COLUMN_ALIAS, VALUE_ALIAS, COLUMN_METADATA, STATIC
         }
 
-        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, AbstractType<?> type, boolean isStatic)
+        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, AbstractType<?> type)
         {
-            this(ksName, cfName, name, kind, -1, type, isStatic);
+            this(ksName, cfName, name, kind, -1, type);
         }
 
         private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, int position, AbstractType<?> type)
         {
-            this(ksName, cfName, name, kind, position, type, false);
-        }
-
-        private Name(String ksName, String cfName, ColumnIdentifier name, Kind kind, int position, AbstractType<?> type, boolean isStatic)
-        {
             super(ksName, cfName, name, type);
             this.kind = kind;
             this.position = position;
-            this.isStatic = isStatic;
         }
 
         public final Kind kind;
         public final int position; // only make sense for KEY_ALIAS and COLUMN_ALIAS
-        public final boolean isStatic;
 
         @Override
         public boolean equals(Object o)
@@ -209,14 +250,18 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
                 && Objects.equal(name, that.name)
                 && Objects.equal(type, that.type)
                 && kind == that.kind
-                && position == that.position
-                && isStatic == isStatic;
+                && position == that.position;
         }
 
         @Override
         public final int hashCode()
         {
-            return Objects.hashCode(ksName, cfName, name, type, kind, position, isStatic);
+            return Objects.hashCode(ksName, cfName, name, type, kind, position);
+        }
+
+        public boolean isPrimaryKeyColumn()
+        {
+            return kind == Kind.KEY_ALIAS || kind == Kind.COLUMN_ALIAS;
         }
     }
 
@@ -224,14 +269,18 @@ public class CFDefinition implements Iterable<CFDefinition.Name>
     public String toString()
     {
         StringBuilder sb = new StringBuilder();
-        sb.append(Joiner.on(", ").join(keys.values()));
-        if (!columns.isEmpty())
-            sb.append(", ").append(Joiner.on(", ").join(columns.values()));
+        sb.append(Joiner.on(", ").join(partitionKeys.values()));
+        if (!clusteringColumns.isEmpty())
+            sb.append(", ").append(Joiner.on(", ").join(clusteringColumns.values()));
         sb.append(" => ");
-        if (value != null)
-            sb.append(value.name);
-        if (!metadata.isEmpty())
-            sb.append("{").append(Joiner.on(", ").join(metadata.values())).append(" }");
+        if (compactValue != null)
+            sb.append(compactValue.name);
+        sb.append("{");
+        sb.append(Joiner.on(", ").join(staticColumns.values()));
+        if (!staticColumns.isEmpty())
+            sb.append(", ");
+        sb.append(Joiner.on(", ").join(regularColumns.values()));
+        sb.append("}");
         return sb.toString();
     }
 

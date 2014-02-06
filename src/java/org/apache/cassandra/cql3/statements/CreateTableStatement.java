@@ -104,7 +104,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
         for (Map.Entry<ColumnIdentifier, AbstractType> col : columns.entrySet())
         {
             ColumnIdentifier id = col.getKey();
-            columnDefs.put(id.key, ColumnDefinition.regularDef(id.key, col.getValue(), componentIndex, staticColumns.contains(id)));
+            columnDefs.put(id.key, staticColumns.contains(id)
+                                   ? ColumnDefinition.staticDef(id.key, col.getValue(), componentIndex)
+                                   : ColumnDefinition.regularDef(id.key, col.getValue(), componentIndex));
         }
 
         return columnDefs;

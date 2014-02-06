@@ -72,9 +72,9 @@ public class UpdateStatement extends ModificationStatement
         if (cfDef.isCompact)
         {
             if (builder.componentCount() == 0)
-                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfDef.columns.values().iterator().next()));
+                throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfDef.clusteringColumns().iterator().next()));
 
-            if (cfDef.value == null)
+            if (cfDef.compactValue() == null)
             {
                 // compact + no compact value implies there is no column outside the PK. So no operation could
                 // have passed through validation
@@ -85,7 +85,7 @@ public class UpdateStatement extends ModificationStatement
             {
                 // compact means we don't have a row marker, so don't accept to set only the PK. See CASSANDRA-5648.
                 if (updates.isEmpty())
-                    throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfDef.value));
+                    throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfDef.compactValue()));
 
                 for (Operation update : updates)
                     update.execute(key, cf, builder.copy(), params);
@@ -163,6 +163,7 @@ public class UpdateStatement extends ModificationStatement
                         break;
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
+                    case STATIC:
                         Operation operation = new Operation.SetValue(value).prepare(name);
                         operation.collectMarkerSpecification(boundNames);
                         stmt.addOperation(operation);
@@ -219,6 +220,7 @@ public class UpdateStatement extends ModificationStatement
                         throw new InvalidRequestException(String.format("PRIMARY KEY part %s found in SET part", entry.left));
                     case VALUE_ALIAS:
                     case COLUMN_METADATA:
+                    case STATIC:
                         stmt.addOperation(operation);
                         break;
                 }
