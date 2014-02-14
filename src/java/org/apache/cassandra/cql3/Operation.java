@@ -68,7 +68,7 @@ public abstract class Operation
         return def != null && def.type == ColumnDefinition.Type.STATIC;
     }
 
-    protected ColumnNameBuilder updatePrefix(CFMetaData cfm, ColumnNameBuilder prefix)
+    protected ColumnNameBuilder maybeUpdatePrefix(CFMetaData cfm, ColumnNameBuilder prefix)
     {
         return isStatic(cfm) ? cfm.getStaticColumnNameBuilder() : prefix;
     }

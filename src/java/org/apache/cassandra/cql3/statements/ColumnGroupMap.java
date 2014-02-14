@@ -137,7 +137,7 @@ public class ColumnGroupMap
             if (!isSameGroup(current))
             {
                 groups.add(currentGroup);
-                // Note that we know that only the first group buildt can be static
+                // Note that we know that only the first group built can be static
                 currentGroup = new ColumnGroupMap(current, false);
             }
             currentGroup.add(current, idx, c);

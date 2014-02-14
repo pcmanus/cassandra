@@ -152,7 +152,6 @@ public final class CFMetaData
                                                              + "index_name text,"
                                                              + "component_index int,"
                                                              + "type text,"
-                                                             + "is_static boolean,"
                                                              + "PRIMARY KEY(keyspace_name, columnfamily_name, column_name)"
                                                              + ") WITH COMMENT='ColumnFamily column attributes' AND gc_grace_seconds=8640");
 
@@ -1852,7 +1851,7 @@ public final class CFMetaData
         if (column_metadata.get(to) != null)
             throw new InvalidRequestException(String.format("Cannot rename column %s to %s in keyspace %s; another column of that name already exist", strFrom, strTo, cfName));
 
-        if (def.type == ColumnDefinition.Type.REGULAR)
+        if (def.type == ColumnDefinition.Type.REGULAR || def.type == ColumnDefinition.Type.STATIC)
         {
             throw new InvalidRequestException(String.format("Cannot rename non PRIMARY KEY part %s", strFrom));
         }

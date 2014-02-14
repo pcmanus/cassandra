@@ -59,6 +59,9 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     private static boolean loggedCounterTTL = false;
     private static boolean loggedCounterTimestamp = false;
 
+    public static enum StatementType { INSERT, UPDATE, DELETE }
+    public final StatementType type;
+
     public final CFMetaData cfm;
     public final Attributes attrs;
 
@@ -82,8 +85,9 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         }
     };
 
-    public ModificationStatement(CFMetaData cfm, Attributes attrs)
+    public ModificationStatement(StatementType type, CFMetaData cfm, Attributes attrs)
     {
+        this.type = type;
         this.cfm = cfm;
         this.attrs = attrs;
     }
@@ -336,11 +340,24 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     public ColumnNameBuilder createClusteringPrefixBuilder(List<ByteBuffer> variables)
     throws InvalidRequestException
     {
-        // The one case where we don't need the clustering prefix (and thus don't want to do any validation),
-        // is when the only inserted columns are static ones (the partition key still need to be given, but
-        // buildPartitionKeyNames checks that anyway).
-        if (setsOnlyStaticColumns && columnConditions == null && hasNoClusteringColumns)
+        // If the only updated/deleted columns are static, then we don't need clustering columns.
+        // And in fact, unless it is an INSERT, we reject if clustering colums are provided as that
+        // suggest something unintended. For instance, given:
+        //   CREATE TABLE t (k int, v int, s int static, PRIMARY KEY (k, v))
+        // it can make sense to do:
+        //   INSERT INTO t(k, v, s) VALUES (0, 1, 2)
+        // but both
+        //   UPDATE t SET s = 3 WHERE k = 0 AND v = 1
+        //   DELETE v FROM t WHERE k = 0 AND v = 1
+        // sounds like you don't really understand what your are doing.
+        if (setsOnlyStaticColumns && columnConditions == null && (type != StatementType.INSERT || hasNoClusteringColumns))
+        {
+            // Reject if any clustering columns is set
+            for (CFDefinition.Name name : cfm.getCfDef().clusteringColumns())
+                if (processedKeys.get(name.name) != null)
+                    throw new InvalidRequestException(String.format("Invalid restriction on clustering column %s since %s statement only modify static columns", name.name, type));
             return cfm.getStaticColumnNameBuilder();
+        }
 
         return createClusteringPrefixBuilderInternal(variables);
     }

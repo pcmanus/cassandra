@@ -266,7 +266,7 @@ public abstract class Lists
         public void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder prefix, UpdateParameters params) throws InvalidRequestException
         {
             // delete + append
-            ColumnNameBuilder column = updatePrefix(cf.metadata(), prefix).add(columnName.key);
+            ColumnNameBuilder column = maybeUpdatePrefix(cf.metadata(), prefix).add(columnName.key);
             cf.addAtom(params.makeTombstoneForOverwrite(column.build(), column.buildAsEndOfRange()));
             Appender.doAppend(t, cf, column, params);
         }
@@ -337,7 +337,7 @@ public abstract class Lists
 
         public void execute(ByteBuffer rowKey, ColumnFamily cf, ColumnNameBuilder prefix, UpdateParameters params) throws InvalidRequestException
         {
-            doAppend(t, cf, updatePrefix(cf.metadata(), prefix).add(columnName.key), params);
+            doAppend(t, cf, maybeUpdatePrefix(cf.metadata(), prefix).add(columnName.key), params);
         }
 
         static void doAppend(Term t, ColumnFamily cf, ColumnNameBuilder columnName, UpdateParameters params) throws InvalidRequestException
@@ -377,7 +377,7 @@ public abstract class Lists
             long time = PrecisionTime.REFERENCE_TIME - (System.currentTimeMillis() - PrecisionTime.REFERENCE_TIME);
 
             List<ByteBuffer> toAdd = ((Lists.Value)value).elements;
-            ColumnNameBuilder column = updatePrefix(cf.metadata(), prefix).add(columnName.key);
+            ColumnNameBuilder column = maybeUpdatePrefix(cf.metadata(), prefix).add(columnName.key);
             for (int i = 0; i < toAdd.size(); i++)
             {
                 ColumnNameBuilder b = i == toAdd.size() - 1 ? column : column.copy();

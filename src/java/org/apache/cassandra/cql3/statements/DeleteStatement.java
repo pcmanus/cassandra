@@ -31,9 +31,9 @@ import org.apache.cassandra.utils.Pair;
  */
 public class DeleteStatement extends ModificationStatement
 {
-    private DeleteStatement(CFMetaData cfm, Attributes attrs)
+    private DeleteStatement(StatementType type, CFMetaData cfm, Attributes attrs)
     {
-        super(cfm, attrs);
+        super(type, cfm, attrs);
     }
 
     public boolean requireFullClusteringKey()
@@ -59,7 +59,15 @@ public class DeleteStatement extends ModificationStatement
         boolean isRange = cfDef.isCompact ? !fullKey : (!fullKey || deletions.isEmpty());
 
         if (!deletions.isEmpty() && isRange)
-            throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletions.get(0).columnName));
+        {
+            // We only get there if we have at least one non-static columns selected, as otherwise the builder will be
+            // the "static" builder and isRange will be false. But we may still have static columns, so pick the first
+            // non static one for the error message so it's not confusing
+            for (Operation deletion : deletions)
+                if (cfm.getCfDef().get(deletion.columnName).kind != CFDefinition.Name.Kind.STATIC)
+                    throw new InvalidRequestException(String.format("Missing mandatory PRIMARY KEY part %s since %s specified", getFirstEmptyKey(), deletion.columnName));
+            throw new AssertionError();
+        }
 
         if (deletions.isEmpty() && builder.componentCount() == 0)
         {
@@ -110,7 +118,7 @@ public class DeleteStatement extends ModificationStatement
 
         protected ModificationStatement prepareInternal(CFDefinition cfDef, VariableSpecifications boundNames, Attributes attrs) throws InvalidRequestException
         {
-            DeleteStatement stmt = new DeleteStatement(cfDef.cfm, attrs);
+            DeleteStatement stmt = new DeleteStatement(ModificationStatement.StatementType.DELETE, cfDef.cfm, attrs);
 
             for (Operation.RawDeletion deletion : deletions)
             {
