@@ -430,56 +430,77 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 ColumnNameBuilder staticPrefix = cfDef.cfm.getStaticColumnNameBuilder();
                 // Note: we could use staticPrefix.build() for the start bound, but EMPTY_BYTE_BUFFER gives us the
                 // same effect while saving a few CPU cycles.
-                staticSlice = new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, staticPrefix.buildAsEndOfRange());
+                staticSlice = isReversed
+                            ? new ColumnSlice(staticPrefix.buildAsEndOfRange(), ByteBufferUtil.EMPTY_BYTE_BUFFER)
+                            : new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, staticPrefix.buildAsEndOfRange());
 
                 // In the case where we only select static columns, we want to really only check the static columns.
                 // So we return early as the rest of that method would actually make us query everything
                 if (selectsOnlyStaticColumns)
-                    return new SliceQueryFilter(new ColumnSlice[]{ staticSlice }, isReversed, limit, toGroup);
+                    return sliceFilter(staticSlice, limit, toGroup);
             }
 
             // The case where startBounds == 1 is common enough that it's worth optimizing
-            ColumnSlice[] slices;
             if (startBounds.size() == 1)
             {
                 ColumnSlice slice = new ColumnSlice(startBounds.get(0), endBounds.get(0));
                 if (slice.isAlwaysEmpty(cfDef.cfm.comparator, isReversed))
-                    return null;
-                slices = staticSlice == null
-                       ? new ColumnSlice[]{ slice }
-                       : (slice.includes(cfDef.cfm.comparator, staticSlice.finish) ? new ColumnSlice[]{ new ColumnSlice(staticSlice.start, slice.finish) }
-                                                                                   : new ColumnSlice[]{ staticSlice, slice });
+                    return staticSlice == null ? null : sliceFilter(staticSlice, limit, toGroup);
+
+                return staticSlice == null
+                     ? sliceFilter(slice, limit, toGroup)
+                     : (slice.includes(cfDef.cfm.comparator, staticSlice.finish) ? sliceFilter(new ColumnSlice(staticSlice.start, slice.finish), limit, toGroup)
+                                                                                 : sliceFilter(new ColumnSlice[]{ staticSlice, slice }, limit, toGroup));
             }
-            else
+
+            List<ColumnSlice> l = new ArrayList<ColumnSlice>(startBounds.size());
+            for (int i = 0; i < startBounds.size(); i++)
             {
-                List<ColumnSlice> l = new ArrayList<ColumnSlice>(startBounds.size() + (staticSlice == null ? 0 : 1));
-                if (staticSlice != null)
-                    l.add(staticSlice);
-                for (int i = 0; i < startBounds.size(); i++)
+                ColumnSlice slice = new ColumnSlice(startBounds.get(i), endBounds.get(i));
+                if (!slice.isAlwaysEmpty(cfDef.cfm.comparator, isReversed))
+                    l.add(slice);
+            }
+
+            if (l.isEmpty())
+                return staticSlice == null ? null : sliceFilter(staticSlice, limit, toGroup);
+            if (staticSlice == null)
+                return sliceFilter(l.toArray(new ColumnSlice[l.size()]), limit, toGroup);
+
+            // The slices should not overlap. We know the slices built from startBounds/endBounds don't, but
+            // if there is a static slice, it could overlap with the 2nd slice. Check for it and correct if
+            // that's the case
+            ColumnSlice[] slices;
+            if (isReversed)
+            {
+                if (l.get(l.size() - 1).includes(cfDef.cfm.comparator, staticSlice.start))
                 {
-                    ColumnSlice slice = new ColumnSlice(startBounds.get(i), endBounds.get(i));
-                    if (!slice.isAlwaysEmpty(cfDef.cfm.comparator, isReversed))
-                        l.add(slice);
-                }
-                if (l.isEmpty())
-                    return null;
-                // The slices should not overlap. We know the slices built from startBounds/endBounds don't, but
-                // if there is a static slice, it could overlap with the 2nd slice. Check for it and correct if
-                // that's the case
-                if (staticSlice != null && l.size() > 1 && l.get(1).includes(cfDef.cfm.comparator, l.get(0).finish))
-                {
-                    slices = new ColumnSlice[l.size() - 1];
-                    slices[0] = new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, l.get(1).finish);
-                    for (int i = 2; i < l.size(); i++)
-                        slices[i-1] = l.get(i);
+                    slices = l.toArray(new ColumnSlice[l.size()]);
+                    slices[slices.length-1] = new ColumnSlice(slices[slices.length-1].start, ByteBufferUtil.EMPTY_BYTE_BUFFER);
                 }
                 else
                 {
-                    slices = l.toArray(new ColumnSlice[l.size()]);
+                    slices = l.toArray(new ColumnSlice[l.size()+1]);
+                    slices[slices.length-1] = staticSlice;
                 }
             }
-
-            return new SliceQueryFilter(slices, isReversed, limit, toGroup);
+            else
+            {
+                if (l.get(0).includes(cfDef.cfm.comparator, staticSlice.finish))
+                {
+                    slices = new ColumnSlice[l.size()];
+                    slices[0] = new ColumnSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER, l.get(0).finish);
+                    for (int i = 1; i < l.size(); i++)
+                        slices[i] = l.get(i);
+                }
+                else
+                {
+                    slices = new ColumnSlice[l.size()+1];
+                    slices[0] = staticSlice;
+                    for (int i = 0; i < l.size(); i++)
+                        slices[i] = l.get(i);
+                }
+            }
+            return sliceFilter(slices, limit, toGroup);
         }
         else
         {
@@ -489,6 +510,16 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             QueryProcessor.validateCellNames(cellNames);
             return new NamesQueryFilter(cellNames, true);
         }
+    }
+
+    private SliceQueryFilter sliceFilter(ColumnSlice slice, int limit, int toGroup)
+    {
+        return sliceFilter(new ColumnSlice[]{ slice }, limit, toGroup);
+    }
+
+    private SliceQueryFilter sliceFilter(ColumnSlice[] slices, int limit, int toGroup)
+    {
+        return new SliceQueryFilter(slices, isReversed, limit, toGroup);
     }
 
     private int getLimit(List<ByteBuffer> variables) throws InvalidRequestException
