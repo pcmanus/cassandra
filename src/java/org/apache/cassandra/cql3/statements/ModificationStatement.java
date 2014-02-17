@@ -355,7 +355,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             // Reject if any clustering columns is set
             for (CFDefinition.Name name : cfm.getCfDef().clusteringColumns())
                 if (processedKeys.get(name.name) != null)
-                    throw new InvalidRequestException(String.format("Invalid restriction on clustering column %s since %s statement only modify static columns", name.name, type));
+                    throw new InvalidRequestException(String.format("Invalid restriction on clustering column %s since the %s statement modifies only static columns", name.name, type));
             return cfm.getStaticColumnNameBuilder();
         }
 
