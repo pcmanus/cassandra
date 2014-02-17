@@ -70,18 +70,18 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     private int boundTerms;
     // Separating normal and static conditions makes things somewhat easier
-    private List<Operation> columnConditions;
-    private List<Operation> staticConditions;
+    private List<ColumnCondition> columnConditions;
+    private List<ColumnCondition> staticConditions;
     private boolean ifNotExists;
 
     private boolean hasNoClusteringColumns = true;
     private boolean setsOnlyStaticColumns;
 
-    private final Function<Operation, ColumnIdentifier> getColumnForOperation = new Function<Operation, ColumnIdentifier>()
+    private final Function<ColumnCondition, ColumnIdentifier> getColumnForCondition = new Function<ColumnCondition, ColumnIdentifier>()
     {
-        public ColumnIdentifier apply(Operation op)
+        public ColumnIdentifier apply(ColumnCondition cond)
         {
-            return op.columnName;
+            return cond.column.name;
         }
     };
 
@@ -198,26 +198,26 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         if (ifNotExists)
             return null;
 
-        return Iterables.concat(columnConditions == null ? Collections.<ColumnIdentifier>emptyList() : Iterables.transform(columnConditions, getColumnForOperation),
-                                staticConditions == null ? Collections.<ColumnIdentifier>emptyList() : Iterables.transform(staticConditions, getColumnForOperation));
+        return Iterables.concat(columnConditions == null ? Collections.<ColumnIdentifier>emptyList() : Iterables.transform(columnConditions, getColumnForCondition),
+                                staticConditions == null ? Collections.<ColumnIdentifier>emptyList() : Iterables.transform(staticConditions, getColumnForCondition));
     }
 
-    public void addCondition(Operation op) throws InvalidRequestException
+    public void addCondition(ColumnCondition cond) throws InvalidRequestException
     {
-        List<Operation> conds = null;
-        if (op.isStatic(cfm))
+        List<ColumnCondition> conds = null;
+        if (cond.column.kind == CFDefinition.Name.Kind.STATIC)
         {
             if (staticConditions == null)
-                staticConditions = new ArrayList<Operation>();
+                staticConditions = new ArrayList<ColumnCondition>();
             conds = staticConditions;
         }
         else
         {
             if (columnConditions == null)
-                columnConditions = new ArrayList<Operation>();
+                columnConditions = new ArrayList<ColumnCondition>();
             conds = columnConditions;
         }
-        conds.add(op);
+        conds.add(cond);
     }
 
     public void setIfNotExistCondition()
@@ -536,7 +536,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
         // It's cleaner to use the query timestamp below, but it's in seconds while the conditions expects microseconds, so just
         // put it back in millis (we don't really lose precision because the ultimate consumer, Column.isLive, re-divide it).
-        CQL3CasConditions conditions = new CQL3CasConditions(cfm, key, queryState.getTimestamp() * 1000);
+        CQL3CasConditions conditions = new CQL3CasConditions(cfm, queryState.getTimestamp() * 1000);
         ColumnNameBuilder prefix = createClusteringPrefixBuilder(variables);
         ColumnFamily updates = UnsortedColumns.factory.create(cfm);
         addUpdatesAndConditions(key, prefix, updates, conditions, variables, getTimestamp(queryState.getTimestamp(), variables));
@@ -707,14 +707,14 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     public static abstract class Parsed extends CFStatement
     {
         protected final Attributes.Raw attrs;
-        private final List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions;
+        private final List<Pair<ColumnIdentifier, ColumnCondition.Raw>> conditions;
         private final boolean ifNotExists;
 
-        protected Parsed(CFName name, Attributes.Raw attrs, List<Pair<ColumnIdentifier, Operation.RawUpdate>> conditions, boolean ifNotExists)
+        protected Parsed(CFName name, Attributes.Raw attrs, List<Pair<ColumnIdentifier, ColumnCondition.Raw>> conditions, boolean ifNotExists)
         {
             super(name);
             this.attrs = attrs;
-            this.conditions = conditions == null ? Collections.<Pair<ColumnIdentifier, Operation.RawUpdate>>emptyList() : conditions;
+            this.conditions = conditions == null ? Collections.<Pair<ColumnIdentifier, ColumnCondition.Raw>>emptyList() : conditions;
             this.ifNotExists = ifNotExists;
         }
 
@@ -756,24 +756,13 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                 }
                 else
                 {
-                    for (Pair<ColumnIdentifier, Operation.RawUpdate> entry : conditions)
+                    for (Pair<ColumnIdentifier, ColumnCondition.Raw> entry : conditions)
                     {
                         CFDefinition.Name name = cfDef.get(entry.left);
                         if (name == null)
                             throw new InvalidRequestException(String.format("Unknown identifier %s", entry.left));
 
-                        /*
-                         * Lists column names are based on a server-side generated timeuuid. So we can't allow lists
-                         * operation or that would yield unexpected results (update that should apply wouldn't). So for
-                         * now, we just refuse lists, which also save use from having to bother about the read that some
-                         * list operation involve.
-                         */
-                        if (name.type instanceof ListType)
-                            throw new InvalidRequestException(String.format("List operation (%s) are not allowed in conditional updates", name));
-
-                        Operation condition = entry.right.prepare(name);
-                        assert !condition.requiresRead();
-
+                        ColumnCondition condition = entry.right.prepare(name);
                         condition.collectMarkerSpecification(boundNames);
 
                         switch (name.kind)

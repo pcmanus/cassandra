@@ -28,12 +28,11 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.service.CASConditions;
 
 /**
- * CAS conditions on potentially multiple rows of the same partition.
+ * Processed CAS conditions on potentially multiple rows of the same partition.
  */
 public class CQL3CasConditions implements CASConditions
 {
     private final CFMetaData cfm;
-    private final ByteBuffer key;
     private final long now;
 
     // We index RowCondition by the prefix of the row they applied to for 2 reasons:
@@ -41,10 +40,9 @@ public class CQL3CasConditions implements CASConditions
     //   2) this allows to detect when contradictory conditions are set (not exists with some other conditions on the same row)
     private final SortedMap<ByteBuffer, RowCondition> conditions;
 
-    public CQL3CasConditions(CFMetaData cfm, ByteBuffer key, long now)
+    public CQL3CasConditions(CFMetaData cfm, long now)
     {
         this.cfm = cfm;
-        this.key = key;
         this.now = now;
         this.conditions = new TreeMap<ByteBuffer, RowCondition>(cfm.comparator);
     }
@@ -56,7 +54,7 @@ public class CQL3CasConditions implements CASConditions
             throw new InvalidRequestException("Cannot mix IF conditions and IF NOT EXISTS for the same row");
     }
 
-    public void addConditions(ColumnNameBuilder prefix, Collection<Operation> operations, List<ByteBuffer> variables) throws InvalidRequestException
+    public void addConditions(ColumnNameBuilder prefix, Collection<ColumnCondition> conds, List<ByteBuffer> variables) throws InvalidRequestException
     {
         ByteBuffer b = prefix.build();
         RowCondition condition = conditions.get(b);
@@ -69,7 +67,7 @@ public class CQL3CasConditions implements CASConditions
         {
             throw new InvalidRequestException("Cannot mix IF conditions and IF NOT EXISTS for the same row");
         }
-        ((ColumnsConditions)condition).addConditions(operations, key, variables);
+        ((ColumnsConditions)condition).addConditions(conds, variables);
     }
 
     public IDiskAtomFilter readFilter()
@@ -86,7 +84,7 @@ public class CQL3CasConditions implements CASConditions
         return new SliceQueryFilter(slices, false, slices.length, cfm.clusteringKeyColumns().size());
     }
 
-    public boolean appliesTo(ColumnFamily current)
+    public boolean appliesTo(ColumnFamily current) throws InvalidRequestException
     {
         for (RowCondition condition : conditions.values())
         {
@@ -107,7 +105,7 @@ public class CQL3CasConditions implements CASConditions
             this.now = now;
         }
 
-        public abstract boolean appliesTo(ColumnFamily current);
+        public abstract boolean appliesTo(ColumnFamily current) throws InvalidRequestException;
     }
 
     private static class NotExistCondition extends RowCondition
@@ -133,53 +131,36 @@ public class CQL3CasConditions implements CASConditions
     private static class ColumnsConditions extends RowCondition
     {
         private final CFMetaData cfm;
-        private final ColumnFamily expected;
+        private final Map<ColumnIdentifier, ColumnCondition> conditions = new HashMap<>();
 
         private ColumnsConditions(ColumnNameBuilder rowPrefix, CFMetaData cfm, long now)
         {
             super(rowPrefix, now);
             this.cfm = cfm;
-            this.expected = TreeMapBackedSortedColumns.factory.create(cfm);
         }
 
-        public void addConditions(Collection<Operation> conditions, ByteBuffer key, List<ByteBuffer> variables) throws InvalidRequestException
+        public void addConditions(Collection<ColumnCondition> conds, List<ByteBuffer> variables) throws InvalidRequestException
         {
-            // When building the conditions, we should not use a TTL. It's not useful, and if a very low ttl (1 seconds) is used, it's possible
-            // for it to expire before the actual build of the conditions which would break since we would then testing for the presence of tombstones.
-            UpdateParameters params = new UpdateParameters(cfm, variables, now, 0, null);
-
-            for (Operation condition : conditions)
-                condition.execute(key, expected, rowPrefix.copy(), params);
+            for (ColumnCondition condition : conds)
+            {
+                // We will need the variables in appliesTo but with protocol batches, each condition in this object can have a
+                // different list of variables. So attach them to the condition directly, it's not particulary elegant but its simpler
+                ColumnCondition previous = conditions.put(condition.column.name, condition.attach(variables));
+                // If 2 conditions are actually equal, let it slide
+                if (previous != null && !previous.equalsTo(condition))
+                    throw new InvalidRequestException("Duplicate and incompatible conditions for column " + condition.column.name);
+            }
         }
 
-        public boolean appliesTo(ColumnFamily current)
+        public boolean appliesTo(ColumnFamily current) throws InvalidRequestException
         {
             if (current == null)
-                return false;
+                return conditions.isEmpty();
 
-            for (Column e : expected)
-            {
-                Column c = current.getColumn(e.name());
-                if (e.isLive(now))
-                {
-                    if (c == null || !c.isLive(now) || !c.value().equals(e.value()))
-                        return false;
-                }
-                else
-                {
-                    // If we have a tombstone in expected, it means the condition tests that the column is
-                    // null, so check that we have no value
-                    if (c != null && c.isLive(now))
-                        return false;
-                }
-            }
+            for (ColumnCondition condition : conditions.values())
+                if (!condition.appliesTo(rowPrefix, current, now))
+                    return false;
             return true;
-        }
-
-        @Override
-        public String toString()
-        {
-            return expected.toString();
         }
     }
 }

@@ -205,7 +205,7 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
                 key = pks.get(0);
                 ksName = statement.cfm.ksName;
                 cfName = statement.cfm.cfName;
-                conditions = new CQL3CasConditions(statement.cfm, key, now);
+                conditions = new CQL3CasConditions(statement.cfm, now);
                 updates = UnsortedColumns.factory.create(statement.cfm);
             }
             else if (!key.equals(pks.get(0)))
