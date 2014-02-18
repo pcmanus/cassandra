@@ -44,7 +44,7 @@ public class CQL3CasConditions implements CASConditions
     {
         this.cfm = cfm;
         this.now = now;
-        this.conditions = new TreeMap<ByteBuffer, RowCondition>(cfm.comparator);
+        this.conditions = new TreeMap<>(cfm.comparator);
     }
 
     public void addNotExist(ColumnNameBuilder prefix) throws InvalidRequestException
@@ -60,7 +60,7 @@ public class CQL3CasConditions implements CASConditions
         RowCondition condition = conditions.get(b);
         if (condition == null)
         {
-            condition = new ColumnsConditions(prefix, cfm, now);
+            condition = new ColumnsConditions(prefix, now);
             conditions.put(b, condition);
         }
         else if (!(condition instanceof ColumnsConditions))
@@ -130,13 +130,11 @@ public class CQL3CasConditions implements CASConditions
 
     private static class ColumnsConditions extends RowCondition
     {
-        private final CFMetaData cfm;
         private final Map<ColumnIdentifier, ColumnCondition> conditions = new HashMap<>();
 
-        private ColumnsConditions(ColumnNameBuilder rowPrefix, CFMetaData cfm, long now)
+        private ColumnsConditions(ColumnNameBuilder rowPrefix, long now)
         {
             super(rowPrefix, now);
-            this.cfm = cfm;
         }
 
         public void addConditions(Collection<ColumnCondition> conds, List<ByteBuffer> variables) throws InvalidRequestException

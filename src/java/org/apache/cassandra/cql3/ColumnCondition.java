@@ -144,7 +144,7 @@ public class ColumnCondition
 
     private boolean setAppliesTo(CFMetaData cfm, Iterator<Column> iter, Set<ByteBuffer> elements)
     {
-        Set<ByteBuffer> remaining = new HashSet<ByteBuffer>(elements);
+        Set<ByteBuffer> remaining = new HashSet<>(elements);
         while (iter.hasNext())
         {
             if (remaining.isEmpty())
@@ -158,7 +158,7 @@ public class ColumnCondition
 
     private boolean mapAppliesTo(CFMetaData cfm, Iterator<Column> iter, Map<ByteBuffer, ByteBuffer> elements)
     {
-        Map<ByteBuffer, ByteBuffer> remaining = new HashMap<ByteBuffer, ByteBuffer>(elements);
+        Map<ByteBuffer, ByteBuffer> remaining = new HashMap<>(elements);
         while (iter.hasNext())
         {
             if (remaining.isEmpty())
