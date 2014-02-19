@@ -424,8 +424,11 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             List<ByteBuffer> endBounds = getRequestedBound(Bound.END, variables);
             assert startBounds.size() == endBounds.size();
 
+            // Handles fetching static columns. Note that for 2i, the filter is just used to restrict
+            // the part of the index to query so adding the static slice would be useless and confusing.
+            // For 2i, static columns are retrieve in CompositesSearcher with each index hit.
             ColumnSlice staticSlice = null;
-            if (selectsStaticColumns)
+            if (selectsStaticColumns && !usesSecondaryIndexing)
             {
                 ColumnNameBuilder staticPrefix = cfDef.cfm.getStaticColumnNameBuilder();
                 // Note: we could use staticPrefix.build() for the start bound, but EMPTY_BYTE_BUFFER gives us the
@@ -1057,7 +1060,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
             Map<CFDefinition.Name, ByteBuffer> staticValues = Collections.emptyMap();
             // Gather up static values first
-            if (selectsStaticColumns && !builder.isEmpty() && builder.firstGroup().isStatic)
+            if (!builder.isEmpty() && builder.firstGroup().isStatic)
             {
                 staticValues = new HashMap<>();
                 ColumnGroupMap group = builder.firstGroup();
@@ -1068,7 +1071,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 // If there was static columns but there is no actual row, then provided the select was a full
                 // partition selection (i.e. not a 2ndary index search and there was no condition on clustering columns)
                 // then we want to include the static columns in the result set.
-                if (!staticValues.isEmpty() && builder.isEmpty() && restrictedNames.isEmpty() && hasNoClusteringColumnsRestriction())
+                if (!staticValues.isEmpty() && builder.isEmpty() && !usesSecondaryIndexing && hasNoClusteringColumnsRestriction())
                 {
                     result.newRow();
                     for (CFDefinition.Name name : selection.getColumnsList())
@@ -1466,8 +1469,16 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 stmt.usesSecondaryIndexing = true;
             }
 
-            if (stmt.usesSecondaryIndexing && stmt.keyIsInRelation)
-                throw new InvalidRequestException("Select on indexed columns and with IN clause for the PRIMARY KEY are not supported");
+            if (stmt.usesSecondaryIndexing)
+            {
+                if (stmt.keyIsInRelation)
+                    throw new InvalidRequestException("Select on indexed columns and with IN clause for the PRIMARY KEY are not supported");
+                // When the user only select static columns, the intent is that we don't query the whole partition but just
+                // the static parts. But 1) we don't have an easy way to do that with 2i and 2) since we don't support index on static columns
+                // so far, 2i means that you've restricted a non static column, so the query is somewhat non-sensical.
+                if (stmt.selectsOnlyStaticColumns)
+                    throw new InvalidRequestException("Queries using 2ndary indexes don't support selecting only static columns");
+            }
 
             if (!stmt.parameters.orderings.isEmpty())
             {
