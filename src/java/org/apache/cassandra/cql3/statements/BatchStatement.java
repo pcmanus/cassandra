@@ -215,19 +215,17 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
         return execute(new PreparedBatchVariables(options.getValues()), false, options.getConsistency(), options.getSerialConsistency(), queryState.getTimestamp());
     }
 
-    public ResultMessage executeWithPerStatementVariables(ConsistencyLevel cl, QueryState queryState, List<List<ByteBuffer>> variables) throws RequestExecutionException, RequestValidationException
+    public ResultMessage executeWithPerStatementVariables(ConsistencyLevel cl, ConsistencyLevel serialCl, QueryState queryState, List<List<ByteBuffer>> variables) throws RequestExecutionException, RequestValidationException
     {
-        if (cl == null)
+        if (cl == null || serialCl == null)
             throw new InvalidRequestException("Invalid empty consistency level");
 
-        return execute(new BatchOfPreparedVariables(variables), false, cl, ConsistencyLevel.SERIAL, queryState.getTimestamp());
+        return execute(new BatchOfPreparedVariables(variables), false, cl, serialCl, queryState.getTimestamp());
     }
 
     public ResultMessage execute(BatchVariables variables, boolean local, ConsistencyLevel cl, ConsistencyLevel serialCl, long now)
     throws RequestExecutionException, RequestValidationException
     {
-        // TODO: we don't support a serial consistency for batches in the protocol so defaulting to SERIAL for now.
-        // We'll need to fix that.
         if (hasConditions)
             return executeWithConditions(variables, cl, serialCl, now);
 

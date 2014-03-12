@@ -72,6 +72,11 @@ public class QueryOptions
         this.protocolVersion = protocolVersion;
     }
 
+    public static QueryOptions fromPreV3Batch(ConsistencyLevel consistency)
+    {
+        return new QueryOptions(consistency, Collections.<ByteBuffer>emptyList(), false, SpecificOptions.DEFAULT, 2);
+    }
+
     public static QueryOptions fromProtocolV1(ConsistencyLevel consistency, List<ByteBuffer> values)
     {
         return new QueryOptions(consistency, values, false, SpecificOptions.DEFAULT, 1);

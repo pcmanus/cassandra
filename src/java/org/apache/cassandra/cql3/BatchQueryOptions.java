@@ -28,12 +28,14 @@ import org.apache.cassandra.db.ConsistencyLevel;
 public class BatchQueryOptions
 {
     private final ConsistencyLevel consistency;
+    private final ConsistencyLevel serialConsistency;
     private final List<List<ByteBuffer>> values;
     private final List<Object> queryOrIdList;
 
-    public BatchQueryOptions(ConsistencyLevel cl, List<List<ByteBuffer>> values, List<Object> queryOrIdList)
+    public BatchQueryOptions(ConsistencyLevel cl, ConsistencyLevel serialCl, List<List<ByteBuffer>> values, List<Object> queryOrIdList)
     {
         this.consistency = cl;
+        this.serialConsistency = serialCl;
         this.values = values;
         this.queryOrIdList = queryOrIdList;
     }
@@ -41,6 +43,11 @@ public class BatchQueryOptions
     public ConsistencyLevel getConsistency()
     {
         return consistency;
+    }
+
+    public ConsistencyLevel getSerialConsistency()
+    {
+        return serialConsistency;
     }
 
     public List<List<ByteBuffer>> getValues()
