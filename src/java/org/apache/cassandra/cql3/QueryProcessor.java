@@ -357,6 +357,7 @@ public class QueryProcessor
 
     public static ResultMessage processBatch(BatchStatement batch,
                                              ConsistencyLevel cl,
+                                             ConsistencyLevel serialCl,
                                              QueryState queryState,
                                              List<List<ByteBuffer>> variables,
                                              List<Object> queryOrIdList)
@@ -367,20 +368,20 @@ public class QueryProcessor
         batch.validate(clientState);
 
         if (preExecutionHooks.isEmpty() && postExecutionHooks.isEmpty())
-            batch.executeWithPerStatementVariables(cl, queryState, variables);
+            batch.executeWithPerStatementVariables(cl, serialCl, queryState, variables);
         else
-            executeBatchWithHooks(batch, cl, new BatchExecutionContext(queryState, queryOrIdList, variables));
+            executeBatchWithHooks(batch, cl, serialCl, new BatchExecutionContext(queryState, queryOrIdList, variables));
 
         return new ResultMessage.Void();
     }
 
-    private static void executeBatchWithHooks(BatchStatement batch, ConsistencyLevel cl, BatchExecutionContext context)
+    private static void executeBatchWithHooks(BatchStatement batch, ConsistencyLevel cl, ConsistencyLevel serialCl, BatchExecutionContext context)
     throws RequestExecutionException, RequestValidationException
     {
         for (PreExecutionHook hook : preExecutionHooks)
             batch = hook.processBatch(batch, context);
 
-        batch.executeWithPerStatementVariables(cl, context.queryState, context.variables);
+        batch.executeWithPerStatementVariables(cl, serialCl, context.queryState, context.variables);
 
         for (PostExecutionHook hook : postExecutionHooks)
             hook.processBatch(batch, context);
