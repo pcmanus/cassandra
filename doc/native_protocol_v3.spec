@@ -38,9 +38,10 @@ Table of Contents
       4.2.8. AUTH_SUCCESS
   5. Compression
   6. Collection types
-  7. Result paging
-  8. Error codes
-  9. Changes from v2
+  7. User Defined types
+  8. Result paging
+  9. Error codes
+  10. Changes from v2
 
 
 1. Overview
@@ -102,7 +103,7 @@ Table of Contents
   connection.
 
   This document describe the version 3 of the protocol. For the changes made since
-  version 2, see Section 9.
+  version 2, see Section 10.
 
 
 2.2. flags
@@ -551,6 +552,19 @@ Table of Contents
                            keys and values of the map
             0x0022    Set: the value is an [option], representing the type
                             of the elements of the set
+            0x0030    UDT: the value is <ks><udt_name><n><name_1><type_1>...<name_n><type_n>
+                           where:
+                              - <ks> is a [string] representing the keyspace name this
+                                UDT is part of.
+                              - <udt_name> is a [string] representing the UDT name.
+                              - <n> is a [short] reprensenting the number of fields of
+                                the UDT, and thus the number of <name_i><type_i> pair
+                                following
+                              - <name_i> is a [string] representing the name of the
+                                i_th field of the UDT.
+                              - <type_i> is an [option] representing the type of the
+                                i_th field of the UDT.
+
     - <rows_count> is an [int] representing the number of rows present in this
       result. Those rows are serialized in the <rows_content> part.
     - <rows_content> is composed of <row_1>...<row_m> where m is <rows_count>.
@@ -706,7 +720,17 @@ Table of Contents
           value.
 
 
-7. Result paging
+7. User defined types
+
+  This section describe the serialization format for User defined types (UDT) values.
+  UDT values are the values of the User Defined Types as defined in section 4.2.5.2.
+
+  A UDT value is a [short] n indicating the number of values (field) of UDT values
+  followed by n elements. Each element is a [short bytes] representing the serialized
+  field.
+
+
+8. Result paging
 
   The protocol allows for paging the result of queries. For that, the QUERY and
   EXECUTE messages have a <result_page_size> value that indicate the desired
@@ -740,7 +764,7 @@ Table of Contents
     slightly smaller or bigger pages in the future for performance reasons.
 
 
-8. Error codes
+9. Error codes
 
   The supported error codes are described below:
     0x0000    Server error: something unexpected happened. This indicates a
@@ -832,7 +856,10 @@ Table of Contents
               this host. The rest of the ERROR message body will be [short
               bytes] representing the unknown ID.
 
-9. Changes from v1
+10. Changes from v2
   * BATCH messages now have <flags> (like QUERY and EXECUTE) and a corresponding optional
     <serial_consistency> parameters (see Section 4.1.7).
+  * User Defined Types have to added to ResultSet metadata (see 4.2.5.2) and a new section
+    on the serialization format of UDT values has been added to thie documentation
+    (Section 7).
 
