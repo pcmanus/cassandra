@@ -313,7 +313,7 @@ public class QueryProcessor implements QueryHandler
         batch.checkAccess(clientState);
         batch.validate(clientState);
 
-        batch.executeWithPerStatementVariables(options.getConsistency(), queryState, options.getValues());
+        batch.executeWithPerStatementVariables(options.getConsistency(), options.getSerialConsistency(), queryState, options.getValues());
         return new ResultMessage.Void();
     }
 
