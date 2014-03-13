@@ -18,45 +18,138 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.service.pager.PagingState;
 
-/**
- * Options for a batch (at the protocol level) queries.
- */
-public class BatchQueryOptions
+public abstract class BatchQueryOptions
 {
-    private final ConsistencyLevel consistency;
-    private final ConsistencyLevel serialConsistency;
-    private final List<List<ByteBuffer>> values;
+    public static BatchQueryOptions DEFAULT = withoutPerStatementVariables(QueryOptions.DEFAULT);
+
+    protected final QueryOptions wrapped;
     private final List<Object> queryOrIdList;
 
-    public BatchQueryOptions(ConsistencyLevel cl, ConsistencyLevel serialCl, List<List<ByteBuffer>> values, List<Object> queryOrIdList)
+    protected BatchQueryOptions(QueryOptions wrapped, List<Object> queryOrIdList)
     {
-        this.consistency = cl;
-        this.serialConsistency = serialCl;
-        this.values = values;
+        this.wrapped = wrapped;
         this.queryOrIdList = queryOrIdList;
     }
 
+    public static BatchQueryOptions withoutPerStatementVariables(QueryOptions options)
+    {
+        return new WithoutPerStatementVariables(options, Collections.<Object>emptyList());
+    }
+
+    public static BatchQueryOptions withPerStatementVariables(QueryOptions options, List<List<ByteBuffer>> variables, List<Object> queryOrIdList)
+    {
+        return new WithPerStatementVariables(options, variables, queryOrIdList);
+    }
+
+    public abstract QueryOptions forStatement(int i);
+
     public ConsistencyLevel getConsistency()
     {
-        return consistency;
+        return wrapped.getConsistency();
     }
 
     public ConsistencyLevel getSerialConsistency()
     {
-        return serialConsistency;
-    }
-
-    public List<List<ByteBuffer>> getValues()
-    {
-        return values;
+        return wrapped.getSerialConsistency();
     }
 
     public List<Object> getQueryOrIdList()
     {
         return queryOrIdList;
+    }
+
+    private static class WithoutPerStatementVariables extends BatchQueryOptions
+    {
+        private WithoutPerStatementVariables(QueryOptions wrapped, List<Object> queryOrIdList)
+        {
+            super(wrapped, queryOrIdList);
+        }
+
+        public QueryOptions forStatement(int i)
+        {
+            return wrapped;
+        }
+    }
+
+    private static class WithPerStatementVariables extends BatchQueryOptions
+    {
+        private final List<QueryOptionsWrapper> perStatementOptions;
+
+        private WithPerStatementVariables(QueryOptions wrapped, List<List<ByteBuffer>> variables, List<Object> queryOrIdList)
+        {
+            super(wrapped, queryOrIdList);
+            this.perStatementOptions = new ArrayList<>(variables.size());
+            for (List<ByteBuffer> vars : variables)
+                perStatementOptions.add(new QueryOptionsWrapper(wrapped, vars));
+        }
+
+        public QueryOptions forStatement(int i)
+        {
+            return perStatementOptions.get(i);
+        }
+
+        private static class QueryOptionsWrapper extends QueryOptions
+        {
+            private final QueryOptions wrapped;
+            private final List<ByteBuffer> values;
+
+            private QueryOptionsWrapper(QueryOptions wrapped, List<ByteBuffer> values)
+            {
+                this.wrapped = wrapped;
+                this.values = values;
+            }
+
+            public ConsistencyLevel getConsistency()
+            {
+                return wrapped.getConsistency();
+            }
+
+            public List<ByteBuffer> getValues()
+            {
+                return values;
+            }
+
+            public boolean skipMetadata()
+            {
+                return wrapped.skipMetadata();
+            }
+
+            public int getPageSize()
+            {
+                return wrapped.getPageSize();
+            }
+
+            public PagingState getPagingState()
+            {
+                return wrapped.getPagingState();
+            }
+
+            public ConsistencyLevel getSerialConsistency()
+            {
+                return wrapped.getSerialConsistency();
+            }
+
+            public int getProtocolVersion()
+            {
+                return wrapped.getProtocolVersion();
+            }
+
+            SpecificOptions getSpecificOptions()
+            {
+                return wrapped.getSpecificOptions();
+            }
+
+            public QueryOptions withProtocolVersion(int version)
+            {
+                return new DefaultQueryOptions(getConsistency(), getValues(), skipMetadata(),  getSpecificOptions(), version);
+            }
+        }
     }
 }
