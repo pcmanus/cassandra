@@ -154,7 +154,7 @@ public class QueryProcessor implements QueryHandler
     public static ResultMessage process(String queryString, ConsistencyLevel cl, QueryState queryState)
     throws RequestExecutionException, RequestValidationException
     {
-        return instance.process(queryString, queryState, new QueryOptions(cl, Collections.<ByteBuffer>emptyList()));
+        return instance.process(queryString, queryState, QueryOptions.forInternalCalls(cl, Collections.<ByteBuffer>emptyList()));
     }
 
     public ResultMessage process(String queryString, QueryState queryState, QueryOptions options)
@@ -176,7 +176,7 @@ public class QueryProcessor implements QueryHandler
     {
         try
         {
-            ResultMessage result = instance.process(query, QueryState.forInternalCalls(), new QueryOptions(cl, Collections.<ByteBuffer>emptyList()));
+            ResultMessage result = instance.process(query, QueryState.forInternalCalls(), QueryOptions.forInternalCalls(cl, Collections.<ByteBuffer>emptyList()));
             if (result instanceof ResultMessage.Rows)
                 return UntypedResultSet.create(((ResultMessage.Rows)result).result);
             else
@@ -312,8 +312,7 @@ public class QueryProcessor implements QueryHandler
         ClientState clientState = queryState.getClientState();
         batch.checkAccess(clientState);
         batch.validate(clientState);
-
-        batch.executeWithPerStatementVariables(options.getConsistency(), options.getSerialConsistency(), queryState, options.getValues());
+        batch.execute(queryState, options);
         return new ResultMessage.Void();
     }
 
