@@ -42,7 +42,7 @@ public class ColumnCondition
     public final ColumnDefinition column;
     private final Term value;
 
-    private List<ByteBuffer> variables;
+    private QueryOptions options;
 
     private ColumnCondition(ColumnDefinition column, Term value)
     {
@@ -57,9 +57,9 @@ public class ColumnCondition
     }
 
     // See CQL3CasConditions for why it's convenient to have this
-    public ColumnCondition attach(List<ByteBuffer> variables)
+    public ColumnCondition attach(QueryOptions options)
     {
-        this.variables = variables;
+        this.options = options;
         return this;
     }
 
@@ -79,7 +79,7 @@ public class ColumnCondition
     public boolean equalsTo(ColumnCondition other) throws InvalidRequestException
     {
         return column.equals(other.column)
-            && value.bindAndGet(variables).equals(other.value.bindAndGet(other.variables));
+            && value.bindAndGet(options).equals(other.value.bindAndGet(other.options));
     }
 
     /**
@@ -91,7 +91,7 @@ public class ColumnCondition
             return collectionAppliesTo((CollectionType)column.type, rowPrefix, current, now);
 
         Cell c = current.getColumn(current.metadata().comparator.create(rowPrefix, column));
-        ByteBuffer v = value.bindAndGet(variables);
+        ByteBuffer v = value.bindAndGet(options);
         return v == null
              ? c == null || !c.isLive(now)
              : c != null && c.isLive(now) && c.value().equals(v);
@@ -112,7 +112,7 @@ public class ColumnCondition
             }
         });
 
-        Term.Terminal v = value.bind(variables);
+        Term.Terminal v = value.bind(options);
         if (v == null)
             return !iter.hasNext();
 

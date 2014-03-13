@@ -32,106 +32,134 @@ import org.apache.cassandra.transport.CBUtil;
 /**
  * Options for a query.
  */
-public class QueryOptions
+public abstract class QueryOptions
 {
-    public static final QueryOptions DEFAULT = new QueryOptions(ConsistencyLevel.ONE, Collections.<ByteBuffer>emptyList());
+    public static final QueryOptions DEFAULT = new DefaultQueryOptions(ConsistencyLevel.ONE,
+                                                                       Collections.<ByteBuffer>emptyList(),
+                                                                       false,
+                                                                       SpecificOptions.DEFAULT,
+                                                                       3);
 
     public static final CBCodec<QueryOptions> codec = new Codec();
 
-    private final ConsistencyLevel consistency;
-    private final List<ByteBuffer> values;
-    private final boolean skipMetadata;
-
-    private final SpecificOptions options;
-
-    // The protocol version of incoming queries. This is set during deserializaion and will be 0
-    // if the QueryOptions does not come from a user message (or come from thrift).
-    private final transient int protocolVersion;
-
-    public QueryOptions(ConsistencyLevel consistency, List<ByteBuffer> values)
+    public static QueryOptions fromProtocolV1(ConsistencyLevel consistency, List<ByteBuffer> values)
     {
-        this(consistency, values, false, SpecificOptions.DEFAULT, 0);
+        return new DefaultQueryOptions(consistency, values, false, SpecificOptions.DEFAULT, 1);
     }
 
-    public QueryOptions(ConsistencyLevel consistency,
-                        List<ByteBuffer> values,
-                        boolean skipMetadata,
-                        int pageSize,
-                        PagingState pagingState,
-                        ConsistencyLevel serialConsistency)
+    public static QueryOptions fromProtocolV2(ConsistencyLevel consistency, List<ByteBuffer> values)
     {
-        this(consistency, values, skipMetadata, new SpecificOptions(pageSize, pagingState, serialConsistency), 0);
+        return new DefaultQueryOptions(consistency, values, false, SpecificOptions.DEFAULT, 2);
     }
 
-    private QueryOptions(ConsistencyLevel consistency, List<ByteBuffer> values, boolean skipMetadata, SpecificOptions options, int protocolVersion)
+    public static QueryOptions forInternalCalls(ConsistencyLevel consistency, List<ByteBuffer> values)
     {
-        this.consistency = consistency;
-        this.values = values;
-        this.skipMetadata = skipMetadata;
-        this.options = options;
-        this.protocolVersion = protocolVersion;
+        return new DefaultQueryOptions(consistency, values, false, SpecificOptions.DEFAULT, 0);
     }
 
     public static QueryOptions fromPreV3Batch(ConsistencyLevel consistency)
     {
-        return new QueryOptions(consistency, Collections.<ByteBuffer>emptyList(), false, SpecificOptions.DEFAULT, 2);
+        return new DefaultQueryOptions(consistency, Collections.<ByteBuffer>emptyList(), false, SpecificOptions.DEFAULT, 2);
     }
 
-    public static QueryOptions fromProtocolV1(ConsistencyLevel consistency, List<ByteBuffer> values)
+    public static QueryOptions create(ConsistencyLevel consistency, List<ByteBuffer> values, boolean skipMetadata, int pageSize, PagingState pagingState, ConsistencyLevel serialConsistency)
     {
-        return new QueryOptions(consistency, values, false, SpecificOptions.DEFAULT, 1);
+        return new DefaultQueryOptions(consistency, values, skipMetadata, new SpecificOptions(pageSize, pagingState, serialConsistency), 0);
     }
 
-    public ConsistencyLevel getConsistency()
-    {
-        return consistency;
-    }
+    public abstract ConsistencyLevel getConsistency();
+    public abstract List<ByteBuffer> getValues();
+    public abstract boolean skipMetadata();
 
-    public List<ByteBuffer> getValues()
-    {
-        return values;
-    }
+    /**  The pageSize for this query. Will be <= 0 if not relevant for the query.  */
+    public abstract int getPageSize();
 
-    public boolean skipMetadata()
-    {
-        return skipMetadata;
-    }
+    /** The paging state for this query, or null if not relevant. */
+    public abstract PagingState getPagingState();
+
+    /**  Serial consistency for conditional updates. */
+    public abstract ConsistencyLevel getSerialConsistency();
 
     /**
-     * The pageSize for this query. Will be <= 0 if not relevant for the query.
-     */
-    public int getPageSize()
-    {
-        return options.pageSize;
-    }
-
-    /**
-     * The paging state for this query, or null if not relevant.
-     */
-    public PagingState getPagingState()
-    {
-        return options.state;
-    }
-
-    /**
-     * Serial consistency for conditional updates.
-     */
-    public ConsistencyLevel getSerialConsistency()
-    {
-        return options.serialConsistency;
-    }
-
-    /**
-     * The protocol version for the query. Will be 0 if the object don't come from
+     * The protocol version for the query. Will be 3 if the object don't come from
      * a native protocol request (i.e. it's been allocated locally or by CQL-over-thrift).
      */
-    public int getProtocolVersion()
+    public abstract int getProtocolVersion();
+
+    public abstract QueryOptions withProtocolVersion(int version);
+
+    // Mainly for the sake of BatchQueryOptions
+    abstract SpecificOptions getSpecificOptions();
+
+    static class DefaultQueryOptions extends QueryOptions
     {
-        return protocolVersion;
+        private final ConsistencyLevel consistency;
+        private final List<ByteBuffer> values;
+        private final boolean skipMetadata;
+
+        private final SpecificOptions options;
+
+        // The protocol version of incoming queries. This is set during deserializaion and will be 0
+        // if the QueryOptions does not come from a user message (or come from thrift).
+        private final transient int protocolVersion;
+
+        DefaultQueryOptions(ConsistencyLevel consistency, List<ByteBuffer> values, boolean skipMetadata, SpecificOptions options, int protocolVersion)
+        {
+            this.consistency = consistency;
+            this.values = values;
+            this.skipMetadata = skipMetadata;
+            this.options = options;
+            this.protocolVersion = protocolVersion;
+        }
+
+        public QueryOptions withProtocolVersion(int version)
+        {
+            return new DefaultQueryOptions(consistency, values, skipMetadata, options, version);
+        }
+
+        public ConsistencyLevel getConsistency()
+        {
+            return consistency;
+        }
+
+        public List<ByteBuffer> getValues()
+        {
+            return values;
+        }
+
+        public boolean skipMetadata()
+        {
+            return skipMetadata;
+        }
+
+        public int getPageSize()
+        {
+            return options.pageSize;
+        }
+
+        public PagingState getPagingState()
+        {
+            return options.state;
+        }
+
+        public ConsistencyLevel getSerialConsistency()
+        {
+            return options.serialConsistency;
+        }
+
+        public int getProtocolVersion()
+        {
+            return protocolVersion;
+        }
+
+        SpecificOptions getSpecificOptions()
+        {
+            return options;
+        }
     }
 
     // Options that are likely to not be present in most queries
-    private static class SpecificOptions
+    static class SpecificOptions
     {
         private static final SpecificOptions DEFAULT = new SpecificOptions(-1, null, null);
 
@@ -202,7 +230,7 @@ public class QueryOptions
                 ConsistencyLevel serialConsistency = flags.contains(Flag.SERIAL_CONSISTENCY) ? CBUtil.readConsistencyLevel(body) : ConsistencyLevel.SERIAL;
                 options = new SpecificOptions(pageSize, pagingState, serialConsistency);
             }
-            return new QueryOptions(consistency, values, skipMetadata, options, version);
+            return new DefaultQueryOptions(consistency, values, skipMetadata, options, version);
         }
 
         public void encode(QueryOptions options, ChannelBuffer dest, int version)
@@ -250,7 +278,7 @@ public class QueryOptions
             EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
             if (options.getValues().size() > 0)
                 flags.add(Flag.VALUES);
-            if (options.skipMetadata)
+            if (options.skipMetadata())
                 flags.add(Flag.SKIP_METADATA);
             if (options.getPageSize() >= 0)
                 flags.add(Flag.PAGE_SIZE);

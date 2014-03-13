@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3.hooks;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import org.apache.cassandra.cql3.BatchQueryOptions;
 import org.apache.cassandra.service.QueryState;
 
 /**
@@ -40,13 +41,13 @@ import org.apache.cassandra.service.QueryState;
 public class BatchExecutionContext
 {
     public final QueryState queryState;
+    public final BatchQueryOptions options;
     public final List<Object> queryOrIdList;
-    public final List<List<ByteBuffer>> variables;
 
-    public BatchExecutionContext(QueryState queryState, List<Object> queryOrIdList, List<List<ByteBuffer>> variables)
+    public BatchExecutionContext(QueryState queryState, BatchQueryOptions options, List<Object> queryOrIdList)
     {
         this.queryState = queryState;
+        this.options = options;
         this.queryOrIdList = queryOrIdList;
-        this.variables = variables;
     }
 }

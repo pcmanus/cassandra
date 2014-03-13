@@ -709,14 +709,14 @@ Table of Contents
   returned in RESULT messages but also to encode values for EXECUTE ones.
 
   The serialization formats are:
-     List: a [short] n indicating the size of the list, followed by n elements.
-           Each element is [short bytes] representing the serialized element
+     List: a [int] n indicating the size of the list, followed by n elements.
+           Each element is [bytes] representing the serialized element
            value.
-     Map: a [short] n indicating the size of the map, followed by n entries.
-          Each entry is composed of two [short bytes] representing the key and
+     Map: a [int] n indicating the size of the map, followed by n entries.
+          Each entry is composed of two [bytes] representing the key and
           the value of the entry map.
-     Set: a [short] n indicating the size of the set, followed by n elements.
-          Each element is [short bytes] representing the serialized element
+     Set: a [int] n indicating the size of the set, followed by n elements.
+          Each element is [bytes] representing the serialized element
           value.
 
 
@@ -862,4 +862,6 @@ Table of Contents
   * User Defined Types have to added to ResultSet metadata (see 4.2.5.2) and a new section
     on the serialization format of UDT values has been added to thie documentation
     (Section 7).
+  * The serialization format for collection has changed (both the collection size and
+    the length of each argument is now 4 bytes long). See Section 6.
 

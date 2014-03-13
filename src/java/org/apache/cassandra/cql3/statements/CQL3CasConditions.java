@@ -56,7 +56,7 @@ public class CQL3CasConditions implements CASConditions
             throw new InvalidRequestException("Cannot mix IF conditions and IF NOT EXISTS for the same row");
     }
 
-    public void addConditions(Composite prefix, Collection<ColumnCondition> conds, List<ByteBuffer> variables) throws InvalidRequestException
+    public void addConditions(Composite prefix, Collection<ColumnCondition> conds, QueryOptions options) throws InvalidRequestException
     {
         RowCondition condition = conditions.get(prefix);
         if (condition == null)
@@ -68,7 +68,7 @@ public class CQL3CasConditions implements CASConditions
         {
             throw new InvalidRequestException("Cannot mix IF conditions and IF NOT EXISTS for the same row");
         }
-        ((ColumnsConditions)condition).addConditions(conds, variables);
+        ((ColumnsConditions)condition).addConditions(conds, options);
     }
 
     public IDiskAtomFilter readFilter()
@@ -139,13 +139,13 @@ public class CQL3CasConditions implements CASConditions
             super(rowPrefix, now);
         }
 
-        public void addConditions(Collection<ColumnCondition> conds, List<ByteBuffer> variables) throws InvalidRequestException
+        public void addConditions(Collection<ColumnCondition> conds, QueryOptions options) throws InvalidRequestException
         {
             for (ColumnCondition condition : conds)
             {
                 // We will need the variables in appliesTo but with protocol batches, each condition in this object can have a
                 // different list of variables. So attach them to the condition directly, it's not particulary elegant but its simpler
-                ColumnCondition previous = conditions.put(condition.column.name, condition.attach(variables));
+                ColumnCondition previous = conditions.put(condition.column.name, condition.attach(options));
                 // If 2 conditions are actually equal, let it slide
                 if (previous != null && !previous.equalsTo(condition))
                     throw new InvalidRequestException("Duplicate and incompatible conditions for column " + condition.column.name);

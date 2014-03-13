@@ -2101,7 +2101,7 @@ public class CassandraServer implements Cassandra.Iface
 
             return org.apache.cassandra.cql3.QueryProcessor.processPrepared(statement,
                                                                             cState.getQueryState(),
-                                                                            new QueryOptions(ThriftConversion.fromThrift(cLevel), bindVariables)).toThriftResult();
+                                                                            QueryOptions.fromProtocolV2(ThriftConversion.fromThrift(cLevel), bindVariables)).toThriftResult();
         }
         catch (RequestExecutionException e)
         {

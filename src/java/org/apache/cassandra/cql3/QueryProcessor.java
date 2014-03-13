@@ -201,7 +201,7 @@ public class QueryProcessor
     public static ResultMessage process(String queryString, ConsistencyLevel cl, QueryState queryState)
     throws RequestExecutionException, RequestValidationException
     {
-        return process(queryString, queryState, new QueryOptions(cl, Collections.<ByteBuffer>emptyList()));
+        return process(queryString, queryState, QueryOptions.forInternalCalls(cl, Collections.<ByteBuffer>emptyList()));
     }
 
     public static ResultMessage process(String queryString, QueryState queryState, QueryOptions options)
@@ -223,7 +223,7 @@ public class QueryProcessor
     {
         try
         {
-            ResultMessage result = process(query, QueryState.forInternalCalls(), new QueryOptions(cl, Collections.<ByteBuffer>emptyList()));
+            ResultMessage result = process(query, QueryState.forInternalCalls(), QueryOptions.forInternalCalls(cl, Collections.<ByteBuffer>emptyList()));
             if (result instanceof ResultMessage.Rows)
                 return UntypedResultSet.create(((ResultMessage.Rows)result).result);
             else
@@ -356,10 +356,8 @@ public class QueryProcessor
     }
 
     public static ResultMessage processBatch(BatchStatement batch,
-                                             ConsistencyLevel cl,
-                                             ConsistencyLevel serialCl,
                                              QueryState queryState,
-                                             List<List<ByteBuffer>> variables,
+                                             BatchQueryOptions options,
                                              List<Object> queryOrIdList)
     throws RequestExecutionException, RequestValidationException
     {
@@ -368,20 +366,20 @@ public class QueryProcessor
         batch.validate(clientState);
 
         if (preExecutionHooks.isEmpty() && postExecutionHooks.isEmpty())
-            batch.executeWithPerStatementVariables(cl, serialCl, queryState, variables);
+            batch.execute(queryState, options);
         else
-            executeBatchWithHooks(batch, cl, serialCl, new BatchExecutionContext(queryState, queryOrIdList, variables));
+            executeBatchWithHooks(batch, new BatchExecutionContext(queryState, options, queryOrIdList));
 
         return new ResultMessage.Void();
     }
 
-    private static void executeBatchWithHooks(BatchStatement batch, ConsistencyLevel cl, ConsistencyLevel serialCl, BatchExecutionContext context)
+    private static void executeBatchWithHooks(BatchStatement batch, BatchExecutionContext context)
     throws RequestExecutionException, RequestValidationException
     {
         for (PreExecutionHook hook : preExecutionHooks)
             batch = hook.processBatch(batch, context);
 
-        batch.executeWithPerStatementVariables(cl, serialCl, context.queryState, context.variables);
+        batch.execute(context.queryState, context.options);
 
         for (PostExecutionHook hook : postExecutionHooks)
             hook.processBatch(batch, context);
