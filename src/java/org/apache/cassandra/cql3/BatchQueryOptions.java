@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.pager.PagingState;
 
 public abstract class BatchQueryOptions
@@ -63,6 +64,11 @@ public abstract class BatchQueryOptions
     public List<Object> getQueryOrIdList()
     {
         return queryOrIdList;
+    }
+
+    public long getTimestamp(QueryState state)
+    {
+        return wrapped.getTimestamp(state);
     }
 
     private static class WithoutPerStatementVariables extends BatchQueryOptions
@@ -119,21 +125,6 @@ public abstract class BatchQueryOptions
             public boolean skipMetadata()
             {
                 return wrapped.skipMetadata();
-            }
-
-            public int getPageSize()
-            {
-                return wrapped.getPageSize();
-            }
-
-            public PagingState getPagingState()
-            {
-                return wrapped.getPagingState();
-            }
-
-            public ConsistencyLevel getSerialConsistency()
-            {
-                return wrapped.getSerialConsistency();
             }
 
             public int getProtocolVersion()

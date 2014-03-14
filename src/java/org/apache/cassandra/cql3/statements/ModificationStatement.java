@@ -491,7 +491,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         else
             cl.validateForWrite(cfm.ksName);
 
-        Collection<? extends IMutation> mutations = getMutations(options, false, queryState.getTimestamp());
+        Collection<? extends IMutation> mutations = getMutations(options, false, options.getTimestamp(queryState));
         if (!mutations.isEmpty())
             StorageProxy.mutateWithTriggers(mutations, cl, false);
 
@@ -508,10 +508,11 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
         ByteBuffer key = keys.get(0);
 
-        CQL3CasConditions conditions = new CQL3CasConditions(cfm, queryState.getTimestamp());
+        long now = options.getTimestamp(queryState);
+        CQL3CasConditions conditions = new CQL3CasConditions(cfm, now);
         Composite prefix = createClusteringPrefix(options);
         ColumnFamily updates = ArrayBackedSortedColumns.factory.create(cfm);
-        addUpdatesAndConditions(key, prefix, updates, conditions, options, getTimestamp(queryState.getTimestamp(), options));
+        addUpdatesAndConditions(key, prefix, updates, conditions, options, getTimestamp(now, options));
 
         ColumnFamily result = StorageProxy.cas(keyspace(),
                                                columnFamily(),
