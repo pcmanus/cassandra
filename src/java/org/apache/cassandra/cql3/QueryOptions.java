@@ -25,6 +25,7 @@ import java.util.List;
 import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.pager.PagingState;
 import org.apache.cassandra.transport.CBCodec;
 import org.apache.cassandra.transport.CBUtil;
@@ -64,7 +65,7 @@ public abstract class QueryOptions
 
     public static QueryOptions create(ConsistencyLevel consistency, List<ByteBuffer> values, boolean skipMetadata, int pageSize, PagingState pagingState, ConsistencyLevel serialConsistency)
     {
-        return new DefaultQueryOptions(consistency, values, skipMetadata, new SpecificOptions(pageSize, pagingState, serialConsistency), 0);
+        return new DefaultQueryOptions(consistency, values, skipMetadata, new SpecificOptions(pageSize, pagingState, serialConsistency, -1L), 0);
     }
 
     public abstract ConsistencyLevel getConsistency();
@@ -72,13 +73,28 @@ public abstract class QueryOptions
     public abstract boolean skipMetadata();
 
     /**  The pageSize for this query. Will be <= 0 if not relevant for the query.  */
-    public abstract int getPageSize();
+    public int getPageSize()
+    {
+        return getSpecificOptions().pageSize;
+    }
 
     /** The paging state for this query, or null if not relevant. */
-    public abstract PagingState getPagingState();
+    public PagingState getPagingState()
+    {
+        return getSpecificOptions().state;
+    }
 
     /**  Serial consistency for conditional updates. */
-    public abstract ConsistencyLevel getSerialConsistency();
+    public ConsistencyLevel getSerialConsistency()
+    {
+        return getSpecificOptions().serialConsistency;
+    }
+
+    public long getTimestamp(QueryState state)
+    {
+        long tstamp = getSpecificOptions().timestamp;
+        return tstamp >= 0 ? tstamp : state.getTimestamp();
+    }
 
     /**
      * The protocol version for the query. Will be 3 if the object don't come from
@@ -132,21 +148,6 @@ public abstract class QueryOptions
             return skipMetadata;
         }
 
-        public int getPageSize()
-        {
-            return options.pageSize;
-        }
-
-        public PagingState getPagingState()
-        {
-            return options.state;
-        }
-
-        public ConsistencyLevel getSerialConsistency()
-        {
-            return options.serialConsistency;
-        }
-
         public int getProtocolVersion()
         {
             return protocolVersion;
@@ -161,17 +162,19 @@ public abstract class QueryOptions
     // Options that are likely to not be present in most queries
     static class SpecificOptions
     {
-        private static final SpecificOptions DEFAULT = new SpecificOptions(-1, null, null);
+        private static final SpecificOptions DEFAULT = new SpecificOptions(-1, null, null, -1L);
 
         private final int pageSize;
         private final PagingState state;
         private final ConsistencyLevel serialConsistency;
+        private final long timestamp;
 
-        private SpecificOptions(int pageSize, PagingState state, ConsistencyLevel serialConsistency)
+        private SpecificOptions(int pageSize, PagingState state, ConsistencyLevel serialConsistency, long timestamp)
         {
             this.pageSize = pageSize;
             this.state = state;
             this.serialConsistency = serialConsistency == null ? ConsistencyLevel.SERIAL : serialConsistency;
+            this.timestamp = timestamp;
         }
     }
 
@@ -184,7 +187,8 @@ public abstract class QueryOptions
             SKIP_METADATA,
             PAGE_SIZE,
             PAGING_STATE,
-            SERIAL_CONSISTENCY;
+            SERIAL_CONSISTENCY,
+            TIMESTAMP;
 
             public static EnumSet<Flag> deserialize(int flags)
             {
@@ -228,7 +232,9 @@ public abstract class QueryOptions
                 int pageSize = flags.contains(Flag.PAGE_SIZE) ? body.readInt() : -1;
                 PagingState pagingState = flags.contains(Flag.PAGING_STATE) ? PagingState.deserialize(CBUtil.readValue(body)) : null;
                 ConsistencyLevel serialConsistency = flags.contains(Flag.SERIAL_CONSISTENCY) ? CBUtil.readConsistencyLevel(body) : ConsistencyLevel.SERIAL;
-                options = new SpecificOptions(pageSize, pagingState, serialConsistency);
+                long timestamp = flags.contains(Flag.TIMESTAMP) ? body.readLong() : -1L;
+
+                options = new SpecificOptions(pageSize, pagingState, serialConsistency, timestamp);
             }
             return new DefaultQueryOptions(consistency, values, skipMetadata, options, version);
         }
@@ -250,6 +256,8 @@ public abstract class QueryOptions
                 CBUtil.writeValue(options.getPagingState().serialize(), dest);
             if (flags.contains(Flag.SERIAL_CONSISTENCY))
                 CBUtil.writeConsistencyLevel(options.getSerialConsistency(), dest);
+            if (flags.contains(Flag.TIMESTAMP))
+                dest.writeLong(options.getSpecificOptions().timestamp);
         }
 
         public int encodedSize(QueryOptions options, int version)
@@ -269,6 +277,8 @@ public abstract class QueryOptions
                 size += CBUtil.sizeOfValue(options.getPagingState().serialize());
             if (flags.contains(Flag.SERIAL_CONSISTENCY))
                 size += CBUtil.sizeOfConsistencyLevel(options.getSerialConsistency());
+            if (flags.contains(Flag.TIMESTAMP))
+                size += 8;
 
             return size;
         }
@@ -286,6 +296,8 @@ public abstract class QueryOptions
                 flags.add(Flag.PAGING_STATE);
             if (options.getSerialConsistency() != ConsistencyLevel.SERIAL)
                 flags.add(Flag.SERIAL_CONSISTENCY);
+            if (options.getSpecificOptions().timestamp >= 0)
+                flags.add(Flag.TIMESTAMP);
             return flags;
         }
     }
