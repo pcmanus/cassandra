@@ -188,6 +188,7 @@ Table of Contents
   define the following:
 
     [int]          A 4 bytes integer
+    [long]         A 8 bytes integer
     [short]        A 2 bytes unsigned integer
     [string]       A [short] n, followed by n bytes representing an UTF-8
                    string.
@@ -287,7 +288,7 @@ Table of Contents
     <query><query_parameters>
   where <query> is a [long string] representing the query and
   <query_parameters> must be
-    <consistency><flags>[<n><value_1>...<value_n>][<result_page_size>][<paging_state>][<serial_consistency>]
+    <consistency><flags>[<n><value_1>...<value_n>][<result_page_size>][<paging_state>][<serial_consistency>][<timestamp>]
   where:
     - <consistency> is the [consistency] level for the operation.
     - <flags> is a [byte] whose bits define the options for this query and
@@ -315,6 +316,11 @@ Table of Contents
               either SERIAL or LOCAL_SERIAL and if not present, it defaults to
               SERIAL. This option will be ignored for anything else that a
               conditional update/insert.
+        0x20: With default timestamp. If present, <timestamp> should be present.
+              <timestamp> is a [long] representing the default timestamp for the query
+              in microseconds. If provided, this will replace the server side assigned
+              timestamp as default timestamp. Note that a timestamp in the query itself
+              will still override this timestamp. This is entirely optional.
 
   Note that the consistency is ignored by some queries (USE, CREATE, ALTER,
   TRUNCATE, ...).
@@ -348,7 +354,7 @@ Table of Contents
   Allows executing a list of queries (prepared or not) as a batch (note that
   only DML statements are accepted in a batch). The body of the message must
   be:
-    <type><n><query_1>...<query_n><consistency><flags>[<serial_consistency>]
+    <type><n><query_1>...<query_n><consistency><flags>[<serial_consistency>][<timestamp>]
   where:
     - <type> is a [byte] indicating the type of batch to use:
         - If <type> == 0, the batch will be "logged". This is equivalent to a
@@ -368,6 +374,11 @@ Table of Contents
               either SERIAL or LOCAL_SERIAL and if not present, it defaults to
               SERIAL. This option will be ignored for anything else that a
               conditional update/insert.
+        0x20: With default timestamp. If present, <timestamp> should be present.
+              <timestamp> is a [long] representing the default timestamp for the query
+              in microseconds. If provided, this will replace the server side assigned
+              timestamp as default timestamp. Note that a timestamp in the query itself
+              will still override this timestamp. This is entirely optional.
     - <n> is a [short] indicating the number of following queries.
     - <query_1>...<query_n> are the queries to execute. A <query_i> must be of the
       form:
@@ -864,4 +875,5 @@ Table of Contents
     (Section 7).
   * The serialization format for collection has changed (both the collection size and
     the length of each argument is now 4 bytes long). See Section 6.
+  * QUERY, EXECUTE and BATCH messages can now optionally provide the default timestamp for the query.
 

@@ -184,7 +184,7 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
 
     public ResultMessage execute(QueryState queryState, BatchQueryOptions options) throws RequestExecutionException, RequestValidationException
     {
-        return execute(options, false, queryState.getTimestamp());
+        return execute(options, false, options.getTimestamp(queryState));
     }
 
     public ResultMessage execute(BatchQueryOptions options, boolean local, long now)
