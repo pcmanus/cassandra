@@ -288,7 +288,7 @@ Table of Contents
     <query><query_parameters>
   where <query> is a [long string] representing the query and
   <query_parameters> must be
-    <consistency><flags>[<n><value_1>...<value_n>][<result_page_size>][<paging_state>][<serial_consistency>][<timestamp>]
+    <consistency><flags>[<n>[name_1]<value_1>...[name_n]<value_n>][<result_page_size>][<paging_state>][<serial_consistency>][<timestamp>]
   where:
     - <consistency> is the [consistency] level for the operation.
     - <flags> is a [byte] whose bits define the options for this query and
@@ -297,7 +297,10 @@ Table of Contents
       flags are, given there mask:
         0x01: Values. In that case, a [short] <n> followed by <n> [bytes]
               values are provided. Those value are used for bound variables in
-              the query.
+              the query. Optionally, if the 0x40 flag is present, each value
+              will be preceded by a [string] name, representing the name of
+              the marker the value must be binded to. This is optional, and
+              if not present, values will be binded by position.
         0x02: Skip_metadata. If present, the Result Set returned as a response
               to that query (if any) will have the NO_METADATA flag (see
               Section 4.2.5.2).
@@ -321,6 +324,13 @@ Table of Contents
               in microseconds. If provided, this will replace the server side assigned
               timestamp as default timestamp. Note that a timestamp in the query itself
               will still override this timestamp. This is entirely optional.
+        0x40: With names for values. This only makes sense if the 0x01 flag is set and
+              is ignored otherwise. If present, the values from the 0x01 flag will
+              be preceded by a name (see above). Note that this is only useful for
+              QUERY requests where named bind markers are used; for EXECUTE statements,
+              since the names for the expected values was returned during preparation,
+              a client can always provide values in the right order without any names
+              and using this flag, while supported, is almost surely inefficient.
 
   Note that the consistency is ignored by some queries (USE, CREATE, ALTER,
   TRUNCATE, ...).
@@ -379,10 +389,13 @@ Table of Contents
               in microseconds. If provided, this will replace the server side assigned
               timestamp as default timestamp. Note that a timestamp in the query itself
               will still override this timestamp. This is entirely optional.
+        0x40: With names for values. If set, then all values for all <query_i> must be
+              preceded by a [string] <name_i> that have the same meaning than in QUERY
+              requests.
     - <n> is a [short] indicating the number of following queries.
     - <query_1>...<query_n> are the queries to execute. A <query_i> must be of the
       form:
-        <kind><string_or_id><n><value_1>...<value_n>
+        <kind><string_or_id><n>[<name_1>]<value_1>...[<name_n>]<value_n>
       where:
        - <kind> is a [byte] indicating whether the following query is a prepared
          one or not. <kind> value must be either 0 or 1.
@@ -391,7 +404,10 @@ Table of Contents
          bind markers). Otherwise (that is, if <kind> == 1), it should be a
          [short bytes] representing a prepared query ID.
        - <n> is a [short] indicating the number (possibly 0) of following values.
-       - <value_1>...<value_n> are the [bytes] to use for bound variables.
+       - <name_i> is the optional name of the following <value_i>. It must be present
+         if and only if the 0x40 flag is provided for the batch.
+       - <value_i> is the [bytes] to use for bound variable i (of bound variable <name_i>
+         if the 0x40 flag is used).
     - <consistency> is the [consistency] level for the operation.
     - <serial_consistency> is only present if the 0x10 flag is set. In that case,
       <serial_consistency> is the [consistency] level for the serial phase of
@@ -876,4 +892,9 @@ Table of Contents
   * The serialization format for collection has changed (both the collection size and
     the length of each argument is now 4 bytes long). See Section 6.
   * QUERY, EXECUTE and BATCH messages can now optionally provide the default timestamp for the query.
+    As this feature is optionally enabled by clients, implementing it is at the discretion of the
+    client.
+  * QUERY, EXECUTE and BATCH messages can now optionally provide the names for the values of the
+    query. As this feature is optionally enabled by clients, implementing it is at the discretion of the
+    client.
 
