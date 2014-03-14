@@ -28,6 +28,7 @@ import io.netty.buffer.ByteBuf;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.statements.BatchStatement;
 import org.apache.cassandra.cql3.statements.ModificationStatement;
+import org.apache.cassandra.cql3.statements.ParsedStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
@@ -169,27 +170,39 @@ public class BatchMessage extends Message.Request
             }
 
             QueryHandler handler = state.getClientState().getCQLQueryHandler();
-            List<ModificationStatement> statements = new ArrayList<ModificationStatement>(queryOrIdList.size());
+            List<ParsedStatement.Prepared> prepared = new ArrayList<>(queryOrIdList.size());
             for (int i = 0; i < queryOrIdList.size(); i++)
             {
                 Object query = queryOrIdList.get(i);
-                CQLStatement statement;
+                ParsedStatement.Prepared p;
                 if (query instanceof String)
                 {
-                    statement = QueryProcessor.parseStatement((String)query, state);
+                    p = QueryProcessor.parseStatement((String)query, state);
                 }
                 else
                 {
-                    statement = handler.getPrepared((MD5Digest)query);
-                    if (statement == null)
+                    p = handler.getPrepared((MD5Digest)query);
+                    if (p == null)
                         throw new PreparedQueryNotFoundException((MD5Digest)query);
                 }
 
                 List<ByteBuffer> queryValues = values.get(i);
-                if (queryValues.size() != statement.getBoundTerms())
+                if (queryValues.size() != p.statement.getBoundTerms())
                     throw new InvalidRequestException(String.format("There were %d markers(?) in CQL but %d bound variables",
-                                                                    statement.getBoundTerms(),
+                                                                    p.statement.getBoundTerms(),
                                                                     queryValues.size()));
+
+                prepared.add(p);
+            }
+
+            BatchQueryOptions batchOptions = BatchQueryOptions.withPerStatementVariables(options, values, queryOrIdList);
+            List<ModificationStatement> statements = new ArrayList<>(prepared.size());
+            for (int i = 0; i < prepared.size(); i++)
+            {
+                ParsedStatement.Prepared p = prepared.get(i);
+                batchOptions.forStatement(i).prepare(p.boundNames);
+                CQLStatement statement = p.statement;
+
                 if (!(statement instanceof ModificationStatement))
                     throw new InvalidRequestException("Invalid statement in batch: only UPDATE, INSERT and DELETE statements are allowed.");
 
@@ -210,7 +223,7 @@ public class BatchMessage extends Message.Request
             // Note: It's ok at this point to pass a bogus value for the number of bound terms in the BatchState ctor
             // (and no value would be really correct, so we prefer passing a clearly wrong one).
             BatchStatement batch = new BatchStatement(-1, type, statements, Attributes.none());
-            Message.Response response = handler.processBatch(batch, state, BatchQueryOptions.withPerStatementVariables(options, values, queryOrIdList));
+            Message.Response response = handler.processBatch(batch, state, batchOptions);
 
             if (tracingId != null)
                 response.setTracingId(tracingId);

@@ -18,6 +18,7 @@
 package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -29,6 +30,7 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.pager.PagingState;
 import org.apache.cassandra.transport.CBCodec;
 import org.apache.cassandra.transport.CBUtil;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Options for a query.
@@ -107,6 +109,11 @@ public abstract class QueryOptions
     // Mainly for the sake of BatchQueryOptions
     abstract SpecificOptions getSpecificOptions();
 
+    public QueryOptions prepare(List<ColumnSpecification> specs)
+    {
+        return this;
+    }
+
     static class DefaultQueryOptions extends QueryOptions
     {
         private final ConsistencyLevel consistency;
@@ -159,6 +166,87 @@ public abstract class QueryOptions
         }
     }
 
+    static abstract class QueryOptionsWrapper extends QueryOptions
+    {
+        protected final QueryOptions wrapped;
+
+        QueryOptionsWrapper(QueryOptions wrapped)
+        {
+            this.wrapped = wrapped;
+        }
+
+        public ConsistencyLevel getConsistency()
+        {
+            return wrapped.getConsistency();
+        }
+
+        public boolean skipMetadata()
+        {
+            return wrapped.skipMetadata();
+        }
+
+        public int getProtocolVersion()
+        {
+            return wrapped.getProtocolVersion();
+        }
+
+        SpecificOptions getSpecificOptions()
+        {
+            return wrapped.getSpecificOptions();
+        }
+
+        @Override
+        public QueryOptions prepare(List<ColumnSpecification> specs)
+        {
+            wrapped.prepare(specs);
+            return this;
+        }
+
+        public QueryOptions withProtocolVersion(int version)
+        {
+            return new DefaultQueryOptions(getConsistency(), getValues(), skipMetadata(),  getSpecificOptions(), version);
+        }
+    }
+
+    static class OptionsWithNames extends QueryOptionsWrapper
+    {
+        private final List<String> names;
+        private List<ByteBuffer> orderedValues;
+
+        OptionsWithNames(DefaultQueryOptions wrapped, List<String> names)
+        {
+            super(wrapped);
+            this.names = names;
+        }
+
+        @Override
+        public QueryOptions prepare(List<ColumnSpecification> specs)
+        {
+            super.prepare(specs);
+
+            orderedValues = new ArrayList<ByteBuffer>(specs.size());
+            for (int i = 0; i < specs.size(); i++)
+            {
+                String name = specs.get(i).name.toString();
+                for (int j = 0; j < names.size(); j++)
+                {
+                    if (name.equals(names.get(j)))
+                    {
+                        orderedValues.add(wrapped.getValues().get(j));
+                        break;
+                    }
+                }
+            }
+            return this;
+        }
+
+        public List<ByteBuffer> getValues()
+        {
+            assert orderedValues != null; // We should have called prepare first!
+            return orderedValues;
+        }
+    }
+
     // Options that are likely to not be present in most queries
     static class SpecificOptions
     {
@@ -188,7 +276,8 @@ public abstract class QueryOptions
             PAGE_SIZE,
             PAGING_STATE,
             SERIAL_CONSISTENCY,
-            TIMESTAMP;
+            TIMESTAMP,
+            NAMES_FOR_VALUES;
 
             public static EnumSet<Flag> deserialize(int flags)
             {
@@ -218,9 +307,21 @@ public abstract class QueryOptions
             ConsistencyLevel consistency = CBUtil.readConsistencyLevel(body);
             EnumSet<Flag> flags = Flag.deserialize((int)body.readByte());
 
-            List<ByteBuffer> values = flags.contains(Flag.VALUES)
-                                    ? CBUtil.readValueList(body)
-                                    : Collections.<ByteBuffer>emptyList();
+            List<ByteBuffer> values = Collections.<ByteBuffer>emptyList();
+            List<String> names = null;
+            if (flags.contains(Flag.VALUES))
+            {
+                if (flags.contains(Flag.NAMES_FOR_VALUES))
+                {
+                    Pair<List<String>, List<ByteBuffer>> namesAndValues = CBUtil.readNameAndValueList(body);
+                    names = namesAndValues.left;
+                    values = namesAndValues.right;
+                }
+                else
+                {
+                    values = CBUtil.readValueList(body);
+                }
+            }
 
             boolean skipMetadata = flags.contains(Flag.SKIP_METADATA);
             flags.remove(Flag.VALUES);
@@ -236,7 +337,8 @@ public abstract class QueryOptions
 
                 options = new SpecificOptions(pageSize, pagingState, serialConsistency, timestamp);
             }
-            return new DefaultQueryOptions(consistency, values, skipMetadata, options, version);
+            DefaultQueryOptions opts = new DefaultQueryOptions(consistency, values, skipMetadata, options, version);
+            return names == null ? opts : new OptionsWithNames(opts, names);
         }
 
         public void encode(QueryOptions options, ByteBuf dest, int version)
@@ -258,6 +360,10 @@ public abstract class QueryOptions
                 CBUtil.writeConsistencyLevel(options.getSerialConsistency(), dest);
             if (flags.contains(Flag.TIMESTAMP))
                 dest.writeLong(options.getSpecificOptions().timestamp);
+
+            // Note that we don't really have to bother with NAMES_FOR_VALUES server side,
+            // and in fact we never really encode QueryOptions, only decode them, so we
+            // don't bother.
         }
 
         public int encodedSize(QueryOptions options, int version)
