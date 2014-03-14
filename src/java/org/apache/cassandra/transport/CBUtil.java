@@ -34,6 +34,7 @@ import org.jboss.netty.util.CharsetUtil;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.TypeSizes;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
@@ -353,6 +354,22 @@ public abstract class CBUtil
         for (ByteBuffer value : values)
             size += CBUtil.sizeOfValue(value);
         return size;
+    }
+
+    public static Pair<List<String>, List<ByteBuffer>> readNameAndValueList(ChannelBuffer cb)
+    {
+        int size = cb.readUnsignedShort();
+        if (size == 0)
+            return Pair.create(Collections.<String>emptyList(), Collections.<ByteBuffer>emptyList());
+
+        List<String> s = new ArrayList<>(size);
+        List<ByteBuffer> l = new ArrayList<>(size);
+        for (int i = 0; i < size; i++)
+        {
+            s.add(readString(cb));
+            l.add(readValue(cb));
+        }
+        return Pair.create(s, l);
     }
 
     public static InetSocketAddress readInet(ChannelBuffer cb)

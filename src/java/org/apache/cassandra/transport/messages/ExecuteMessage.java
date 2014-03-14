@@ -27,6 +27,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.statements.ParsedStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.exceptions.PreparedQueryNotFoundException;
 import org.apache.cassandra.service.QueryState;
@@ -99,7 +100,9 @@ public class ExecuteMessage extends Message.Request
     {
         try
         {
-            CQLStatement statement = QueryProcessor.getPrepared(statementId);
+            ParsedStatement.Prepared prepared = QueryProcessor.getPrepared(statementId);
+            options.prepare(prepared.boundNames);
+            CQLStatement statement = prepared.statement;
 
             if (statement == null)
                 throw new PreparedQueryNotFoundException(statementId);

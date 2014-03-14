@@ -78,61 +78,27 @@ public abstract class BatchQueryOptions
 
     private static class WithPerStatementVariables extends BatchQueryOptions
     {
-        private final List<QueryOptionsWrapper> perStatementOptions;
+        private final List<QueryOptions> perStatementOptions;
 
         private WithPerStatementVariables(QueryOptions wrapped, List<List<ByteBuffer>> variables)
         {
             super(wrapped);
             this.perStatementOptions = new ArrayList<>(variables.size());
-            for (List<ByteBuffer> vars : variables)
-                perStatementOptions.add(new QueryOptionsWrapper(wrapped, vars));
+            for (final List<ByteBuffer> vars : variables)
+            {
+                perStatementOptions.add(new QueryOptions.QueryOptionsWrapper(wrapped)
+                {
+                    public List<ByteBuffer> getValues()
+                    {
+                        return vars;
+                    }
+                });
+            }
         }
 
         public QueryOptions forStatement(int i)
         {
             return perStatementOptions.get(i);
-        }
-
-        private static class QueryOptionsWrapper extends QueryOptions
-        {
-            private final QueryOptions wrapped;
-            private final List<ByteBuffer> values;
-
-            private QueryOptionsWrapper(QueryOptions wrapped, List<ByteBuffer> values)
-            {
-                this.wrapped = wrapped;
-                this.values = values;
-            }
-
-            public ConsistencyLevel getConsistency()
-            {
-                return wrapped.getConsistency();
-            }
-
-            public List<ByteBuffer> getValues()
-            {
-                return values;
-            }
-
-            public boolean skipMetadata()
-            {
-                return wrapped.skipMetadata();
-            }
-
-            public int getProtocolVersion()
-            {
-                return wrapped.getProtocolVersion();
-            }
-
-            SpecificOptions getSpecificOptions()
-            {
-                return wrapped.getSpecificOptions();
-            }
-
-            public QueryOptions withProtocolVersion(int version)
-            {
-                return new DefaultQueryOptions(getConsistency(), getValues(), skipMetadata(),  getSpecificOptions(), version);
-            }
         }
     }
 }
