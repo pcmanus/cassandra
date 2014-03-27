@@ -667,12 +667,20 @@ Table of Contents
       consists of a [string] and an [inet], corresponding respectively to the
       type of status change ("UP" or "DOWN") followed by the address of the
       concerned node.
-    - "SCHEMA_CHANGE": events related to schema change. The body of the message
-      (after the event type) consists of 3 [string] corresponding respectively
-      to the type of schema change ("CREATED", "UPDATED" or "DROPPED"),
-      followed by the name of the affected keyspace and the name of the
-      affected table within that keyspace. For changes that affect a keyspace
-      directly, the table name will be empty (i.e. the empty string "").
+    - "SCHEMA_CHANGE": events related to schema change. After the event type,
+      the rest of the message will be <change_type><target><options> where:
+        - <change_type> is the type of changed involved. It will be one of
+          "CREATED", "UPDATED" or "DROPPED".
+        - <target> can be one of "KEYSPACE", "TABLE" or "TYPE" and describe
+          what has been modified ("TYPE" stands for modifications related to
+          user types).
+        - <options> depends of the preceding <target>. If <target> is
+          "KEYSPACE", then <options> will be a single [string] representing the
+          keyspace changed. Otherwise, if <target> is "TABLE" or "TYPE", then
+          <options> will be 2 [string]: the first one will be the keyspace
+          containing the affected object, and the seconde one will be the name
+          of said affected object (so either the table name or the user type
+          name).
 
   All EVENT message have a streamId of -1 (Section 2.3).
 
@@ -897,4 +905,6 @@ Table of Contents
   * QUERY, EXECUTE and BATCH messages can now optionally provide the names for the values of the
     query. As this feature is optionally enabled by clients, implementing it is at the discretion of the
     client.
+  * The format of "SCHEMA_CHANGE" notifications has been modified, and now includes changes related to
+    user types.
 
