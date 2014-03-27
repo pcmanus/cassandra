@@ -287,6 +287,10 @@ public class Auth
             DatabaseDescriptor.getAuthorizer().revokeAll(DataResource.columnFamily(ksName, cfName));
         }
 
+        public void onDropUserType(String ksName, String userType)
+        {
+        }
+
         public void onCreateKeyspace(String ksName)
         {
         }
@@ -295,11 +299,19 @@ public class Auth
         {
         }
 
+        public void onCreateUserType(String ksName, String userType)
+        {
+        }
+
         public void onUpdateKeyspace(String ksName)
         {
         }
 
         public void onUpdateColumnFamily(String ksName, String cfName)
+        {
+        }
+
+        public void onUpdateUserType(String ksName, String userType)
         {
         }
     }
