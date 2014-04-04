@@ -36,6 +36,11 @@ public class CounterColumnType extends AbstractType<Long>
         return true;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        throw new AssertionError();
+    }
+
     @Override
     public Long compose(ByteBuffer bytes)
     {

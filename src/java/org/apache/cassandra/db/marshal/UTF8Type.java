@@ -47,6 +47,11 @@ public class UTF8Type extends AbstractType<String>
         return this == previous || previous == AsciiType.instance;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
+
     public CQL3Type asCQL3Type()
     {
         return CQL3Type.Native.TEXT;

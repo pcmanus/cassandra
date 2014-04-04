@@ -81,4 +81,9 @@ public class Int32Type extends AbstractType<Integer>
     {
         return Int32Serializer.instance;
     }
+
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
 }

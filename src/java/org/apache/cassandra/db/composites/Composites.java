@@ -45,7 +45,6 @@ public abstract class Composites
 
     private static class EmptyComposite implements Composite
     {
-
         final EOC eoc;
         private EmptyComposite(EOC eoc)
         {

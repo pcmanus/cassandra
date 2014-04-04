@@ -72,6 +72,11 @@ public class BytesType extends AbstractType<ByteBuffer>
         return true;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
+
     public CQL3Type asCQL3Type()
     {
         return CQL3Type.Native.BLOB;

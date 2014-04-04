@@ -115,6 +115,11 @@ public class TimestampType extends AbstractType<Date>
         return false;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
+
     public CQL3Type asCQL3Type()
     {
         return CQL3Type.Native.TIMESTAMP;

@@ -48,4 +48,9 @@ public class AsciiType extends AbstractType<String>
     {
         return AsciiSerializer.instance;
     }
+
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
 }

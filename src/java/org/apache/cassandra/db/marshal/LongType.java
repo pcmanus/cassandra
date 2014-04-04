@@ -83,4 +83,9 @@ public class LongType extends AbstractType<Long>
     {
         return LongSerializer.instance;
     }
+
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
 }

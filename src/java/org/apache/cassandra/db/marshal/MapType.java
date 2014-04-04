@@ -115,6 +115,11 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
         return serializer;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        return keys.isByteOrderComparable();
+    }
+
     protected void appendToStringBuilder(StringBuilder sb)
     {
         sb.append(getClass().getName()).append(TypeParser.stringifyTypeParameters(Arrays.asList(keys, values)));

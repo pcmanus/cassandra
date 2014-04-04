@@ -20,6 +20,7 @@ package org.apache.cassandra.db.composites;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * A not truly-composite CType.
@@ -27,10 +28,12 @@ import org.apache.cassandra.db.marshal.AbstractType;
 public class SimpleCType extends AbstractCType
 {
     protected final AbstractType<?> type;
+    private final boolean isByteOrderComparable;
 
     public SimpleCType(AbstractType<?> type)
     {
         this.type = type;
+        this.isByteOrderComparable = type.isByteOrderComparable();
     }
 
     public boolean isCompound()
@@ -46,6 +49,17 @@ public class SimpleCType extends AbstractCType
     public int compare(Composite c1, Composite c2)
     {
         assert !c1.isStatic() && !c2.isStatic();
+        if (isByteOrderComparable)
+        {
+            // toByteBuffer is always cheap for simple types, and we keep virtual method calls to a minimum:
+            // hasRemaining will always be inlined, as will most of the call-stack for BBU.compareUnsigned
+            ByteBuffer b1 = c1.toByteBuffer();
+            ByteBuffer b2 = c2.toByteBuffer();
+            if (b1.hasRemaining() && b2.hasRemaining())
+                return ByteBufferUtil.compareUnsigned(b1, b2);
+            // in case one of the simple types is a single empty bytebuffer (i.e. non-empty type, but empty value)
+            // we just fall through, as it should be a comparatively rare case
+        }
         if (c1.isEmpty() != c2.isEmpty())
             return c1.isEmpty() ? c1.eoc().prefixComparisonResult() : -c2.eoc().prefixComparisonResult();
         return type.compare(c1.get(0), c2.get(0));

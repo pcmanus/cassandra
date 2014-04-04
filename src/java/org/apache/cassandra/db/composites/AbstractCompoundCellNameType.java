@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public abstract class AbstractCompoundCellNameType extends AbstractCellNameType
 {
@@ -31,6 +32,7 @@ public abstract class AbstractCompoundCellNameType extends AbstractCellNameType
 
     protected final int clusteringSize;
     protected final int fullSize;
+    protected final boolean isByteOrderComparable;
 
     protected AbstractCompoundCellNameType(CompoundCType clusteringType, CompoundCType fullType)
     {
@@ -39,6 +41,44 @@ public abstract class AbstractCompoundCellNameType extends AbstractCellNameType
 
         this.clusteringSize = clusteringType.size();
         this.fullSize = fullType.size();
+        boolean isByteOrderComparable = true;
+        for (AbstractType<?> type : clusteringType.types)
+            isByteOrderComparable &= type.isByteOrderComparable();
+        this.isByteOrderComparable = isByteOrderComparable;
+    }
+
+    public int compare(Composite c1, Composite c2)
+    {
+        if (c1.isStatic() != c2.isStatic())
+            return c1.isStatic() ? -1 : 1;
+
+        int s1 = c1.size();
+        int s2 = c2.size();
+        int i;
+        int minSize = Math.min(s1, s2);
+
+        if (isByteOrderComparable)
+        {
+            for (i = 0; i < minSize; i++)
+            {
+                int cmp = ByteBufferUtil.compareUnsigned(c1.get(i), c2.get(i));
+                if (cmp != 0)
+                    return cmp;
+            }
+        }
+        else
+        {
+            for (i = 0; i < minSize; i++)
+            {
+                AbstractType<?> comparator = subtype(i);
+                int cmp = comparator.compare(c1.get(i), c2.get(i));
+                if (cmp != 0)
+                    return cmp;
+            }
+        }
+
+        int c = c1.eoc().ordinal() - c2.eoc().ordinal();
+        return c == 0 ? s1 - s2 : c;
     }
 
     public int clusteringPrefixSize()

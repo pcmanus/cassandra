@@ -116,6 +116,11 @@ public class DateType extends AbstractType<Date>
         return false;
     }
 
+    public boolean isByteOrderComparable()
+    {
+        return true;
+    }
+
     @Override
     public CQL3Type asCQL3Type()
     {

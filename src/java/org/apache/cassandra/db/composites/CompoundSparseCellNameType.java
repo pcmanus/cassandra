@@ -41,6 +41,7 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
     protected final Map<ByteBuffer, ColumnIdentifier> internedIds;
 
     private final Composite staticPrefix;
+    private final boolean isByteOrderComparable;
 
     public CompoundSparseCellNameType(List<AbstractType<?>> types)
     {
@@ -63,6 +64,10 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
         this.columnNameType = columnNameType;
         this.internedIds = internedIds;
         this.staticPrefix = makeStaticPrefix(clusteringType.size());
+        boolean isByteOrderComparable = columnNameType.isByteOrderComparable();
+        for (AbstractType<?> type : clusteringType.types)
+            isByteOrderComparable &= type.isByteOrderComparable();
+        this.isByteOrderComparable = isByteOrderComparable;
     }
 
     private static Composite makeStaticPrefix(int size)
@@ -271,23 +276,35 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
         {
             if (c1.isStatic() != c2.isStatic())
                 return c1.isStatic() ? -1 : 1;
-
             int s1 = c1.size();
             int s2 = c2.size();
-            ByteBuffer previous = null;
-            int i;
             int minSize = Math.min(s1, s2);
-            for (i = 0; i < minSize; i++)
+            int i;
+
+            if (super.isByteOrderComparable)
             {
-                AbstractType<?> comparator = subtype(i);
-                ByteBuffer value1 = c1.get(i);
-                ByteBuffer value2 = c2.get(i);
+                for (i = 0; i < minSize; i++)
+                {
+                    int cmp = ByteBufferUtil.compareUnsigned(c1.get(i), c2.get(i));
+                    if (cmp != 0)
+                        return cmp;
+                }
+            }
+            else
+            {
+                ByteBuffer previous = null;
+                for (i = 0; i < minSize; i++)
+                {
+                    AbstractType<?> comparator = subtype(i);
+                    ByteBuffer value1 = c1.get(i);
+                    ByteBuffer value2 = c2.get(i);
 
-                int cmp = comparator.compareCollectionMembers(value1, value2, previous);
-                if (cmp != 0)
-                    return cmp;
+                    int cmp = comparator.compareCollectionMembers(value1, value2, previous);
+                    if (cmp != 0)
+                        return cmp;
 
-                previous = value1;
+                    previous = value1;
+                }
             }
 
             int c = c1.eoc().ordinal() - c2.eoc().ordinal();

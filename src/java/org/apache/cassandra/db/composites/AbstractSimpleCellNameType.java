@@ -27,10 +27,12 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public abstract class AbstractSimpleCellNameType extends AbstractCellNameType
 {
     protected final AbstractType<?> type;
+    protected final boolean isByteOrderComparable;
 
     protected AbstractSimpleCellNameType(AbstractType<?> type)
     {
         this.type = type;
+        this.isByteOrderComparable = type.isByteOrderComparable();
     }
 
     public boolean isCompound()
@@ -47,6 +49,17 @@ public abstract class AbstractSimpleCellNameType extends AbstractCellNameType
     {
         // can never have static simple types
         assert !c1.isStatic() && !c2.isStatic();
+        if (isByteOrderComparable)
+        {
+            // toByteBuffer is always cheap for simple types, and we keep virtual method calls to a minimum:
+            // hasRemaining will always be inlined, as will most of the call-stack for BBU.compareUnsigned
+            ByteBuffer b1 = c1.toByteBuffer();
+            ByteBuffer b2 = c2.toByteBuffer();
+            if (b1.hasRemaining() && b2.hasRemaining())
+                return ByteBufferUtil.compareUnsigned(b1, b2);
+            // in case one of the simple types is a single empty bytebuffer (i.e. non-empty type, but empty value)
+            // we just fall through, as it should be a comparatively rare case
+        }
         if (c1.isEmpty() != c2.isEmpty())
             return c1.isEmpty() ? c1.eoc().prefixComparisonResult() : -c2.eoc().prefixComparisonResult();
         return type.compare(c1.get(0), c2.get(0));

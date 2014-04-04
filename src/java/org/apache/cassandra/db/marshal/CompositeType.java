@@ -65,6 +65,7 @@ public class CompositeType extends AbstractCompositeType
     public static final int STATIC_MARKER = 0xFFFF;
 
     public final List<AbstractType<?>> types;
+    private final boolean isByteOrderComparable;
 
     // interning instances
     private static final Map<List<AbstractType<?>>, CompositeType> instances = new HashMap<List<AbstractType<?>>, CompositeType>();
@@ -113,6 +114,10 @@ public class CompositeType extends AbstractCompositeType
     protected CompositeType(List<AbstractType<?>> types)
     {
         this.types = ImmutableList.copyOf(types);
+        boolean isByteOrderComparable = true;
+        for (AbstractType<?> type : types)
+            isByteOrderComparable &= type.isByteOrderComparable();
+        this.isByteOrderComparable = isByteOrderComparable;
     }
 
     protected AbstractType<?> getComparator(int i, ByteBuffer bb)
@@ -273,6 +278,11 @@ public class CompositeType extends AbstractCompositeType
                 return false;
         }
         return true;
+    }
+
+    public boolean isByteOrderComparable()
+    {
+        return isByteOrderComparable;
     }
 
     private static class StaticParsedComparator implements ParsedComparator
