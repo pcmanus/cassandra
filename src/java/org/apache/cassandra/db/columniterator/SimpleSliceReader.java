@@ -84,7 +84,7 @@ class SimpleSliceReader extends AbstractIterator<OnDiskAtom> implements OnDiskAt
             return endOfData();
 
         OnDiskAtom column = atomIterator.next();
-        if (!finishColumn.isEmpty() && comparator.compare(column.name(), finishColumn) > 0)
+        if (comparator.compare(column.name(), finishColumn) > 0)
             return endOfData();
 
         return column;

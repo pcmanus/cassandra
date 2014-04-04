@@ -23,6 +23,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.CQL3Row;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class SimpleDenseCellNameType extends AbstractSimpleCellNameType
 {

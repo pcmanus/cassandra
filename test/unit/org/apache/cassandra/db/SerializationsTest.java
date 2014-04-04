@@ -50,10 +50,9 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private ByteBuffer startCol = ByteBufferUtil.bytes("Start");
     private ByteBuffer stopCol = ByteBufferUtil.bytes("Stop");
-    private Composite emptyCol = Composites.EMPTY;
     public NamesQueryFilter namesPred = new NamesQueryFilter(statics.NamedCols);
     public NamesQueryFilter namesSCPred = new NamesQueryFilter(statics.NamedSCCols);
-    public SliceQueryFilter emptyRangePred = new SliceQueryFilter(emptyCol, emptyCol, false, 100);
+    public SliceQueryFilter emptyRangePred = new SliceQueryFilter(Composites.NEG_INF, Composites.POS_INF, false, 100);
     public SliceQueryFilter nonEmptyRangePred = new SliceQueryFilter(CellNames.simpleDense(startCol), CellNames.simpleDense(stopCol), true, 100);
     public SliceQueryFilter nonEmptyRangeSCPred = new SliceQueryFilter(CellNames.compositeDense(statics.SC, startCol), CellNames.compositeDense(statics.SC, stopCol), true, 100);
 

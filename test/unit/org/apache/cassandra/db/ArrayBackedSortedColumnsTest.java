@@ -207,8 +207,8 @@ public class ArrayBackedSortedColumnsTest extends SchemaLoader
         for (int i = 0; i < values.length; ++i)
             map.addColumn(new Cell(type.makeCellName(values[reversed ? values.length - 1 - i : i])));
 
-        assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(3), Composites.EMPTY) }));
-        assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(4), Composites.EMPTY) }));
+        assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(3), Composites.POS_INF) }));
+        assertSame(new int[]{ 3, 2, 1 }, map.reverseIterator(new ColumnSlice[]{ new ColumnSlice(type.make(4), Composites.POS_INF) }));
 
         assertSame(map.iterator(), map.iterator(ColumnSlice.ALL_COLUMNS_ARRAY));
     }

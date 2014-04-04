@@ -76,7 +76,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
     private Composite makePrefix(CompositesIndex index, ByteBuffer key, ExtendedFilter filter, boolean isStart)
     {
         if (key.remaining() == 0)
-            return Composites.EMPTY;
+            return isStart ? Composites.NEG_INF : Composites.POS_INF;
 
         Composite prefix;
         IDiskAtomFilter columnFilter = filter.columnFilter(key);

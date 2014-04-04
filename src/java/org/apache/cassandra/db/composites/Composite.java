@@ -39,7 +39,13 @@ public interface Composite extends IMeasurableMemory
 {
     public enum EOC
     {
-        START, NONE, END;
+        START(-1), NONE(-1), END(1);
+
+        final int prefixComparisonResult;
+        EOC(int prefixComparisonResult)
+        {
+            this.prefixComparisonResult = prefixComparisonResult;
+        }
 
         public static EOC from(int eoc)
         {
@@ -55,6 +61,11 @@ public interface Composite extends IMeasurableMemory
                 case END:   return (byte) 1;
                 default: throw new AssertionError();
             }
+        }
+
+        public int prefixComparisonResult()
+        {
+            return prefixComparisonResult;
         }
     }
 

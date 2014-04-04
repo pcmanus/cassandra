@@ -393,7 +393,7 @@ public class SSTableReaderTest extends SchemaLoader
             {
                 public void run()
                 {
-                    ColumnFamily result = store.getColumnFamily(sstable.partitioner.decorateKey(key), Composites.EMPTY, Composites.EMPTY, false, 100, 100);
+                    ColumnFamily result = store.getColumnFamily(sstable.partitioner.decorateKey(key), Composites.NEG_INF, Composites.POS_INF, false, 100, 100);
                     assertFalse(result.isEmpty());
                     assertEquals(0, ByteBufferUtil.compare(String.format("%3d", index).getBytes(), result.getColumn(Util.cellname("0")).value()));
                 }

@@ -138,7 +138,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         {
             public void runMayThrow() throws IOException
             {
-                QueryFilter sliceFilter = QueryFilter.getSliceFilter(Util.dk("key1"), "Standard2", Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
+                QueryFilter sliceFilter = QueryFilter.getSliceFilter(Util.dk("key1"), "Standard2", Composites.NEG_INF, Composites.POS_INF, false, 1, System.currentTimeMillis());
                 ColumnFamily cf = store.getColumnFamily(sliceFilter);
                 assertTrue(cf.isMarkedForDelete());
                 assertFalse(cf.hasColumns());
@@ -233,7 +233,7 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         assert rows.get(0).cf.getColumnCount() == 1 : rows.get(0).cf;
 
         // once more, this time with a slice rowset that needs to be expanded
-        SliceQueryFilter emptyFilter = new SliceQueryFilter(Composites.EMPTY, Composites.EMPTY, false, 0);
+        SliceQueryFilter emptyFilter = new SliceQueryFilter(Composites.NEG_INF, Composites.POS_INF, false, 0);
         rows = cfs.search(range, clause, emptyFilter, 100);
 
         assert rows.size() == 1 : StringUtils.join(rows, ",");
@@ -1338,18 +1338,18 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] ranges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colA")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colA")),
                 new ColumnSlice(cellname("colC"), cellname("colE")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
-                new ColumnSlice(cellname("colI"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colI"), Composites.POS_INF) };
 
         ColumnSlice[] rangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colI")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colI")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colE"), cellname("colC")),
-                new ColumnSlice(cellname("colA"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colA"), Composites.POS_INF) };
 
         String tableName = "Keyspace1";
         String cfName = "Standard1";
@@ -1387,18 +1387,18 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] ranges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colA")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colA")),
                 new ColumnSlice(cellname("colC"), cellname("colE")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
-                new ColumnSlice(cellname("colI"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colI"), Composites.POS_INF) };
 
         ColumnSlice[] rangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY,  cellname("colI")),
+                new ColumnSlice(Composites.NEG_INF,  cellname("colI")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colE"), cellname("colC")),
-                new ColumnSlice(cellname("colA"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colA"), Composites.POS_INF) };
 
         String tableName = "Keyspace1";
         String cfName = "Standard1";
@@ -1436,18 +1436,18 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] ranges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colA")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colA")),
                 new ColumnSlice(cellname("colC"), cellname("colE")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
-                new ColumnSlice(cellname("colI"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colI"), Composites.POS_INF) };
 
         ColumnSlice[] rangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colI")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colI")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colE"), cellname("colC")),
-                new ColumnSlice(cellname("colA"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colA"), Composites.POS_INF) };
 
         String tableName = "Keyspace1";
         String cfName = "Standard1";
@@ -1486,18 +1486,18 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] ranges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colA")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colA")),
                 new ColumnSlice(cellname("colC"), cellname("colE")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
-                new ColumnSlice(cellname("colI"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colI"), Composites.POS_INF) };
 
         ColumnSlice[] rangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colI")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colI")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
                 new ColumnSlice(cellname("colF"), cellname("colF")),
                 new ColumnSlice(cellname("colE"), cellname("colC")),
-                new ColumnSlice(cellname("colA"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colA"), Composites.POS_INF) };
 
         String tableName = "Keyspace1";
         String cfName = "Standard1";
@@ -1536,16 +1536,16 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] ranges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colA")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colA")),
                 new ColumnSlice(cellname("colC"), cellname("colE")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
-                new ColumnSlice(cellname("colI"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colI"), Composites.POS_INF) };
 
         ColumnSlice[] rangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colI")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colI")),
                 new ColumnSlice(cellname("colG"), cellname("colG")),
                 new ColumnSlice(cellname("colE"), cellname("colC")),
-                new ColumnSlice(cellname("colA"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colA"), Composites.POS_INF) };
 
         String keyspaceName = "Keyspace1";
         String cfName = "Standard1";
@@ -1844,20 +1844,20 @@ public class ColumnFamilyStoreTest extends SchemaLoader
         // in order not to change thrift interfaces at this stage we build SliceQueryFilter
         // directly instead of using QueryFilter to build it for us
         ColumnSlice[] startMiddleAndEndRanges = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colc")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colc")),
                 new ColumnSlice(cellname("colf"), cellname("colg")),
-                new ColumnSlice(cellname("colj"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colj"), Composites.POS_INF) };
 
         ColumnSlice[] startMiddleAndEndRangesReversed = new ColumnSlice[] {
-                new ColumnSlice(Composites.EMPTY, cellname("colj")),
+                new ColumnSlice(Composites.NEG_INF, cellname("colj")),
                 new ColumnSlice(cellname("colg"), cellname("colf")),
-                new ColumnSlice(cellname("colc"), Composites.EMPTY) };
+                new ColumnSlice(cellname("colc"), Composites.POS_INF) };
 
         ColumnSlice[] startOnlyRange =
-                new ColumnSlice[] { new ColumnSlice(Composites.EMPTY, cellname("colc")) };
+                new ColumnSlice[] { new ColumnSlice(Composites.NEG_INF, cellname("colc")) };
 
         ColumnSlice[] startOnlyRangeReversed =
-                new ColumnSlice[] { new ColumnSlice(cellname("colc"), Composites.EMPTY) };
+                new ColumnSlice[] { new ColumnSlice(cellname("colc"), Composites.POS_INF) };
 
         ColumnSlice[] middleOnlyRanges =
                 new ColumnSlice[] { new ColumnSlice(cellname("colf"), cellname("colg")) };
@@ -1866,10 +1866,10 @@ public class ColumnFamilyStoreTest extends SchemaLoader
                 new ColumnSlice[] { new ColumnSlice(cellname("colg"), cellname("colf")) };
 
         ColumnSlice[] endOnlyRanges =
-                new ColumnSlice[] { new ColumnSlice(cellname("colj"), Composites.EMPTY) };
+                new ColumnSlice[] { new ColumnSlice(cellname("colj"), Composites.POS_INF) };
 
         ColumnSlice[] endOnlyRangesReversed =
-                new ColumnSlice[] { new ColumnSlice(Composites.EMPTY, cellname("colj")) };
+                new ColumnSlice[] { new ColumnSlice(Composites.NEG_INF, cellname("colj")) };
 
         SliceQueryFilter startOnlyFilter = new SliceQueryFilter(startOnlyRange, false,
                 Integer.MAX_VALUE);

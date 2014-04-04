@@ -205,10 +205,10 @@ public class SuperColumns
             // The filter is on the super column name
             CBuilder builder = type.builder();
             Composite start = filter.start().isEmpty()
-                            ? Composites.EMPTY
+                            ? Composites.NEG_INF
                             : builder.buildWith(filter.start().toByteBuffer()).withEOC(filter.reversed ? Composite.EOC.END : Composite.EOC.START);
             Composite finish = filter.finish().isEmpty()
-                             ? Composites.EMPTY
+                             ? Composites.POS_INF
                              : builder.buildWith(filter.finish().toByteBuffer()).withEOC(filter.reversed ? Composite.EOC.START : Composite.EOC.END);
             return new SliceQueryFilter(start, finish, filter.reversed, filter.count, 1);
         }

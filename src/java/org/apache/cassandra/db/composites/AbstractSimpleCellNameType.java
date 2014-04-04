@@ -43,6 +43,15 @@ public abstract class AbstractSimpleCellNameType extends AbstractCellNameType
         return 1;
     }
 
+    public int compare(Composite c1, Composite c2)
+    {
+        // can never have static simple types
+        assert !c1.isStatic() && !c2.isStatic();
+        if (c1.isEmpty() != c2.isEmpty())
+            return c1.isEmpty() ? c1.eoc().prefixComparisonResult() : -c2.eoc().prefixComparisonResult();
+        return type.compare(c1.get(0), c2.get(0));
+    }
+
     public AbstractType<?> subtype(int i)
     {
         if (i != 0)

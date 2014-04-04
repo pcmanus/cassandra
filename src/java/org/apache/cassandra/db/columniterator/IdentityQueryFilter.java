@@ -27,7 +27,7 @@ public class IdentityQueryFilter extends SliceQueryFilter
      */
     public IdentityQueryFilter()
     {
-        super(Composites.EMPTY, Composites.EMPTY, false, Integer.MAX_VALUE);
+        super(Composites.NEG_INF, Composites.POS_INF, false, Integer.MAX_VALUE);
     }
 
     @Override

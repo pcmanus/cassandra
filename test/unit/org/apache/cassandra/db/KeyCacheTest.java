@@ -129,16 +129,16 @@ public class KeyCacheTest extends SchemaLoader
         // reads to cache key position
         cfs.getColumnFamily(QueryFilter.getSliceFilter(key1,
                                                        COLUMN_FAMILY1,
-                                                       Composites.EMPTY,
-                                                       Composites.EMPTY,
+                                                       Composites.NEG_INF,
+                                                       Composites.POS_INF,
                                                        false,
                                                        10,
                                                        System.currentTimeMillis()));
 
         cfs.getColumnFamily(QueryFilter.getSliceFilter(key2,
                                                        COLUMN_FAMILY1,
-                                                       Composites.EMPTY,
-                                                       Composites.EMPTY,
+                                                       Composites.NEG_INF,
+                                                       Composites.POS_INF,
                                                        false,
                                                        10,
                                                        System.currentTimeMillis()));
@@ -153,16 +153,16 @@ public class KeyCacheTest extends SchemaLoader
         // re-read same keys to verify that key cache didn't grow further
         cfs.getColumnFamily(QueryFilter.getSliceFilter(key1,
                                                        COLUMN_FAMILY1,
-                                                       Composites.EMPTY,
-                                                       Composites.EMPTY,
+                                                       Composites.NEG_INF,
+                                                       Composites.POS_INF,
                                                        false,
                                                        10,
                                                        System.currentTimeMillis()));
 
         cfs.getColumnFamily(QueryFilter.getSliceFilter(key2,
                                                        COLUMN_FAMILY1,
-                                                       Composites.EMPTY,
-                                                       Composites.EMPTY,
+                                                       Composites.NEG_INF,
+                                                       Composites.POS_INF,
                                                        false,
                                                        10,
                                                        System.currentTimeMillis()));

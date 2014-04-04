@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.memory.PoolAllocator;
 
 public class ColumnSlice
 {
-    public static final ColumnSlice ALL_COLUMNS = new ColumnSlice(Composites.EMPTY, Composites.EMPTY);
+    public static final ColumnSlice ALL_COLUMNS = new ColumnSlice(Composites.NEG_INF, Composites.POS_INF);
     public static final ColumnSlice[] ALL_COLUMNS_ARRAY = new ColumnSlice[]{ ALL_COLUMNS };
 
     public final Composite start;
@@ -55,12 +55,12 @@ public class ColumnSlice
     public boolean isAlwaysEmpty(CellNameType comparator, boolean reversed)
     {
         Comparator<Composite> orderedComparator = reversed ? comparator.reverseComparator() : comparator;
-        return !start.isEmpty() && !finish.isEmpty() && orderedComparator.compare(start, finish) > 0;
+        return !start.isEmpty() && orderedComparator.compare(start, finish) > 0;
     }
 
     public boolean includes(Comparator<Composite> cmp, Composite name)
     {
-        return cmp.compare(start, name) <= 0 && (finish.isEmpty() || cmp.compare(finish, name) >= 0);
+        return cmp.compare(start, name) <= 0 && cmp.compare(finish, name) >= 0;
     }
 
     public boolean isBefore(Comparator<Composite> cmp, Composite name)

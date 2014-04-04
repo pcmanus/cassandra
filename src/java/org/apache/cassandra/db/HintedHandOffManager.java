@@ -347,7 +347,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         DecoratedKey epkey =  StorageService.getPartitioner().decorateKey(hostIdBytes);
 
         final AtomicInteger rowsReplayed = new AtomicInteger(0);
-        Composite startColumn = Composites.EMPTY;
+        Composite startColumn = Composites.NEG_INF;
 
         int pageSize = calculatePageSize();
         logger.debug("Using pageSize of {}", pageSize);
@@ -366,7 +366,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
             QueryFilter filter = QueryFilter.getSliceFilter(epkey,
                                                             SystemKeyspace.HINTS_CF,
                                                             startColumn,
-                                                            Composites.EMPTY,
+                                                            Composites.POS_INF,
                                                             false,
                                                             pageSize,
                                                             now);

@@ -751,8 +751,8 @@ public class SystemKeyspace
         // Get the last CounterId (since CounterId are timeuuid is thus ordered from the older to the newer one)
         QueryFilter filter = QueryFilter.getSliceFilter(decorate(ALL_LOCAL_NODE_ID_KEY),
                                                         COUNTER_ID_CF,
-                                                        Composites.EMPTY,
-                                                        Composites.EMPTY,
+                                                        Composites.NEG_INF,
+                                                        Composites.POS_INF,
                                                         true,
                                                         1,
                                                         System.currentTimeMillis());

@@ -88,53 +88,25 @@ public abstract class AbstractCType implements CType
 
     public int compare(Composite c1, Composite c2)
     {
-        if (c1 == null || c1.isEmpty())
-            return c2 == null || c2.isEmpty() ? 0 : -1;
-        if (c2 == null || c2.isEmpty())
-            return 1;
-
         if (c1.isStatic() != c2.isStatic())
             return c1.isStatic() ? -1 : 1;
 
-        ByteBuffer previous = null;
+        int s1 = c1.size();
+        int s2 = c2.size();
         int i;
-        int minSize = Math.min(c1.size(), c2.size());
+        int minSize = Math.min(s1, s2);
         for (i = 0; i < minSize; i++)
         {
             AbstractType<?> comparator = subtype(i);
-            ByteBuffer value1 = c1.get(i);
-            ByteBuffer value2 = c2.get(i);
-
-            int cmp = comparator.compareCollectionMembers(value1, value2, previous);
+            int cmp = comparator.compare(c1.get(i), c2.get(i));
             if (cmp != 0)
                 return cmp;
-
-            previous = value1;
         }
 
-        if (c1.size() == c2.size())
-        {
-            if (c1.eoc() != c2.eoc())
-            {
-                switch (c1.eoc())
-                {
-                    case START: return -1;
-                    case END:   return 1;
-                    case NONE:  return c2.eoc() == Composite.EOC.START ? 1 : -1;
-                }
-            }
-            return 0;
-        }
-
-        if (i == c1.size())
-        {
-            return c1.eoc() == Composite.EOC.END ? 1 : -1;
-        }
-        else
-        {
-            assert i == c2.size();
-            return c2.eoc() == Composite.EOC.END ? -1 : 1;
-        }
+        // only one can have an EOC, so if it has it use that for the comparison result
+        // as we prefix match; however if neither have an EOC the prefix is the smallest
+        int c = c1.eoc().ordinal() - c2.eoc().ordinal();
+        return c == 0 ? s1 - s2 : c;
     }
 
     public void validate(Composite name)

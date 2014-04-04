@@ -267,6 +267,33 @@ public class CompoundSparseCellNameType extends AbstractCompoundCellNameType
             return new CompoundSparseCellName.WithCollection(lc.elements, clusteringSize, column.name, collectionElement, column.isStatic());
         }
 
+        public int compare(Composite c1, Composite c2)
+        {
+            if (c1.isStatic() != c2.isStatic())
+                return c1.isStatic() ? -1 : 1;
+
+            int s1 = c1.size();
+            int s2 = c2.size();
+            ByteBuffer previous = null;
+            int i;
+            int minSize = Math.min(s1, s2);
+            for (i = 0; i < minSize; i++)
+            {
+                AbstractType<?> comparator = subtype(i);
+                ByteBuffer value1 = c1.get(i);
+                ByteBuffer value2 = c2.get(i);
+
+                int cmp = comparator.compareCollectionMembers(value1, value2, previous);
+                if (cmp != 0)
+                    return cmp;
+
+                previous = value1;
+            }
+
+            int c = c1.eoc().ordinal() - c2.eoc().ordinal();
+            return c == 0 ? s1 - s2 : c;
+        }
+
         @Override
         public boolean hasCollections()
         {

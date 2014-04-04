@@ -76,7 +76,7 @@ public class KeyspaceTest extends SchemaLoader
                 cf = cfStore.getColumnFamily(Util.namesQueryFilter(cfStore, TEST_KEY));
                 assertColumns(cf);
 
-                cf = cfStore.getColumnFamily(QueryFilter.getSliceFilter(TEST_KEY, "Standard3", Composites.EMPTY, Composites.EMPTY, false, 0, System.currentTimeMillis()));
+                cf = cfStore.getColumnFamily(QueryFilter.getSliceFilter(TEST_KEY, "Standard3", Composites.NEG_INF, Composites.POS_INF, false, 0, System.currentTimeMillis()));
                 assertColumns(cf);
 
                 cf = cfStore.getColumnFamily(Util.namesQueryFilter(cfStore, TEST_KEY, "col99"));
@@ -204,11 +204,11 @@ public class KeyspaceTest extends SchemaLoader
                 String[] strCols = new String[100]; // col000-col099
                 for (int i = 0; i < 100; i++)
                     strCols[i] = "col" + fmt.format(i);
-                cf = cfStore.getColumnFamily(ROW, Composites.EMPTY, cellname("col099"), false, 100, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, Composites.NEG_INF, cellname("col099"), false, 100, System.currentTimeMillis());
                 assertColumns(cf, strCols);
 
                 // test reversed, from end, spanning a segment.
-                cf = cfStore.getColumnFamily(ROW, Composites.EMPTY, cellname("col288"), true, 12, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, Composites.POS_INF, cellname("col288"), true, 12, System.currentTimeMillis());
                 assertColumns(cf, "col288", "col289", "col290", "col291", "col292", "col293", "col294", "col295", "col296", "col297", "col298", "col299");
             }
         };
@@ -240,7 +240,7 @@ public class KeyspaceTest extends SchemaLoader
             Mutation rm = new Mutation("Keyspace1", ROW.key, cf);
             rm.apply();
 
-            cf = cfs.getColumnFamily(ROW, Composites.EMPTY, Composites.EMPTY, true, 1, System.currentTimeMillis());
+            cf = cfs.getColumnFamily(ROW, Composites.NEG_INF, Composites.POS_INF, true, 1, System.currentTimeMillis());
             assertEquals(1, Iterables.size(cf.getColumnNames()));
             assertEquals(i, cf.getColumnNames().iterator().next().toByteBuffer().getLong());
         }
@@ -252,11 +252,11 @@ public class KeyspaceTest extends SchemaLoader
         ColumnFamily cf;
 
         // key before the rows that exists
-        cf = cfStore.getColumnFamily(Util.dk("a"), Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(Util.dk("a"), Composites.NEG_INF, Composites.POS_INF, false, 1, System.currentTimeMillis());
         assertColumns(cf);
 
         // key after the rows that exist
-        cf = cfStore.getColumnFamily(Util.dk("z"), Composites.EMPTY, Composites.EMPTY, false, 1, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(Util.dk("z"), Composites.NEG_INF, Composites.POS_INF, false, 1, System.currentTimeMillis());
         assertColumns(cf);
     }
 
@@ -288,26 +288,26 @@ public class KeyspaceTest extends SchemaLoader
             {
                 ColumnFamily cf;
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col5"), Composites.EMPTY, false, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col5"), Composites.POS_INF, false, 2, System.currentTimeMillis());
                 assertColumns(cf, "col5", "col7");
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col4"), Composites.EMPTY, false, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col4"), Composites.POS_INF, false, 2, System.currentTimeMillis());
                 assertColumns(cf, "col4", "col5", "col7");
                 assertColumns(ColumnFamilyStore.removeDeleted(cf, Integer.MAX_VALUE), "col5", "col7");
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col5"), Composites.EMPTY, true, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col5"), Composites.POS_INF, true, 2, System.currentTimeMillis());
                 assertColumns(cf, "col3", "col4", "col5");
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col6"), Composites.EMPTY, true, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col6"), Composites.POS_INF, true, 2, System.currentTimeMillis());
                 assertColumns(cf, "col3", "col4", "col5");
 
-                cf = cfStore.getColumnFamily(ROW, Composites.EMPTY, Composites.EMPTY, true, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, Composites.NEG_INF, Composites.POS_INF, true, 2, System.currentTimeMillis());
                 assertColumns(cf, "col7", "col9");
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col95"), Composites.EMPTY, false, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col95"), Composites.POS_INF, false, 2, System.currentTimeMillis());
                 assertColumns(cf);
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col0"), Composites.EMPTY, true, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col0"), Composites.POS_INF, true, 2, System.currentTimeMillis());
                 assertColumns(cf);
             }
         };
@@ -336,11 +336,11 @@ public class KeyspaceTest extends SchemaLoader
             {
                 ColumnFamily cf;
 
-                cf = cfStore.getColumnFamily(ROW, Composites.EMPTY, Composites.EMPTY, false, 2, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, Composites.NEG_INF, Composites.POS_INF, false, 2, System.currentTimeMillis());
                 assertColumns(cf, "col1", "col2");
                 assertColumns(ColumnFamilyStore.removeDeleted(cf, Integer.MAX_VALUE), "col1");
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col2"), Composites.EMPTY, false, 1, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col2"), Composites.POS_INF, false, 1, System.currentTimeMillis());
                 assertColumns(cf, "col2");
                 assertColumns(ColumnFamilyStore.removeDeleted(cf, Integer.MAX_VALUE));
             }
@@ -381,7 +381,7 @@ public class KeyspaceTest extends SchemaLoader
             {
                 ColumnFamily cf;
 
-                cf = cfStore.getColumnFamily(ROW, cellname("col2"), Composites.EMPTY, false, 3, System.currentTimeMillis());
+                cf = cfStore.getColumnFamily(ROW, cellname("col2"), Composites.POS_INF, false, 3, System.currentTimeMillis());
                 assertColumns(cf, "col2", "col3", "col4");
 
                 ByteBuffer col = cf.getColumn(cellname("col2")).value();
@@ -446,7 +446,7 @@ public class KeyspaceTest extends SchemaLoader
             cfStore.forceBlockingFlush();
         }
         cfStore.metric.sstablesPerReadHistogram.clear();
-        ColumnFamily cf = cfStore.getColumnFamily(key, Composites.EMPTY, cellname("col1499"), false, 1000, System.currentTimeMillis());
+        ColumnFamily cf = cfStore.getColumnFamily(key, Composites.NEG_INF, cellname("col1499"), false, 1000, System.currentTimeMillis());
         assertEquals(cfStore.metric.sstablesPerReadHistogram.max(), 5, 0.1);
         int i = 0;
         for (Cell c : cf.getSortedColumns())
@@ -527,7 +527,7 @@ public class KeyspaceTest extends SchemaLoader
     {
         DecoratedKey key = Util.dk("row3");
         ColumnFamily cf;
-        cf = cfStore.getColumnFamily(key, cellname("col1000"), Composites.EMPTY, false, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col1000"), Composites.POS_INF, false, 3, System.currentTimeMillis());
         assertColumns(cf, "col1000", "col1001", "col1002");
 
         ByteBuffer col;
@@ -538,7 +538,7 @@ public class KeyspaceTest extends SchemaLoader
         col = cf.getColumn(cellname("col1002")).value();
         assertEquals(ByteBufferUtil.string(col), "v1002");
 
-        cf = cfStore.getColumnFamily(key, cellname("col1195"), Composites.EMPTY, false, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col1195"), Composites.POS_INF, false, 3, System.currentTimeMillis());
         assertColumns(cf, "col1195", "col1196", "col1197");
 
         col = cf.getColumn(cellname("col1195")).value();
@@ -549,7 +549,7 @@ public class KeyspaceTest extends SchemaLoader
         assertEquals(ByteBufferUtil.string(col), "v1197");
 
 
-        cf = cfStore.getColumnFamily(key, cellname("col1996"), Composites.EMPTY, true, 1000, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col1996"), Composites.POS_INF, true, 1000, System.currentTimeMillis());
         Cell[] cells = cf.getSortedColumns().toArray(new Cell[0]);
         for (int i = 1000; i < 1996; i++)
         {
@@ -559,7 +559,7 @@ public class KeyspaceTest extends SchemaLoader
             assertEquals(ByteBufferUtil.string(cell.value()), ("v" + i));
         }
 
-        cf = cfStore.getColumnFamily(key, cellname("col1990"), Composites.EMPTY, false, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col1990"), Composites.POS_INF, false, 3, System.currentTimeMillis());
         assertColumns(cf, "col1990", "col1991", "col1992");
         col = cf.getColumn(cellname("col1990")).value();
         assertEquals(ByteBufferUtil.string(col), "v1990");
@@ -568,7 +568,7 @@ public class KeyspaceTest extends SchemaLoader
         col = cf.getColumn(cellname("col1992")).value();
         assertEquals(ByteBufferUtil.string(col), "v1992");
 
-        cf = cfStore.getColumnFamily(key, Composites.EMPTY, Composites.EMPTY, true, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, Composites.NEG_INF, Composites.POS_INF, true, 3, System.currentTimeMillis());
         assertColumns(cf, "col1997", "col1998", "col1999");
         col = cf.getColumn(cellname("col1997")).value();
         assertEquals(ByteBufferUtil.string(col), "v1997");
@@ -577,10 +577,10 @@ public class KeyspaceTest extends SchemaLoader
         col = cf.getColumn(cellname("col1999")).value();
         assertEquals(ByteBufferUtil.string(col), "v1999");
 
-        cf = cfStore.getColumnFamily(key, cellname("col9000"), Composites.EMPTY, true, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col9000"), Composites.POS_INF, true, 3, System.currentTimeMillis());
         assertColumns(cf, "col1997", "col1998", "col1999");
 
-        cf = cfStore.getColumnFamily(key, cellname("col9000"), Composites.EMPTY, false, 3, System.currentTimeMillis());
+        cf = cfStore.getColumnFamily(key, cellname("col9000"), Composites.NEG_INF, false, 3, System.currentTimeMillis());
         assertColumns(cf);
     }
 

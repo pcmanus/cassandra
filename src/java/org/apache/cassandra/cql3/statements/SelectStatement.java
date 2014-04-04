@@ -440,8 +440,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 // Note: we could use staticPrefix.start() for the start bound, but EMPTY gives us the
                 // same effect while saving a few CPU cycles.
                 staticSlice = isReversed
-                            ? new ColumnSlice(cfm.comparator.staticPrefix().end(), Composites.EMPTY)
-                            : new ColumnSlice(Composites.EMPTY, cfm.comparator.staticPrefix().end());
+                            ? new ColumnSlice(cfm.comparator.staticPrefix().end(), Composites.POS_INF)
+                            : new ColumnSlice(Composites.NEG_INF, cfm.comparator.staticPrefix().end());
 
                 // In the case where we only select static columns, we want to really only check the static columns.
                 // So we return early as the rest of that method would actually make us query everything
@@ -483,7 +483,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 if (l.get(l.size() - 1).includes(cfm.comparator, staticSlice.start))
                 {
                     slices = l.toArray(new ColumnSlice[l.size()]);
-                    slices[slices.length-1] = new ColumnSlice(slices[slices.length-1].start, Composites.EMPTY);
+                    slices[slices.length-1] = new ColumnSlice(slices[slices.length-1].start, Composites.POS_INF);
                 }
                 else
                 {
@@ -496,7 +496,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 if (l.get(0).includes(cfm.comparator, staticSlice.finish))
                 {
                     slices = new ColumnSlice[l.size()];
-                    slices[0] = new ColumnSlice(Composites.EMPTY, l.get(0).finish);
+                    slices[0] = new ColumnSlice(Composites.NEG_INF, l.get(0).finish);
                     for (int i = 1; i < l.size(); i++)
                         slices[i] = l.get(i);
                 }

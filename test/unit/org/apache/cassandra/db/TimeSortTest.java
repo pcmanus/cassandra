@@ -53,7 +53,7 @@ public class TimeSortTest extends SchemaLoader
         rm.add("StandardLong1", cellname(0), ByteBufferUtil.bytes("b"), 0);
         rm.apply();
 
-        ColumnFamily cf = cfStore.getColumnFamily(key, cellname(10), Composites.EMPTY, false, 1000, System.currentTimeMillis());
+        ColumnFamily cf = cfStore.getColumnFamily(key, cellname(10), Composites.POS_INF, false, 1000, System.currentTimeMillis());
         Collection<Cell> cells = cf.getSortedColumns();
         assert cells.size() == 1;
     }
@@ -94,7 +94,7 @@ public class TimeSortTest extends SchemaLoader
         rm.apply();
 
         // verify
-        ColumnFamily cf = cfStore.getColumnFamily(key, cellname(0), Composites.EMPTY, false, 1000, System.currentTimeMillis());
+        ColumnFamily cf = cfStore.getColumnFamily(key, cellname(0), Composites.POS_INF, false, 1000, System.currentTimeMillis());
         Collection<Cell> cells = cf.getSortedColumns();
         assertEquals(12, cells.size());
         Iterator<Cell> iter = cells.iterator();
@@ -120,7 +120,7 @@ public class TimeSortTest extends SchemaLoader
             for (int j = 0; j < 8; j += 3)
             {
                 ColumnFamilyStore cfs = keyspace.getColumnFamilyStore("StandardLong1");
-                ColumnFamily cf = cfs.getColumnFamily(key, cellname(j * 2), Composites.EMPTY, false, 1000, System.currentTimeMillis());
+                ColumnFamily cf = cfs.getColumnFamily(key, cellname(j * 2), Composites.POS_INF, false, 1000, System.currentTimeMillis());
                 Collection<Cell> cells = cf.getSortedColumns();
                 assert cells.size() == 8 - j;
                 int k = j;

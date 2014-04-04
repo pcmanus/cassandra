@@ -28,7 +28,9 @@ public abstract class Composites
 {
     private Composites() {}
 
-    public static final Composite EMPTY = new EmptyComposite();
+    public static final Composite NEG_INF = new EmptyComposite(Composite.EOC.START);
+    public static final Composite EMPTY = new EmptyComposite(Composite.EOC.NONE);
+    public static final Composite POS_INF = new EmptyComposite(Composite.EOC.END);
 
     static final CBuilder EMPTY_BUILDER = new CBuilder()
     {
@@ -43,6 +45,13 @@ public abstract class Composites
 
     private static class EmptyComposite implements Composite
     {
+
+        final EOC eoc;
+        private EmptyComposite(EOC eoc)
+        {
+            this.eoc = eoc;
+        }
+
         public boolean isEmpty()
         {
             return true;
@@ -60,26 +69,35 @@ public abstract class Composites
 
         public EOC eoc()
         {
-            return EOC.NONE;
+            return eoc;
         }
 
         public Composite start()
         {
-            return this;
+            assert this == EMPTY;
+            return NEG_INF;
         }
 
         public Composite end()
         {
-            return this;
+            assert this == EMPTY;
+            return POS_INF;
         }
 
         public Composite withEOC(EOC newEoc)
         {
-            return this;
+            switch (newEoc)
+            {
+                case NONE: return EMPTY;
+                case START: return NEG_INF;
+                case END: return POS_INF;
+            }
+            throw new AssertionError();
         }
 
         public ColumnSlice slice()
         {
+            assert this == EMPTY;
             return ColumnSlice.ALL_COLUMNS;
         }
 

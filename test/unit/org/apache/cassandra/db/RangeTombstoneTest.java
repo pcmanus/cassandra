@@ -304,7 +304,7 @@ public class RangeTombstoneTest extends SchemaLoader
         cfs.forceBlockingFlush();
 
         // Get the last value of the row
-        cf = cfs.getColumnFamily(QueryFilter.getSliceFilter(dk(key), CFNAME, Composites.EMPTY, Composites.EMPTY, true, 1, System.currentTimeMillis()));
+        cf = cfs.getColumnFamily(QueryFilter.getSliceFilter(dk(key), CFNAME, Composites.NEG_INF, Composites.POS_INF, true, 1, System.currentTimeMillis()));
 
         assert !cf.isEmpty();
         int last = i(cf.getSortedColumns().iterator().next().name());
