@@ -145,7 +145,7 @@ public class LongBTreeTest
         Snapshot snap = BTREE_TIMER.getSnapshot();
         System.out.println(String.format("btree   : %.2fns, %.2fns, %.2fns", snap.getMedian(), snap.get95thPercentile(), snap.get999thPercentile()));
         snap = TREE_TIMER.getSnapshot();
-        System.out.println(String.format("snaptree: %.2fns, %.2fns, %.2fns", snap.getMedian(), snap.get95thPercentile(), snap.get999thPercentile()));
+        System.out.println(String.format("treemap: %.2fns, %.2fns, %.2fns", snap.getMedian(), snap.get95thPercentile(), snap.get999thPercentile()));
         System.out.println("Done");
     }
 

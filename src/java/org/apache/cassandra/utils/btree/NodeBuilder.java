@@ -117,7 +117,13 @@ final class NodeBuilder
         assert copyFrom != null;
         int copyFromKeyEnd = getKeyEnd(copyFrom);
 
-        int i = find(comparator, key, copyFrom, copyFromKeyPosition, copyFromKeyEnd);
+        int i = copyFromKeyPosition, c;
+        if ((key == POSITIVE_INFINITY) | (i == copyFromKeyEnd))
+            i = -1 -copyFromKeyEnd;
+        else if ((c = comparator.compare(copyFrom[i], key)) >= 0)
+            i = c == 0 ? i : -1 - i;
+         else
+            i = find(comparator, key, copyFrom, i + 1, copyFromKeyEnd);
         boolean found = i >= 0; // exact key match?
         boolean owns = true; // true iff this node (or a child) should contain the key
         if (found)
