@@ -117,15 +117,41 @@ final class NodeBuilder
         assert copyFrom != null;
         int copyFromKeyEnd = getKeyEnd(copyFrom);
 
-        int i = copyFromKeyPosition, c;
-        if ((key == POSITIVE_INFINITY) | (i == copyFromKeyEnd))
-            i = -1 -copyFromKeyEnd;
-        else if ((c = comparator.compare(copyFrom[i], key)) >= 0)
-            i = c == 0 ? i : -1 - i;
-         else
-            i = find(comparator, key, copyFrom, i + 1, copyFromKeyEnd);
-        boolean found = i >= 0; // exact key match?
+        if (key == POSITIVE_INFINITY)
+        {
+            if (buildKeyPosition > 0)
+            {
+                copyKeys(copyFromKeyEnd);
+                if (!isLeaf(copyFrom) && buildChildPosition > 0)
+                    copyChildren(copyFromKeyEnd + 1);
+            }
+            return isRoot() ? null : ascend();
+        }
+
+        int i = copyFromKeyPosition;
+        boolean found; // exact key match?
         boolean owns = true; // true iff this node (or a child) should contain the key
+        if (copyFromKeyPosition == copyFromKeyEnd)
+        {
+            found = false;
+            if (compare(comparator, upperBound, key) <= 0)
+                owns = false;
+        }
+        else
+        {
+            // TODO: Could use some comment on why that's a useful optimization to do.
+            int c = comparator.compare(copyFrom[copyFromKeyPosition], key);
+            if (c >= 0)
+            {
+                found = c == 0;
+            }
+            else
+            {
+                i = find(comparator, key, copyFrom, copyFromKeyPosition + 1, copyFromKeyEnd);
+                found = i >= 0;
+            }
+        }
+
         if (found)
         {
             Object prev = copyFrom[i];
@@ -208,9 +234,6 @@ final class NodeBuilder
                 copyChildren(copyFromKeyEnd + 1); // since we know that there are exactly 1 more child nodes, than keys
             }
         }
-
-        if (key == POSITIVE_INFINITY && isRoot())
-            return null;
 
         return ascend();
     }
