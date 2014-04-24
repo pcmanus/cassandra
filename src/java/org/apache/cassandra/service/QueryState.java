@@ -55,7 +55,7 @@ public class QueryState
      */
     public long getTimestamp()
     {
-        long current = System.currentTimeMillis() * 1000;
+        long current = FBUtilities.timestampMicros();
         clock = clock >= current ? clock + 1 : current;
         return clock;
     }

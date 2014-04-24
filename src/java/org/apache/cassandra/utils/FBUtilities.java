@@ -391,7 +391,7 @@ public class FBUtilities
     {
         // we use microsecond resolution for compatibility with other client libraries, even though
         // we can't actually get microsecond precision.
-        return System.currentTimeMillis() * 1000;
+        return FastTime.getRealTimeMicros();
     }
 
     public static void waitOnFutures(Iterable<Future<?>> futures)
