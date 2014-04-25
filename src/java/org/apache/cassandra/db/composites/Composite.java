@@ -39,22 +39,25 @@ public interface Composite extends IMeasurableMemory
 {
     public enum EOC
     {
-        START, NONE, END;
+        START(-1), NONE(-1), END(1);
+
+        final int prefixComparisonResult;
+        EOC(int prefixComparisonResult)
+        {
+            this.prefixComparisonResult = prefixComparisonResult;
+        }
 
         public static EOC from(int eoc)
         {
             return eoc == 0 ? NONE : (eoc < 0 ? START : END);
         }
 
-        public byte toByte()
+        // the compareTo() result that should result if this EOC is on the left-hand compare parameter
+        // and it is a prefix of the right-hand compare parameter with the provided EOC
+        public int prefixCompare(EOC that)
         {
-            switch (this)
-            {
-                case START: return (byte)-1;
-                case NONE:  return (byte) 0;
-                case END:   return (byte) 1;
-                default: throw new AssertionError();
-            }
+            int c = compareTo(that);
+            return c == 0 ? this == Composite.EOC.END ? 1 : -1 : c;
         }
     }
 

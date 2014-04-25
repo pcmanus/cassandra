@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public abstract class AbstractCompoundCellNameType extends AbstractCellNameType
 {
@@ -34,6 +35,7 @@ public abstract class AbstractCompoundCellNameType extends AbstractCellNameType
 
     protected AbstractCompoundCellNameType(CompoundCType clusteringType, CompoundCType fullType)
     {
+        super(isByteOrderComparable(fullType.types));
         this.clusteringType = clusteringType;
         this.fullType = fullType;
 
