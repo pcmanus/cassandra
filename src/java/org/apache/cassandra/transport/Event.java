@@ -20,6 +20,7 @@ package org.apache.cassandra.transport;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
+import com.google.common.base.Objects;
 import io.netty.buffer.ByteBuf;
 
 public abstract class Event
@@ -114,6 +115,23 @@ public abstract class Event
         {
             return change + " " + node;
         }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hashCode(change, node);
+        }
+
+        @Override
+        public boolean equals(Object other)
+        {
+            if (!(other instanceof TopologyChange))
+                return false;
+
+            TopologyChange tpc = (TopologyChange)other;
+            return Objects.equal(change, tpc.change)
+                && Objects.equal(node, tpc.node);
+        }
     }
 
     public static class StatusChange extends Event
@@ -163,6 +181,23 @@ public abstract class Event
         public String toString()
         {
             return status + " " + node;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hashCode(status, node);
+        }
+
+        @Override
+        public boolean equals(Object other)
+        {
+            if (!(other instanceof StatusChange))
+                return false;
+
+            StatusChange stc = (StatusChange)other;
+            return Objects.equal(status, stc.status)
+                && Objects.equal(node, stc.node);
         }
     }
 
@@ -252,6 +287,25 @@ public abstract class Event
         public String toString()
         {
             return change + " " + target + " " + keyspace + (tableOrType == null ? "" : "." + tableOrType);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hashCode(change, target, keyspace, tableOrType);
+        }
+
+        @Override
+        public boolean equals(Object other)
+        {
+            if (!(other instanceof SchemaChange))
+                return false;
+
+            SchemaChange scc = (SchemaChange)other;
+            return Objects.equal(change, scc.change)
+                && Objects.equal(target, scc.target)
+                && Objects.equal(keyspace, scc.keyspace)
+                && Objects.equal(tableOrType, scc.tableOrType);
         }
     }
 }
