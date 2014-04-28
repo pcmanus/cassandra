@@ -219,8 +219,10 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
     public ResultMessage execute(BatchQueryOptions options, boolean local, long now)
     throws RequestExecutionException, RequestValidationException
     {
-        if (options.getConsistency() == null || options.getSerialConsistency() == null)
+        if (options.getConsistency() == null)
             throw new InvalidRequestException("Invalid empty consistency level");
+        if (options.getSerialConsistency() == null)
+            throw new InvalidRequestException("Invalid empty serial consistency level");
 
         if (hasConditions)
             return executeWithConditions(options, now);

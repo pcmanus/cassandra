@@ -30,6 +30,7 @@ import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.pager.PagingState;
 import org.apache.cassandra.transport.CBCodec;
 import org.apache.cassandra.transport.CBUtil;
+import org.apache.cassandra.transport.ProtocolException;
 import org.apache.cassandra.utils.Pair;
 
 /**
@@ -333,7 +334,14 @@ public abstract class QueryOptions
                 int pageSize = flags.contains(Flag.PAGE_SIZE) ? body.readInt() : -1;
                 PagingState pagingState = flags.contains(Flag.PAGING_STATE) ? PagingState.deserialize(CBUtil.readValue(body)) : null;
                 ConsistencyLevel serialConsistency = flags.contains(Flag.SERIAL_CONSISTENCY) ? CBUtil.readConsistencyLevel(body) : ConsistencyLevel.SERIAL;
-                long timestamp = flags.contains(Flag.TIMESTAMP) ? body.readLong() : -1L;
+                long timestamp = -1L;
+                if (flags.contains(Flag.TIMESTAMP))
+                {
+                    long ts = body.readLong();
+                    if (ts < 0)
+                        throw new ProtocolException("Invalid negative (" + ts + ") protocol level timestamp");
+                    timestamp = ts;
+                }
 
                 options = new SpecificOptions(pageSize, pagingState, serialConsistency, timestamp);
             }

@@ -321,9 +321,10 @@ Table of Contents
               conditional update/insert.
         0x20: With default timestamp. If present, <timestamp> should be present.
               <timestamp> is a [long] representing the default timestamp for the query
-              in microseconds. If provided, this will replace the server side assigned
-              timestamp as default timestamp. Note that a timestamp in the query itself
-              will still override this timestamp. This is entirely optional.
+              in microseconds (negative values are forbidden). If provided, this will
+              replace the server side assigned timestamp as default timestamp.
+              Note that a timestamp in the query itself will still override
+              this timestamp. This is entirely optional.
         0x40: With names for values. This only makes sense if the 0x01 flag is set and
               is ignored otherwise. If present, the values from the 0x01 flag will
               be preceded by a name (see above). Note that this is only useful for
@@ -390,7 +391,7 @@ Table of Contents
               timestamp as default timestamp. Note that a timestamp in the query itself
               will still override this timestamp. This is entirely optional.
         0x40: With names for values. If set, then all values for all <query_i> must be
-              preceded by a [string] <name_i> that have the same meaning than in QUERY
+              preceded by a [string] <name_i> that have the same meaning as in QUERY
               requests.
     - <n> is a [short] indicating the number of following queries.
     - <query_1>...<query_n> are the queries to execute. A <query_i> must be of the
@@ -671,14 +672,14 @@ Table of Contents
       the rest of the message will be <change_type><target><options> where:
         - <change_type> is the type of changed involved. It will be one of
           "CREATED", "UPDATED" or "DROPPED".
-        - <target> can be one of "KEYSPACE", "TABLE" or "TYPE" and describe
+        - <target> can be one of "KEYSPACE", "TABLE" or "TYPE" and describes
           what has been modified ("TYPE" stands for modifications related to
           user types).
-        - <options> depends of the preceding <target>. If <target> is
+        - <options> depends on the preceding <target>. If <target> is
           "KEYSPACE", then <options> will be a single [string] representing the
           keyspace changed. Otherwise, if <target> is "TABLE" or "TYPE", then
           <options> will be 2 [string]: the first one will be the keyspace
-          containing the affected object, and the seconde one will be the name
+          containing the affected object, and the second one will be the name
           of said affected object (so either the table name or the user type
           name).
 
@@ -895,7 +896,7 @@ Table of Contents
   * BATCH messages now have <flags> (like QUERY and EXECUTE) and a corresponding optional
     <serial_consistency> parameters (see Section 4.1.7).
   * User Defined Types have to added to ResultSet metadata (see 4.2.5.2) and a new section
-    on the serialization format of UDT values has been added to thie documentation
+    on the serialization format of UDT values has been added to the documentation
     (Section 7).
   * The serialization format for collection has changed (both the collection size and
     the length of each argument is now 4 bytes long). See Section 6.
