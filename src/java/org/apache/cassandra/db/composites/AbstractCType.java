@@ -125,7 +125,7 @@ public abstract class AbstractCType implements CType
 
         if (s1 == s2)
             return c1.eoc().compareTo(c2.eoc());
-        return s1 < s2 ? c1.eoc().prefixCompare(c2.eoc()) : -c2.eoc().prefixCompare(c1.eoc());
+        return s1 < s2 ? c1.eoc().prefixComparisonResult : -c2.eoc().prefixComparisonResult;
     }
 
     public void validate(Composite name)

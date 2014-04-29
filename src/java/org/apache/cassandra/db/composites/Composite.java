@@ -41,8 +41,12 @@ public interface Composite extends IMeasurableMemory
     {
         START(-1), NONE(-1), END(1);
 
-        final int prefixComparisonResult;
-        EOC(int prefixComparisonResult)
+        // If composite p has this EOC and is a strict prefix of composite c, then this
+        // the result of the comparison of p and c. Basically, p sorts before c unless
+        // it's EOC is END.
+        public final int prefixComparisonResult;
+
+        private EOC(int prefixComparisonResult)
         {
             this.prefixComparisonResult = prefixComparisonResult;
         }
@@ -50,14 +54,6 @@ public interface Composite extends IMeasurableMemory
         public static EOC from(int eoc)
         {
             return eoc == 0 ? NONE : (eoc < 0 ? START : END);
-        }
-
-        // the compareTo() result that should result if this EOC is on the left-hand compare parameter
-        // and it is a prefix of the right-hand compare parameter with the provided EOC
-        public int prefixCompare(EOC that)
-        {
-            int c = compareTo(that);
-            return c == 0 ? this == Composite.EOC.END ? 1 : -1 : c;
         }
     }
 

@@ -128,14 +128,6 @@ public class ColumnToCollectionType extends AbstractType<ByteBuffer>
         return true;
     }
 
-    public boolean isByteOrderComparable()
-    {
-        for (CollectionType type : defined.values())
-            if (!type.isByteOrderComparable())
-                return false;
-        return true;
-    }
-
     @Override
     public String toString()
     {

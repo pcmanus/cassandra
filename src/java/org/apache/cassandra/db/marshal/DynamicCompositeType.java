@@ -260,14 +260,6 @@ public class DynamicCompositeType extends AbstractCompositeType
         return true;
     }
 
-    public boolean isByteOrderComparable()
-    {
-        for (AbstractType type : aliases.values())
-            if (!type.isByteOrderComparable())
-                return false;
-        return true;
-    }
-
     private class DynamicParsedComparator implements ParsedComparator
     {
         final AbstractType<?> type;
