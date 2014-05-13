@@ -100,9 +100,9 @@ public final class UTMetaData
         adder.resetCollection("column_names");
         adder.resetCollection("column_types");
 
-        for (ByteBuffer name : newType.columnNames)
+        for (ByteBuffer name : newType.fieldNames)
             adder.addListEntry("column_names", name);
-        for (AbstractType<?> type : newType.types)
+        for (AbstractType<?> type : newType.fieldTypes)
             adder.addListEntry("column_types", type.toString());
 
         return mutation;
