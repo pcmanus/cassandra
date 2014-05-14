@@ -199,7 +199,7 @@ public class QueryProcessor implements QueryHandler
             state.setKeyspace(Keyspace.SYSTEM_KS);
             CQLStatement statement = getStatement(query, state).statement;
             statement.validate(state);
-            ResultMessage result = statement.executeInternal(qState);
+            ResultMessage result = statement.executeInternal(qState, QueryOptions.DEFAULT);
             if (result instanceof ResultMessage.Rows)
                 return UntypedResultSet.create(((ResultMessage.Rows)result).result);
             else
