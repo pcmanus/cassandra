@@ -256,7 +256,7 @@ public class QueryProcessor implements QueryHandler
         }
         catch (RequestValidationException e)
         {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Error validating " + query, e);
         }
     }
 
@@ -274,7 +274,7 @@ public class QueryProcessor implements QueryHandler
         }
         catch (RequestValidationException e)
         {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Error validating query" + e);
         }
     }
 
@@ -300,7 +300,7 @@ public class QueryProcessor implements QueryHandler
         }
         catch (RequestValidationException e)
         {
-            throw new RuntimeException("Error validating " + query, e);
+            throw new RuntimeException("Error validating query " + query, e);
         }
     }
 
