@@ -864,10 +864,17 @@ usertype_literal returns [UserTypes.Literal ut]
     : '{' k1=cident ':' v1=term { m.put(k1, v1); } ( ',' kn=cident ':' vn=term { m.put(kn, vn); } )* '}'
     ;
 
+tuple_literal returns [Tuples.Literal tt]
+    @init{ List<Term.Raw> l = new ArrayList<Term.Raw>(); }
+    @after{ $tt = new Tuples.Literal(l); }
+    : '(' t1=term { l.add(t1); } ( ',' tn=term { l.add(tn); } )* ')'
+    ;
+
 value returns [Term.Raw value]
     : c=constant           { $value = c; }
     | l=collection_literal { $value = l; }
     | u=usertype_literal   { $value = u; }
+    | t=tuple_literal      { $value = t; }
     | K_NULL               { $value = Constants.NULL_LITERAL; }
     | ':' id=cident        { $value = newBindVariables(id); }
     | QMARK                { $value = newBindVariables(null); }
@@ -999,7 +1006,8 @@ relation[List<Relation> clauses]
 comparatorType returns [CQL3Type.Raw t]
     : n=native_type     { $t = CQL3Type.Raw.from(n); }
     | c=collection_type { $t = c; }
-    | id=userTypeName  { $t = CQL3Type.Raw.userType(id); }
+    | id=userTypeName   { $t = CQL3Type.Raw.userType(id); }
+    | tt=tuple_type     { $t = tt; }
     | s=STRING_LITERAL
       {
         try {
@@ -1044,6 +1052,12 @@ collection_type returns [CQL3Type.Raw pt]
         { try { if (t != null) $pt = CQL3Type.Raw.set(t); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); } }
     ;
 
+tuple_type returns [CQL3Type.Raw t]
+    : K_TUPLE '<' { List<CQL3Type.Raw> types = new ArrayList<>(); }
+         t1=comparatorType { types.add(t1); } (',' tn=comparatorType { types.add(tn); })*
+      '>' { try { $t = CQL3Type.Raw.tuple(types); } catch (InvalidRequestException e) { addRecognitionError(e.getMessage()); }}
+    ;
+
 username
     : IDENT
     | STRING_LITERAL
@@ -1055,11 +1069,12 @@ non_type_ident returns [ColumnIdentifier id]
     : t=IDENT                    { if (reservedTypeNames.contains($t.text)) addRecognitionError("Invalid (reserved) user type name " + $t.text); $id = new ColumnIdentifier($t.text, false); }
     | t=QUOTED_NAME              { $id = new ColumnIdentifier($t.text, true); }
     | k=basic_unreserved_keyword { $id = new ColumnIdentifier(k, false); }
+    | kk=K_KEY                   { $id = new ColumnIdentifier($kk.text, false); }
     ;
 
 unreserved_keyword returns [String str]
     : u=unreserved_function_keyword     { $str = u; }
-    | k=(K_TTL | K_COUNT | K_WRITETIME) { $str = $k.text; }
+    | k=(K_TTL | K_COUNT | K_WRITETIME | K_KEY) { $str = $k.text; }
     ;
 
 unreserved_function_keyword returns [String str]
@@ -1068,8 +1083,7 @@ unreserved_function_keyword returns [String str]
     ;
 
 basic_unreserved_keyword returns [String str]
-    : k=( K_KEY
-        | K_KEYS
+    : k=( K_KEYS
         | K_AS
         | K_CLUSTERING
         | K_COMPACT
@@ -1196,6 +1210,7 @@ K_MAP:         M A P;
 K_LIST:        L I S T;
 K_NAN:         N A N;
 K_INFINITY:    I N F I N I T Y;
+K_TUPLE:       T U P L E;
 
 K_TRIGGER:     T R I G G E R;
 K_STATIC:      S T A T I C;
