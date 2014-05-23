@@ -135,11 +135,11 @@ public enum DataType implements OptionCodec.Codecable<DataType>
                 UserType udt = (UserType)value;
                 CBUtil.writeString(udt.keyspace, cb);
                 CBUtil.writeString(UTF8Type.instance.compose(udt.name), cb);
-                cb.writeShort(udt.fieldNames.size());
-                for (int i = 0; i < udt.fieldNames.size(); i++)
+                cb.writeShort(udt.size());
+                for (int i = 0; i < udt.size(); i++)
                 {
-                    CBUtil.writeString(UTF8Type.instance.compose(udt.fieldNames.get(i)), cb);
-                    codec.writeOne(DataType.fromType(udt.fieldTypes.get(i), version), cb, version);
+                    CBUtil.writeString(UTF8Type.instance.compose(udt.fieldName(i)), cb);
+                    codec.writeOne(DataType.fromType(udt.fieldType(i), version), cb, version);
                 }
                 break;
         }
@@ -166,10 +166,10 @@ public enum DataType implements OptionCodec.Codecable<DataType>
                 size += CBUtil.sizeOfString(udt.keyspace);
                 size += CBUtil.sizeOfString(UTF8Type.instance.compose(udt.name));
                 size += 2;
-                for (int i = 0; i < udt.fieldNames.size(); i++)
+                for (int i = 0; i < udt.size(); i++)
                 {
-                    size += CBUtil.sizeOfString(UTF8Type.instance.compose(udt.fieldNames.get(i)));
-                    size += codec.oneSerializedSize(DataType.fromType(udt.fieldTypes.get(i), version), version);
+                    size += CBUtil.sizeOfString(UTF8Type.instance.compose(udt.fieldName(i)));
+                    size += codec.oneSerializedSize(DataType.fromType(udt.fieldType(i), version), version);
                 }
                 return size;
             default:
