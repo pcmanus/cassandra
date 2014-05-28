@@ -777,7 +777,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     }
 
     private static List<Composite> buildBound(Bound bound,
-                                              Collection<ColumnDefinition> defs,
+                                              List<ColumnDefinition> defs,
                                               Restriction[] restrictions,
                                               boolean isReversed,
                                               CType type,
@@ -796,7 +796,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 else if (firstRestriction.isIN())
                     return buildMultiColumnInBound(bound, defs, (MultiColumnRestriction.IN) firstRestriction, isReversed, builder, type, options);
                 else
-                    return buildMultiColumnEQBound(bound, (MultiColumnRestriction.EQ) firstRestriction, isReversed, builder, options);
+                    return buildMultiColumnEQBound(bound, defs, (MultiColumnRestriction.EQ) firstRestriction, isReversed, builder, options);
             }
         }
 
@@ -885,7 +885,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     }
 
     private static List<Composite> buildMultiColumnSliceBound(Bound bound,
-                                                              Collection<ColumnDefinition> defs,
+                                                              List<ColumnDefinition> defs,
                                                               MultiColumnRestriction.Slice slice,
                                                               boolean isReversed,
                                                               CBuilder builder,
@@ -910,22 +910,29 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         }
 
         List<ByteBuffer> vals = slice.componentBounds(firstComponentBound, options);
-        builder.add(vals.get(firstName.position()));
 
-        while(iter.hasNext())
+        ByteBuffer v = vals.get(firstName.position());
+        if (v == null)
+            throw new InvalidRequestException("Invalid null value in condition for column " + firstName.name);
+        builder.add(v);
+
+        while (iter.hasNext())
         {
             ColumnDefinition def = iter.next();
             if (def.position() >= vals.size())
                 break;
 
-            builder.add(vals.get(def.position()));
+            v = vals.get(def.position());
+            if (v == null)
+                throw new InvalidRequestException("Invalid null value in condition for column " + def.name);
+            builder.add(v);
         }
         Relation.Type relType = slice.getRelation(eocBound, firstComponentBound);
         return Collections.singletonList(builder.build().withEOC(eocForRelation(relType)));
     }
 
     private static List<Composite> buildMultiColumnInBound(Bound bound,
-                                                           Collection<ColumnDefinition> defs,
+                                                           List<ColumnDefinition> defs,
                                                            MultiColumnRestriction.IN restriction,
                                                            boolean isReversed,
                                                            CBuilder builder,
@@ -940,6 +947,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         Iterator<ColumnDefinition> iter = defs.iterator();
         for (List<ByteBuffer> components : splitInValues)
         {
+            for (int i = 0; i < components.size(); i++)
+                if (components.get(i) == null)
+                    throw new InvalidRequestException("Invalid null value in condition for column " + defs.get(i));
+
             Composite prefix = builder.buildWith(components);
             Bound b = isReversed == isReversedType(iter.next()) ? bound : Bound.reverse(bound);
             inValues.add(b == Bound.END && builder.remainingCount() - components.size() > 0
@@ -950,14 +961,21 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     }
 
     private static List<Composite> buildMultiColumnEQBound(Bound bound,
+                                                           List<ColumnDefinition> defs,
                                                            MultiColumnRestriction.EQ restriction,
                                                            boolean isReversed,
                                                            CBuilder builder,
                                                            QueryOptions options) throws InvalidRequestException
     {
         Bound eocBound = isReversed ? Bound.reverse(bound) : bound;
-        for (ByteBuffer component : restriction.values(options))
+        List<ByteBuffer> values = restriction.values(options);
+        for (int i = 0; i < values.size(); i++)
+        {
+            ByteBuffer component = values.get(i);
+            if (component == null)
+                throw new InvalidRequestException("Invalid null value in condition for column " + defs.get(i));
             builder.add(component);
+        }
 
         Composite prefix = builder.build();
         return Collections.singletonList(builder.remainingCount() > 0 && eocBound == Bound.END

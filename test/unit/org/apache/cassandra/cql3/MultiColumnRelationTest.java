@@ -257,7 +257,7 @@ public class MultiColumnRelationTest
         execute("SELECT * FROM %s.multiple_clustering WHERE a=0 AND (b, c, d) = (1, 2, 'foobar')");
     }
 
-    @Test(expected=SyntaxException.class)
+    @Test(expected=InvalidRequestException.class)
     public void testSingleColumnTupleRelation() throws Throwable
     {
         execute("SELECT * FROM %s.multiple_clustering WHERE a=0 AND b = (1, 2, 3)");

@@ -61,10 +61,9 @@ public class Tuples
         {
             validateAssignableTo(keyspace, receiver);
 
-            TupleType tt = (TupleType)receiver.type;
             List<Term> values = new ArrayList<>(elements.size());
             boolean allTerminal = true;
-            for (int i = 0; i < tt.size(); i++)
+            for (int i = 0; i < elements.size(); i++)
             {
                 Term value = elements.get(i).prepare(keyspace, componentSpecOf(receiver, i));
                 if (value instanceof Term.NonTerminal)
@@ -98,7 +97,7 @@ public class Tuples
         private void validateAssignableTo(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
             if (!(receiver.type instanceof TupleType))
-                throw new InvalidRequestException(String.format("Invalid tuple type literal for %s of type %s", receiver, receiver.type.asCQL3Type()));
+                throw new InvalidRequestException(String.format("Invalid tuple type literal for %s of type %s", receiver.name, receiver.type.asCQL3Type()));
 
             TupleType tt = (TupleType)receiver.type;
             for (int i = 0; i < elements.size(); i++)
