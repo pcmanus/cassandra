@@ -42,9 +42,7 @@ public abstract class CQLTester
     protected static final Logger logger = LoggerFactory.getLogger(CQLTester.class);
 
     private static final String KEYSPACE = "cql_test_keyspace";
-
     private static final boolean USE_PREPARED_VALUES = Boolean.valueOf(System.getProperty("cassandra.test.use_prepared", "true"));
-
     private static final AtomicInteger seqNumber = new AtomicInteger();
 
     private String currentTable;
@@ -52,7 +50,6 @@ public abstract class CQLTester
     @BeforeClass
     public static void setUpClass() throws Throwable
     {
-        // This start gossiper for the sake of schema migrations. We might be able to get rid of that with some work.
         SchemaLoader.prepareServer();
 
         schemaChange(String.format("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", KEYSPACE));
@@ -61,7 +58,6 @@ public abstract class CQLTester
     @AfterClass
     public static void tearDownClass()
     {
-        SchemaLoader.stopGossiper();
     }
 
     protected void createTable(String query)
@@ -77,7 +73,7 @@ public abstract class CQLTester
         try
         {
             // executeOnceInternal don't work for schema changes
-            QueryProcessor.process(query, ConsistencyLevel.ONE);
+            QueryProcessor.executeOnceInternal(query);
         }
         catch (Exception e)
         {
