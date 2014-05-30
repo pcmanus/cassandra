@@ -161,11 +161,11 @@ public class DefsTables
      */
     public static synchronized void mergeSchema(Collection<Mutation> mutations) throws ConfigurationException, IOException
     {
-        mergeSchemaInternal(mutations);
+        mergeSchemaInternal(mutations, true);
         Schema.instance.updateVersionAndAnnounce();
     }
 
-    public static void mergeSchemaInternal(Collection<Mutation> mutations) throws ConfigurationException, IOException
+    public static void mergeSchemaInternal(Collection<Mutation> mutations, boolean doFlush) throws ConfigurationException, IOException
     {
         // current state of the schema
         Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);
@@ -175,7 +175,7 @@ public class DefsTables
         for (Mutation mutation : mutations)
             mutation.apply();
 
-        if (!StorageService.instance.isClientMode())
+        if (doFlush && !StorageService.instance.isClientMode())
             flushSchemaCFs();
 
         // with new data applied

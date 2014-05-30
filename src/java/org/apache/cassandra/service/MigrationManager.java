@@ -362,7 +362,7 @@ public class MigrationManager
         {
             try
             {
-                DefsTables.mergeSchemaInternal(Collections.singletonList(schema));
+                DefsTables.mergeSchemaInternal(Collections.singletonList(schema), false);
             }
             catch (ConfigurationException | IOException e)
             {
@@ -373,11 +373,6 @@ public class MigrationManager
         {
             FBUtilities.waitOnFuture(announce(Collections.singletonList(schema)));
         }
-    }
-
-    // For testing, only write the schema locally
-    private static void announceLocally(Mutation schema)
-    {
     }
 
     private static void pushSchemaMutation(InetAddress endpoint, Collection<Mutation> schema)
