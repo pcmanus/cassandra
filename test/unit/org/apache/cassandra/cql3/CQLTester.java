@@ -50,6 +50,8 @@ public abstract class CQLTester
     @BeforeClass
     public static void setUpClass() throws Throwable
     {
+        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
+
         SchemaLoader.prepareServer();
 
         schemaChange(String.format("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", KEYSPACE));
