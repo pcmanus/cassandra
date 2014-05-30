@@ -1206,7 +1206,8 @@
 
   <target name="cql-test" depends="build-test" description="Execute CQL tests">
     <testmacro suitename="cql" inputdir="${test.unit.src}"
-               timeout="${test.timeout}" filter="**/cql3/*Test.java">
+            timeout="${test.timeout}" filter="**/cql3/*Test.java"
+            forkmode="once">
       <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
     </testmacro>
   </target>
@@ -1216,7 +1217,7 @@
       <echo message="running ${test.methods} tests from ${test.name}"/>
       <mkdir dir="${build.test.dir}/cassandra"/>
       <mkdir dir="${build.test.dir}/output"/>
-      <junit fork="on" failureproperty="testfailed" maxmemory="1024m" timeout="${test.timeout}">
+      <junit fork="on" forkmode="once" failureproperty="testfailed" maxmemory="1024m" timeout="${test.timeout}">
         <sysproperty key="net.sourceforge.cobertura.datafile" file="${cobertura.datafile}"/>
         <formatter type="brief" usefile="false"/>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
