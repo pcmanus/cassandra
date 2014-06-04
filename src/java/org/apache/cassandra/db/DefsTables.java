@@ -165,7 +165,7 @@ public class DefsTables
         Schema.instance.updateVersionAndAnnounce();
     }
 
-    public static void mergeSchemaInternal(Collection<Mutation> mutations, boolean doFlush) throws ConfigurationException, IOException
+    public static synchronized void mergeSchemaInternal(Collection<Mutation> mutations, boolean doFlush) throws ConfigurationException, IOException
     {
         // current state of the schema
         Map<DecoratedKey, ColumnFamily> oldKeyspaces = SystemKeyspace.getSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF);

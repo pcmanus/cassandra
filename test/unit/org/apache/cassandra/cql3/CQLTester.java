@@ -55,7 +55,6 @@ public abstract class CQLTester
     static
     {
         // Once per-JVM is enough
-        System.setProperty("cassandra.memtable_row_overhead_computation_step", "100");
         SchemaLoader.prepareServer();
     }
 
