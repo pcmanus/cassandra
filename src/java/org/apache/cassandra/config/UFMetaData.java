@@ -39,6 +39,7 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.udf.UDFFunctionOverloads;
 import org.apache.cassandra.cql3.udf.UDFRegistry;
+import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.db.CFRowAdder;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.Keyspace;
@@ -62,9 +63,7 @@ import org.apache.cassandra.exceptions.SyntaxException;
  */
 public final class UFMetaData
 {
-    public final String namespace;
-    public final String functionName;
-    public final String qualifiedName;
+    public final FunctionName functionName;
     public final String returnType;
     public final List<String> argumentNames;
     public final List<String> argumentTypes;
@@ -81,12 +80,10 @@ public final class UFMetaData
     // TODO tracking "valid" status via an exception field is really bad style - but we need some way to mark a function as "dead"
     public InvalidRequestException invalid;
 
-    public UFMetaData(String namespace, String functionName, boolean deterministic, List<String> argumentNames,
+    public UFMetaData(FunctionName functionName, boolean deterministic, List<String> argumentNames,
                       List<String> argumentTypes, String returnType, String language, String body)
     {
-        this.namespace = namespace != null ? namespace.toLowerCase() : "";
-        this.functionName = functionName.toLowerCase();
-        this.qualifiedName = qualifiedName(namespace, functionName);
+        this.functionName = functionName;
         this.returnType = returnType;
         this.argumentNames = argumentNames;
         this.argumentTypes = argumentTypes;
@@ -111,7 +108,7 @@ public final class UFMetaData
         this.cqlReturnType = rt;
 
         StringBuilder signature = new StringBuilder();
-        signature.append(qualifiedName);
+        signature.append(functionName.toString().toLowerCase());
         for (String argumentType : argumentTypes)
         {
             signature.append(',');
@@ -146,7 +143,7 @@ public final class UFMetaData
     {
         return new ColumnSpecification(ksName,
                                        cfName,
-                                       new ColumnIdentifier("arg" + i + "(" + qualifiedName + ")", true), argType);
+                                       new ColumnIdentifier("arg" + i + "(" + functionName.toString().toLowerCase() + ")", true), argType);
     }
 
     private static CQL3Type parseCQLType(String cqlType)
@@ -173,20 +170,13 @@ public final class UFMetaData
         }
     }
 
-    public static String qualifiedName(String namespace, String functionName)
+    public static Mutation dropFunction(long timestamp, FunctionName fun)
     {
-        if (namespace == null)
-            return "::" + functionName;
-        return (namespace + "::" + functionName).toLowerCase();
-    }
-
-    public static Mutation dropFunction(long timestamp, String namespace, String functionName)
-    {
-        UDFFunctionOverloads sigMap = UDFRegistry.getFunctionSigMap(UFMetaData.qualifiedName(namespace, functionName));
+        UDFFunctionOverloads sigMap = UDFRegistry.getFunctionSigMap(fun);
         if (sigMap == null || sigMap.isEmpty())
             return null;
 
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, partKey.decompose(namespace, functionName));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, partKey.decompose(fun.namespace, fun.name));
         ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
         int ldt = (int) (System.currentTimeMillis() / 1000);
@@ -210,7 +200,7 @@ public final class UFMetaData
     public static Mutation createOrReplaceFunction(long timestamp, UFMetaData f)
     throws ConfigurationException, SyntaxException
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, partKey.decompose(f.namespace, f.functionName));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, partKey.decompose(f.functionName.namespace, f.functionName.name));
         ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
         Composite prefix = udfSignatureKey(f);
@@ -243,7 +233,7 @@ public final class UFMetaData
         String language = row.getString("language");
         String body = row.getString("body");
 
-        return new UFMetaData(namespace, name, deterministic, argumentNames, argumentTypes, returnType, language, body);
+        return new UFMetaData(new FunctionName(namespace, name), deterministic, argumentNames, argumentTypes, returnType, language, body);
     }
 
     public static Map<String, UFMetaData> fromSchema(Row row)
@@ -274,7 +264,7 @@ public final class UFMetaData
             return false;
         if (body != null ? !body.equals(that.body) : that.body != null)
             return false;
-        if (!namespace.equals(that.namespace))
+        if (!functionName.equals(that.functionName))
             return false;
         if (!language.equals(that.language))
             return false;

@@ -33,18 +33,19 @@ public abstract class Functions
     private Functions() {}
 
     // If we ever allow this to be populated at runtime, this will need to be thread safe.
-    private static final ArrayListMultimap<String, Function.Factory> declared = ArrayListMultimap.create();
+    private static final ArrayListMultimap<FunctionName, Function.Factory> declared = ArrayListMultimap.create();
+
     static
     {
         // All method sharing the same name must have the same returnType. We could find a way to make that clear.
-        declared.put("token", TokenFct.factory);
+        declare("token", TokenFct.factory);
 
-        declared.put("now", AbstractFunction.factory(TimeuuidFcts.nowFct));
-        declared.put("mintimeuuid", AbstractFunction.factory(TimeuuidFcts.minTimeuuidFct));
-        declared.put("maxtimeuuid", AbstractFunction.factory(TimeuuidFcts.maxTimeuuidFct));
-        declared.put("dateof", AbstractFunction.factory(TimeuuidFcts.dateOfFct));
-        declared.put("unixtimestampof", AbstractFunction.factory(TimeuuidFcts.unixTimestampOfFct));
-        declared.put("uuid", AbstractFunction.factory(UuidFcts.uuidFct));
+        declare("now", AbstractFunction.factory(TimeuuidFcts.nowFct));
+        declare("mintimeuuid", AbstractFunction.factory(TimeuuidFcts.minTimeuuidFct));
+        declare("maxtimeuuid", AbstractFunction.factory(TimeuuidFcts.maxTimeuuidFct));
+        declare("dateof", AbstractFunction.factory(TimeuuidFcts.dateOfFct));
+        declare("unixtimestampof", AbstractFunction.factory(TimeuuidFcts.unixTimestampOfFct));
+        declare("uuid", AbstractFunction.factory(UuidFcts.uuidFct));
 
         for (CQL3Type type : CQL3Type.Native.values())
         {
@@ -58,18 +59,23 @@ public abstract class Functions
             declared.put(toBlob.name(), AbstractFunction.factory(toBlob));
             declared.put(fromBlob.name(), AbstractFunction.factory(fromBlob));
         }
-        declared.put("varcharasblob", AbstractFunction.factory(BytesConversionFcts.VarcharAsBlobFct));
-        declared.put("blobasvarchar", AbstractFunction.factory(BytesConversionFcts.BlobAsVarcharFact));
+        declare("varcharasblob", AbstractFunction.factory(BytesConversionFcts.VarcharAsBlobFct));
+        declare("blobasvarchar", AbstractFunction.factory(BytesConversionFcts.BlobAsVarcharFact));
     }
 
-    public static boolean contains(String functionName)
+    private static void declare(String name, Function.Factory factory)
+    {
+        declared.put(new FunctionName(name), factory);
+    }
+
+    public static boolean contains(FunctionName functionName)
     {
         return declared.containsKey(functionName);
     }
 
-    public static AbstractType<?> getReturnType(String functionName, String ksName, String cfName)
+    public static AbstractType<?> getReturnType(FunctionName name, String ksName, String cfName)
     {
-        List<Function.Factory> factories = declared.get(functionName.toLowerCase());
+        List<Function.Factory> factories = declared.get(name);
         return factories.isEmpty()
              ? null // That's ok, we'll complain later
              : factories.get(0).create(ksName, cfName).returnType();
@@ -83,9 +89,9 @@ public abstract class Functions
                 fun.argsType().get(i));
     }
 
-    public static Function get(String keyspace, String name, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
+    public static Function get(String keyspace, FunctionName name, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
     {
-        List<Function.Factory> factories = declared.get(name.toLowerCase());
+        List<Function.Factory> factories = declared.get(name);
         if (factories.isEmpty())
             return null;
 

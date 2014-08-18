@@ -166,7 +166,7 @@ public abstract class Selection
             AbstractType<?> returnType = Functions.getReturnType(withFun.functionName, cfm.ksName, cfm.cfName);
             if (returnType == null)
             {
-                UDFunction userFun = UDFRegistry.resolveFunction(withFun.namespace, withFun.functionName, cfm.ksName, cfm.cfName, args);
+                UDFunction userFun = UDFRegistry.resolveFunction(withFun.functionName, cfm.ksName, cfm.cfName, args);
                 if (userFun != null)
                 {
                     // got a user defined function to call
@@ -176,7 +176,7 @@ public abstract class Selection
                         metadata.add(spec);
                     return new FunctionSelector(userFun.create(args), args);
                 }
-                throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.namespace.isEmpty() ? withFun.functionName : withFun.namespace + "::" + withFun.functionName));
+                throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.functionName));
             }
             ColumnSpecification spec = makeFunctionSpec(cfm, withFun, returnType, raw.alias);
             Function fun = Functions.get(cfm.ksName, withFun.functionName, args, spec);
@@ -208,7 +208,7 @@ public abstract class Selection
                                                         ColumnIdentifier alias) throws InvalidRequestException
     {
         if (returnType == null)
-            throw new InvalidRequestException(String.format("Unknown function %s called in selection clause", fun.namespace.isEmpty() ? fun.functionName : fun.namespace +"::"+fun.functionName));
+            throw new InvalidRequestException(String.format("Unknown function %s called in selection clause", fun.functionName));
 
         return new ColumnSpecification(cfm.ksName,
                                        cfm.cfName,

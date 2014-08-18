@@ -25,7 +25,7 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 
 public interface Function
 {
-    public String name();
+    public FunctionName name();
     public List<AbstractType<?>> argsType();
     public AbstractType<?> returnType();
 

@@ -29,6 +29,7 @@ import org.apache.cassandra.config.UFMetaData;
 import org.apache.cassandra.cql3.AssignementTestable;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -51,7 +52,7 @@ public class UDFRegistry
                                      "return_type, language, body FROM " +
                                      Keyspace.SYSTEM_KS + '.' + SystemKeyspace.SCHEMA_FUNCTIONS_CF;
 
-    private static final Map<String, UDFFunctionOverloads> functions = new ConcurrentHashMap<>();
+    private static final Map<FunctionName, UDFFunctionOverloads> functions = new ConcurrentHashMap<>();
 
     public static void init()
     {
@@ -67,11 +68,11 @@ public class UDFRegistry
         for (UntypedResultSet.Row row : QueryProcessor.executeOnceInternal(SELECT_CQL))
         {
             UFMetaData uf = UFMetaData.fromSchema(row);
-            UDFFunctionOverloads sigMap = functions.get(uf.qualifiedName);
+            UDFFunctionOverloads sigMap = functions.get(uf.functionName);
             if (sigMap == null)
-                functions.put(uf.qualifiedName, sigMap = new UDFFunctionOverloads());
+                functions.put(uf.functionName, sigMap = new UDFFunctionOverloads());
 
-            if (Functions.contains(uf.qualifiedName))
+            if (Functions.contains(uf.functionName))
                 logger.warn("The UDF '" + uf.functionName + "' cannot be used because it uses the same name as the CQL " +
                             "function with the same name. You should drop this function but can do a " +
                             "'DESCRIBE FUNCTION "+uf.functionName+";' in cqlsh before to get more information about it.");
@@ -84,17 +85,17 @@ public class UDFRegistry
         }
     }
 
-    public static boolean hasFunction(String qualifiedName)
+    public static boolean hasFunction(FunctionName fun)
     {
-        UDFFunctionOverloads sigMap = functions.get(qualifiedName.toLowerCase());
+        UDFFunctionOverloads sigMap = functions.get(fun);
         return sigMap != null && !sigMap.isEmpty();
     }
 
-    public static UDFunction resolveFunction(String namespace, String functionName, String ksName, String cfName,
+    public static UDFunction resolveFunction(FunctionName name, String ksName, String cfName,
                                              List<? extends AssignementTestable> args)
     throws InvalidRequestException
     {
-        UDFFunctionOverloads sigMap = functions.get(UFMetaData.qualifiedName(namespace, functionName));
+        UDFFunctionOverloads sigMap = functions.get(name);
         if (sigMap != null)
             return sigMap.resolveFunction(ksName, cfName, args);
         return null;
@@ -102,7 +103,7 @@ public class UDFRegistry
 
     public static void migrateDropFunction(UFMetaData uf)
     {
-        UDFFunctionOverloads sigMap = functions.get(uf.qualifiedName);
+        UDFFunctionOverloads sigMap = functions.get(uf.functionName);
         if (sigMap == null)
             return;
 
@@ -132,15 +133,15 @@ public class UDFRegistry
 
     private static void addFunction(UFMetaData uf, boolean addIfInvalid)
     {
-        UDFFunctionOverloads sigMap = functions.get(uf.qualifiedName);
+        UDFFunctionOverloads sigMap = functions.get(uf.functionName);
         if (sigMap == null)
-            functions.put(uf.qualifiedName, sigMap = new UDFFunctionOverloads());
+            functions.put(uf.functionName, sigMap = new UDFFunctionOverloads());
 
         sigMap.addAndInit(uf, addIfInvalid);
     }
 
-    public static UDFFunctionOverloads getFunctionSigMap(String qualifiedName)
+    public static UDFFunctionOverloads getFunctionSigMap(FunctionName name)
     {
-        return functions.get(qualifiedName);
+        return functions.get(name);
     }
 }

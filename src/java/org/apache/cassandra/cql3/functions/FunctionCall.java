@@ -113,33 +113,28 @@ public class FunctionCall extends Term.NonTerminal
 
     public static class Raw implements Term.Raw
     {
-        private final String namespace;
-        private final String functionName;
+        private final FunctionName name;
         private final List<Term.Raw> terms;
 
-        public Raw(String namespace, String functionName, List<Term.Raw> terms)
+        public Raw(FunctionName name, List<Term.Raw> terms)
         {
-            this.namespace = namespace;
-            this.functionName = functionName;
+            this.name = name;
             this.terms = terms;
         }
 
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            Function fun = null;
-            if (namespace.isEmpty())
-                fun = Functions.get(keyspace, functionName, terms, receiver);
-
+            Function fun = Functions.get(keyspace, name, terms, receiver);
             if (fun == null)
             {
-                UDFunction udf = UDFRegistry.resolveFunction(namespace, functionName, receiver.ksName, receiver.cfName, terms);
+                UDFunction udf = UDFRegistry.resolveFunction(name, receiver.ksName, receiver.cfName, terms);
                 if (udf != null)
                     // got a user defined function to call
                     fun = udf.create(terms);
             }
 
             if (fun == null)
-                throw new InvalidRequestException(String.format("Unknown function %s called", namespace.isEmpty() ? functionName : namespace + "::" + functionName));
+                throw new InvalidRequestException(String.format("Unknown function %s called", name));
 
             List<Term> parameters = new ArrayList<Term>(terms.size());
             boolean allTerminal = true;
@@ -173,7 +168,7 @@ public class FunctionCall extends Term.NonTerminal
 
         public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
         {
-            AbstractType<?> returnType = Functions.getReturnType(functionName, receiver.ksName, receiver.cfName);
+            AbstractType<?> returnType = Functions.getReturnType(name, receiver.ksName, receiver.cfName);
             // Note: if returnType == null, it means the function doesn't exist. We may get this if an undefined function
             // is used as argument of another, existing, function. In that case, we return true here because we'll catch
             // the fact that the method is undefined latter anyway and with a more helpful error message that if we were
@@ -185,9 +180,7 @@ public class FunctionCall extends Term.NonTerminal
         public String toString()
         {
             StringBuilder sb = new StringBuilder();
-            if (!namespace.isEmpty())
-                sb.append(namespace).append("::");
-            sb.append(functionName).append("(");
+            sb.append(name).append("(");
             for (int i = 0; i < terms.size(); i++)
             {
                 if (i > 0)

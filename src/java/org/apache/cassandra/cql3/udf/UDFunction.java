@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.UFMetaData;
 import org.apache.cassandra.cql3.AssignementTestable;
 import org.apache.cassandra.cql3.functions.Function;
+import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -61,7 +62,7 @@ public class UDFunction
                 m = resolveClassMethod();
                 break;
             default:
-                throw new InvalidRequestException("Invalid UDF language " + meta.language + " for '" + meta.qualifiedName + '\'');
+                throw new InvalidRequestException("Invalid UDF language " + meta.language + " for '" + meta.functionName + '\'');
         }
         this.method = m;
     }
@@ -83,7 +84,7 @@ public class UDFunction
         }
         else
         {
-            methodName = meta.functionName;
+            methodName = meta.functionName.name;
             className = meta.body;
         }
         try
@@ -126,9 +127,9 @@ public class UDFunction
 
         return new Function()
         {
-            public String name()
+            public FunctionName name()
             {
-                return meta.qualifiedName;
+                return meta.functionName;
             }
 
             public List<AbstractType<?>> argsType()
@@ -161,15 +162,11 @@ public class UDFunction
                     @SuppressWarnings("unchecked") ByteBuffer r = result != null ? ((AbstractType) returnType).decompose(result) : null;
                     return r;
                 }
-                catch (InvocationTargetException e)
+                catch (InvocationTargetException | IllegalAccessException e)
                 {
                     Throwable c = e.getCause();
-                    logger.error("Invocation of UDF {} failed", meta.qualifiedName, c);
-                    throw new InvalidRequestException("Invocation of UDF " + meta.qualifiedName + " failed: " + c);
-                }
-                catch (IllegalAccessException e)
-                {
-                    throw new InvalidRequestException("UDF " + meta.qualifiedName + " invocation failed: " + e);
+                    logger.error("Invocation of function {} failed", meta.functionName, c);
+                    throw new InvalidRequestException("Invocation of function " + meta.functionName + " failed: " + c);
                 }
             }
 

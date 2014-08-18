@@ -26,6 +26,7 @@ import org.apache.cassandra.config.UFMetaData;
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.QueryOptions;
+import org.apache.cassandra.cql3.functions.FunctionName;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -42,26 +43,27 @@ import org.apache.cassandra.transport.messages.ResultMessage;
  */
 public final class CreateFunctionStatement extends SchemaAlteringStatement
 {
-    final boolean orReplace;
-    final boolean ifNotExists;
-    final String namespace;
-    final String functionName;
-    final String qualifiedName;
-    final String language;
-    final String body;
-    final boolean deterministic;
-    final CQL3Type.Raw returnType;
-    final List<Argument> arguments;
+    private final boolean orReplace;
+    private final boolean ifNotExists;
+    private final FunctionName functionName;
+    private final String language;
+    private final String body;
+    private final boolean deterministic;
+    private final CQL3Type.Raw returnType;
+    private final List<Argument> arguments;
 
     private UFMetaData ufMeta;
 
-    public CreateFunctionStatement(String namespace, String functionName, String language, String body, boolean deterministic,
-                                   CQL3Type.Raw returnType, List<Argument> arguments, boolean orReplace, boolean ifNotExists)
+    public CreateFunctionStatement(FunctionName functionName,
+                                   String language,
+                                   String body,
+                                   boolean deterministic,
+                                   CQL3Type.Raw returnType,
+                                   List<Argument> arguments,
+                                   boolean orReplace,
+                                   boolean ifNotExists)
     {
-        super();
-        this.namespace = namespace != null ? namespace : "";
         this.functionName = functionName;
-        this.qualifiedName = UFMetaData.qualifiedName(namespace, functionName);
         this.language = language;
         this.body = body;
         this.deterministic = deterministic;
@@ -83,23 +85,8 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
         state.hasAllKeyspacesAccess(Permission.CREATE);
     }
 
-    /**
-     * The <code>CqlParser</code> only goes as far as extracting the keyword arguments
-     * from these statements, so this method is responsible for processing and
-     * validating.
-     *
-     * @throws org.apache.cassandra.exceptions.InvalidRequestException if arguments are missing or unacceptable
-     */
-    public void validate(ClientState state) throws RequestValidationException
+    public void validate(ClientState state)
     {
-        if (!namespace.isEmpty() && !namespace.matches("\\w+"))
-            throw new InvalidRequestException(String.format("\"%s\" is not a valid function name", qualifiedName));
-        if (!functionName.matches("\\w+"))
-            throw new InvalidRequestException(String.format("\"%s\" is not a valid function name", qualifiedName));
-        if (namespace.length() > Schema.NAME_LENGTH)
-            throw new InvalidRequestException(String.format("UDF namespace names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, qualifiedName));
-        if (functionName.length() > Schema.NAME_LENGTH)
-            throw new InvalidRequestException(String.format("UDF function names shouldn't be more than %s characters long (got \"%s\")", Schema.NAME_LENGTH, qualifiedName));
     }
 
     public Event.SchemaChange changeEvent()
@@ -128,14 +115,14 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
 
     private void doExecute() throws RequestValidationException
     {
-        boolean exists = UDFRegistry.hasFunction(qualifiedName);
+        boolean exists = UDFRegistry.hasFunction(functionName);
         if (exists && ifNotExists)
-            throw new InvalidRequestException(String.format("Function '%s' already exists.", qualifiedName));
+            throw new InvalidRequestException(String.format("Function '%s' already exists.", functionName));
         if (exists && !orReplace)
-            throw new InvalidRequestException(String.format("Function '%s' already exists.", qualifiedName));
+            throw new InvalidRequestException(String.format("Function '%s' already exists.", functionName));
 
-        if (namespace.isEmpty() && Functions.contains(functionName))
-            throw new InvalidRequestException(String.format("Function name '%s' is reserved by CQL.", qualifiedName));
+        if (Functions.contains(functionName))
+            throw new InvalidRequestException(String.format("Function name '%s' is reserved by CQL.", functionName));
 
         List<Argument> args = arguments;
         List<String> argumentNames = new ArrayList<>(args.size());
@@ -145,7 +132,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
             argumentNames.add(arg.getName().toString());
             argumentTypes.add(arg.getType().toString());
         }
-        this.ufMeta = new UFMetaData(namespace, functionName, deterministic, argumentNames, argumentTypes,
+        this.ufMeta = new UFMetaData(functionName, deterministic, argumentNames, argumentTypes,
                                      returnType.toString(), language, body);
 
         UDFRegistry.tryCreateFunction(ufMeta);

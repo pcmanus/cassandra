@@ -24,18 +24,23 @@ import org.apache.cassandra.db.marshal.AbstractType;
 
 public abstract class AbstractFunction implements Function
 {
-    public final String name;
+    public final FunctionName name;
     public final List<AbstractType<?>> argsType;
     public final AbstractType<?> returnType;
 
     protected AbstractFunction(String name, AbstractType<?> returnType, AbstractType<?>... argsType)
+    {
+        this(new FunctionName(name), returnType, argsType);
+    }
+
+    protected AbstractFunction(FunctionName name, AbstractType<?> returnType, AbstractType<?>... argsType)
     {
         this.name = name;
         this.argsType = Arrays.asList(argsType);
         this.returnType = returnType;
     }
 
-    public String name()
+    public FunctionName name()
     {
         return name;
     }
