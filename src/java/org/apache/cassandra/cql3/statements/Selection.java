@@ -163,25 +163,23 @@ public abstract class Selection
                 args.add(makeSelector(cfm, new RawSelector(rawArg, null), defs, null));
 
             // resolve built-in functions before user defined functions
-            AbstractType<?> returnType = Functions.getReturnType(withFun.functionName, cfm.ksName, cfm.cfName);
-            if (returnType == null)
+            Function fun = Functions.get(cfm.ksName, withFun.functionName, args, cfm.ksName, cfm.cfName);
+            if (fun == null)
             {
                 UDFunction userFun = UDFRegistry.resolveFunction(withFun.functionName, cfm.ksName, cfm.cfName, args);
                 if (userFun != null)
                 {
                     // got a user defined function to call
-                    Function fun = userFun.create(args);
-                    ColumnSpecification spec = makeFunctionSpec(cfm, withFun, fun.returnType(), raw.alias);
+                    Function f = userFun.create(args);
+                    ColumnSpecification spec = makeFunctionSpec(cfm, withFun, f.returnType(), raw.alias);
                     if (metadata != null)
                         metadata.add(spec);
-                    return new FunctionSelector(userFun.create(args), args);
+                    return new FunctionSelector(f, args);
                 }
                 throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.functionName));
             }
-            ColumnSpecification spec = makeFunctionSpec(cfm, withFun, returnType, raw.alias);
-            Function fun = Functions.get(cfm.ksName, withFun.functionName, args, spec);
             if (metadata != null)
-                metadata.add(spec);
+                metadata.add(makeFunctionSpec(cfm, withFun, fun.returnType(), raw.alias));
             return new FunctionSelector(fun, args);
         }
     }

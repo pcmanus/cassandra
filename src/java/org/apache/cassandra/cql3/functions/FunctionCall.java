@@ -124,7 +124,7 @@ public class FunctionCall extends Term.NonTerminal
 
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
-            Function fun = Functions.get(keyspace, name, terms, receiver);
+            Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName);
             if (fun == null)
             {
                 UDFunction udf = UDFRegistry.resolveFunction(name, receiver.ksName, receiver.cfName, terms);
@@ -136,11 +136,18 @@ public class FunctionCall extends Term.NonTerminal
             if (fun == null)
                 throw new InvalidRequestException(String.format("Unknown function %s called", name));
 
+            // Functions.get() will complain if no function "name" type check with the provided arguments.
+            // We still have to validate that the return type matches however
+            if (!receiver.type.isValueCompatibleWith(fun.returnType()))
+                throw new InvalidRequestException(String.format("Type error: cannot assign result of function %s (type %s) to %s (type %s)",
+                                                                fun.name(), fun.returnType().asCQL3Type(),
+                                                                receiver, receiver.type.asCQL3Type()));
+
             List<Term> parameters = new ArrayList<Term>(terms.size());
             boolean allTerminal = true;
             for (int i = 0; i < terms.size(); i++)
             {
-                Term t = terms.get(i).prepare(keyspace, Functions.makeArgSpec(receiver, fun, i));
+                Term t = terms.get(i).prepare(keyspace, Functions.makeArgSpec(receiver.ksName, receiver.cfName, fun, i));
                 if (t instanceof NonTerminal)
                     allTerminal = false;
                 parameters.add(t);
@@ -168,12 +175,19 @@ public class FunctionCall extends Term.NonTerminal
 
         public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
         {
-            AbstractType<?> returnType = Functions.getReturnType(name, receiver.ksName, receiver.cfName);
-            // Note: if returnType == null, it means the function doesn't exist. We may get this if an undefined function
-            // is used as argument of another, existing, function. In that case, we return true here because we'll catch
-            // the fact that the method is undefined latter anyway and with a more helpful error message that if we were
-            // to return false here.
-            return returnType == null || receiver.type.isValueCompatibleWith(returnType);
+            // Note: Functions.get() will return null if the function doesn't exist, or throw is no function matching
+            // the arguments can be found. We may get one of those if an undefined/wrong function is used as argument
+            // of another, existing, function. In that case, we return true here because we'll throw a proper exception
+            // later with a more helpful error message that if we were to return false here.
+            try
+            {
+                Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName);
+                return fun == null || receiver.type.isValueCompatibleWith(fun.returnType());
+            }
+            catch (InvalidRequestException e)
+            {
+                return true;
+            }
         }
 
         @Override

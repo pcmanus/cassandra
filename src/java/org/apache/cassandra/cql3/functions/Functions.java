@@ -37,7 +37,6 @@ public abstract class Functions
 
     static
     {
-        // All method sharing the same name must have the same returnType. We could find a way to make that clear.
         declare("token", TokenFct.factory);
 
         declare("now", AbstractFunction.factory(TimeuuidFcts.nowFct));
@@ -73,58 +72,61 @@ public abstract class Functions
         return declared.containsKey(functionName);
     }
 
-    public static AbstractType<?> getReturnType(FunctionName name, String ksName, String cfName)
+    public static ColumnSpecification makeArgSpec(String receiverKs, String receiverCf, Function fun, int i)
     {
-        List<Function.Factory> factories = declared.get(name);
-        return factories.isEmpty()
-             ? null // That's ok, we'll complain later
-             : factories.get(0).create(ksName, cfName).returnType();
+        return new ColumnSpecification(receiverKs,
+                                       receiverCf,
+                                       new ColumnIdentifier("arg" + i +  "(" + fun.name() + ")", true),
+                                       fun.argsType().get(i));
     }
 
-    public static ColumnSpecification makeArgSpec(ColumnSpecification receiver, Function fun, int i)
-    {
-        return new ColumnSpecification(receiver.ksName,
-                receiver.cfName,
-                new ColumnIdentifier("arg" + i +  "(" + fun.name() + ")", true),
-                fun.argsType().get(i));
-    }
-
-    public static Function get(String keyspace, FunctionName name, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
+    public static Function get(String keyspace,
+                               FunctionName name,
+                               List<? extends AssignementTestable> providedArgs,
+                               String receiverKs,
+                               String receiverCf)
+    throws InvalidRequestException
     {
         List<Function.Factory> factories = declared.get(name);
         if (factories.isEmpty())
             return null;
 
-        // Fast path if there is not choice
+        // Fast path if there is only one choice
         if (factories.size() == 1)
         {
-            Function fun = factories.get(0).create(receiver.ksName, receiver.cfName);
-            validateTypes(keyspace, fun, providedArgs, receiver);
+            Function fun = factories.get(0).create(receiverKs, receiverCf);
+            validateTypes(keyspace, fun, providedArgs, receiverKs, receiverCf);
             return fun;
         }
 
         Function candidate = null;
         for (Function.Factory factory : factories)
         {
-            Function toTest = factory.create(receiver.ksName, receiver.cfName);
-            if (!isValidType(keyspace, toTest, providedArgs, receiver))
+            Function toTest = factory.create(receiverKs, receiverCf);
+            if (!isValidType(keyspace, toTest, providedArgs, receiverKs, receiverCf))
                 continue;
 
             if (candidate == null)
                 candidate = toTest;
             else
-                throw new InvalidRequestException(String.format("Ambiguous call to function %s (can match both type signature %s and %s): use type casts to disambiguate", name, signature(candidate), signature(toTest)));
+                throw new InvalidRequestException(String.format("Ambiguous call to function %s (can match both type signature %s and %s): use type casts to disambiguate",
+                                                                name, signature(candidate), signature(toTest)));
         }
         if (candidate == null)
-            throw new InvalidRequestException(String.format("Invalid call to function %s, none of its type signature matches (known type signatures: %s)", name, signatures(factories, receiver)));
+            throw new InvalidRequestException(String.format("Invalid call to function %s, none of its type signature matches (known type signatures: %s)",
+                                                            name, signatures(factories, receiverKs, receiverCf)));
         return candidate;
     }
 
-    private static void validateTypes(String keyspace, Function fun, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
+    // This method and isValidType are somewhat duplicate, but this method allows us to provide more precise errors in the common
+    // case where there is no override for a given function. This is thus probably worth the minor code duplication.
+    private static void validateTypes(String keyspace,
+                                      Function fun,
+                                      List<? extends AssignementTestable> providedArgs,
+                                      String receiverKs,
+                                      String receiverCf)
+    throws InvalidRequestException
     {
-        if (!receiver.type.isValueCompatibleWith(fun.returnType()))
-            throw new InvalidRequestException(String.format("Type error: cannot assign result of function %s (type %s) to %s (type %s)", fun.name(), fun.returnType().asCQL3Type(), receiver, receiver.type.asCQL3Type()));
-
         if (providedArgs.size() != fun.argsType().size())
             throw new InvalidRequestException(String.format("Invalid number of arguments in call to function %s: %d required but %d provided", fun.name(), fun.argsType().size(), providedArgs.size()));
 
@@ -137,17 +139,19 @@ public abstract class Functions
             if (provided == null)
                 continue;
 
-            ColumnSpecification expected = makeArgSpec(receiver, fun, i);
+            ColumnSpecification expected = makeArgSpec(receiverKs, receiverCf, fun, i);
             if (!provided.isAssignableTo(keyspace, expected))
                 throw new InvalidRequestException(String.format("Type error: %s cannot be passed as argument %d of function %s of type %s", provided, i, fun.name(), expected.type.asCQL3Type()));
         }
     }
 
-    private static boolean isValidType(String keyspace, Function fun, List<? extends AssignementTestable> providedArgs, ColumnSpecification receiver) throws InvalidRequestException
+    private static boolean isValidType(String keyspace,
+                                       Function fun,
+                                       List<? extends AssignementTestable> providedArgs,
+                                       String receiverKs,
+                                       String receiverCf)
+    throws InvalidRequestException
     {
-        if (!receiver.type.isValueCompatibleWith(fun.returnType()))
-            return false;
-
         if (providedArgs.size() != fun.argsType().size())
             return false;
 
@@ -160,7 +164,7 @@ public abstract class Functions
             if (provided == null)
                 continue;
 
-            ColumnSpecification expected = makeArgSpec(receiver, fun, i);
+            ColumnSpecification expected = makeArgSpec(receiverKs, receiverCf, fun, i);
             if (!provided.isAssignableTo(keyspace, expected))
                 return false;
         }
@@ -182,13 +186,13 @@ public abstract class Functions
         return sb.toString();
     }
 
-    private static String signatures(List<Function.Factory> factories, ColumnSpecification receiver)
+    private static String signatures(List<Function.Factory> factories, String receiverKs, String receiverCf)
     {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < factories.size(); i++)
         {
             if (i > 0) sb.append(", ");
-            sb.append(signature(factories.get(i).create(receiver.ksName, receiver.cfName)));
+            sb.append(signature(factories.get(i).create(receiverKs, receiverCf)));
         }
         return sb.toString();
     }
