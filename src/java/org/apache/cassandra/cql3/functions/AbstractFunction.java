@@ -60,18 +60,4 @@ public abstract class AbstractFunction implements Function
     {
         return true;
     }
-
-    /**
-     * Creates a trivial factory that always return the provided function.
-     */
-    public static Function.Factory factory(final Function fun)
-    {
-        return new Function.Factory()
-        {
-            public Function create(String ksName, String cfName)
-            {
-                return fun;
-            }
-        };
-    }
 }

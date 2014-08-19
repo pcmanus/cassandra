@@ -21,6 +21,7 @@ import java.util.List;
 
 import com.google.common.collect.ArrayListMultimap;
 
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.CQL3Type;
@@ -30,21 +31,24 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 
 public abstract class Functions
 {
+    // We special case the token function because that's the only function whose argument types actually
+    // depend on the table on which the function is called. Because it's the sole exception, it's easier
+    // to handle it as a special case.
+    private static final FunctionName TOKEN_FUNCTION_NAME = new FunctionName("token");
+
     private Functions() {}
 
     // If we ever allow this to be populated at runtime, this will need to be thread safe.
-    private static final ArrayListMultimap<FunctionName, Function.Factory> declared = ArrayListMultimap.create();
+    private static final ArrayListMultimap<FunctionName, Function> declared = ArrayListMultimap.create();
 
     static
     {
-        declare("token", TokenFct.factory);
-
-        declare("now", AbstractFunction.factory(TimeuuidFcts.nowFct));
-        declare("mintimeuuid", AbstractFunction.factory(TimeuuidFcts.minTimeuuidFct));
-        declare("maxtimeuuid", AbstractFunction.factory(TimeuuidFcts.maxTimeuuidFct));
-        declare("dateof", AbstractFunction.factory(TimeuuidFcts.dateOfFct));
-        declare("unixtimestampof", AbstractFunction.factory(TimeuuidFcts.unixTimestampOfFct));
-        declare("uuid", AbstractFunction.factory(UuidFcts.uuidFct));
+        declare(TimeuuidFcts.nowFct);
+        declare(TimeuuidFcts.minTimeuuidFct);
+        declare(TimeuuidFcts.maxTimeuuidFct);
+        declare(TimeuuidFcts.dateOfFct);
+        declare(TimeuuidFcts.unixTimestampOfFct);
+        declare(UuidFcts.uuidFct);
 
         for (CQL3Type type : CQL3Type.Native.values())
         {
@@ -53,18 +57,16 @@ public abstract class Functions
             if (type == CQL3Type.Native.VARCHAR || type == CQL3Type.Native.BLOB)
                 continue;
 
-            Function toBlob = BytesConversionFcts.makeToBlobFunction(type.getType());
-            Function fromBlob = BytesConversionFcts.makeFromBlobFunction(type.getType());
-            declared.put(toBlob.name(), AbstractFunction.factory(toBlob));
-            declared.put(fromBlob.name(), AbstractFunction.factory(fromBlob));
+            declare(BytesConversionFcts.makeToBlobFunction(type.getType()));
+            declare(BytesConversionFcts.makeFromBlobFunction(type.getType()));
         }
-        declare("varcharasblob", AbstractFunction.factory(BytesConversionFcts.VarcharAsBlobFct));
-        declare("blobasvarchar", AbstractFunction.factory(BytesConversionFcts.BlobAsVarcharFact));
+        declare(BytesConversionFcts.VarcharAsBlobFct);
+        declare(BytesConversionFcts.BlobAsVarcharFact);
     }
 
-    private static void declare(String name, Function.Factory factory)
+    private static void declare(Function fun)
     {
-        declared.put(new FunctionName(name), factory);
+        declared.put(fun.name(), fun);
     }
 
     public static boolean contains(FunctionName functionName)
@@ -87,22 +89,24 @@ public abstract class Functions
                                String receiverCf)
     throws InvalidRequestException
     {
-        List<Function.Factory> factories = declared.get(name);
-        if (factories.isEmpty())
+        if (name.equals(TOKEN_FUNCTION_NAME))
+            return new TokenFct(Schema.instance.getCFMetaData(receiverKs, receiverCf));
+
+        List<Function> candidates = declared.get(name);
+        if (candidates.isEmpty())
             return null;
 
         // Fast path if there is only one choice
-        if (factories.size() == 1)
+        if (candidates.size() == 1)
         {
-            Function fun = factories.get(0).create(receiverKs, receiverCf);
+            Function fun = candidates.get(0);
             validateTypes(keyspace, fun, providedArgs, receiverKs, receiverCf);
             return fun;
         }
 
         Function candidate = null;
-        for (Function.Factory factory : factories)
+        for (Function toTest : candidates)
         {
-            Function toTest = factory.create(receiverKs, receiverCf);
             if (!isValidType(keyspace, toTest, providedArgs, receiverKs, receiverCf))
                 continue;
 
@@ -114,7 +118,7 @@ public abstract class Functions
         }
         if (candidate == null)
             throw new InvalidRequestException(String.format("Invalid call to function %s, none of its type signature matches (known type signatures: %s)",
-                                                            name, signatures(factories, receiverKs, receiverCf)));
+                                                            name, signatures(candidates)));
         return candidate;
     }
 
@@ -186,13 +190,13 @@ public abstract class Functions
         return sb.toString();
     }
 
-    private static String signatures(List<Function.Factory> factories, String receiverKs, String receiverCf)
+    private static String signatures(List<Function> funs)
     {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < factories.size(); i++)
+        for (int i = 0; i < funs.size(); i++)
         {
             if (i > 0) sb.append(", ");
-            sb.append(signature(factories.get(i).create(receiverKs, receiverCf)));
+            sb.append(signature(funs.get(i)));
         }
         return sb.toString();
     }
