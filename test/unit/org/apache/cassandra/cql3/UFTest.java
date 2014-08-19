@@ -115,12 +115,12 @@ public class UFTest extends CQLTester
     }
 
     @Test(expected = InvalidRequestException.class)
-    public void ddlCreateIfNotExistsFunctionFail() throws Throwable
+    public void ddlCreateExistingFunctionFail() throws Throwable
     {
         createTable("CREATE TABLE %s (key int primary key, val double)"); // not used, but required by CQLTester
 
-        execute("create function if not exists foo::cfinef ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
-        execute("create function if not exists foo::cfinef ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
+        execute("create function foo::cfinef ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
+        execute("create function foo::cfinef ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
     }
 
     @Test
@@ -130,6 +130,15 @@ public class UFTest extends CQLTester
 
         execute("create function foo::corf ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
         execute("create or replace function foo::corf ( input double ) returns double using 'org.apache.cassandra.cql3.UFTest#sin'");
+    }
+
+    @Test
+    public void ddlCreateIfNotExistFunction() throws Throwable
+    {
+        createTable("CREATE TABLE %s (key int primary key, val double)"); // not used, but required by CQLTester
+
+        execute("create function foo::cinef ( input double ) returns double 'org.apache.cassandra.cql3.UFTest#sin'");
+        execute("create function if not exists foo::cinef ( input double ) returns double 'org.apache.cassandra.cql3.UFTest#sin'");
     }
 
     @Test(expected = InvalidRequestException.class)

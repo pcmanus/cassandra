@@ -26,11 +26,14 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 public interface Function
 {
     public FunctionName name();
-    public List<AbstractType<?>> argsType();
+    public List<AbstractType<?>> argTypes();
     public AbstractType<?> returnType();
 
     public ByteBuffer execute(List<ByteBuffer> parameters) throws InvalidRequestException;
 
     // Whether the function is a pure function (as in doesn't depend on, nor produce side effects).
     public boolean isPure();
+
+    // Whether the function is a native/harcoded one.
+    public boolean isNative();
 }

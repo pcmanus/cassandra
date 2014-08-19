@@ -17,10 +17,11 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.util.List;
+
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.UFMetaData;
-import org.apache.cassandra.cql3.functions.FunctionName;
+import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
@@ -65,20 +66,21 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
         return null;
     }
 
-    // no execute() - drop propagated via MigrationManager
-
     public boolean announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        try
-        {
-            MigrationManager.announceFunctionDrop(functionName, isLocalOnly);
-            return true;
-        }
-        catch (InvalidRequestException e)
+        List<Function> olds = Functions.find(functionName);
+        if (olds == null || olds.isEmpty())
         {
             if (ifExists)
                 return false;
-            throw e;
+            throw new InvalidRequestException(String.format("Cannot drop non existing function '%s'", functionName));
         }
+
+        for (Function f : olds)
+            if (f.isNative())
+                throw new InvalidRequestException(String.format("Cannot drop function '%s' because it has native overloads", functionName));
+
+        MigrationManager.announceFunctionDrop(functionName, isLocalOnly);
+        return true;
     }
 }

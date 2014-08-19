@@ -493,9 +493,10 @@ createFunctionStatement returns [CreateFunctionStatement expr]
         boolean ifNotExists = false;
 
         boolean deterministic = true;
-        String language = "CLASS";
+        String language = "class";
         String bodyOrClassName = null;
-        List<CreateFunctionStatement.Argument> args = new ArrayList<CreateFunctionStatement.Argument>();
+        List<ColumnIdentifier> argsNames = new ArrayList<>();
+        List<CQL3Type.Raw> argsTypes = new ArrayList<>();
     }
     : K_CREATE (K_OR K_REPLACE { orReplace = true; })?
       ((K_NON { deterministic = false; })? K_DETERMINISTIC)?
@@ -504,8 +505,8 @@ createFunctionStatement returns [CreateFunctionStatement expr]
       fn=functionName
       '('
         (
-          k=cident v=comparatorType { args.add(new CreateFunctionStatement.Argument(k, v)); }
-          ( ',' k=cident v=comparatorType { args.add(new CreateFunctionStatement.Argument(k, v)); } )*
+          k=cident v=comparatorType { argsNames.add(k); argsTypes.add(v); }
+          ( ',' k=cident v=comparatorType { argsNames.add(k); argsTypes.add(v); } )*
         )?
       ')'
       K_RETURNS
@@ -521,7 +522,7 @@ createFunctionStatement returns [CreateFunctionStatement expr]
             )
           )
       )
-      { $expr = new CreateFunctionStatement(fn, language, bodyOrClassName, deterministic, rt, args, orReplace, ifNotExists); }
+      { $expr = new CreateFunctionStatement(fn, language.toLowerCase(), bodyOrClassName, deterministic, argsNames, argsTypes, rt, orReplace, ifNotExists); }
     ;
 
 dropFunctionStatement returns [DropFunctionStatement expr]

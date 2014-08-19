@@ -29,8 +29,6 @@ import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.cql3.udf.UDFunction;
-import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.db.Cell;
 import org.apache.cassandra.db.CounterCell;
 import org.apache.cassandra.db.ExpiringCell;
@@ -165,19 +163,7 @@ public abstract class Selection
             // resolve built-in functions before user defined functions
             Function fun = Functions.get(cfm.ksName, withFun.functionName, args, cfm.ksName, cfm.cfName);
             if (fun == null)
-            {
-                UDFunction userFun = UDFRegistry.resolveFunction(withFun.functionName, cfm.ksName, cfm.cfName, args);
-                if (userFun != null)
-                {
-                    // got a user defined function to call
-                    Function f = userFun.create(args);
-                    ColumnSpecification spec = makeFunctionSpec(cfm, withFun, f.returnType(), raw.alias);
-                    if (metadata != null)
-                        metadata.add(spec);
-                    return new FunctionSelector(f, args);
-                }
                 throw new InvalidRequestException(String.format("Unknown function '%s'", withFun.functionName));
-            }
             if (metadata != null)
                 metadata.add(makeFunctionSpec(cfm, withFun, fun.returnType(), raw.alias));
             return new FunctionSelector(fun, args);

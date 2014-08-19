@@ -22,8 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.cassandra.cql3.*;
-import org.apache.cassandra.cql3.udf.UDFunction;
-import org.apache.cassandra.cql3.udf.UDFRegistry;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.ListType;
@@ -125,14 +123,6 @@ public class FunctionCall extends Term.NonTerminal
         public Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
         {
             Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName);
-            if (fun == null)
-            {
-                UDFunction udf = UDFRegistry.resolveFunction(name, receiver.ksName, receiver.cfName, terms);
-                if (udf != null)
-                    // got a user defined function to call
-                    fun = udf.create(terms);
-            }
-
             if (fun == null)
                 throw new InvalidRequestException(String.format("Unknown function %s called", name));
 

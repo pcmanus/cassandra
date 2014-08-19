@@ -17,26 +17,35 @@
  */
 package org.apache.cassandra.cql3.functions;
 
-import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 
-import org.apache.cassandra.db.marshal.UUIDType;
-import org.apache.cassandra.serializers.UUIDSerializer;
+import org.apache.cassandra.db.marshal.AbstractType;
 
-public abstract class UuidFcts
+/**
+ * Base class for our native/hardcoded functions.
+ */
+public abstract class NativeFunction extends AbstractFunction
 {
-    public static final Function uuidFct = new NativeFunction("uuid", UUIDType.instance)
+    protected NativeFunction(String name, AbstractType<?> returnType, AbstractType<?>... argTypes)
     {
-        public ByteBuffer execute(List<ByteBuffer> parameters)
-        {
-            return UUIDSerializer.instance.serialize(UUID.randomUUID());
-        }
+        this(new FunctionName(name), returnType, argTypes);
+    }
 
-        @Override
-        public boolean isPure()
-        {
-            return false;
-        }
-    };
+    protected NativeFunction(FunctionName name, AbstractType<?> returnType, AbstractType<?>... argTypes)
+    {
+        super(name, Arrays.asList(argTypes), returnType);
+    }
+
+    // Most of our functions are pure, the other ones should override this
+    public boolean isPure()
+    {
+        return true;
+    }
+
+    public boolean isNative()
+    {
+        return true;
+    }
 }
+

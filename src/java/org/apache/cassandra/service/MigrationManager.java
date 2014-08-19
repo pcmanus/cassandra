@@ -29,9 +29,6 @@ import java.util.concurrent.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 
-import org.apache.cassandra.config.UFMetaData;
-import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.exceptions.SyntaxException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,10 +39,13 @@ import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.UTMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.FunctionName;
+import org.apache.cassandra.cql3.functions.UDFunction;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.AlreadyExistsException;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -177,22 +177,22 @@ public class MigrationManager
             listener.onCreateUserType(ut.keyspace, ut.getNameAsString());
     }
 
-    public void notifyCreateFunction(UFMetaData uf)
+    public void notifyCreateFunction(UDFunction udf)
     {
         for (IMigrationListener listener : listeners)
-            listener.onCreateFunction(uf.functionName.namespace, uf.functionName.name);
+            listener.onCreateFunction(udf.name().namespace, udf.name().name);
     }
 
-    public void notifyUpdateFunction(UFMetaData uf)
+    public void notifyUpdateFunction(UDFunction udf)
     {
         for (IMigrationListener listener : listeners)
-            listener.onUpdateFunction(uf.functionName.namespace, uf.functionName.name);
+            listener.onUpdateFunction(udf.name().namespace, udf.name().name);
     }
 
-    public void notifyDropFunction(UFMetaData uf)
+    public void notifyDropFunction(UDFunction udf)
     {
         for (IMigrationListener listener : listeners)
-            listener.onDropFunction(uf.functionName.namespace, uf.functionName.name);
+            listener.onDropFunction(udf.name().namespace, udf.name().name);
     }
 
     public void notifyUpdateKeyspace(KSMetaData ksm)
@@ -376,21 +376,14 @@ public class MigrationManager
 
     public static void announceFunctionDrop(FunctionName fun, boolean announceLocally) throws InvalidRequestException
     {
-        Mutation mutation = UFMetaData.dropFunction(FBUtilities.timestampMicros(), fun);
-        if (mutation == null)
-            throw new InvalidRequestException(String.format("Cannot drop non existing function '%s'", fun));
-
         logger.info(String.format("Drop Function '%s'", fun));
-        announce(mutation, announceLocally);
+        announce(UDFunction.dropFromSchema(FBUtilities.timestampMicros(), fun), announceLocally);
     }
 
-    public static void announceNewFunction(UFMetaData uf, boolean announceLocally) throws ConfigurationException, SyntaxException
+    public static void announceNewFunction(UDFunction udf, boolean announceLocally) throws ConfigurationException, SyntaxException
     {
-        Mutation mutation = UFMetaData.createOrReplaceFunction(FBUtilities.timestampMicros(), uf);
-        if (mutation == null)
-            throw new ConfigurationException(String.format("Function '%s' already exists.", uf.functionName));
-
-        logger.info(String.format("Create Function '%s'", uf.functionName));
+        Mutation mutation = udf.toSchemaUpdate(FBUtilities.timestampMicros());
+        logger.info(String.format("Create Function '%s'", udf.name()));
         announce(mutation, announceLocally);
     }
 
