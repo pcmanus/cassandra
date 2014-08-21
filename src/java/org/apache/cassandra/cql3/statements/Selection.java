@@ -369,14 +369,19 @@ public abstract class Selection
         }
     }
 
-    private static abstract class Selector implements AssignementTestable
+    private static abstract class Selector implements AssignmentTestable
     {
         public abstract ByteBuffer compute(ResultSetBuilder rs) throws InvalidRequestException;
         public abstract AbstractType<?> getType();
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
-            return receiver.type.isValueCompatibleWith(getType());
+            if (receiver.type.equals(getType()))
+                return AssignmentTestable.TestResult.EXACT_MATCH;
+            else if (receiver.type.isValueCompatibleWith(getType()))
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+            else
+                return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
         }
     }
 

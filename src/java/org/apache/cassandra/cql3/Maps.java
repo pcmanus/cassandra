@@ -98,23 +98,23 @@ public abstract class Maps
             ColumnSpecification valueSpec = Maps.valueSpecOf(receiver);
             for (Pair<Term.Raw, Term.Raw> entry : entries)
             {
-                if (!entry.left.isAssignableTo(keyspace, keySpec))
+                if (!entry.left.testAssignment(keyspace, keySpec).isAssignable())
                     throw new InvalidRequestException(String.format("Invalid map literal for %s: key %s is not of type %s", receiver, entry.left, keySpec.type.asCQL3Type()));
-                if (!entry.right.isAssignableTo(keyspace, valueSpec))
+                if (!entry.right.testAssignment(keyspace, valueSpec).isAssignable())
                     throw new InvalidRequestException(String.format("Invalid map literal for %s: value %s is not of type %s", receiver, entry.right, valueSpec.type.asCQL3Type()));
             }
         }
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
             try
             {
                 validateAssignableTo(keyspace, receiver);
-                return true;
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
             }
             catch (InvalidRequestException e)
             {
-                return false;
+                return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
         }
 

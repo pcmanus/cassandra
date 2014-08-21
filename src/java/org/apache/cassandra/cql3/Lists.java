@@ -93,21 +93,21 @@ public abstract class Lists
             ColumnSpecification valueSpec = Lists.valueSpecOf(receiver);
             for (Term.Raw rt : elements)
             {
-                if (!rt.isAssignableTo(keyspace, valueSpec))
+                if (!rt.testAssignment(keyspace, valueSpec).isAssignable())
                     throw new InvalidRequestException(String.format("Invalid list literal for %s: value %s is not of type %s", receiver, rt, valueSpec.type.asCQL3Type()));
             }
         }
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
             try
             {
                 validateAssignableTo(keyspace, receiver);
-                return true;
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
             }
             catch (InvalidRequestException e)
             {
-                return false;
+                return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
         }
 

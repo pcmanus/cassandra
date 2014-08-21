@@ -163,7 +163,7 @@ public class FunctionCall extends Term.NonTerminal
             return executeInternal(fun, buffers);
         }
 
-        public boolean isAssignableTo(String keyspace, ColumnSpecification receiver)
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
             // Note: Functions.get() will return null if the function doesn't exist, or throw is no function matching
             // the arguments can be found. We may get one of those if an undefined/wrong function is used as argument
@@ -172,11 +172,16 @@ public class FunctionCall extends Term.NonTerminal
             try
             {
                 Function fun = Functions.get(keyspace, name, terms, receiver.ksName, receiver.cfName);
-                return fun == null || receiver.type.isValueCompatibleWith(fun.returnType());
+                if (fun != null && receiver.type.equals(fun.returnType()))
+                    return AssignmentTestable.TestResult.EXACT_MATCH;
+                else if (fun == null || receiver.type.isValueCompatibleWith(fun.returnType()))
+                    return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+                else
+                    return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
             catch (InvalidRequestException e)
             {
-                return true;
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
             }
         }
 
