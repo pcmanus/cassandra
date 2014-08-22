@@ -114,15 +114,21 @@ public abstract class Sets
 
         public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
-            try
+            if (!(receiver.type instanceof SetType))
             {
-                validateAssignableTo(keyspace, receiver);
-                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
-            }
-            catch (InvalidRequestException e)
-            {
+                // We've parsed empty maps as a set literal to break the ambiguity so handle that case now
+                if (receiver.type instanceof MapType && elements.isEmpty())
+                    return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
                 return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
+
+            // If there is no elements, we can't say it's an exact match (an empty set if fundamentally polymorphic).
+            if (elements.isEmpty())
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
+            ColumnSpecification valueSpec = Sets.valueSpecOf(receiver);
+            return AssignmentTestable.TestResult.testAll(keyspace, valueSpec, elements);
         }
 
         @Override

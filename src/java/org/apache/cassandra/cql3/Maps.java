@@ -107,15 +107,27 @@ public abstract class Maps
 
         public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
         {
-            try
-            {
-                validateAssignableTo(keyspace, receiver);
-                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
-            }
-            catch (InvalidRequestException e)
-            {
+            if (!(receiver.type instanceof MapType))
                 return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
+
+            // If there is no elements, we can't say it's an exact match (an empty map if fundamentally polymorphic).
+            if (entries.isEmpty())
+                return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
+
+            ColumnSpecification keySpec = Maps.keySpecOf(receiver);
+            ColumnSpecification valueSpec = Maps.valueSpecOf(receiver);
+            // It's an exact match if all are exact match, but is not assignable as soon as any is non assignable.
+            AssignmentTestable.TestResult res = AssignmentTestable.TestResult.EXACT_MATCH;
+            for (Pair<Term.Raw, Term.Raw> entry : entries)
+            {
+                AssignmentTestable.TestResult t1 = entry.left.testAssignment(keyspace, keySpec);
+                AssignmentTestable.TestResult t2 = entry.right.testAssignment(keyspace, valueSpec);
+                if (t1 == AssignmentTestable.TestResult.NOT_ASSIGNABLE || t2 == AssignmentTestable.TestResult.NOT_ASSIGNABLE)
+                    return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
+                if (t1 != AssignmentTestable.TestResult.EXACT_MATCH || t2 != AssignmentTestable.TestResult.EXACT_MATCH)
+                    res = AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
             }
+            return res;
         }
 
         @Override

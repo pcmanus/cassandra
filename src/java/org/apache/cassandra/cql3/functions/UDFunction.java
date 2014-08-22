@@ -81,6 +81,33 @@ public abstract class UDFunction extends AbstractFunction
         }
     }
 
+    /**
+     * It can happen that a function has been declared (is listed in the scheam) but cannot
+     * be loaded (maybe only on some nodes). This is the case for instance if the class defining
+     * the class is not on the classpath for some of the node, or after a restart. In that case,
+     * we create a "fake" function so that:
+     *  1) the broken function can be dropped easily if that is what people want to do.
+     *  2) we return a meaningful error message if the function is executed (something more precise
+     *     than saying that the function doesn't exist)
+     */
+    private static UDFunction createBrokenFunction(FunctionName name,
+                                                  List<ColumnIdentifier> argNames,
+                                                  List<AbstractType<?>> argTypes,
+                                                  AbstractType<?> returnType,
+                                                  String language,
+                                                  String body,
+                                                  final InvalidRequestException reason)
+    {
+        return new UDFunction(name, argNames, argTypes, returnType, language, body, true)
+        {
+            public ByteBuffer execute(List<ByteBuffer> parameters) throws InvalidRequestException
+            {
+                throw new InvalidRequestException(String.format("Function '%s' exists but hasn't been loaded successfully for the following reason: %s. "
+                                                              + "Please see the server log for more details", this, reason.getMessage()));
+            }
+        };
+    }
+
     // We allow method overloads, so a function is not uniquely identified by its name only, but
     // also by its argument types. To distinguish overloads of given function name in the schema 
     // we use a "signature" which is just a SHA-1 of it's argument types (we could replace that by
@@ -143,16 +170,12 @@ public abstract class UDFunction extends AbstractFunction
         return mutation;
     }
 
-    static FunctionName getName(UntypedResultSet.Row row)
+    public static UDFunction fromSchema(UntypedResultSet.Row row)
     {
         String namespace = row.getString("namespace");
-        String name = row.getString("name");
-        return new FunctionName(namespace, name);
-    }
+        String fname = row.getString("name");
+        FunctionName name = new FunctionName(namespace, fname);
 
-    public static UDFunction fromSchema(UntypedResultSet.Row row)
-    throws InvalidRequestException
-    {
         List<String> names = row.getList("argument_names", UTF8Type.instance);
         List<String> types = row.getList("argument_types", UTF8Type.instance);
 
@@ -170,7 +193,15 @@ public abstract class UDFunction extends AbstractFunction
         String language = row.getString("language");
         String body = row.getString("body");
 
-        return create(getName(row), argNames, argTypes, returnType, language, body, deterministic);
+        try
+        {
+            return create(name, argNames, argTypes, returnType, language, body, deterministic);
+        }
+        catch (InvalidRequestException e)
+        {
+            logger.error(String.format("Cannot load function '%s' from schema: this function won't be available (on this node)", name), e);
+            return createBrokenFunction(name, argNames, argTypes, returnType, language, body, e);
+        }
     }
 
     private static AbstractType<?> parseType(String str)
@@ -191,20 +222,7 @@ public abstract class UDFunction extends AbstractFunction
         UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system." + SystemKeyspace.SCHEMA_FUNCTIONS_CF, row);
         Map<ByteBuffer, UDFunction> udfs = new HashMap<>(results.size());
         for (UntypedResultSet.Row result : results)
-        {
-            try
-            {
-                udfs.put(result.getBlob("signature"), fromSchema(result));
-            }
-            catch (InvalidRequestException e)
-            {
-                // fromSchema only throws if it can't create the function. This could happen if a UDF was registered,
-                // but the class implementing it is not in the classpatch this time around for instance. In that case,
-                // log the error but skip the function otherwise as we don't want to break schema updates for that.
-                logger.error(String.format("Cannot load function '%s' from schema: this function won't be available (on this node)",
-                                           getName(result)), e);
-            }
-        }
+            udfs.put(result.getBlob("signature"), fromSchema(result));
         return udfs;
     }
 

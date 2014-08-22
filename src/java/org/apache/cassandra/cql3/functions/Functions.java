@@ -81,20 +81,7 @@ public abstract class Functions
     {
         logger.debug("Loading UDFs");
         for (UntypedResultSet.Row row : QueryProcessor.executeOnceInternal(SELECT_UDFS))
-        {
-            try
-            {
-                addFunction(UDFunction.fromSchema(row));
-            }
-            catch (InvalidRequestException e)
-            {
-                // fromSchema only throws if it can't create the function. This could happen if a UDF was registered,
-                // but the class implementing it is not in the classpatch this time around for instance. In that case,
-                // log the error but skip the function otherwise as we don't want to break schema updates for that.
-                logger.error(String.format("Cannot load function '%s' from schema: this function won't be available (on this node)",
-                                           UDFunction.getName(row)), e);
-            }
-        }
+            addFunction(UDFunction.fromSchema(row));
     }
 
     public static ColumnSpecification makeArgSpec(String receiverKs, String receiverCf, Function fun, int i)
@@ -207,13 +194,11 @@ public abstract class Functions
         if (providedArgs.size() != fun.argTypes().size())
             return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
 
+        // It's an exact match if all are exact match, but is not assignable as soon as any is non assignable.
         AssignmentTestable.TestResult res = AssignmentTestable.TestResult.EXACT_MATCH;
         for (int i = 0; i < providedArgs.size(); i++)
         {
             AssignmentTestable provided = providedArgs.get(i);
-
-            // If the concrete argument is a bind variables, it can have any type.
-            // We'll validate the actually provided value at execution time.
             if (provided == null)
             {
                 res = AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
@@ -222,14 +207,10 @@ public abstract class Functions
 
             ColumnSpecification expected = makeArgSpec(receiverKs, receiverCf, fun, i);
             AssignmentTestable.TestResult argRes = provided.testAssignment(keyspace, expected);
-            switch (argRes)
-            {
-                case NOT_ASSIGNABLE:
-                    return argRes;
-                case WEAKLY_ASSIGNABLE:
-                    res = AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
-                    break;
-            }
+            if (argRes == AssignmentTestable.TestResult.NOT_ASSIGNABLE)
+                return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
+            if (argRes == AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE)
+                res = AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
         }
         return res;
     }
