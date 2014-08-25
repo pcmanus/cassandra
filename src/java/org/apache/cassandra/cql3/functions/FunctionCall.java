@@ -131,7 +131,7 @@ public class FunctionCall extends Term.NonTerminal
             if (!receiver.type.isValueCompatibleWith(fun.returnType()))
                 throw new InvalidRequestException(String.format("Type error: cannot assign result of function %s (type %s) to %s (type %s)",
                                                                 fun.name(), fun.returnType().asCQL3Type(),
-                                                                receiver, receiver.type.asCQL3Type()));
+                                                                receiver.name, receiver.type.asCQL3Type()));
 
             List<Term> parameters = new ArrayList<Term>(terms.size());
             boolean allTerminal = true;

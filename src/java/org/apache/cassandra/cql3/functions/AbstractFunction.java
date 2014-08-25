@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.cql3.functions;
 
-import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.base.Objects;

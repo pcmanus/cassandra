@@ -132,7 +132,7 @@ public abstract class Functions
         }
 
         if (compatibles == null || compatibles.isEmpty())
-            throw new InvalidRequestException(String.format("Invalid call to function %s, none of its type signature matches (known type signatures: %s)",
+            throw new InvalidRequestException(String.format("Invalid call to function %s, none of its type signatures match (known type signatures: %s)",
                                                             name, toString(candidates)));
 
         if (compatibles.size() > 1)

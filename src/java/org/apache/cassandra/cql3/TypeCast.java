@@ -37,7 +37,7 @@ public class TypeCast implements Term.Raw
             throw new InvalidRequestException(String.format("Cannot cast value %s to type %s", term, type));
 
         if (!testAssignment(keyspace, receiver).isAssignable())
-            throw new InvalidRequestException(String.format("Cannot assign value %s to %s of type %s", this, receiver, receiver.type.asCQL3Type()));
+            throw new InvalidRequestException(String.format("Cannot assign value %s to %s of type %s", this, receiver.name, receiver.type.asCQL3Type()));
 
         return term.prepare(keyspace, receiver);
     }

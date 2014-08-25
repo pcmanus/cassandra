@@ -20,7 +20,6 @@ package org.apache.cassandra.cql3.statements;
 import java.util.List;
 
 import org.apache.cassandra.auth.Permission;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.RequestValidationException;

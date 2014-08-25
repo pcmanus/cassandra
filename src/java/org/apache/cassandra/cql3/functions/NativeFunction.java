@@ -18,7 +18,6 @@
 package org.apache.cassandra.cql3.functions;
 
 import java.util.Arrays;
-import java.util.List;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 
