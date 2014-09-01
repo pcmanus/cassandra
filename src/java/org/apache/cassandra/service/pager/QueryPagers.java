@@ -23,10 +23,7 @@ import java.util.List;
 
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.filter.ColumnCounter;
-import org.apache.cassandra.db.filter.NamesQueryFilter;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
-import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
@@ -37,78 +34,69 @@ public class QueryPagers
 {
     private QueryPagers() {};
 
-    private static int maxQueried(ReadCommand command)
+    private static int maxQueried(SinglePartitionReadCommand command)
     {
-        if (command instanceof SliceByNamesReadCommand)
+        if (command instanceof SinglePartitionNamesCommand)
         {
-            NamesQueryFilter filter = ((SliceByNamesReadCommand)command).filter;
-            return filter.countCQL3Rows() ? 1 : filter.columns.size();
+            // For names query, we actually can't get more that the number of names asked for
+            NamesPartitionFilter filter = ((SinglePartitionNamesCommand)command).partitionFilter();
+            int max = filter.maxQueried(command.limits().countCells());
+            return Math.min(max, command.limits().count());
         }
-        else
-        {
-            SliceQueryFilter filter = ((SliceFromReadCommand)command).filter;
-            return filter.count;
-        }
+
+        return command.limits().count();
     }
 
     public static boolean mayNeedPaging(Pageable command, int pageSize)
     {
         if (command instanceof Pageable.ReadCommands)
         {
-            List<ReadCommand> commands = ((Pageable.ReadCommands)command).commands;
+            List<SinglePartitionReadCommand> commands = ((Pageable.ReadCommands)command).commands;
 
             // Using long on purpose, as we could overflow otherwise
             long maxQueried = 0;
-            for (ReadCommand readCmd : commands)
+            for (SinglePartitionReadCommand readCmd : commands)
                 maxQueried += maxQueried(readCmd);
 
             return maxQueried > pageSize;
         }
-        else if (command instanceof ReadCommand)
+        else if (command instanceof SinglePartitionReadCommand)
         {
-            return maxQueried((ReadCommand)command) > pageSize;
+            return maxQueried((SinglePartitionReadCommand)command) > pageSize;
         }
         else
         {
-            assert command instanceof RangeSliceCommand;
-            RangeSliceCommand rsc = (RangeSliceCommand)command;
-            // We don't support paging for thrift in general because the way thrift RangeSliceCommand count rows
-            // independently of cells makes things harder (see RangeSliceQueryPager). The one case where we do
-            // get a RangeSliceCommand from CQL3 without the countCQL3Rows flag set is for DISTINCT. In that case
-            // however, the underlying sliceQueryFilter count is 1, so that the RSC limit is still a limit on the
-            // number of CQL3 rows returned.
-            assert rsc.countCQL3Rows || (rsc.predicate instanceof SliceQueryFilter && ((SliceQueryFilter)rsc.predicate).count == 1);
-            return rsc.maxResults > pageSize;
+            return ((PartitionRangeReadCommand)command).limits().count() > pageSize;
         }
     }
 
-    private static QueryPager pager(ReadCommand command, ConsistencyLevel consistencyLevel, boolean local, PagingState state)
+    private static QueryPager pager(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel, boolean local, PagingState state)
     {
-        if (command instanceof SliceByNamesReadCommand)
-            return new NamesQueryPager((SliceByNamesReadCommand)command, consistencyLevel, local);
+        if (command instanceof SinglePartitionNamesCommand)
+            return new NamesQueryPager((SinglePartitionNamesCommand)command, consistencyLevel, local);
         else
-            return new SliceQueryPager((SliceFromReadCommand)command, consistencyLevel, local, state);
+            return new SliceQueryPager((SinglePartitionSliceCommand)command, consistencyLevel, local, state);
     }
 
     private static QueryPager pager(Pageable command, ConsistencyLevel consistencyLevel, boolean local, PagingState state)
     {
         if (command instanceof Pageable.ReadCommands)
         {
-            List<ReadCommand> commands = ((Pageable.ReadCommands)command).commands;
+            List<SinglePartitionReadCommand> commands = ((Pageable.ReadCommands)command).commands;
             if (commands.size() == 1)
                 return pager(commands.get(0), consistencyLevel, local, state);
 
             return new MultiPartitionPager(commands, consistencyLevel, local, state);
         }
-        else if (command instanceof ReadCommand)
+        else if (command instanceof SinglePartitionReadCommand)
         {
-            return pager((ReadCommand)command, consistencyLevel, local, state);
+            return pager((SinglePartitionReadCommand)command, consistencyLevel, local, state);
         }
         else
         {
-            assert command instanceof RangeSliceCommand;
-            RangeSliceCommand rangeCommand = (RangeSliceCommand)command;
-            if (rangeCommand.predicate instanceof NamesQueryFilter)
+            assert command instanceof PartitionRangeReadCommand;
+            PartitionRangeReadCommand rangeCommand = (PartitionRangeReadCommand)command;
+            if (rangeCommand.isNamesQuery())
                 return new RangeNamesQueryPager(rangeCommand, consistencyLevel, local, state);
             else
                 return new RangeSliceQueryPager(rangeCommand, consistencyLevel, local, state);
@@ -131,64 +119,27 @@ public class QueryPagers
     }
 
     /**
-     * Convenience method to (locally) page an internal row.
-     * Used to 2ndary index a wide row without dying.
-     */
-    public static Iterator<ColumnFamily> pageRowLocally(final ColumnFamilyStore cfs, ByteBuffer key, final int pageSize)
-    {
-        SliceFromReadCommand command = new SliceFromReadCommand(cfs.metadata.ksName, key, cfs.name, System.currentTimeMillis(), new IdentityQueryFilter());
-        final SliceQueryPager pager = new SliceQueryPager(command, null, true);
-
-        return new Iterator<ColumnFamily>()
-        {
-            // We don't use AbstractIterator because we don't want hasNext() to do an actual query
-            public boolean hasNext()
-            {
-                return !pager.isExhausted();
-            }
-
-            public ColumnFamily next()
-            {
-                try
-                {
-                    List<Row> rows = pager.fetchPage(pageSize);
-                    ColumnFamily cf = rows.isEmpty() ? null : rows.get(0).cf;
-                    return cf == null ? ArrayBackedSortedColumns.factory.create(cfs.metadata) : cf;
-                }
-                catch (Exception e)
-                {
-                    throw new RuntimeException(e);
-                }
-            }
-
-            public void remove()
-            {
-                throw new UnsupportedOperationException();
-            }
-        };
-    }
-
-    /**
      * Convenience method that count (live) cells/rows for a given slice of a row, but page underneath.
      */
-    public static int countPaged(String keyspace,
-                                 String columnFamily,
-                                 ByteBuffer key,
-                                 SliceQueryFilter filter,
-                                 ConsistencyLevel consistencyLevel,
-                                 final int pageSize,
-                                 long now) throws RequestValidationException, RequestExecutionException
-    {
-        SliceFromReadCommand command = new SliceFromReadCommand(keyspace, key, columnFamily, now, filter);
-        final SliceQueryPager pager = new SliceQueryPager(command, consistencyLevel, false);
+    // TODO
+    //public static int countPaged(String keyspace,
+    //                             String columnFamily,
+    //                             ByteBuffer key,
+    //                             SliceQueryFilter filter,
+    //                             ConsistencyLevel consistencyLevel,
+    //                             final int pageSize,
+    //                             long now) throws RequestValidationException, RequestExecutionException
+    //{
+    //    SliceFromReadCommand command = new SliceFromReadCommand(keyspace, key, columnFamily, now, filter);
+    //    final SliceQueryPager pager = new SliceQueryPager(command, consistencyLevel, false);
 
-        ColumnCounter counter = filter.columnCounter(Schema.instance.getCFMetaData(keyspace, columnFamily).comparator, now);
-        while (!pager.isExhausted())
-        {
-            List<Row> next = pager.fetchPage(pageSize);
-            if (!next.isEmpty())
-                counter.countAll(next.get(0).cf);
-        }
-        return counter.live();
-    }
+    //    ColumnCounter counter = filter.columnCounter(Schema.instance.getCFMetaData(keyspace, columnFamily).comparator, now);
+    //    while (!pager.isExhausted())
+    //    {
+    //        List<Row> next = pager.fetchPage(pageSize);
+    //        if (!next.isEmpty())
+    //            counter.countAll(next.get(0).cf);
+    //    }
+    //    return counter.live();
+    //}
 }

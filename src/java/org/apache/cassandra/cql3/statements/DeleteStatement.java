@@ -24,7 +24,9 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.RowUpdate;
+import org.apache.cassandra.db.atoms.RowUpdates;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.Pair;
 
@@ -43,12 +45,12 @@ public class DeleteStatement extends ModificationStatement
         return false;
     }
 
-    public void addUpdateForKey(ColumnFamily cf, ByteBuffer key, Composite prefix, UpdateParameters params)
+    public void addUpdateForKey(PartitionUpdate update, ClusteringPrefix clustering, UpdateParameters params)
     throws InvalidRequestException
     {
         List<Operation> deletions = getOperations();
 
-        if (prefix.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
+        if (clustering.size() < cfm.clusteringColumns().size() && !deletions.isEmpty())
         {
             // In general, we can't delete specific columns if not all clustering columns have been specified.
             // However, if we delete only static colums, it's fine since we won't really use the prefix anyway.
@@ -61,26 +63,27 @@ public class DeleteStatement extends ModificationStatement
         {
             // We delete the slice selected by the prefix.
             // However, for performance reasons, we distinguish 2 cases:
-            //   - It's a full internal row delete
-            //   - It's a full cell name (i.e it's a dense layout and the prefix is full)
-            if (prefix.isEmpty())
+            //   - It's a full internal partition delete
+            //   - It's a cell deletion (i.e it's a dense layout and the clustering is full)
+            if (clustering.size() == 0)
             {
-                // No columns specified, delete the row
-                cf.delete(new DeletionInfo(params.timestamp, params.localDeletionTime));
+                update.deletionInfo().add(params.deletionTime());
             }
-            else if (cfm.comparator.isDense() && prefix.size() == cfm.clusteringColumns().size())
+            else if (cfm.layout().isDense() && clustering.size() == cfm.clusteringColumns().size())
             {
-                cf.addAtom(params.makeTombstone(cfm.comparator.create(prefix, null)));
+                update.add(RowUpdates.create(clustering, Columns.of(cfm.compactValueColumn())).addCell(cfm.compactValueColumn(), params.makeTombstone()));
             }
             else
             {
-                cf.addAtom(params.makeRangeTombstone(prefix.slice()));
+                update.deletionInfo().add(params.makeRangeTombstone(clustering), cfm.comparator);
             }
         }
         else
         {
+            RowUpdate row = RowUpdates.create(clustering, updatedColumns());
             for (Operation op : deletions)
-                op.execute(key, cf, prefix, params);
+                op.execute(update.partitionKey().getKey(), row, params);
+            update.add(row);
         }
     }
 

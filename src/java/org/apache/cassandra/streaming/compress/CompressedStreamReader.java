@@ -76,6 +76,7 @@ public class CompressedStreamReader extends StreamReader
 
         CompressedInputStream cis = new CompressedInputStream(Channels.newInputStream(channel), compressionInfo, inputVersion.hasPostCompressionAdlerChecksums);
         BytesReadTracker in = new BytesReadTracker(new DataInputStream(cis));
+        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata, in, inputVersion);
         try
         {
             for (Pair<Long, Long> section : sections)
@@ -86,7 +87,7 @@ public class CompressedStreamReader extends StreamReader
                 in.reset(0);
                 while (in.getBytesRead() < length)
                 {
-                    writeRow(writer, in, cfs);
+                    writePartition(deserializer, writer, cfs);
                     // when compressed, report total bytes of compressed chunks read since remoteFile.size is the sum of chunks transferred
                     session.progress(desc, ProgressInfo.Direction.IN, cis.getTotalCompressedBytesRead(), totalSize);
                 }

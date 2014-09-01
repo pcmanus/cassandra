@@ -25,83 +25,82 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-class SimpleSliceReader extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
+class SimpleSliceReader //extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
 {
-    private static final Logger logger = LoggerFactory.getLogger(SimpleSliceReader.class);
+    // TODO
+    //private static final Logger logger = LoggerFactory.getLogger(SimpleSliceReader.class);
 
-    private final FileDataInput file;
-    private final boolean needsClosing;
-    private final Composite finishColumn;
-    private final CellNameType comparator;
-    private final ColumnFamily emptyColumnFamily;
-    private final Iterator<OnDiskAtom> atomIterator;
+    //private final FileDataInput file;
+    //private final boolean needsClosing;
+    //private final Composite finishColumn;
+    //private final CellNameType comparator;
+    //private final ColumnFamily emptyColumnFamily;
+    //private final Iterator<OnDiskAtom> atomIterator;
 
-    public SimpleSliceReader(SSTableReader sstable, RowIndexEntry indexEntry, FileDataInput input, Composite finishColumn)
-    {
-        Tracing.trace("Seeking to partition beginning in data file");
-        this.finishColumn = finishColumn;
-        this.comparator = sstable.metadata.comparator;
-        try
-        {
-            if (input == null)
-            {
-                this.file = sstable.getFileDataInput(indexEntry.position);
-                this.needsClosing = true;
-            }
-            else
-            {
-                this.file = input;
-                input.seek(indexEntry.position);
-                this.needsClosing = false;
-            }
+    //public SimpleSliceReader(SSTableReader sstable, RowIndexEntry indexEntry, FileDataInput input, Composite finishColumn)
+    //{
+    //    Tracing.trace("Seeking to partition beginning in data file");
+    //    this.finishColumn = finishColumn;
+    //    this.comparator = sstable.metadata.comparator;
+    //    try
+    //    {
+    //        if (input == null)
+    //        {
+    //            this.file = sstable.getFileDataInput(indexEntry.position);
+    //            this.needsClosing = true;
+    //        }
+    //        else
+    //        {
+    //            this.file = input;
+    //            input.seek(indexEntry.position);
+    //            this.needsClosing = false;
+    //        }
 
-            // Skip key and data size
-            ByteBufferUtil.skipShortLength(file);
+    //        // Skip key and data size
+    //        ByteBufferUtil.skipShortLength(file);
 
-            emptyColumnFamily = ArrayBackedSortedColumns.factory.create(sstable.metadata);
-            emptyColumnFamily.delete(DeletionTime.serializer.deserialize(file));
-            atomIterator = emptyColumnFamily.metadata().getOnDiskIterator(file, sstable.descriptor.version);
-        }
-        catch (IOException e)
-        {
-            sstable.markSuspect();
-            throw new CorruptSSTableException(e, sstable.getFilename());
-        }
-    }
+    //        emptyColumnFamily = ArrayBackedSortedColumns.factory.create(sstable.metadata);
+    //        emptyColumnFamily.delete(DeletionTime.serializer.deserialize(file));
+    //        atomIterator = emptyColumnFamily.metadata().getOnDiskIterator(file, sstable.descriptor.version);
+    //    }
+    //    catch (IOException e)
+    //    {
+    //        sstable.markSuspect();
+    //        throw new CorruptSSTableException(e, sstable.getFilename());
+    //    }
+    //}
 
-    protected OnDiskAtom computeNext()
-    {
-        if (!atomIterator.hasNext())
-            return endOfData();
+    //protected OnDiskAtom computeNext()
+    //{
+    //    if (!atomIterator.hasNext())
+    //        return endOfData();
 
-        OnDiskAtom column = atomIterator.next();
-        if (!finishColumn.isEmpty() && comparator.compare(column.name(), finishColumn) > 0)
-            return endOfData();
+    //    OnDiskAtom column = atomIterator.next();
+    //    if (!finishColumn.isEmpty() && comparator.compare(column.name(), finishColumn) > 0)
+    //        return endOfData();
 
-        return column;
-    }
+    //    return column;
+    //}
 
-    public ColumnFamily getColumnFamily()
-    {
-        return emptyColumnFamily;
-    }
+    //public ColumnFamily getColumnFamily()
+    //{
+    //    return emptyColumnFamily;
+    //}
 
-    public void close() throws IOException
-    {
-        if (needsClosing)
-            file.close();
-    }
+    //public void close() throws IOException
+    //{
+    //    if (needsClosing)
+    //        file.close();
+    //}
 
-    public DecoratedKey getKey()
-    {
-        throw new UnsupportedOperationException();
-    }
+    //public DecoratedKey getKey()
+    //{
+    //    throw new UnsupportedOperationException();
+    //}
 }

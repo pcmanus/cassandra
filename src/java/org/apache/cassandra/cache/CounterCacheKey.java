@@ -21,29 +21,41 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.UUID;
 
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNames;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.utils.*;
 
 public class CounterCacheKey implements CacheKey
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new CounterCacheKey(null, ByteBufferUtil.EMPTY_BYTE_BUFFER, CellNames.simpleDense(ByteBuffer.allocate(1))))
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new CounterCacheKey(null, ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBuffer.allocate(1)))
                                            + ObjectSizes.measure(new UUID(0, 0));
 
     public final UUID cfId;
     public final byte[] partitionKey;
     public final byte[] cellName;
 
-    private CounterCacheKey(UUID cfId, ByteBuffer partitionKey, CellName cellName)
+    public CounterCacheKey(UUID cfId, ByteBuffer partitionKey, ByteBuffer cellName)
     {
         this.cfId = cfId;
         this.partitionKey = ByteBufferUtil.getArray(partitionKey);
-        this.cellName = ByteBufferUtil.getArray(cellName.toByteBuffer());
+        this.cellName = ByteBufferUtil.getArray(cellName);
     }
 
-    public static CounterCacheKey create(UUID cfId, ByteBuffer partitionKey, CellName cellName)
+    public static CounterCacheKey create(UUID cfId, ByteBuffer partitionKey, ClusteringPrefix clustering, ColumnDefinition c)
     {
-        return new CounterCacheKey(cfId, partitionKey, cellName);
+        return new CounterCacheKey(cfId, partitionKey, makeCellName(clustering, c));
+    }
+
+    private static ByteBuffer makeCellName(ClusteringPrefix clustering, ColumnDefinition c)
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    public Pair<ClusteringPrefix, ColumnDefinition> extractColumnPath()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
     public UUID getCFId()

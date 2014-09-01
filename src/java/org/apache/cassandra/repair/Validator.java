@@ -31,7 +31,8 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.compaction.AbstractCompactedRow;
+import org.apache.cassandra.db.atoms.AtomIterator;
+import org.apache.cassandra.db.atoms.AtomIterators;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.ValidationComplete;
 import org.apache.cassandra.utils.FBUtilities;
@@ -119,18 +120,18 @@ public class Validator implements Runnable
      *
      * @param row Row to add hash
      */
-    public void add(AbstractCompactedRow row)
+    public void add(AtomIterator partition)
     {
-        assert desc.range.contains(row.key.getToken()) : row.key.getToken() + " is not contained in " + desc.range;
-        assert lastKey == null || lastKey.compareTo(row.key) < 0
-               : "row " + row.key + " received out of order wrt " + lastKey;
-        lastKey = row.key;
+        assert desc.range.contains(partition.partitionKey().getToken()) : partition.partitionKey().getToken() + " is not contained in " + desc.range;
+        assert lastKey == null || lastKey.compareTo(partition.partitionKey()) < 0
+               : "partition " + partition.partitionKey() + " received out of order wrt " + lastKey;
+        lastKey = partition.partitionKey();
 
         if (range == null)
             range = ranges.next();
 
         // generate new ranges as long as case 1 is true
-        while (!range.contains(row.key.getToken()))
+        while (!range.contains(lastKey.getToken()))
         {
             // add the empty hash, and move to the next range
             range.ensureHashInitialised();
@@ -138,7 +139,7 @@ public class Validator implements Runnable
         }
 
         // case 3 must be true: mix in the hashed row
-        range.addHash(rowHash(row));
+        range.addHash(rowHash(partition));
     }
 
     static class CountingDigest extends MessageDigest
@@ -180,13 +181,13 @@ public class Validator implements Runnable
 
     }
 
-    private MerkleTree.RowHash rowHash(AbstractCompactedRow row)
+    private MerkleTree.RowHash rowHash(AtomIterator partition)
     {
         validated++;
         // MerkleTree uses XOR internally, so we want lots of output bits here
         CountingDigest digest = new CountingDigest(FBUtilities.newMessageDigest("SHA-256"));
-        row.update(digest);
-        return new MerkleTree.RowHash(row.key.getToken(), digest.digest(), digest.count);
+        AtomIterators.digest(partition, digest);
+        return new MerkleTree.RowHash(partition.partitionKey().getToken(), digest.digest(), digest.count);
     }
 
     /**

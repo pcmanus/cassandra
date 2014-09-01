@@ -25,9 +25,6 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.db.ArrayBackedSortedColumns;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -49,7 +46,7 @@ public class PrepareResponse
 
     public PrepareResponse(boolean promised, Commit inProgressCommit, Commit mostRecentCommit)
     {
-        assert inProgressCommit.key == mostRecentCommit.key;
+        assert inProgressCommit.update.partitionKey().equals(mostRecentCommit.update.partitionKey());
         assert inProgressCommit.update.metadata() == mostRecentCommit.update.metadata();
 
         this.promised = promised;
@@ -63,43 +60,46 @@ public class PrepareResponse
         return String.format("PrepareResponse(%s, %s, %s)", promised, mostRecentCommit, inProgressCommit);
     }
 
+    // TODO
     public static class PrepareResponseSerializer implements IVersionedSerializer<PrepareResponse>
     {
         public void serialize(PrepareResponse response, DataOutputPlus out, int version) throws IOException
         {
-            out.writeBoolean(response.promised);
-            ByteBufferUtil.writeWithShortLength(response.inProgressCommit.key, out);
-            UUIDSerializer.serializer.serialize(response.inProgressCommit.ballot, out, version);
-            ColumnFamily.serializer.serialize(response.inProgressCommit.update, out, version);
-            UUIDSerializer.serializer.serialize(response.mostRecentCommit.ballot, out, version);
-            ColumnFamily.serializer.serialize(response.mostRecentCommit.update, out, version);
+            //out.writeBoolean(response.promised);
+            //ByteBufferUtil.writeWithShortLength(response.inProgressCommit.key, out);
+            //UUIDSerializer.serializer.serialize(response.inProgressCommit.ballot, out, version);
+            //ColumnFamily.serializer.serialize(response.inProgressCommit.update, out, version);
+            //UUIDSerializer.serializer.serialize(response.mostRecentCommit.ballot, out, version);
+            //ColumnFamily.serializer.serialize(response.mostRecentCommit.update, out, version);
         }
 
         public PrepareResponse deserialize(DataInput in, int version) throws IOException
         {
-            boolean success = in.readBoolean();
-            ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
-            return new PrepareResponse(success,
-                                       new Commit(key,
-                                                  UUIDSerializer.serializer.deserialize(in, version),
-                                                  ColumnFamily.serializer.deserialize(in,
-                                                                                      ArrayBackedSortedColumns.factory,
-                                                                                      ColumnSerializer.Flag.LOCAL, version)),
-                                       new Commit(key,
-                                                  UUIDSerializer.serializer.deserialize(in, version),
-                                                  ColumnFamily.serializer.deserialize(in,
-                                                                                      ArrayBackedSortedColumns.factory,
-                                                                                      ColumnSerializer.Flag.LOCAL, version)));
+            throw new UnsupportedOperationException();
+            //boolean success = in.readBoolean();
+            //ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
+            //return new PrepareResponse(success,
+            //                           new Commit(key,
+            //                                      UUIDSerializer.serializer.deserialize(in, version),
+            //                                      ColumnFamily.serializer.deserialize(in,
+            //                                                                          ArrayBackedSortedColumns.factory,
+            //                                                                          ColumnSerializer.Flag.LOCAL, version)),
+            //                           new Commit(key,
+            //                                      UUIDSerializer.serializer.deserialize(in, version),
+            //                                      ColumnFamily.serializer.deserialize(in,
+            //                                                                          ArrayBackedSortedColumns.factory,
+            //                                                                          ColumnSerializer.Flag.LOCAL, version)));
         }
 
         public long serializedSize(PrepareResponse response, int version)
         {
-            return 1
-                   + 2 + response.inProgressCommit.key.remaining()
-                   + UUIDSerializer.serializer.serializedSize(response.inProgressCommit.ballot, version)
-                   + ColumnFamily.serializer.serializedSize(response.inProgressCommit.update, version)
-                   + UUIDSerializer.serializer.serializedSize(response.mostRecentCommit.ballot, version)
-                   + ColumnFamily.serializer.serializedSize(response.mostRecentCommit.update, version);
+            throw new UnsupportedOperationException();
+            //return 1
+            //       + 2 + response.inProgressCommit.key.remaining()
+            //       + UUIDSerializer.serializer.serializedSize(response.inProgressCommit.ballot, version)
+            //       + ColumnFamily.serializer.serializedSize(response.inProgressCommit.update, version)
+            //       + UUIDSerializer.serializer.serializedSize(response.mostRecentCommit.ballot, version)
+            //       + ColumnFamily.serializer.serializedSize(response.mostRecentCommit.update, version);
         }
     }
 }

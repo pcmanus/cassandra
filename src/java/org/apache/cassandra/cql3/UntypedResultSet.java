@@ -213,6 +213,12 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
                 data.put(names.get(i).name.toString(), columns.get(i));
         }
 
+        public static Row fromInternalRow(org.apache.cassandra.db.atoms.Row row)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+
         public boolean has(String column)
         {
             // Note that containsKey won't work because we may have null values

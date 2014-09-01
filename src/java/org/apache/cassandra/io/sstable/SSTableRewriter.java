@@ -33,7 +33,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DataTracker;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.RowIndexEntry;
-import org.apache.cassandra.db.compaction.AbstractCompactedRow;
+import org.apache.cassandra.db.atoms.AtomIterator;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.FBUtilities;
@@ -103,42 +103,43 @@ public class SSTableRewriter
         return writer;
     }
 
-    public RowIndexEntry append(AbstractCompactedRow row)
+    public RowIndexEntry append(AtomIterator partition)
     {
         // we do this before appending to ensure we can resetAndTruncate() safely if the append fails
-        maybeReopenEarly(row.key);
-        RowIndexEntry index = writer.append(row);
+        DecoratedKey key = partition.partitionKey();
+        maybeReopenEarly(key);
+        RowIndexEntry index = writer.append(partition);
         if (!isOffline)
         {
             if (index == null)
             {
-                cfs.invalidateCachedRow(row.key);
+                cfs.invalidateCachedPartition(key);
             }
             else
             {
                 boolean save = false;
                 for (SSTableReader reader : rewriting)
                 {
-                    if (reader.getCachedPosition(row.key, false) != null)
+                    if (reader.getCachedPosition(key, false) != null)
                     {
                         save = true;
                         break;
                     }
                 }
                 if (save)
-                    cachedKeys.put(row.key, index);
+                    cachedKeys.put(key, index);
             }
         }
         return index;
     }
 
     // attempts to append the row, if fails resets the writer position
-    public RowIndexEntry tryAppend(AbstractCompactedRow row)
+    public RowIndexEntry tryAppend(AtomIterator partition)
     {
         mark();
         try
         {
-            return append(row);
+            return append(partition);
         }
         catch (Throwable t)
         {

@@ -182,9 +182,9 @@ public class CompactionController implements AutoCloseable
         return min;
     }
 
-    public void invalidateCachedRow(DecoratedKey key)
+    public void invalidateCachedPartition(DecoratedKey key)
     {
-        cfs.invalidateCachedRow(key);
+        cfs.invalidateCachedPartition(key);
     }
 
     public void close()

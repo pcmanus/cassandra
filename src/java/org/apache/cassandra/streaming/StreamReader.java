@@ -24,21 +24,23 @@ import java.io.InputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.UUID;
 
 import com.google.common.base.Throwables;
+import com.google.common.collect.AbstractIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.ning.compress.lzf.LZFInputStream;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Directories;
-import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.sstable.SSTableAtomIterator;
 import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.messages.FileMessageHeader;
@@ -92,11 +94,12 @@ public class StreamReader
         SSTableWriter writer = createWriter(cfs, totalSize, repairedAt);
         DataInputStream dis = new DataInputStream(new LZFInputStream(Channels.newInputStream(channel)));
         BytesReadTracker in = new BytesReadTracker(dis);
+        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata, in, inputVersion);
         try
         {
             while (in.getBytesRead() < totalSize)
             {
-                writeRow(writer, in, cfs);
+                writePartition(deserializer, writer, cfs);
                 // TODO move this to BytesReadTracker
                 session.progress(desc, ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
             }
@@ -150,10 +153,114 @@ public class StreamReader
         return size;
     }
 
-    protected void writeRow(SSTableWriter writer, DataInput in, ColumnFamilyStore cfs) throws IOException
+    protected void writePartition(StreamDeserializer deserializer, SSTableWriter writer, ColumnFamilyStore cfs) throws IOException
     {
-        DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
-        writer.appendFromStream(key, cfs.metadata, in, inputVersion);
-        cfs.invalidateCachedRow(key);
+        DecoratedKey key = deserializer.newPartition();
+        writer.append(deserializer);
+        cfs.invalidateCachedPartition(key);
+    }
+
+    public static class StreamDeserializer extends AbstractIterator<Atom> implements AtomIterator
+    {
+        private final CFMetaData metadata;
+        private final DataInput in;
+        private final Descriptor.Version version;
+
+        private DecoratedKey key;
+        private DeletionTime partitionLevelDeletion;
+        private Iterator<Atom> atomIter;
+        private Row staticRow;
+
+        private Atom first;
+
+        public StreamDeserializer(CFMetaData metadata, DataInput in, Descriptor.Version version)
+        {
+            this.metadata = metadata;
+            this.in = in;
+            this.version = version;
+        }
+
+        public DecoratedKey newPartition() throws IOException
+        {
+            key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+            partitionLevelDeletion = DeletionTime.serializer.deserialize(in);
+            atomIter = new SSTableAtomIterator(in, LegacyLayout.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version);
+
+            first = atomIter.hasNext() ? atomIter.next() : null;
+            if (first.kind() == Atom.Kind.ROW && ((Row)first).clustering() == EmptyClusteringPrefix.STATIC_PREFIX)
+            {
+                staticRow = (Row)first;
+                first = null;
+            }
+            else
+            {
+                staticRow = Rows.EMPTY_STATIC_ROW;
+            }
+            return key;
+        }
+
+        public CFMetaData metadata()
+        {
+            return metadata;
+        }
+
+        public Columns columns()
+        {
+            // We don't know which columns we'll get so assume it can be all of them
+            return metadata.regularColumns();
+        }
+
+        public Columns staticColumns()
+        {
+            return metadata.staticColumns();
+        }
+
+        public boolean isReverseOrder()
+        {
+            return false;
+        }
+
+        public DecoratedKey partitionKey()
+        {
+            return key;
+        }
+
+        public DeletionTime partitionLevelDeletion()
+        {
+            return partitionLevelDeletion;
+        }
+
+        public Row staticRow()
+        {
+            return staticRow;
+        }
+
+        protected Atom computeNext()
+        {
+            if (first != null)
+            {
+                Atom toReturn = first;
+                first = null;
+                return toReturn;
+            }
+
+            if (!atomIter.hasNext())
+                return endOfData();
+
+            Atom atom = atomIter.next();
+            return metadata.isCounter() && atom.kind() == Atom.Kind.ROW
+                 ? maybeMarkLocalToBeCleared((Row)atom)
+                 : atom;
+        }
+
+        private static Row maybeMarkLocalToBeCleared(Row row)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+
+        public void close()
+        {
+        }
     }
 }

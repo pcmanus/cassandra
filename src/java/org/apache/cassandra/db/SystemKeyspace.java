@@ -39,11 +39,10 @@ import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
-import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.compaction.CompactionHistoryTabularData;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -658,26 +657,21 @@ public class SystemKeyspace
 
     public static boolean isIndexBuilt(String keyspaceName, String indexName)
     {
-        ColumnFamilyStore cfs = Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(INDEX_CF);
-        QueryFilter filter = QueryFilter.getNamesFilter(decorate(ByteBufferUtil.bytes(keyspaceName)),
-                                                        INDEX_CF,
-                                                        FBUtilities.singleton(cfs.getComparator().makeCellName(indexName), cfs.getComparator()),
-                                                        System.currentTimeMillis());
-        return ColumnFamilyStore.removeDeleted(cfs.getColumnFamily(filter), Integer.MAX_VALUE) != null;
+        String req = "SELECT index_name FROM system.%s WHERE table_name=? AND index_name=?";
+        UntypedResultSet result = executeInternal(String.format(req, INDEX_CF), keyspaceName, indexName);
+        return !result.isEmpty();
     }
 
     public static void setIndexBuilt(String keyspaceName, String indexName)
     {
-        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(Keyspace.SYSTEM_KS, INDEX_CF);
-        cf.addColumn(new BufferCell(cf.getComparator().makeCellName(indexName), ByteBufferUtil.EMPTY_BYTE_BUFFER, FBUtilities.timestampMicros()));
-        new Mutation(Keyspace.SYSTEM_KS, ByteBufferUtil.bytes(keyspaceName), cf).apply();
+        String req = "INSERT INTO system.%s (table_name, index_name) VALUES (?, ?)";
+        executeInternal(String.format(req, INDEX_CF), keyspaceName, indexName);
     }
 
     public static void setIndexRemoved(String keyspaceName, String indexName)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, ByteBufferUtil.bytes(keyspaceName));
-        mutation.delete(INDEX_CF, CFMetaData.IndexCf.comparator.makeCellName(indexName), FBUtilities.timestampMicros());
-        mutation.apply();
+        String req = "DELETE FROM system.%s WHERE table_name = ? AND index_name = ?";
+        executeInternal(String.format(req, INDEX_CF), keyspaceName, indexName);
     }
 
     /**
@@ -718,29 +712,14 @@ public class SystemKeyspace
         return Keyspace.open(Keyspace.SYSTEM_KS).getColumnFamilyStore(cfName);
     }
 
-    public static List<Row> serializedSchema()
+    public static Map<String, DataIterator> serializedSchema()
     {
-        List<Row> schema = new ArrayList<>();
+        Map<String, DataIterator> schema = new HashMap<>(allSchemaCfs.size());
 
         for (String cf : allSchemaCfs)
-            schema.addAll(serializedSchema(cf));
+            schema.put(cf, getSchema(cf));
 
         return schema;
-    }
-
-    /**
-     * @param schemaCfName The name of the ColumnFamily responsible for part of the schema (keyspace, ColumnFamily, columns)
-     * @return low-level schema representation (each row represents individual Keyspace or ColumnFamily)
-     */
-    public static List<Row> serializedSchema(String schemaCfName)
-    {
-        Token minToken = StorageService.getPartitioner().getMinimumToken();
-
-        return schemaCFS(schemaCfName).getRangeSlice(new Range<RowPosition>(minToken.minKeyBound(), minToken.maxKeyBound()),
-                                                     null,
-                                                     new IdentityQueryFilter(),
-                                                     Integer.MAX_VALUE,
-                                                     System.currentTimeMillis());
     }
 
     public static Collection<Mutation> serializeSchema()
@@ -755,41 +734,46 @@ public class SystemKeyspace
 
     private static void serializeSchema(Map<DecoratedKey, Mutation> mutationMap, String schemaCfName)
     {
-        for (Row schemaRow : serializedSchema(schemaCfName))
+        try (DataIterator iter = getSchema(schemaCfName))
         {
-            if (Schema.ignoredSchemaRow(schemaRow))
-                continue;
-
-            Mutation mutation = mutationMap.get(schemaRow.key);
-            if (mutation == null)
+            while (iter.hasNext())
             {
-                mutation = new Mutation(Keyspace.SYSTEM_KS, schemaRow.key.getKey());
-                mutationMap.put(schemaRow.key, mutation);
-            }
+                RowIterator partition = iter.next();
+                if (Schema.ignoredSchemaPartition(partition))
+                    continue;
 
-            mutation.add(schemaRow.cf);
+                DecoratedKey key = partition.partitionKey();
+                Mutation mutation = mutationMap.get(key);
+                if (mutation == null)
+                {
+                    mutation = new Mutation(Keyspace.SYSTEM_KS, key);
+                    mutationMap.put(key, mutation);
+                }
+
+                mutation.add(RowIterators.toUpdate(partition));
+            }
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
         }
     }
 
-    public static Map<DecoratedKey, ColumnFamily> getSchema(String cfName)
+    public static DataIterator getSchema(String cfName)
     {
-        Map<DecoratedKey, ColumnFamily> schema = new HashMap<>();
-
-        for (Row schemaEntity : SystemKeyspace.serializedSchema(cfName))
-            schema.put(schemaEntity.key, schemaEntity.cf);
-
-        return schema;
+        ColumnFamilyStore cfs = schemaCFS(cfName);
+        int nowInSec = FBUtilities.nowInSeconds();
+        ReadCommand cmd = ReadCommands.allDataRead(cfs.metadata, nowInSec);
+        return PartitionIterators.asDataIterator(cmd.executeLocally(cfs), nowInSec);
     }
 
-    public static Map<DecoratedKey, ColumnFamily> getSchema(String schemaCfName, Set<String> keyspaces)
+    public static Map<DecoratedKey, RowIterator> getSchema(String schemaCfName, Set<String> keyspaces)
     {
-        Map<DecoratedKey, ColumnFamily> schema = new HashMap<>();
-
+        Map<DecoratedKey, RowIterator> schema = new HashMap<>(keyspaces.size());
         for (String keyspace : keyspaces)
         {
-            Row schemaEntity = readSchemaRow(schemaCfName, keyspace);
-            if (schemaEntity.cf != null)
-                schema.put(schemaEntity.key, schemaEntity.cf);
+            RowIterator iter = readSchema(schemaCfName, keyspace);
+            schema.put(iter.partitionKey(), iter);
         }
 
         return schema;
@@ -800,6 +784,11 @@ public class SystemKeyspace
         return AsciiType.instance.fromString(ksName);
     }
 
+    public static DecoratedKey getSchemaKSDecoratedKey(String ksName)
+    {
+        return decorate(getSchemaKSKey(ksName));
+    }
+
     /**
      * Fetches a subset of schema (table data, columns metadata or triggers) for the keyspace.
      *
@@ -807,14 +796,17 @@ public class SystemKeyspace
      * @param ksName the keyspace of the tables we are interested in
      * @return a Row containing the schema data of a particular type for the keyspace
      */
-    public static Row readSchemaRow(String schemaCfName, String ksName)
+    public static RowIterator readSchema(String schemaCfName, String ksName)
     {
-        DecoratedKey key = StorageService.getPartitioner().decorateKey(getSchemaKSKey(ksName));
+        return readSchema(schemaCfName, StorageService.getPartitioner().decorateKey(getSchemaKSKey(ksName)));
+    }
 
-        ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(schemaCfName);
-        ColumnFamily result = schemaCFS.getColumnFamily(QueryFilter.getIdentityFilter(key, schemaCfName, System.currentTimeMillis()));
-
-        return new Row(key, result);
+    public static RowIterator readSchema(String schemaCfName, DecoratedKey ksKey)
+    {
+        ColumnFamilyStore schemaCFS = schemaCFS(schemaCfName);
+        int nowInSec = FBUtilities.nowInSeconds();
+        AtomIterator iter = ReadCommands.fullPartitionRead(schemaCFS.metadata, ksKey, nowInSec).queryMemtableAndDisk(schemaCFS);
+        return AtomIterators.asRowIterator(iter, nowInSec);
     }
 
     /**
@@ -825,50 +817,48 @@ public class SystemKeyspace
      * @param cfName the table we are interested in
      * @return a Row containing the schema data of a particular type for the table
      */
-    public static Row readSchemaRow(String schemaCfName, String ksName, String cfName)
+    public static RowIterator readSchema(String schemaCfName, String ksName, String cfName)
     {
         DecoratedKey key = StorageService.getPartitioner().decorateKey(getSchemaKSKey(ksName));
         ColumnFamilyStore schemaCFS = SystemKeyspace.schemaCFS(schemaCfName);
-        Composite prefix = schemaCFS.getComparator().make(cfName);
-        ColumnFamily cf = schemaCFS.getColumnFamily(key,
-                                                    prefix,
-                                                    prefix.end(),
-                                                    false,
-                                                    Integer.MAX_VALUE,
-                                                    System.currentTimeMillis());
-        return new Row(key, cf);
+
+        ClusteringComparator comparator = schemaCFS.metadata.comparator;
+        Slices slices = Slices.make(comparator, comparator.make(cfName));
+        int nowInSec = FBUtilities.nowInSeconds();
+        AtomIterator iter = ReadCommands.fullSlicesRead(schemaCFS.metadata, key, slices, nowInSec).queryMemtableAndDisk(schemaCFS);
+        return AtomIterators.asRowIterator(iter, nowInSec);
     }
 
-    public static PaxosState loadPaxosState(ByteBuffer key, CFMetaData metadata)
+    public static PaxosState loadPaxosState(DecoratedKey key, CFMetaData metadata)
     {
         String req = "SELECT * FROM system.%s WHERE row_key = ? AND cf_id = ?";
-        UntypedResultSet results = executeInternal(String.format(req, PAXOS_CF), key, metadata.cfId);
+        UntypedResultSet results = executeInternal(String.format(req, PAXOS_CF), key.getKey(), metadata.cfId);
         if (results.isEmpty())
             return new PaxosState(key, metadata);
         UntypedResultSet.Row row = results.one();
         Commit promised = row.has("in_progress_ballot")
-                        ? new Commit(key, row.getUUID("in_progress_ballot"), ArrayBackedSortedColumns.factory.create(metadata))
+                        ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key))
                         : Commit.emptyCommit(key, metadata);
         // either we have both a recently accepted ballot and update or we have neither
         Commit accepted = row.has("proposal")
-                        ? new Commit(key, row.getUUID("proposal_ballot"), ColumnFamily.fromBytes(row.getBytes("proposal")))
+                        ? new Commit(row.getUUID("proposal_ballot"), PartitionUpdate.fromBytes(row.getBytes("proposal")))
                         : Commit.emptyCommit(key, metadata);
         // either most_recent_commit and most_recent_commit_at will both be set, or neither
         Commit mostRecent = row.has("most_recent_commit")
-                          ? new Commit(key, row.getUUID("most_recent_commit_at"), ColumnFamily.fromBytes(row.getBytes("most_recent_commit")))
+                          ? new Commit(row.getUUID("most_recent_commit_at"), PartitionUpdate.fromBytes(row.getBytes("most_recent_commit")))
                           : Commit.emptyCommit(key, metadata);
         return new PaxosState(promised, accepted, mostRecent);
     }
 
-    public static Commit loadPaxosPromise(ByteBuffer key, CFMetaData metadata)
+    public static Commit loadPaxosPromise(DecoratedKey key, CFMetaData metadata)
     {
         String req = "SELECT in_progress_ballot FROM system.%s WHERE row_key = ? AND cf_id = ?";
-        UntypedResultSet results = executeInternal(String.format(req, PAXOS_CF), key, metadata.cfId);
+        UntypedResultSet results = executeInternal(String.format(req, PAXOS_CF), key.getKey(), metadata.cfId);
         if (results.isEmpty())
             return Commit.emptyCommit(key, metadata);
         UntypedResultSet.Row row = results.one();
         Commit promised = row.has("in_progress_ballot")
-                ? new Commit(key, row.getUUID("in_progress_ballot"), ArrayBackedSortedColumns.factory.create(metadata))
+                ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key))
                 : Commit.emptyCommit(key, metadata);
         return promised;
     }
@@ -878,21 +868,21 @@ public class SystemKeyspace
         String req = "UPDATE system.%s USING TIMESTAMP ? AND TTL ? SET in_progress_ballot = ? WHERE row_key = ? AND cf_id = ?";
         executeInternal(String.format(req, PAXOS_CF),
                         UUIDGen.microsTimestamp(promise.ballot),
-                        paxosTtl(promise.update.metadata),
+                        paxosTtl(promise.update.metadata()),
                         promise.ballot,
-                        promise.key,
-                        promise.update.id());
+                        promise.update.partitionKey(),
+                        promise.update.metadata().cfId);
     }
 
     public static void savePaxosProposal(Commit proposal)
     {
         executeInternal(String.format("UPDATE system.%s USING TIMESTAMP ? AND TTL ? SET proposal_ballot = ?, proposal = ? WHERE row_key = ? AND cf_id = ?", PAXOS_CF),
                         UUIDGen.microsTimestamp(proposal.ballot),
-                        paxosTtl(proposal.update.metadata),
+                        paxosTtl(proposal.update.metadata()),
                         proposal.ballot,
-                        proposal.update.toBytes(),
-                        proposal.key,
-                        proposal.update.id());
+                        PartitionUpdate.toBytes(proposal.update),
+                        proposal.update.partitionKey().getKey(),
+                        proposal.update.metadata().cfId);
     }
 
     private static int paxosTtl(CFMetaData metadata)
@@ -908,11 +898,11 @@ public class SystemKeyspace
         String cql = "UPDATE system.%s USING TIMESTAMP ? AND TTL ? SET proposal_ballot = null, proposal = null, most_recent_commit_at = ?, most_recent_commit = ? WHERE row_key = ? AND cf_id = ?";
         executeInternal(String.format(cql, PAXOS_CF),
                         UUIDGen.microsTimestamp(commit.ballot),
-                        paxosTtl(commit.update.metadata),
+                        paxosTtl(commit.update.metadata()),
                         commit.ballot,
-                        commit.update.toBytes(),
-                        commit.key,
-                        commit.update.id());
+                        PartitionUpdate.toBytes(commit.update),
+                        commit.update.partitionKey().getKey(),
+                        commit.update.metadata().cfId);
     }
 
     /**

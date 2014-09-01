@@ -39,7 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.db.atoms.AtomIterator;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -304,7 +304,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
 
     // Lazily creates SSTableBoundedScanner for sstable that are assumed to be from the
     // same level (e.g. non overlapping) - see #4142
-    private static class LeveledScanner extends AbstractIterator<OnDiskAtomIterator> implements ICompactionScanner
+    private static class LeveledScanner extends AbstractIterator<AtomIterator> implements ICompactionScanner
     {
         private final Range<Token> range;
         private final List<SSTableReader> sstables;
@@ -352,7 +352,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
             return filtered;
         }
 
-        protected OnDiskAtomIterator computeNext()
+        protected AtomIterator computeNext()
         {
             if (currentScanner == null)
                 return endOfData();

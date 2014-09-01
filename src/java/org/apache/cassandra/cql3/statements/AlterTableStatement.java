@@ -85,12 +85,12 @@ public class AlterTableStatement extends SchemaAlteringStatement
         switch (oType)
         {
             case ADD:
-                if (cfm.comparator.isDense())
-                    throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");
+                if (cfm.layout().isDense())
+                    throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table that has some clustering columns");
 
                 if (isStatic)
                 {
-                    if (!cfm.comparator.isCompound())
+                    if (!cfm.layout().isCompound())
                         throw new InvalidRequestException("Static columns are not allowed in COMPACT STORAGE tables");
                     if (cfm.clusteringColumns().isEmpty())
                         throw new InvalidRequestException("Static columns are only useful (and thus allowed) if the table has at least one clustering column");
@@ -115,27 +115,22 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 AbstractType<?> type = validator.getType();
                 if (type instanceof CollectionType)
                 {
-                    if (!cfm.comparator.supportCollections())
-                        throw new InvalidRequestException("Cannot use collection types with non-composite PRIMARY KEY");
+                    if (!cfm.layout().isCompound())
+                        throw new InvalidRequestException("Cannot use collection types in COMPACT STORAGE tables");
                     if (cfm.isSuper())
                         throw new InvalidRequestException("Cannot use collection types with Super column family");
-
 
                     // If there used to be a collection column with the same name (that has been dropped), it will
                     // still be appear in the ColumnToCollectionType because or reasons explained on #6276. The same
                     // reason mean that we can't allow adding a new collection with that name (see the ticket for details).
-                    if (cfm.comparator.hasCollections())
+                    if (cfm.droppedCollections().contains(columnName))
                     {
-                        CollectionType previous = cfm.comparator.collectionType() == null ? null : cfm.comparator.collectionType().defined.get(columnName.bytes);
-                        if (previous != null && !type.isCompatibleWith(previous))
-                            throw new InvalidRequestException(String.format("Cannot add a collection with the name %s " +
-                                        "because a collection with the same name and a different type has already been used in the past", columnName));
+                        throw new InvalidRequestException(String.format("Cannot add a collection with the name %s " +
+                                    "because a collection with the same name and a different type has already been used in the past", columnName));
                     }
-
-                    cfm.comparator = cfm.comparator.addOrUpdateCollection(columnName, (CollectionType)type);
                 }
 
-                Integer componentIndex = cfm.comparator.isCompound() ? cfm.comparator.clusteringPrefixSize() : null;
+                Integer componentIndex = cfm.layout().isCompound() ? cfm.comparator.size() : null;
                 cfm.addColumnDefinition(isStatic
                                         ? ColumnDefinition.staticDef(cfm, columnName.bytes, type, componentIndex)
                                         : ColumnDefinition.regularDef(cfm, columnName.bytes, type, componentIndex));
@@ -208,14 +203,6 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                                                            columnName,
                                                                            def.type.asCQL3Type(),
                                                                            validator));
-
-                        // For collections, if we alter the type, we need to update the comparator too since it includes
-                        // the type too (note that isValueCompatibleWith above has validated that the need type don't really
-                        // change the underlying sorting order, but we still don't want to have a discrepancy between the type
-                        // in the comparator and the one in the ColumnDefinition as that would be dodgy).
-                        if (validator.getType() instanceof CollectionType)
-                            cfm.comparator = cfm.comparator.addOrUpdateCollection(def.name, (CollectionType)validator.getType());
-
                         break;
                 }
                 // In any case, we update the column definition

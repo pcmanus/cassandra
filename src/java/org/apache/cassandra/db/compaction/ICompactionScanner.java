@@ -19,14 +19,13 @@
 
 package org.apache.cassandra.db.compaction;
 
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
-import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.db.partitions.PartitionIterator;
 
 /**
  * An ICompactionScanner is an abstraction allowing multiple SSTableScanners to be
  * chained together under the hood.  See LeveledCompactionStrategy.getScanners.
  */
-public interface ICompactionScanner extends CloseableIterator<OnDiskAtomIterator>
+public interface ICompactionScanner extends PartitionIterator
 {
     public long getLengthInBytes();
     public long getCurrentPosition();

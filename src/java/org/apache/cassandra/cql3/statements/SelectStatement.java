@@ -18,6 +18,7 @@
 package org.apache.cassandra.cql3.statements;
 
 import java.nio.ByteBuffer;
+import java.io.IOException;
 import java.util.*;
 
 import com.google.common.base.Joiner;
@@ -31,13 +32,13 @@ import org.github.jamm.MemoryMeter;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.cql3.*;
-import org.apache.cassandra.db.composites.*;
-import org.apache.cassandra.db.composites.Composite.EOC;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.dht.*;
@@ -54,6 +55,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.cassandra.db.ClusteringPrefix.EOC;
 
 /**
  * Encapsulates a completely parsed SELECT query, including the target
@@ -83,7 +86,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     // All restricted columns not covered by the key or index filter
     private final Set<ColumnDefinition> restrictedColumns = new HashSet<ColumnDefinition>();
-    private Restriction.Slice sliceRestriction;
 
     private boolean isReversed;
     private boolean onToken;
@@ -96,16 +98,12 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private boolean selectsStaticColumns;
     private boolean selectsOnlyStaticColumns;
 
+    private final Columns selectedColumns;
+    private final Columns selectedStaticColumns;
+
+
     // Used by forSelection below
     private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier, Boolean>emptyMap(), false, false);
-
-    private static final Predicate<ColumnDefinition> isStaticFilter = new Predicate<ColumnDefinition>()
-    {
-        public boolean apply(ColumnDefinition def)
-        {
-            return def.isStatic();
-        }
-    };
 
     public SelectStatement(CFMetaData cfm, int boundTerms, Parameters parameters, Selection selection, Term limit)
     {
@@ -118,32 +116,43 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         this.limit = limit;
 
         // Now gather a few info on whether we should bother with static columns or not for this statement
-        initStaticColumnsInfo();
+        Columns.Builder builder = initColumnsInfo();
+        this.selectedColumns = builder.regularColumns();
+        this.selectedStaticColumns = builder.staticColumns();
     }
 
-    private void initStaticColumnsInfo()
+    private Columns.Builder initColumnsInfo()
     {
-        if (!cfm.hasStaticColumns())
-            return;
-
         // If it's a wildcard, we do select static but not only them
         if (selection.isWildcard())
         {
             selectsStaticColumns = true;
-            return;
+            return Columns.builder().addAll(cfm.regularAndStaticColumns());
         }
 
         // Otherwise, check the selected columns
-        selectsStaticColumns = !Iterables.isEmpty(Iterables.filter(selection.getColumns(), isStaticFilter));
+        selectsStaticColumns = false;
         selectsOnlyStaticColumns = true;
+        Columns.Builder builder = Columns.builder();
         for (ColumnDefinition def : selection.getColumns())
         {
-            if (def.kind != ColumnDefinition.Kind.PARTITION_KEY && def.kind != ColumnDefinition.Kind.STATIC)
+            switch (def.kind)
             {
-                selectsOnlyStaticColumns = false;
-                break;
+                case CLUSTERING_COLUMN:
+                    selectsOnlyStaticColumns = false;
+                    break;
+                case STATIC:
+                    selectsStaticColumns = true;
+                    builder.add(def);
+                    break;
+                case REGULAR:
+                case COMPACT_VALUE:
+                    selectsOnlyStaticColumns = false;
+                    builder.add(def);
+                    break;
             }
         }
+        return builder;
     }
 
     // Creates a simple select based on the given selection.
@@ -169,7 +178,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
              + meter.measureDeep(columnRestrictions)
              + meter.measureDeep(metadataRestrictions)
              + meter.measureDeep(restrictedColumns)
-             + (sliceRestriction == null ? 0 : meter.measureDeep(sliceRestriction))
              + (orderingIndexes == null ? 0 : meter.measureDeep(orderingIndexes));
     }
 
@@ -197,8 +205,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         cl.validateForRead(keyspace());
 
         int limit = getLimit(options);
-        long now = System.currentTimeMillis();
-        Pageable command = getPageableCommand(options, limit, now);
+        int nowInSec = (int)(System.currentTimeMillis()/1000);
+        Pageable command = getPageableCommand(options, limit, nowInSec);
 
         int pageSize = options.getPageSize();
 
@@ -210,20 +218,20 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         if (pageSize <= 0 || command == null || !QueryPagers.mayNeedPaging(command, pageSize))
         {
-            return execute(command, options, limit, now);
+            return execute(command, options, limit, nowInSec);
         }
 
         QueryPager pager = QueryPagers.pager(command, cl, options.getPagingState());
         if (selection.isAggregate())
-            return pageAggregateQuery(pager, options, pageSize, now);
+            return pageAggregateQuery(pager, options, pageSize, nowInSec);
 
         // We can't properly do post-query ordering if we page (see #6722)
         if (needsPostQueryOrdering())
             throw new InvalidRequestException("Cannot page queries with both ORDER BY and a IN restriction on the partition key; you must either remove the "
                                             + "ORDER BY or the IN and sort client side, or disable paging for this query");
 
-        List<Row> page = pager.fetchPage(pageSize);
-        ResultMessage.Rows msg = processResults(page, options, limit, now);
+        DataIterator page = pager.fetchPage(pageSize);
+        ResultMessage.Rows msg = processResults(page, options, limit, nowInSec);
 
         if (!pager.isExhausted())
             msg.result.metadata.setHasMorePages(pager.state());
@@ -231,89 +239,90 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return msg;
     }
 
-    private Pageable getPageableCommand(QueryOptions options, int limit, long now) throws RequestValidationException
+    private Pageable getPageableCommand(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
     {
-        int limitForQuery = updateLimitForQuery(limit);
         if (isKeyRange || usesSecondaryIndexing)
-            return getRangeCommand(options, limitForQuery, now);
+            return getRangeCommand(options, limit, nowInSec);
 
-        List<ReadCommand> commands = getSliceCommands(options, limitForQuery, now);
+        List<SinglePartitionReadCommand> commands = getSliceCommands(options, limit, nowInSec);
         return commands == null ? null : new Pageable.ReadCommands(commands);
     }
 
     public Pageable getPageableCommand(QueryOptions options) throws RequestValidationException
     {
-        return getPageableCommand(options, getLimit(options), System.currentTimeMillis());
+        return getPageableCommand(options, getLimit(options), (int)(System.currentTimeMillis() / 1000));
     }
 
-    private ResultMessage.Rows execute(Pageable command, QueryOptions options, int limit, long now) throws RequestValidationException, RequestExecutionException
+    private ResultMessage.Rows execute(Pageable command, QueryOptions options, int limit, int nowInSec) throws RequestValidationException, RequestExecutionException
     {
-        List<Row> rows;
+        DataIterator data;
         if (command == null)
         {
-            rows = Collections.<Row>emptyList();
+            data = DataIterators.EMPTY;
         }
         else
         {
-            rows = command instanceof Pageable.ReadCommands
+            data = command instanceof Pageable.ReadCommands
                  ? StorageProxy.read(((Pageable.ReadCommands)command).commands, options.getConsistency())
-                 : StorageProxy.getRangeSlice((RangeSliceCommand)command, options.getConsistency());
+                 : StorageProxy.getRangeSlice((PartitionRangeReadCommand)command, options.getConsistency());
         }
 
-        return processResults(rows, options, limit, now);
+        return processResults(data, options, limit, nowInSec);
     }
 
-    private ResultMessage.Rows pageAggregateQuery(QueryPager pager, QueryOptions options, int pageSize, long now)
-            throws RequestValidationException, RequestExecutionException
+    private ResultMessage.Rows pageAggregateQuery(QueryPager pager, QueryOptions options, int pageSize, int nowInSec)
+    throws RequestValidationException, RequestExecutionException
     {
-        Selection.ResultSetBuilder result = selection.resultSetBuilder(now);
+        Selection.ResultSetBuilder result = selection.resultSetBuilder(nowInSec);
         while (!pager.isExhausted())
         {
-            for (org.apache.cassandra.db.Row row : pager.fetchPage(pageSize))
+            try (DataIterator iter = pager.fetchPage(pageSize))
             {
-                // Not columns match the query, skip
-                if (row.cf == null)
-                    continue;
-
-                processColumnFamily(row.key.getKey(), row.cf, options, now, result);
+                while (iter.hasNext())
+                    processPartition(iter.next(), options, nowInSec, result);
+            }
+            catch (IOException e)
+            {
+                // We shouldn't get one up there
+                throw new RuntimeException(e);
             }
         }
         return new ResultMessage.Rows(result.build());
     }
 
-    public ResultMessage.Rows processResults(List<Row> rows, QueryOptions options, int limit, long now) throws RequestValidationException
+    public ResultMessage.Rows processResults(DataIterator partitions, QueryOptions options, int limit, int nowInSec) throws RequestValidationException
     {
-        ResultSet rset = process(rows, options, limit, now);
+        ResultSet rset = process(partitions, options, limit, nowInSec);
         return new ResultMessage.Rows(rset);
     }
 
-    static List<Row> readLocally(String keyspaceName, List<ReadCommand> cmds)
+    static DataIterator readLocally(List<SinglePartitionReadCommand> cmds, ColumnFamilyStore cfs, int nowInSec)
     {
-        Keyspace keyspace = Keyspace.open(keyspaceName);
-        List<Row> rows = new ArrayList<Row>(cmds.size());
+        List<DataIterator> partitions = new ArrayList<>(cmds.size());
         for (ReadCommand cmd : cmds)
-            rows.add(cmd.getRow(keyspace));
-        return rows;
+            partitions.add(PartitionIterators.asDataIterator(cmd.executeLocally(cfs), nowInSec));
+        return DataIterators.concat(partitions);
     }
 
     public ResultMessage.Rows executeInternal(QueryState state, QueryOptions options) throws RequestExecutionException, RequestValidationException
     {
         int limit = getLimit(options);
-        long now = System.currentTimeMillis();
-        Pageable command = getPageableCommand(options, limit, now);
-        List<Row> rows = command == null
-                       ? Collections.<Row>emptyList()
-                       : (command instanceof Pageable.ReadCommands
-                          ? readLocally(keyspace(), ((Pageable.ReadCommands)command).commands)
-                          : ((RangeSliceCommand)command).executeLocally());
+        int nowInSec = (int)(System.currentTimeMillis() / 1000);
+        Pageable command = getPageableCommand(options, limit, nowInSec);
+        ColumnFamilyStore cfs = Keyspace.openAndGetStore(cfm);
+        DataIterator data = command == null
+                          ? DataIterators.EMPTY
+                          : (command instanceof Pageable.ReadCommands
+                            ? readLocally(((Pageable.ReadCommands)command).commands, cfs, nowInSec)
+                            : PartitionIterators.asDataIterator(((PartitionRangeReadCommand)command).executeLocally(cfs), nowInSec));
 
-        return processResults(rows, options, limit, now);
+        return processResults(data, options, limit, nowInSec);
     }
 
-    public ResultSet process(List<Row> rows) throws InvalidRequestException
+    public ResultSet process(DataIterator partitions) throws InvalidRequestException
     {
         QueryOptions options = QueryOptions.DEFAULT;
-        return process(rows, options, getLimit(options), System.currentTimeMillis());
+        return process(partitions, options, getLimit(options), (int)(System.currentTimeMillis() / 1000));
     }
 
     public String keyspace()
@@ -326,15 +335,21 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return cfm.cfName;
     }
 
-    private List<ReadCommand> getSliceCommands(QueryOptions options, int limit, long now) throws RequestValidationException
+    public DataLimits getLimits()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    private List<SinglePartitionReadCommand> getSliceCommands(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
     {
         Collection<ByteBuffer> keys = getKeys(options);
         if (keys.isEmpty()) // in case of IN () for (the last column of) the partition key.
             return null;
 
-        List<ReadCommand> commands = new ArrayList<>(keys.size());
+        List<SinglePartitionReadCommand> commands = new ArrayList<>(keys.size());
 
-        IDiskAtomFilter filter = makeFilter(options, limit);
+        PartitionFilter filter = makeFilter(options);
         if (filter == null)
             return null;
 
@@ -343,28 +358,26 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         for (ByteBuffer key : keys)
         {
             QueryProcessor.validateKey(key);
-            // We should not share the slice filter amongst the commands (hence the cloneShallow), due to
-            // SliceQueryFilter not being immutable due to its columnCounter used by the lastCounted() method
-            // (this is fairly ugly and we should change that but that's probably not a tiny refactor to do that cleanly)
-            commands.add(ReadCommand.create(keyspace(), ByteBufferUtil.clone(key), columnFamily(), now, filter.cloneShallow()));
+            commands.add(ReadCommands.create(cfm, ByteBufferUtil.clone(key), filter, getLimits(), nowInSec));
         }
 
         return commands;
     }
 
-    private RangeSliceCommand getRangeCommand(QueryOptions options, int limit, long now) throws RequestValidationException
+    private PartitionRangeReadCommand getRangeCommand(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
     {
-        IDiskAtomFilter filter = makeFilter(options, limit);
-        if (filter == null)
+        PartitionFilter partitionFilter = makeFilter(options);
+        if (partitionFilter == null)
             return null;
 
-        List<IndexExpression> expressions = getValidatedIndexExpressions(options);
-        // The LIMIT provided by the user is the number of CQL row he wants returned.
-        // We want to have getRangeSlice to count the number of columns, not the number of keys.
         AbstractBounds<RowPosition> keyBounds = getKeyBounds(options);
-        return keyBounds == null
-             ? null
-             : new RangeSliceCommand(keyspace(), columnFamily(), now,  filter, keyBounds, expressions, limit, !parameters.isDistinct, false);
+        if (keyBounds == null)
+            return null;
+
+        ColumnFilter columnFilter = getValidatedIndexExpressions(options);
+        DataLimits limits = DataLimits.cqlLimits(limit, parameters.isDistinct);
+
+        return new PartitionRangeReadCommand(cfm, nowInSec, columnFilter, limits, new DataRange(keyBounds, partitionFilter));
     }
 
     private AbstractBounds<RowPosition> getKeyBounds(QueryOptions options) throws InvalidRequestException
@@ -424,126 +437,65 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         }
     }
 
-    private ColumnSlice makeStaticSlice()
+    private boolean isAlwaysEmpty(ClusteringPrefix start, ClusteringPrefix end)
     {
-        // Note: we could use staticPrefix.start() for the start bound, but EMPTY gives us the
-        // same effect while saving a few CPU cycles.
-        return isReversed
-             ? new ColumnSlice(cfm.comparator.staticPrefix().end(), Composites.EMPTY)
-             : new ColumnSlice(Composites.EMPTY, cfm.comparator.staticPrefix().end());
+        return cfm.comparator.compare(start, end) > 0;
     }
 
-    private IDiskAtomFilter makeFilter(QueryOptions options, int limit)
+    private PartitionFilter makeFilter(QueryOptions options)
     throws InvalidRequestException
     {
-        int toGroup = cfm.comparator.isDense() ? -1 : cfm.clusteringColumns().size();
-        if (parameters.isDistinct)
+        if (isColumnRange())
         {
-            // For distinct, we only care about fetching the beginning of each partition. If we don't have
-            // static columns, we in fact only care about the first cell, so we query only that (we don't "group").
-            // If we do have static columns, we do need to fetch the first full group (to have the static columns values).
-            return new SliceQueryFilter(ColumnSlice.ALL_COLUMNS_ARRAY, false, 1, selectsStaticColumns ? toGroup : -1);
-        }
-        else if (isColumnRange())
-        {
-            List<Composite> startBounds = getRequestedBound(Bound.START, options);
-            List<Composite> endBounds = getRequestedBound(Bound.END, options);
-            assert startBounds.size() == endBounds.size();
+            Slices slices = makeSlices(options);
+            if (slices == Slices.NONE && !selectsStaticColumns)
+                return null;
 
-            // Handles fetching static columns. Note that for 2i, the filter is just used to restrict
-            // the part of the index to query so adding the static slice would be useless and confusing.
-            // For 2i, static columns are retrieve in CompositesSearcher with each index hit.
-            ColumnSlice staticSlice = selectsStaticColumns && !usesSecondaryIndexing
-                                    ? makeStaticSlice()
-                                    : null;
-
-            // The case where startBounds == 1 is common enough that it's worth optimizing
-            if (startBounds.size() == 1)
-            {
-                ColumnSlice slice = new ColumnSlice(startBounds.get(0), endBounds.get(0));
-                if (slice.isAlwaysEmpty(cfm.comparator, isReversed))
-                    return staticSlice == null ? null : sliceFilter(staticSlice, limit, toGroup);
-
-                if (staticSlice == null)
-                    return sliceFilter(slice, limit, toGroup);
-
-                if (isReversed)
-                    return slice.includes(cfm.comparator.reverseComparator(), staticSlice.start)
-                            ? sliceFilter(new ColumnSlice(slice.start, staticSlice.finish), limit, toGroup)
-                            : sliceFilter(new ColumnSlice[]{ slice, staticSlice }, limit, toGroup);
-                else
-                    return slice.includes(cfm.comparator, staticSlice.finish)
-                            ? sliceFilter(new ColumnSlice(staticSlice.start, slice.finish), limit, toGroup)
-                            : sliceFilter(new ColumnSlice[]{ staticSlice, slice }, limit, toGroup);
-            }
-
-            List<ColumnSlice> l = new ArrayList<ColumnSlice>(startBounds.size());
-            for (int i = 0; i < startBounds.size(); i++)
-            {
-                ColumnSlice slice = new ColumnSlice(startBounds.get(i), endBounds.get(i));
-                if (!slice.isAlwaysEmpty(cfm.comparator, isReversed))
-                    l.add(slice);
-            }
-
-            if (l.isEmpty())
-                return staticSlice == null ? null : sliceFilter(staticSlice, limit, toGroup);
-            if (staticSlice == null)
-                return sliceFilter(l.toArray(new ColumnSlice[l.size()]), limit, toGroup);
-
-            // The slices should not overlap. We know the slices built from startBounds/endBounds don't, but if there is
-            // a static slice, it could overlap with the 2nd slice. Check for it and correct if that's the case
-            ColumnSlice[] slices;
-            if (isReversed)
-            {
-                if (l.get(l.size() - 1).includes(cfm.comparator.reverseComparator(), staticSlice.start))
-                {
-                    slices = l.toArray(new ColumnSlice[l.size()]);
-                    slices[slices.length-1] = new ColumnSlice(slices[slices.length-1].start, Composites.EMPTY);
-                }
-                else
-                {
-                    slices = l.toArray(new ColumnSlice[l.size()+1]);
-                    slices[slices.length-1] = staticSlice;
-                }
-            }
-            else
-            {
-                if (l.get(0).includes(cfm.comparator, staticSlice.finish))
-                {
-                    slices = new ColumnSlice[l.size()];
-                    slices[0] = new ColumnSlice(Composites.EMPTY, l.get(0).finish);
-                    for (int i = 1; i < l.size(); i++)
-                        slices[i] = l.get(i);
-                }
-                else
-                {
-                    slices = new ColumnSlice[l.size()+1];
-                    slices[0] = staticSlice;
-                    for (int i = 0; i < l.size(); i++)
-                        slices[i+1] = l.get(i);
-                }
-            }
-            return sliceFilter(slices, limit, toGroup);
+            return new SlicePartitionFilter(selectedColumns, selectedStaticColumns, slices, isReversed);
         }
         else
         {
-            SortedSet<CellName> cellNames = getRequestedColumns(options);
-            if (cellNames == null) // in case of IN () for the last column of the key
-                return null;
-            QueryProcessor.validateCellNames(cellNames, cfm.comparator);
-            return new NamesQueryFilter(cellNames, true);
+            // TODO: names filter
+            throw new UnsupportedOperationException();
+            //SortedSet<CellName> cellNames = getRequestedColumns(options);
+            //if (cellNames == null) // in case of IN () for the last column of the key
+            //    return null;
+            //QueryProcessor.validateCellNames(cellNames, cfm.comparator);
+            //return new NamesQueryFilter(cellNames, true);
         }
     }
 
-    private SliceQueryFilter sliceFilter(ColumnSlice slice, int limit, int toGroup)
+    private Slices makeSlices(QueryOptions options)
+    throws InvalidRequestException
     {
-        return sliceFilter(new ColumnSlice[]{ slice }, limit, toGroup);
-    }
+        List<ClusteringPrefix> startBounds = getRequestedBound(Bound.START, options);
+        List<ClusteringPrefix> endBounds = getRequestedBound(Bound.END, options);
+        assert startBounds.size() == endBounds.size();
 
-    private SliceQueryFilter sliceFilter(ColumnSlice[] slices, int limit, int toGroup)
-    {
-        assert ColumnSlice.validateSlices(slices, cfm.comparator, isReversed) : String.format("Invalid slices: " + Arrays.toString(slices) + (isReversed ? " (reversed)" : ""));
-        return new SliceQueryFilter(slices, isReversed, limit, toGroup);
+        // The case where startBounds == 1 is common enough that it's worth optimizing
+        if (startBounds.size() == 1)
+        {
+            ClusteringPrefix start = startBounds.get(0);
+            ClusteringPrefix end = endBounds.get(0);
+            return cfm.comparator.compare(start, end) > 0
+                 ? Slices.NONE
+                 : Slices.make(cfm.comparator, start, end);
+        }
+
+        Slices.Builder builder = new Slices.Builder(cfm.comparator, startBounds.size());
+        for (int i = 0; i < startBounds.size(); i++)
+        {
+            ClusteringPrefix start = startBounds.get(i);
+            ClusteringPrefix end = endBounds.get(i);
+
+            // Ignore slices that are nonsensical
+            if (cfm.comparator.compare(start, end) > 0)
+                continue;
+
+            builder.add(start, end);
+        }
+
+        return builder.build();
     }
 
     private int getLimit(QueryOptions options) throws InvalidRequestException
@@ -572,19 +524,18 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return l;
     }
 
-    private int updateLimitForQuery(int limit)
+    public static ByteBuffer serializePartitionKey(ClusteringPrefix keyAsClusteringPrefix)
     {
-        // Internally, we don't support exclusive bounds for slices. Instead, we query one more element if necessary
-        // and exclude it later (in processColumnFamily)
-        return sliceRestriction != null && (!sliceRestriction.isInclusive(Bound.START) || !sliceRestriction.isInclusive(Bound.END)) && limit != Integer.MAX_VALUE
-             ? limit + 1
-             : limit;
+        if (keyAsClusteringPrefix.size() == 1)
+            return keyAsClusteringPrefix.get(0);
+
+        return LegacyLayout.serializeAsOldComposite(keyAsClusteringPrefix);
     }
 
     private Collection<ByteBuffer> getKeys(final QueryOptions options) throws InvalidRequestException
     {
         List<ByteBuffer> keys = new ArrayList<ByteBuffer>();
-        CBuilder builder = cfm.getKeyValidatorAsCType().builder();
+        CBuilder builder = new CBuilder(cfm.getKeyValidatorAsClusteringComparator());
         for (ColumnDefinition def : cfm.partitionKeyColumns())
         {
             Restriction r = keyRestrictions[def.position()];
@@ -598,7 +549,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 {
                     if (val == null)
                         throw new InvalidRequestException(String.format("Invalid null value for partition key part %s", def.name));
-                    keys.add(builder.buildWith(val).toByteBuffer());
+                    keys.add(serializePartitionKey(builder.buildWith(val)));
                 }
             }
             else
@@ -624,7 +575,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 return ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
         // We deal with IN queries for keys in other places, so we know buildBound will return only one result
-        return buildBound(b, cfm.partitionKeyColumns(), keyRestrictions, false, cfm.getKeyValidatorAsCType(), options).get(0).toByteBuffer();
+        ClusteringPrefix prefix = buildBound(b, cfm.partitionKeyColumns(), keyRestrictions, cfm.getKeyValidatorAsClusteringComparator(), options).get(0);
+        return prefix == EmptyClusteringPrefix.BOTTOM || prefix == EmptyClusteringPrefix.TOP
+             ? ByteBufferUtil.EMPTY_BYTE_BUFFER
+             : serializePartitionKey(prefix);
     }
 
     private Token getTokenBound(Bound b, QueryOptions options, IPartitioner<?> p) throws InvalidRequestException
@@ -675,8 +629,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     {
         // Due to CASSANDRA-5762, we always do a slice for CQL3 tables (not dense, composite).
         // Static CF (non dense but non composite) never entails a column slice however
-        if (!cfm.comparator.isDense())
-            return cfm.comparator.isCompound();
+        if (!cfm.layout().isDense())
+            return cfm.layout().isCompound();
 
         // Otherwise (i.e. for compact table where we don't have a row marker anyway and thus don't care about CASSANDRA-5762),
         // it is a range query if it has at least one the column alias for which no relation is defined or is not EQ.
@@ -688,79 +642,77 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return false;
     }
 
-    private SortedSet<CellName> getRequestedColumns(QueryOptions options) throws InvalidRequestException
-    {
-        // Note: getRequestedColumns don't handle static columns, but due to CASSANDRA-5762
-        // we always do a slice for CQL3 tables, so it's ok to ignore them here
-        assert !isColumnRange();
+    // TODO
+    //private SortedSet<CellName> getRequestedColumns(QueryOptions options) throws InvalidRequestException
+    //{
+    //    // Note: getRequestedColumns don't handle static columns, but due to CASSANDRA-5762
+    //    // we always do a slice for CQL3 tables, so it's ok to ignore them here
+    //    assert !isColumnRange();
 
-        CompositesBuilder builder = new CompositesBuilder(cfm.comparator.prefixBuilder(), cfm.comparator);
-        Iterator<ColumnDefinition> idIter = cfm.clusteringColumns().iterator();
-        for (Restriction r : columnRestrictions)
-        {
-            ColumnDefinition def = idIter.next();
-            assert r != null && !r.isSlice();
+    //    CompositesBuilder builder = new CompositesBuilder(cfm.comparator.prefixBuilder(), cfm.comparator);
+    //    Iterator<ColumnDefinition> idIter = cfm.clusteringColumns().iterator();
+    //    for (Restriction r : columnRestrictions)
+    //    {
+    //        ColumnDefinition def = idIter.next();
+    //        assert r != null && !r.isSlice();
 
-            List<ByteBuffer> values = r.values(options);
+    //        List<ByteBuffer> values = r.values(options);
 
-            if (values.isEmpty())
-                return null;
+    //        if (values.isEmpty())
+    //            return null;
 
-            builder.addEachElementToAll(values);
-            if (builder.containsNull())
-                throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s",
-                                                                def.name));
-        }
-        SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
-        for (Composite composite : builder.build())
-            columns.addAll(addSelectedColumns(composite));
+    //        builder.addEachElementToAll(values);
+    //        if (builder.containsNull())
+    //            throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s",
+    //                                                            def.name));
+    //    }
+    //    SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
+    //    for (Composite composite : builder.build())
+    //        columns.addAll(addSelectedColumns(composite));
 
-        return columns;
-    }
+    //    return columns;
+    //}
+    //
+    //private SortedSet<CellName> addSelectedColumns(Composite prefix)
+    //{
+    //    if (cfm.comparator.isDense())
+    //    {
+    //        return FBUtilities.singleton(cfm.comparator.create(prefix, null), cfm.comparator);
+    //    }
+    //    else
+    //    {
+    //        // Collections require doing a slice query because a given collection is a
+    //        // non-know set of columns, so we shouldn't get there
+    //        assert !selectACollection();
 
-    private SortedSet<CellName> addSelectedColumns(Composite prefix)
-    {
-        if (cfm.comparator.isDense())
-        {
-            return FBUtilities.singleton(cfm.comparator.create(prefix, null), cfm.comparator);
-        }
-        else
-        {
-            // Collections require doing a slice query because a given collection is a
-            // non-know set of columns, so we shouldn't get there
-            assert !selectACollection();
+    //        SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
 
-            SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
+    //        // We need to query the selected column as well as the marker
+    //        // column (for the case where the row exists but has no columns outside the PK)
+    //        // Two exceptions are "static CF" (non-composite non-compact CF) and "super CF"
+    //        // that don't have marker and for which we must query all columns instead
+    //        if (cfm.comparator.isCompound() && !cfm.isSuper())
+    //        {
+    //            // marker
+    //            columns.add(cfm.comparator.rowMarker(prefix));
 
-            // We need to query the selected column as well as the marker
-            // column (for the case where the row exists but has no columns outside the PK)
-            // Two exceptions are "static CF" (non-composite non-compact CF) and "super CF"
-            // that don't have marker and for which we must query all columns instead
-            if (cfm.comparator.isCompound() && !cfm.isSuper())
-            {
-                // marker
-                columns.add(cfm.comparator.rowMarker(prefix));
-
-                // selected columns
-                for (ColumnDefinition def : selection.getColumns())
-                    if (def.kind == ColumnDefinition.Kind.REGULAR || def.kind == ColumnDefinition.Kind.STATIC)
-                        columns.add(cfm.comparator.create(prefix, def));
-            }
-            else
-            {
-                // We now that we're not composite so we can ignore static columns
-                for (ColumnDefinition def : cfm.regularColumns())
-                    columns.add(cfm.comparator.create(prefix, def));
-            }
-            return columns;
-        }
-    }
+    //            // selected columns
+    //            for (ColumnDefinition def : selection.getColumns())
+    //                if (def.kind == ColumnDefinition.Kind.REGULAR || def.kind == ColumnDefinition.Kind.STATIC)
+    //                    columns.add(cfm.comparator.create(prefix, def));
+    //        }
+    //        else
+    //        {
+    //            // We now that we're not composite so we can ignore static columns
+    //            for (ColumnDefinition def : cfm.regularColumns())
+    //                columns.add(cfm.comparator.create(prefix, def));
+    //        }
+    //        return columns;
+    //    }
+    //}
 
     private boolean selectACollection()
     {
-        if (!cfm.comparator.hasCollections())
-            return false;
-
         for (ColumnDefinition def : selection.getColumns())
         {
             if (def.type instanceof CollectionType)
@@ -770,58 +722,47 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return false;
     }
 
-    private static List<Composite> buildBound(Bound bound,
-                                              List<ColumnDefinition> defs,
-                                              Restriction[] restrictions,
-                                              boolean isReversed,
-                                              CType type,
-                                              QueryOptions options) throws InvalidRequestException
+    private static List<ClusteringPrefix> buildBound(Bound bound,
+                                                     List<ColumnDefinition> defs,
+                                                     Restriction[] restrictions,
+                                                     ClusteringComparator comparator,
+                                                     QueryOptions options) throws InvalidRequestException
     {
-        CBuilder builder = type.builder();
+        CBuilder builder = new CBuilder(comparator);
 
         // check the first restriction to see if we're dealing with a multi-column restriction
-        if (!defs.isEmpty())
+        Restriction firstRestriction = restrictions[0];
+        if (firstRestriction.isMultiColumn())
         {
-            Restriction firstRestriction = restrictions[0];
-            if (firstRestriction != null && firstRestriction.isMultiColumn())
-            {
-                if (firstRestriction.isSlice())
-                    return buildMultiColumnSliceBound(bound, defs, (MultiColumnRestriction.Slice) firstRestriction, isReversed, builder, options);
-                else if (firstRestriction.isIN())
-                    return buildMultiColumnInBound(bound, defs, (MultiColumnRestriction.IN) firstRestriction, isReversed, builder, type, options);
-                else
-                    return buildMultiColumnEQBound(bound, defs, (MultiColumnRestriction.EQ) firstRestriction, isReversed, builder, options);
-            }
+            if (firstRestriction.isSlice())
+                return buildMultiColumnSliceBound(bound, defs, (MultiColumnRestriction.Slice) firstRestriction, builder, options);
+            else if (firstRestriction.isIN())
+                return buildMultiColumnInBound(bound, defs, (MultiColumnRestriction.IN) firstRestriction, builder, comparator, options);
+            else
+                return buildMultiColumnEQBound(bound, defs, (MultiColumnRestriction.EQ) firstRestriction, builder, options);
         }
 
-        CompositesBuilder compositeBuilder = new CompositesBuilder(builder, isReversed ? type.reverseComparator() : type);
-        // The end-of-component of composite doesn't depend on whether the
-        // component type is reversed or not (i.e. the ReversedType is applied
-        // to the component comparator but not to the end-of-component itself),
-        // it only depends on whether the slice is reversed
-        Bound eocBound = isReversed ? Bound.reverse(bound) : bound;
-        for (Iterator<ColumnDefinition> iter = defs.iterator(); iter.hasNext();)
-        {
-            ColumnDefinition def = iter.next();
+        MultiCBuilder compositeBuilder = new MultiCBuilder(builder);
 
-            // In a restriction, we always have Bound.START < Bound.END for the "base" comparator.
-            // So if we're doing a reverse slice, we must inverse the bounds when giving them as start and end of the slice filter.
-            // But if the actual comparator itself is reversed, we must inversed the bounds too.
-            Bound b = isReversed == isReversedType(def) ? bound : Bound.reverse(bound);
+        for (ColumnDefinition def : defs)
+        {
             Restriction r = restrictions[def.position()];
+            // The bound of this method is refering to the clustering order. So if said clustering order
+            // is reversed for this column, we should reverse the restriction we use.
+            Bound b = isReversedType(def) ? Bound.reverse(bound) : bound;
             if (isNullRestriction(r, b))
             {
                 // There wasn't any non EQ relation on that key, we select all records having the preceding component as prefix.
                 // For composites, if there was preceding component and we're computing the end, we must change the last component
                 // End-Of-Component, otherwise we would be selecting only one record.
-                EOC eoc = !compositeBuilder.isEmpty() && eocBound == Bound.END ? EOC.END : EOC.NONE;
-                return compositeBuilder.buildWithEOC(eoc);
+                return compositeBuilder.build(bound == Bound.START ? EOC.START : EOC.END);
             }
+
             if (r.isSlice())
             {
                 compositeBuilder.addElementToAll(getSliceValue(r, b, options));
-                Relation.Type relType = ((Restriction.Slice) r).getRelation(eocBound, b);
-                return compositeBuilder.buildWithEOC(eocForRelation(relType));
+                Relation.Type relType = ((Restriction.Slice) r).getRelation(bound, b);
+                return compositeBuilder.build(eocForRelation(relType));
             }
 
             compositeBuilder.addEachElementToAll(r.values(options));
@@ -830,58 +771,53 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 throw new InvalidRequestException(
                         String.format("Invalid null clustering key part %s", def.name));
         }
-        // Means no relation at all or everything was an equal
+        // Everything was an equal
         // Note: if the builder is "full", there is no need to use the end-of-component bit. For columns selection,
         // it would be harmless to do it. However, we use this method got the partition key too. And when a query
         // with 2ndary index is done, and with the the partition provided with an EQ, we'll end up here, and in that
         // case using the eoc would be bad, since for the random partitioner we have no guarantee that
         // prefix.end() will sort after prefix (see #5240).
-        EOC eoc = eocBound == Bound.END && compositeBuilder.hasRemaining() ? EOC.END : EOC.NONE;
-        return compositeBuilder.buildWithEOC(eoc);
+        EOC eoc = compositeBuilder.hasRemaining() ? (bound == Bound.START ? EOC.START : EOC.END) : EOC.NONE;
+        return compositeBuilder.build(eoc);
     }
 
-    private static Composite.EOC eocForRelation(Relation.Type op)
+    private static EOC eocForRelation(Relation.Type op)
     {
         switch (op)
         {
             case LT:
                 // < X => using startOf(X) as finish bound
-                return Composite.EOC.START;
+                return EOC.START;
             case GT:
             case LTE:
                 // > X => using endOf(X) as start bound
                 // <= X => using endOf(X) as finish bound
-                return Composite.EOC.END;
+                return EOC.END;
             default:
                 // >= X => using X as start bound (could use START_OF too)
                 // = X => using X
-                return Composite.EOC.NONE;
+                return EOC.NONE;
         }
     }
 
-    private static List<Composite> buildMultiColumnSliceBound(Bound bound,
-                                                              List<ColumnDefinition> defs,
-                                                              MultiColumnRestriction.Slice slice,
-                                                              boolean isReversed,
-                                                              CBuilder builder,
-                                                              QueryOptions options) throws InvalidRequestException
+    private static List<ClusteringPrefix> buildMultiColumnSliceBound(Bound bound,
+                                                                     List<ColumnDefinition> defs,
+                                                                     MultiColumnRestriction.Slice slice,
+                                                                     CBuilder builder,
+                                                                     QueryOptions options) throws InvalidRequestException
     {
-        Bound eocBound = isReversed ? Bound.reverse(bound) : bound;
-
         Iterator<ColumnDefinition> iter = defs.iterator();
         ColumnDefinition firstName = iter.next();
         // A hack to preserve pre-6875 behavior for tuple-notation slices where the comparator mixes ASCENDING
         // and DESCENDING orders.  This stores the bound for the first component; we will re-use it for all following
         // components, even if they don't match the first component's reversal/non-reversal.  Note that this does *not*
         // guarantee correct query results, it just preserves the previous behavior.
-        Bound firstComponentBound = isReversed == isReversedType(firstName) ? bound : Bound.reverse(bound);
+        Bound firstComponentBound = isReversedType(firstName) ? Bound.reverse(bound) : bound;
 
         if (!slice.hasBound(firstComponentBound))
         {
-            Composite prefix = builder.build();
-            return Collections.singletonList(builder.remainingCount() > 0 && eocBound == Bound.END
-                    ? prefix.end()
-                    : prefix);
+            EOC eoc = builder.remainingCount() == 0 ? EOC.NONE : (bound == Bound.START ? EOC.START : EOC.END);
+            return Collections.singletonList(builder.build(eoc));
         }
 
         List<ByteBuffer> vals = slice.componentBounds(firstComponentBound, options);
@@ -902,46 +838,40 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 throw new InvalidRequestException("Invalid null value in condition for column " + def.name);
             builder.add(v);
         }
-        Relation.Type relType = slice.getRelation(eocBound, firstComponentBound);
-        return Collections.singletonList(builder.build().withEOC(eocForRelation(relType)));
+        Relation.Type relType = slice.getRelation(bound, firstComponentBound);
+        return Collections.singletonList(builder.build(eocForRelation(relType)));
     }
 
-    private static List<Composite> buildMultiColumnInBound(Bound bound,
-                                                           List<ColumnDefinition> defs,
-                                                           MultiColumnRestriction.IN restriction,
-                                                           boolean isReversed,
-                                                           CBuilder builder,
-                                                           CType type,
-                                                           QueryOptions options) throws InvalidRequestException
+    private static List<ClusteringPrefix> buildMultiColumnInBound(Bound bound,
+                                                                  List<ColumnDefinition> defs,
+                                                                  MultiColumnRestriction.IN restriction,
+                                                                  CBuilder builder,
+                                                                  ClusteringComparator comparator,
+                                                                  QueryOptions options) throws InvalidRequestException
     {
         List<List<ByteBuffer>> splitInValues = restriction.splitValues(options);
-        Bound eocBound = isReversed ? Bound.reverse(bound) : bound;
 
         // The IN query might not have listed the values in comparator order, so we need to re-sort
         // the bounds lists to make sure the slices works correctly (also, to avoid duplicates).
-        TreeSet<Composite> inValues = new TreeSet<>(isReversed ? type.reverseComparator() : type);
+        TreeSet<ClusteringPrefix> inValues = new TreeSet<>(comparator);
         for (List<ByteBuffer> components : splitInValues)
         {
             for (int i = 0; i < components.size(); i++)
                 if (components.get(i) == null)
                     throw new InvalidRequestException("Invalid null value in condition for column " + defs.get(i));
 
-            Composite prefix = builder.buildWith(components);
-            inValues.add(eocBound == Bound.END && builder.remainingCount() - components.size() > 0
-                         ? prefix.end()
-                         : prefix);
+            EOC eoc = builder.remainingCount() - components.size() == 0 ? EOC.NONE : (bound == Bound.START ? EOC.START : EOC.END);
+            inValues.add(builder.buildWith(components, eoc));
         }
         return new ArrayList<>(inValues);
     }
 
-    private static List<Composite> buildMultiColumnEQBound(Bound bound,
-                                                           List<ColumnDefinition> defs,
-                                                           MultiColumnRestriction.EQ restriction,
-                                                           boolean isReversed,
-                                                           CBuilder builder,
-                                                           QueryOptions options) throws InvalidRequestException
+    private static List<ClusteringPrefix> buildMultiColumnEQBound(Bound bound,
+                                                                  List<ColumnDefinition> defs,
+                                                                  MultiColumnRestriction.EQ restriction,
+                                                                  CBuilder builder,
+                                                                  QueryOptions options) throws InvalidRequestException
     {
-        Bound eocBound = isReversed ? Bound.reverse(bound) : bound;
         List<ByteBuffer> values = restriction.values(options);
         for (int i = 0; i < values.size(); i++)
         {
@@ -951,10 +881,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             builder.add(component);
         }
 
-        Composite prefix = builder.build();
-        return Collections.singletonList(builder.remainingCount() > 0 && eocBound == Bound.END
-                                         ? prefix.end()
-                                         : prefix);
+        EOC eoc = builder.remainingCount() == 0 ? EOC.NONE : (bound == Bound.START ? EOC.START : EOC.END);
+        return Collections.singletonList(builder.build(eoc));
     }
 
     private static boolean isNullRestriction(Restriction r, Bound b)
@@ -972,18 +900,18 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return val;
     }
 
-    private List<Composite> getRequestedBound(Bound b, QueryOptions options) throws InvalidRequestException
+    private List<ClusteringPrefix> getRequestedBound(Bound b, QueryOptions options) throws InvalidRequestException
     {
         assert isColumnRange();
-        return buildBound(b, cfm.clusteringColumns(), columnRestrictions, isReversed, cfm.comparator, options);
+        return buildBound(b, cfm.clusteringColumns(), columnRestrictions, cfm.comparator, options);
     }
 
-    public List<IndexExpression> getValidatedIndexExpressions(QueryOptions options) throws InvalidRequestException
+    public ColumnFilter getValidatedIndexExpressions(QueryOptions options) throws InvalidRequestException
     {
         if (!usesSecondaryIndexing || restrictedColumns.isEmpty())
-            return Collections.emptyList();
+            return ColumnFilter.NONE;
 
-        List<IndexExpression> expressions = new ArrayList<IndexExpression>();
+        ColumnFilter filter = new ColumnFilter();
         for (ColumnDefinition def : restrictedColumns)
         {
             Restriction restriction;
@@ -1012,13 +940,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     if (slice.hasBound(b))
                     {
                         ByteBuffer value = validateIndexedValue(def, slice.bound(b, options));
-                        IndexExpression.Operator op = slice.getIndexOperator(b);
-                        // If the underlying comparator for name is reversed, we need to reverse the IndexOperator: user operation
-                        // always refer to the "forward" sorting even if the clustering order is reversed, but the 2ndary code does
-                        // use the underlying comparator as is.
-                        if (def.type instanceof ReversedType)
-                            op = reverse(op);
-                        expressions.add(new IndexExpression(def.name.bytes, op, value));
+                        filter.add(def, slice.getIndexOperator(b), value);
                     }
                 }
             }
@@ -1028,12 +950,12 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 for (ByteBuffer value : contains.values(options))
                 {
                     validateIndexedValue(def, value);
-                    expressions.add(new IndexExpression(def.name.bytes, IndexExpression.Operator.CONTAINS, value));
+                    filter.add(def, ColumnFilter.Operator.CONTAINS, value);
                 }
                 for (ByteBuffer key : contains.keys(options))
                 {
                     validateIndexedValue(def, key);
-                    expressions.add(new IndexExpression(def.name.bytes, IndexExpression.Operator.CONTAINS_KEY, key));
+                    filter.add(def, ColumnFilter.Operator.CONTAINS_KEY, key);
                 }
             }
             else
@@ -1044,7 +966,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     throw new InvalidRequestException("IN restrictions are not supported on indexed columns");
 
                 ByteBuffer value = validateIndexedValue(def, values.get(0));
-                expressions.add(new IndexExpression(def.name.bytes, IndexExpression.Operator.EQ, value));
+                filter.add(def, ColumnFilter.Operator.EQ, value);
             }
         }
         
@@ -1052,10 +974,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         {
             ColumnFamilyStore cfs = Keyspace.open(keyspace()).getColumnFamilyStore(columnFamily());
             SecondaryIndexManager secondaryIndexManager = cfs.indexManager;
-            secondaryIndexManager.validateIndexSearchersForQuery(expressions);
+            secondaryIndexManager.validateIndexSearchersForQuery(filter);
         }
         
-        return expressions;
+        return filter;
     }
 
     private static ByteBuffer validateIndexedValue(ColumnDefinition def, ByteBuffer value) throws InvalidRequestException
@@ -1067,57 +989,18 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return value;
     }
 
-    private Iterator<Cell> applySliceRestriction(final Iterator<Cell> cells, final QueryOptions options) throws InvalidRequestException
+    private ResultSet process(DataIterator partitions, QueryOptions options, int limit, int nowInSec) throws InvalidRequestException
     {
-        assert sliceRestriction != null;
-
-        final CellNameType type = cfm.comparator;
-        final CellName excludedStart = sliceRestriction.isInclusive(Bound.START) ? null : type.makeCellName(sliceRestriction.bound(Bound.START, options));
-        final CellName excludedEnd = sliceRestriction.isInclusive(Bound.END) ? null : type.makeCellName(sliceRestriction.bound(Bound.END, options));
-
-        return new AbstractIterator<Cell>()
+        Selection.ResultSetBuilder result = selection.resultSetBuilder(nowInSec);
+        try (DataIterator iter = partitions)
         {
-            protected Cell computeNext()
-            {
-                while (cells.hasNext())
-                {
-                    Cell c = cells.next();
-
-                    // For dynamic CF, the column could be out of the requested bounds (because we don't support strict bounds internally (unless
-                    // the comparator is composite that is)), filter here
-                    if ( (excludedStart != null && type.compare(c.name(), excludedStart) == 0)
-                      || (excludedEnd != null && type.compare(c.name(), excludedEnd) == 0) )
-                        continue;
-
-                    return c;
-                }
-                return endOfData();
-            }
-        };
-    }
-
-    private static IndexExpression.Operator reverse(IndexExpression.Operator op)
-    {
-        switch (op)
-        {
-            case LT:  return IndexExpression.Operator.GT;
-            case LTE: return IndexExpression.Operator.GTE;
-            case GT:  return IndexExpression.Operator.LT;
-            case GTE: return IndexExpression.Operator.LTE;
-            default: return op;
+            while (iter.hasNext())
+                processPartition(iter.next(), options, nowInSec, result);
         }
-    }
-
-    private ResultSet process(List<Row> rows, QueryOptions options, int limit, long now) throws InvalidRequestException
-    {
-        Selection.ResultSetBuilder result = selection.resultSetBuilder(now);
-        for (org.apache.cassandra.db.Row row : rows)
+        catch (IOException e)
         {
-            // Not columns match the query, skip
-            if (row.cf == null)
-                continue;
-
-            processColumnFamily(row.key.getKey(), row.cf, options, now, result);
+            // We shouldn't get one up here
+            throw new RuntimeException(e);
         }
 
         ResultSet cqlRows = result.build();
@@ -1134,84 +1017,87 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     }
 
     // Used by ModificationStatement for CAS operations
-    void processColumnFamily(ByteBuffer key, ColumnFamily cf, QueryOptions options, long now, Selection.ResultSetBuilder result)
+    void processPartition(RowIterator partition, QueryOptions options, int nowInSec, Selection.ResultSetBuilder result)
     throws InvalidRequestException
     {
-        CFMetaData cfm = cf.metadata();
-        ByteBuffer[] keyComponents = null;
-        if (cfm.getKeyValidator() instanceof CompositeType)
+        try (RowIterator p = partition)
         {
-            keyComponents = ((CompositeType)cfm.getKeyValidator()).split(key);
-        }
-        else
-        {
-            keyComponents = new ByteBuffer[]{ key };
-        }
-
-        Iterator<Cell> cells = cf.getSortedColumns().iterator();
-        if (sliceRestriction != null)
-            cells = applySliceRestriction(cells, options);
-
-        CQL3Row.RowIterator iter = cfm.comparator.CQL3RowBuilder(cfm, now).group(cells);
-
-        // If there is static columns but there is no non-static row, then provided the select was a full
-        // partition selection (i.e. not a 2ndary index search and there was no condition on clustering columns)
-        // then we want to include the static columns in the result set (and we're done).
-        CQL3Row staticRow = iter.getStaticRow();
-        if (staticRow != null && !iter.hasNext() && !usesSecondaryIndexing && hasNoClusteringColumnsRestriction())
-        {
-            result.newRow();
-            for (ColumnDefinition def : selection.getColumns())
+            ByteBuffer key = partition.partitionKey().getKey();
+            ByteBuffer[] keyComponents = null;
+            if (cfm.getKeyValidator() instanceof CompositeType)
             {
-                switch (def.kind)
+                keyComponents = ((CompositeType)cfm.getKeyValidator()).split(key);
+            }
+            else
+            {
+                keyComponents = new ByteBuffer[]{ key };
+            }
+
+            Row staticRow = partition.staticRow();
+            // If there is no atoms, then provided the select was a full partition selection
+            // (i.e. not a 2ndary index search and there was no condition on clustering columns),
+            // we want to include static columns and we're done.
+            if (!partition.hasNext())
+            {
+                // We should have a non-empty static row or we wouldn't be here, but since 
+                if (!staticRow.isEmpty() && !usesSecondaryIndexing && hasNoClusteringColumnsRestriction())
                 {
-                    case PARTITION_KEY:
-                        result.add(keyComponents[def.position()]);
-                        break;
-                    case STATIC:
-                        addValue(result, def, staticRow, options);
-                        break;
-                    default:
-                        result.add((ByteBuffer)null);
+                    result.newRow();
+                    for (ColumnDefinition def : selection.getColumns())
+                    {
+                        switch (def.kind)
+                        {
+                            case PARTITION_KEY:
+                                result.add(keyComponents[def.position()]);
+                                break;
+                            case STATIC:
+                                addValue(result, def, staticRow, options);
+                                break;
+                            default:
+                                result.add((ByteBuffer)null);
+                        }
+                    }
+                }
+                return;
+            }
+
+            while (partition.hasNext())
+            {
+                Row row = partition.next();
+
+                result.newRow();
+                // Respect selection order
+                for (ColumnDefinition def : selection.getColumns())
+                {
+                    switch (def.kind)
+                    {
+                        case PARTITION_KEY:
+                            result.add(keyComponents[def.position()]);
+                            break;
+                        case CLUSTERING_COLUMN:
+                            result.add(row.clustering().get(def.position()));
+                            break;
+                        case COMPACT_VALUE:
+                        case REGULAR:
+                            addValue(result, def, row, options);
+                            break;
+                        case STATIC:
+                            addValue(result, def, staticRow, options);
+                            break;
+                    }
                 }
             }
-            return;
         }
-
-        while (iter.hasNext())
+        catch (IOException e)
         {
-            CQL3Row cql3Row = iter.next();
-
-            // Respect requested order
-            result.newRow();
-            // Respect selection order
-            for (ColumnDefinition def : selection.getColumns())
-            {
-                switch (def.kind)
-                {
-                    case PARTITION_KEY:
-                        result.add(keyComponents[def.position()]);
-                        break;
-                    case CLUSTERING_COLUMN:
-                        result.add(cql3Row.getClusteringColumn(def.position()));
-                        break;
-                    case COMPACT_VALUE:
-                        result.add(cql3Row.getColumn(null));
-                        break;
-                    case REGULAR:
-                        addValue(result, def, cql3Row, options);
-                        break;
-                    case STATIC:
-                        addValue(result, def, staticRow, options);
-                        break;
-                }
-            }
+            throw new RuntimeException(e);
         }
     }
 
-    private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, CQL3Row row, QueryOptions options)
+    private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, Row row, QueryOptions options)
     {
-        if (row == null)
+        ColumnData cd = row.data(def);
+        if (cd == null || cd.size() == 0)
         {
             result.add((ByteBuffer)null);
             return;
@@ -1219,15 +1105,13 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         if (def.type.isCollection())
         {
-            List<Cell> collection = row.getCollection(def.name);
-            ByteBuffer value = collection == null
-                             ? null
-                             : ((CollectionType)def.type).serializeForNativeProtocol(collection, options.getProtocolVersion());
-            result.add(value);
-            return;
+            result.add(((CollectionType)def.type).serializeForNativeProtocol(cd, options.getProtocolVersion()));
+        }
+        else
+        {
+            result.add(cd.cell(0));
         }
 
-        result.add(row.getColumn(def.name));
     }
 
     private boolean hasNoClusteringColumnsRestriction()
@@ -1847,11 +1731,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 {
                     canRestrictFurtherComponents = false;
                     previousIsSlice = true;
-                    Restriction.Slice slice = (Restriction.Slice)restriction;
-                    // For non-composite slices, we don't support internally the difference between exclusive and
-                    // inclusive bounds, so we deal with it manually.
-                    if (!cfm.comparator.isCompound() && (!slice.isInclusive(Bound.START) || !slice.isInclusive(Bound.END)))
-                        stmt.sliceRestriction = slice;
                 }
                 else if (restriction.isIN())
                 {
@@ -1971,24 +1850,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                                                       "thus may have unpredictable performance. If you want to execute " +
                                                       "this query despite the performance unpredictability, use ALLOW FILTERING");
             }
-
-            // We don't internally support exclusive slice bounds on non-composite tables. To deal with it we do an
-            // inclusive slice and remove post-query the value that shouldn't be returned. One problem however is that
-            // if there is a user limit, that limit may make the query return before the end of the slice is reached,
-            // in which case, once we'll have removed bound post-query, we might end up with less results than
-            // requested which would be incorrect. For single-partition query, this is not a problem, we just ask for
-            // one more result (see updateLimitForQuery()) since that's enough to compensate for that problem. For key
-            // range however, each returned row may include one result that will have to be trimmed, so we would have
-            // to bump the query limit by N where N is the number of rows we will return, but we don't know that in
-            // advance. So, since we currently don't have a good way to handle such query, we refuse it (#7059) rather
-            // than answering with something that is wrong.
-            if (stmt.sliceRestriction != null && stmt.isKeyRange && limit != null)
-            {
-                SingleColumnRelation rel = findInclusiveClusteringRelationForCompact(stmt.cfm);
-                throw new InvalidRequestException(String.format("The query requests a restriction of rows with a strict bound (%s) over a range of partitions. "
-                                                              + "This is not supported by the underlying storage engine for COMPACT tables if a LIMIT is provided. "
-                                                              + "Please either make the condition non strict (%s) or remove the user LIMIT", rel, rel.withNonStrictOperator()));
-            }
         }
 
         private int indexOf(ColumnDefinition def, Selection selection)
@@ -2005,22 +1866,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                                                    return def.name.equals(n.name);
                                                }
                                            });
-        }
-
-        private SingleColumnRelation findInclusiveClusteringRelationForCompact(CFMetaData cfm)
-        {
-            for (Relation r : whereClause)
-            {
-                // We only call this when sliceRestriction != null, i.e. for compact table with non composite comparator,
-                // so it can't be a MultiColumnRelation.
-                SingleColumnRelation rel = (SingleColumnRelation)r;
-                if (cfm.getColumnDefinition(rel.getEntity()).kind == ColumnDefinition.Kind.CLUSTERING_COLUMN
-                    && (rel.operator() == Relation.Type.GT || rel.operator() == Relation.Type.LT))
-                    return rel;
-            }
-
-            // We're not supposed to call this method unless we know this can't happen
-            throw new AssertionError();
         }
 
         private boolean containsAlias(final ColumnIdentifier name)

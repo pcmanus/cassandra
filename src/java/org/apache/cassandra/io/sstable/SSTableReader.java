@@ -64,15 +64,8 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DataRange;
-import org.apache.cassandra.db.DataTracker;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.RowIndexEntry;
-import org.apache.cassandra.db.RowPosition;
-import org.apache.cassandra.db.SystemKeyspace;
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.ICompactionScanner;
 import org.apache.cassandra.db.index.SecondaryIndex;
@@ -272,7 +265,8 @@ public class SSTableReader extends SSTable
             String parentName = descriptor.cfname.substring(0, i);
             CFMetaData parent = Schema.instance.getCFMetaData(descriptor.ksname, parentName);
             ColumnDefinition def = parent.getColumnDefinitionForIndex(descriptor.cfname.substring(i + 1));
-            metadata = CFMetaData.newIndexMetadata(parent, def, SecondaryIndex.getIndexComparator(parent, def));
+            Pair<ClusteringComparator, LegacyLayout> p = SecondaryIndex.getIndexComparatorAndLayout(parent, def);
+            metadata = CFMetaData.newIndexMetadata(parent, def, p.left, p.right);
         }
         else
         {
@@ -792,7 +786,7 @@ public class SSTableReader extends SSTable
             while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
             {
                 ByteBuffer key = ByteBufferUtil.readWithShortLength(primaryIndex);
-                RowIndexEntry indexEntry = metadata.comparator.rowIndexEntrySerializer().deserialize(primaryIndex, descriptor.version);
+                RowIndexEntry indexEntry = metadata.layout().rowIndexEntrySerializer().deserialize(primaryIndex, descriptor.version);
                 DecoratedKey decoratedKey = partitioner.decorateKey(key);
                 if (first == null)
                     first = decoratedKey;
@@ -1475,7 +1469,7 @@ public class SSTableReader extends SSTable
                     if (opSatisfied)
                     {
                         // read data position from index entry
-                        RowIndexEntry indexEntry = metadata.comparator.rowIndexEntrySerializer().deserialize(in, descriptor.version);
+                        RowIndexEntry indexEntry = metadata.layout().rowIndexEntrySerializer().deserialize(in, descriptor.version);
                         if (exactMatch && updateCacheAndStats)
                         {
                             assert key instanceof DecoratedKey; // key can be == to the index key only if it's a true row key
@@ -1663,7 +1657,7 @@ public class SSTableReader extends SSTable
 
     public SSTableScanner getScanner(RateLimiter limiter)
     {
-        return new SSTableScanner(this, DataRange.allData(partitioner), limiter);
+        return new SSTableScanner(this, DataRange.allData(metadata, partitioner), limiter);
     }
 
     /**
@@ -2028,7 +2022,7 @@ public class SSTableReader extends SSTable
             return false;
         }
 
-        public OnDiskAtomIterator next()
+        public AtomIterator next()
         {
             return null;
         }

@@ -18,13 +18,14 @@
 package org.apache.cassandra.cql3.statements;
 
 import org.apache.cassandra.cql3.*;
-import org.apache.cassandra.db.IndexExpression;
+import org.apache.cassandra.db.filters.ColumnFilter;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
 
 public abstract class SingleColumnRestriction implements Restriction
 {
@@ -261,14 +262,14 @@ public abstract class SingleColumnRestriction implements Restriction
             throw new AssertionError();
         }
 
-        public IndexExpression.Operator getIndexOperator(Bound b)
+        public ColumnFilter.Operator getIndexOperator(Bound b)
         {
             switch (b)
             {
                 case START:
-                    return boundInclusive[b.idx] ? IndexExpression.Operator.GTE : IndexExpression.Operator.GT;
+                    return boundInclusive[b.idx] ? ColumnFilter.Operator.GTE : ColumnFilter.Operator.GT;
                 case END:
-                    return boundInclusive[b.idx] ? IndexExpression.Operator.LTE : IndexExpression.Operator.LT;
+                    return boundInclusive[b.idx] ? ColumnFilter.Operator.LTE : ColumnFilter.Operator.LT;
             }
             throw new AssertionError();
         }

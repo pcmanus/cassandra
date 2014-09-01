@@ -42,7 +42,9 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.DataLimits;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.db.marshal.UUIDType;
@@ -197,12 +199,12 @@ public class StorageProxy implements StorageProxyMBean
      * @return null if the operation succeeds in updating the row, or the current values corresponding to conditions.
      * (since, if the CAS doesn't succeed, it means the current value do not match the conditions).
      */
-    public static ColumnFamily cas(String keyspaceName,
-                                   String cfName,
-                                   ByteBuffer key,
-                                   CASRequest request,
-                                   ConsistencyLevel consistencyForPaxos,
-                                   ConsistencyLevel consistencyForCommit)
+    public static RowIterator cas(String keyspaceName,
+                                  String cfName,
+                                  DecoratedKey key,
+                                  CASRequest request,
+                                  ConsistencyLevel consistencyForPaxos,
+                                  ConsistencyLevel consistencyForCommit)
     throws UnavailableException, IsBootstrappingException, ReadTimeoutException, WriteTimeoutException, InvalidRequestException
     {
         consistencyForPaxos.validateForCas();
@@ -215,7 +217,7 @@ public class StorageProxy implements StorageProxyMBean
         while (System.nanoTime() - start < timeout)
         {
             // for simplicity, we'll do a single liveness check at the start of each attempt
-            Pair<List<InetAddress>, Integer> p = getPaxosParticipants(keyspaceName, key, consistencyForPaxos);
+            Pair<List<InetAddress>, Integer> p = getPaxosParticipants(metadata, key, consistencyForPaxos);
             List<InetAddress> liveEndpoints = p.left;
             int requiredParticipants = p.right;
 
@@ -223,20 +225,19 @@ public class StorageProxy implements StorageProxyMBean
 
             // read the current values and check they validate the conditions
             Tracing.trace("Reading existing values for CAS precondition");
-            long timestamp = System.currentTimeMillis();
-            ReadCommand readCommand = ReadCommand.create(keyspaceName, key, cfName, timestamp, request.readFilter());
-            List<Row> rows = read(Arrays.asList(readCommand), consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM);
-            ColumnFamily current = rows.get(0).cf;
+            SinglePartitionReadCommand readCommand = ReadCommands.create(metadata, key, request.readFilter(), DataLimits.NONE, FBUtilities.nowInSeconds());
+            ConsistencyLevel readConsistency = consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL ? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM;
+            ReadPartition current = ReadPartition.create(readOne(readCommand, readConsistency));
             if (!request.appliesTo(current))
             {
                 Tracing.trace("CAS precondition does not match current values {}", current);
                 // We should not return null as this means success
-                return current == null ? ArrayBackedSortedColumns.factory.create(metadata) : current;
+                return current.rowIterator();
             }
 
             // finish the paxos round w/ the desired updates
             // TODO turn null updates into delete?
-            ColumnFamily updates = request.makeUpdates(current);
+            PartitionUpdate updates = request.makeUpdates(current);
 
             // Apply triggers to cas updates. A consideration here is that
             // triggers emit Mutations, and so a given trigger implementation
@@ -245,9 +246,9 @@ public class StorageProxy implements StorageProxyMBean
             // validate that the generated mutations are targetted at the same
             // partition as the initial updates and reject (via an
             // InvalidRequestException) any which aren't.
-            updates = TriggerExecutor.instance.execute(key, updates);
+            updates = TriggerExecutor.instance.execute(updates);
 
-            Commit proposal = Commit.newProposal(key, ballot, updates);
+            Commit proposal = Commit.newProposal(ballot, updates);
             Tracing.trace("CAS precondition is met; proposing client-requested updates for {}", ballot);
             if (proposePaxos(proposal, liveEndpoints, requiredParticipants, true, consistencyForPaxos))
             {
@@ -276,11 +277,11 @@ public class StorageProxy implements StorageProxyMBean
         };
     }
 
-    private static Pair<List<InetAddress>, Integer> getPaxosParticipants(String keyspaceName, ByteBuffer key, ConsistencyLevel consistencyForPaxos) throws UnavailableException
+    private static Pair<List<InetAddress>, Integer> getPaxosParticipants(CFMetaData cfm, DecoratedKey key, ConsistencyLevel consistencyForPaxos) throws UnavailableException
     {
-        Token tk = StorageService.getPartitioner().getToken(key);
-        List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(keyspaceName, tk);
-        Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
+        Token tk = key.getToken();
+        List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(cfm.ksName, tk);
+        Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, cfm.ksName);
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
             // Restrict naturalEndpoints and pendingEndpoints to node in the local DC only
@@ -302,7 +303,7 @@ public class StorageProxy implements StorageProxyMBean
      * @return the Paxos ballot promised by the replicas if no in-progress requests were seen and a quorum of
      * nodes have seen the mostRecentCommit.  Otherwise, return null.
      */
-    private static UUID beginAndRepairPaxos(long start, ByteBuffer key, CFMetaData metadata, List<InetAddress> liveEndpoints, int requiredParticipants, ConsistencyLevel consistencyForPaxos, ConsistencyLevel consistencyForCommit)
+    private static UUID beginAndRepairPaxos(long start, DecoratedKey key, CFMetaData metadata, List<InetAddress> liveEndpoints, int requiredParticipants, ConsistencyLevel consistencyForPaxos, ConsistencyLevel consistencyForCommit)
     throws WriteTimeoutException
     {
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getCasContentionTimeout());
@@ -335,7 +336,7 @@ public class StorageProxy implements StorageProxyMBean
             if (!inProgress.update.isEmpty() && inProgress.isAfter(mostRecent))
             {
                 Tracing.trace("Finishing incomplete paxos round {}", inProgress);
-                Commit refreshedInProgress = Commit.newProposal(inProgress.key, ballot, inProgress.update);
+                Commit refreshedInProgress = Commit.newProposal(ballot, inProgress.update);
                 if (proposePaxos(refreshedInProgress, liveEndpoints, requiredParticipants, false, consistencyForPaxos))
                 {
                     commitPaxos(refreshedInProgress, consistencyForCommit);
@@ -384,7 +385,7 @@ public class StorageProxy implements StorageProxyMBean
     private static PrepareCallback preparePaxos(Commit toPrepare, List<InetAddress> endpoints, int requiredParticipants, ConsistencyLevel consistencyForPaxos)
     throws WriteTimeoutException
     {
-        PrepareCallback callback = new PrepareCallback(toPrepare.key, toPrepare.update.metadata(), requiredParticipants, consistencyForPaxos);
+        PrepareCallback callback = new PrepareCallback(toPrepare.update.partitionKey(), toPrepare.update.metadata(), requiredParticipants, consistencyForPaxos);
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_PREPARE, toPrepare, Commit.serializer);
         for (InetAddress target : endpoints)
             MessagingService.instance().sendRR(message, target, callback);
@@ -416,7 +417,7 @@ public class StorageProxy implements StorageProxyMBean
         boolean shouldBlock = consistencyLevel != ConsistencyLevel.ANY;
         Keyspace keyspace = Keyspace.open(proposal.update.metadata().ksName);
 
-        Token tk = StorageService.getPartitioner().getToken(proposal.key);
+        Token tk = proposal.update.partitionKey().getToken();
         List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(keyspace.getName(), tk);
         Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspace.getName());
 
@@ -494,7 +495,7 @@ public class StorageProxy implements StorageProxyMBean
                     if (mutation instanceof CounterMutation)
                         continue;
 
-                    Token tk = StorageService.getPartitioner().getToken(mutation.key());
+                    Token tk = mutation.key().getToken();
                     List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(mutation.getKeyspaceName(), tk);
                     Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, mutation.getKeyspaceName());
                     for (InetAddress target : Iterables.concat(naturalEndpoints, pendingEndpoints))
@@ -654,7 +655,7 @@ public class StorageProxy implements StorageProxyMBean
                                                                         Keyspace.open(Keyspace.SYSTEM_KS),
                                                                         null,
                                                                         WriteType.SIMPLE);
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, UUIDType.instance.decompose(uuid));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(uuid)));
         mutation.delete(SystemKeyspace.BATCHLOG_CF, FBUtilities.timestampMicros());
         MessageOut<Mutation> message = mutation.createMessage();
         for (InetAddress target : endpoints)
@@ -704,7 +705,7 @@ public class StorageProxy implements StorageProxyMBean
         String keyspaceName = mutation.getKeyspaceName();
         AbstractReplicationStrategy rs = Keyspace.open(keyspaceName).getReplicationStrategy();
 
-        Token tk = StorageService.getPartitioner().getToken(mutation.key());
+        Token tk = mutation.key().getToken();
         List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(keyspaceName, tk);
         Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
 
@@ -722,7 +723,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         AbstractReplicationStrategy rs = Keyspace.open(mutation.getKeyspaceName()).getReplicationStrategy();
         String keyspaceName = mutation.getKeyspaceName();
-        Token tk = StorageService.getPartitioner().getToken(mutation.key());
+        Token tk = mutation.key().getToken();
         List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(keyspaceName, tk);
         Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
         AbstractWriteResponseHandler responseHandler = rs.getWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, null, writeType);
@@ -1001,7 +1002,7 @@ public class StorageProxy implements StorageProxyMBean
             // Exit now if we can't fulfill the CL here instead of forwarding to the leader replica
             String keyspaceName = cm.getKeyspaceName();
             AbstractReplicationStrategy rs = Keyspace.open(keyspaceName).getReplicationStrategy();
-            Token tk = StorageService.getPartitioner().getToken(cm.key());
+            Token tk = cm.key().getToken();
             List<InetAddress> naturalEndpoints = StorageService.instance.getNaturalEndpoints(keyspaceName, tk);
             Collection<InetAddress> pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
 
@@ -1026,7 +1027,7 @@ public class StorageProxy implements StorageProxyMBean
      * is unclear we want to mix those latencies with read latencies, so this
      * may be a bit involved.
      */
-    private static InetAddress findSuitableEndpoint(String keyspaceName, ByteBuffer key, String localDataCenter, ConsistencyLevel cl) throws UnavailableException
+    private static InetAddress findSuitableEndpoint(String keyspaceName, DecoratedKey key, String localDataCenter, ConsistencyLevel cl) throws UnavailableException
     {
         Keyspace keyspace = Keyspace.open(keyspaceName);
         IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
@@ -1097,19 +1098,25 @@ public class StorageProxy implements StorageProxyMBean
         };
     }
 
-    private static boolean systemKeyspaceQuery(List<ReadCommand> cmds)
+    private static boolean systemKeyspaceQuery(List<? extends ReadCommand> cmds)
     {
         for (ReadCommand cmd : cmds)
-            if (!cmd.ksName.equals(Keyspace.SYSTEM_KS))
+            if (!cmd.metadata().ksName.equals(Keyspace.SYSTEM_KS))
                 return false;
         return true;
+    }
+
+    public static RowIterator readOne(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel)
+    throws UnavailableException, IsBootstrappingException, ReadTimeoutException, InvalidRequestException
+    {
+        return DataIterators.getOnlyElement(read(Collections.singletonList(command), consistencyLevel));
     }
 
     /**
      * Performs the actual reading of a row out of the StorageService, fetching
      * a specific set of column names from a given column family.
      */
-    public static List<Row> read(List<ReadCommand> commands, ConsistencyLevel consistency_level)
+    public static DataIterator read(List<SinglePartitionReadCommand> commands, ConsistencyLevel consistencyLevel)
     throws UnavailableException, IsBootstrappingException, ReadTimeoutException, InvalidRequestException
     {
         if (StorageService.instance.isBootstrapMode() && !systemKeyspaceQuery(commands))
@@ -1120,37 +1127,38 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         long start = System.nanoTime();
-        List<Row> rows = null;
+        DataIterator result = null;
         try
         {
-            if (consistency_level.isSerialConsistency())
+            if (consistencyLevel.isSerialConsistency())
             {
                 // make sure any in-progress paxos writes are done (i.e., committed to a majority of replicas), before performing a quorum read
                 if (commands.size() > 1)
-                    throw new InvalidRequestException("SERIAL/LOCAL_SERIAL consistency may only be requested for one row at a time");
-                ReadCommand command = commands.get(0);
+                    throw new InvalidRequestException("SERIAL/LOCAL_SERIAL consistency may only be requested for one partition at a time");
+                SinglePartitionReadCommand command = commands.get(0);
 
-                CFMetaData metadata = Schema.instance.getCFMetaData(command.ksName, command.cfName);
-                Pair<List<InetAddress>, Integer> p = getPaxosParticipants(command.ksName, command.key, consistency_level);
+                CFMetaData metadata = command.metadata();
+                DecoratedKey key = command.partitionKey();
+                Pair<List<InetAddress>, Integer> p = getPaxosParticipants(metadata, key, consistencyLevel);
                 List<InetAddress> liveEndpoints = p.left;
                 int requiredParticipants = p.right;
 
                 // does the work of applying in-progress writes; throws UAE or timeout if it can't
-                final ConsistencyLevel consistencyForCommitOrFetch = consistency_level == ConsistencyLevel.LOCAL_SERIAL ? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM;
+                final ConsistencyLevel consistencyForCommitOrFetch = consistencyLevel == ConsistencyLevel.LOCAL_SERIAL ? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM;
                 try
                 {
-                    beginAndRepairPaxos(start, command.key, metadata, liveEndpoints, requiredParticipants, consistency_level, consistencyForCommitOrFetch);
+                    beginAndRepairPaxos(start, key, metadata, liveEndpoints, requiredParticipants, consistencyLevel, consistencyForCommitOrFetch);
                 }
                 catch (WriteTimeoutException e)
                 {
-                    throw new ReadTimeoutException(consistency_level, 0, consistency_level.blockFor(Keyspace.open(command.ksName)), false);
+                    throw new ReadTimeoutException(consistencyLevel, 0, consistencyLevel.blockFor(Keyspace.open(metadata.ksName)), false);
                 }
 
-                rows = fetchRows(commands, consistencyForCommitOrFetch);
+                result = fetchRows(commands, consistencyForCommitOrFetch);
             }
             else
             {
-                rows = fetchRows(commands, consistency_level);
+                result = fetchRows(commands, consistencyLevel);
             }
         }
         catch (UnavailableException e)
@@ -1171,9 +1179,9 @@ public class StorageProxy implements StorageProxyMBean
             readMetrics.addNano(latency);
             // TODO avoid giving every command the same latency number.  Can fix this in CASSADRA-5329
             for (ReadCommand command : commands)
-                Keyspace.open(command.ksName).getColumnFamilyStore(command.cfName).metric.coordinatorReadLatency.update(latency, TimeUnit.NANOSECONDS);
+                Keyspace.openAndGetStore(command.metadata()).metric.coordinatorReadLatency.update(latency, TimeUnit.NANOSECONDS);
         }
-        return rows;
+        return result;
     }
 
     /**
@@ -1187,167 +1195,164 @@ public class StorageProxy implements StorageProxyMBean
      * 4. If the digests (if any) match the data return the data
      * 5. else carry out read repair by getting data from all the nodes.
      */
-    private static List<Row> fetchRows(List<ReadCommand> initialCommands, ConsistencyLevel consistencyLevel)
+    @Inline
+    private static DataIterator fetchRows(List<SinglePartitionReadCommand> commands, ConsistencyLevel consistencyLevel)
     throws UnavailableException, ReadTimeoutException
     {
-        List<Row> rows = new ArrayList<>(initialCommands.size());
-        // (avoid allocating a new list in the common case of nothing-to-retry)
-        List<ReadCommand> commandsToRetry = Collections.emptyList();
+        int cmdCount = commands.size();
 
-        do
+        SinglePartitionReadLifecycle[] reads = new SinglePartitionReadLifecycle[cmdCount];
+        for (int i = 0; i < cmdCount; i++)
+            reads[i] = new SinglePartitionReadLifecycle(commands.get(i), consistencyLevel);
+
+        while (true)
         {
-            List<ReadCommand> commands = commandsToRetry.isEmpty() ? initialCommands : commandsToRetry;
-            AbstractReadExecutor[] readExecutors = new AbstractReadExecutor[commands.size()];
+            for (int i = 0; i < cmdCount; i++)
+                if (!reads[i].isDone())
+                    reads[i].doInitialQueries();
 
-            if (!commandsToRetry.isEmpty())
-                Tracing.trace("Retrying {} commands", commandsToRetry.size());
+            for (int i = 0; i < cmdCount; i++)
+                if (!reads[i].isDone())
+                    reads[i].maybeTryAdditionalReplicas();
 
-            // send out read requests
-            for (int i = 0; i < commands.size(); i++)
+            for (int i = 0; i < cmdCount; i++)
+                if (!reads[i].isDone())
+                    reads[i].awaitResultsAndRetryOnDigestMismatch();
+
+            for (int i = 0; i < cmdCount; i++)
+                if (!reads[i].isDone())
+                    reads[i].maybeAwaitFullDataRead();
+
+            boolean isDone = true;
+            for (int i = 0; i < cmdCount; i++)
             {
-                ReadCommand command = commands.get(i);
-                assert !command.isDigestQuery();
+                SinglePartitionReadLifecycle read = reads[i];
+                if (read.isDone())
+                    continue;
 
-                AbstractReadExecutor exec = AbstractReadExecutor.getReadExecutor(command, consistencyLevel);
-                exec.executeAsync();
-                readExecutors[i] = exec;
+                // If we're not done with this read, it was a short read, we need to retry it.
+                isDone = false;
+                reads[i] = new SinglePartitionReadLifecycle(read.getShortReadRetryCommand(), consistencyLevel);
             }
 
-            for (AbstractReadExecutor exec : readExecutors)
-                exec.maybeTryAdditionalReplicas();
+            if (isDone)
+                break;
+        }
 
-            // read results and make a second pass for any digest mismatches
-            List<ReadCommand> repairCommands = null;
-            List<ReadCallback<ReadResponse, Row>> repairResponseHandlers = null;
-            for (AbstractReadExecutor exec: readExecutors)
+        List<DataIterator> results = new ArrayList<>(cmdCount);
+        for (int i = 0; i < cmdCount; i++)
+            results.set(i, reads[i].getResult());
+
+        return DataIterators.concat(results);
+    }
+
+    private static class SinglePartitionReadLifecycle
+    {
+        private final SinglePartitionReadCommand command;
+        private final AbstractReadExecutor executor;
+
+        private DataIterator result;
+
+        private ReadCallback<ReadResponse, DataIterator> repairHandler;
+
+        private SinglePartitionReadCommand retryCommand;
+
+        SinglePartitionReadLifecycle(SinglePartitionReadCommand command, ConsistencyLevel consistency)
+        {
+            this.command = command;
+            this.executor = AbstractReadExecutor.getReadExecutor(command, consistency);
+        }
+
+        boolean isDone()
+        {
+            return result != null;
+        }
+
+        void doInitialQueries()
+        {
+            executor.executeAsync();
+        }
+
+        void maybeTryAdditionalReplicas()
+        {
+            executor.maybeTryAdditionalReplicas();
+        }
+
+        void awaitResultsAndRetryOnDigestMismatch() throws ReadTimeoutException
+        {
+            try
             {
-                try
+                result = executor.get();
+            }
+            catch (DigestMismatchException ex)
+            {
+                Tracing.trace("Digest mismatch: {}", ex);
+
+                ReadRepairMetrics.repairedBlocking.mark();
+
+                // Do a full data read to resolve the correct response (and repair node that need be)
+                Keyspace keyspace = Keyspace.open(command.metadata().ksName);
+                DataResolver resolver = new DataResolver(keyspace, command.metadata(), ConsistencyLevel.ALL, command.nowInSec(), executor.handler.endpoints.size());
+                repairHandler = new ReadCallback<>(resolver,
+                                                   ConsistencyLevel.ALL,
+                                                   executor.getContactedReplicas().size(),
+                                                   command,
+                                                   keyspace,
+                                                   executor.handler.endpoints);
+
+                MessageOut<ReadCommand> message = command.createMessage();
+                for (InetAddress endpoint : executor.getContactedReplicas())
                 {
-                    Row row = exec.get();
-                    if (row != null)
-                    {
-                        exec.command.maybeTrim(row);
-                        rows.add(row);
-                    }
-
-                    if (logger.isDebugEnabled())
-                        logger.debug("Read: {} ms.", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - exec.handler.start));
-                }
-                catch (ReadTimeoutException ex)
-                {
-                    int blockFor = consistencyLevel.blockFor(Keyspace.open(exec.command.getKeyspace()));
-                    int responseCount = exec.handler.getReceivedCount();
-                    String gotData = responseCount > 0
-                                   ? exec.resolver.isDataPresent() ? " (including data)" : " (only digests)"
-                                   : "";
-
-                    if (Tracing.isTracing())
-                    {
-                        Tracing.trace("Timed out; received {} of {} responses{}",
-                                      new Object[]{ responseCount, blockFor, gotData });
-                    }
-                    else if (logger.isDebugEnabled())
-                    {
-                        logger.debug("Read timeout; received {} of {} responses{}", responseCount, blockFor, gotData);
-                    }
-                    throw ex;
-                }
-                catch (DigestMismatchException ex)
-                {
-                    Tracing.trace("Digest mismatch: {}", ex);
-
-                    ReadRepairMetrics.repairedBlocking.mark();
-
-                    // Do a full data read to resolve the correct response (and repair node that need be)
-                    RowDataResolver resolver = new RowDataResolver(exec.command.ksName, exec.command.key, exec.command.filter(), exec.command.timestamp, exec.handler.endpoints.size());
-                    ReadCallback<ReadResponse, Row> repairHandler = new ReadCallback<>(resolver,
-                                                                                       ConsistencyLevel.ALL,
-                                                                                       exec.getContactedReplicas().size(),
-                                                                                       exec.command,
-                                                                                       Keyspace.open(exec.command.getKeyspace()),
-                                                                                       exec.handler.endpoints);
-
-                    if (repairCommands == null)
-                    {
-                        repairCommands = new ArrayList<>();
-                        repairResponseHandlers = new ArrayList<>();
-                    }
-                    repairCommands.add(exec.command);
-                    repairResponseHandlers.add(repairHandler);
-
-                    MessageOut<ReadCommand> message = exec.command.createMessage();
-                    for (InetAddress endpoint : exec.getContactedReplicas())
-                    {
-                        Tracing.trace("Enqueuing full data read to {}", endpoint);
-                        MessagingService.instance().sendRR(message, endpoint, repairHandler);
-                    }
+                    Tracing.trace("Enqueuing full data read to {}", endpoint);
+                    MessagingService.instance().sendRR(message, endpoint, repairHandler);
                 }
             }
+        }
 
-            commandsToRetry.clear();
+        void maybeAwaitFullDataRead() throws ReadTimeoutException
+        {
+            // There wasn't a digest mismatch, we're good
+            if (repairHandler == null)
+                return;
 
-            // read the results for the digest mismatch retries
-            if (repairResponseHandlers != null)
+            // Otherwise, get the result from the full-data read and check that it's not a short read
+            try
             {
-                for (int i = 0; i < repairCommands.size(); i++)
-                {
-                    ReadCommand command = repairCommands.get(i);
-                    ReadCallback<ReadResponse, Row> handler = repairResponseHandlers.get(i);
-
-                    Row row;
-                    try
-                    {
-                        row = handler.get();
-                    }
-                    catch (DigestMismatchException e)
-                    {
-                        throw new AssertionError(e); // full data requested from each node here, no digests should be sent
-                    }
-
-                    RowDataResolver resolver = (RowDataResolver)handler.resolver;
-                    try
-                    {
-                        // wait for the repair writes to be acknowledged, to minimize impact on any replica that's
-                        // behind on writes in case the out-of-sync row is read multiple times in quick succession
-                        FBUtilities.waitOnFutures(resolver.repairResults, DatabaseDescriptor.getWriteRpcTimeout());
-                    }
-                    catch (TimeoutException e)
-                    {
-                        Tracing.trace("Timed out on digest mismatch retries");
-                        int blockFor = consistencyLevel.blockFor(Keyspace.open(command.getKeyspace()));
-                        throw new ReadTimeoutException(consistencyLevel, blockFor-1, blockFor, true);
-                    }
-
-                    // retry any potential short reads
-                    ReadCommand retryCommand = command.maybeGenerateRetryCommand(resolver, row);
-                    if (retryCommand != null)
-                    {
-                        Tracing.trace("Issuing retry for read command");
-                        if (commandsToRetry == Collections.EMPTY_LIST)
-                            commandsToRetry = new ArrayList<>();
-                        commandsToRetry.add(retryCommand);
-                        continue;
-                    }
-
-                    if (row != null)
-                    {
-                        command.maybeTrim(row);
-                        rows.add(row);
-                    }
-                }
+                result = repairHandler.get();
             }
-        } while (!commandsToRetry.isEmpty());
+            catch (DigestMismatchException e)
+            {
+                throw new AssertionError(e); // full data requested from each node here, no digests should be sent
+            }
 
-        return rows;
+            // TODO: This currently forces use to consume the result entirely
+            // to know if there was a short-read, we should fix that
+            // TODO: should we close the result if there is a retry to do?
+            throw new UnsupportedOperationException();
+            //retryCommand = command.maybeGenerateRetryCommand(resolver, result);
+            //if (retryCommand != null)
+            //    result = null;
+        }
+
+        SinglePartitionReadCommand getShortReadRetryCommand()
+        {
+            return retryCommand;
+        }
+
+        DataIterator getResult()
+        {
+            assert result != null;
+            return result;
+        }
     }
 
     static class LocalReadRunnable extends DroppableRunnable
     {
         private final ReadCommand command;
-        private final ReadCallback<ReadResponse, Row> handler;
+        private final ReadCallback<ReadResponse, DataIterator> handler;
         private final long start = System.nanoTime();
 
-        LocalReadRunnable(ReadCommand command, ReadCallback<ReadResponse, Row> handler)
+        LocalReadRunnable(ReadCommand command, ReadCallback<ReadResponse, DataIterator> handler)
         {
             super(MessagingService.Verb.READ);
             this.command = command;
@@ -1356,32 +1361,13 @@ public class StorageProxy implements StorageProxyMBean
 
         protected void runMayThrow()
         {
-            Keyspace keyspace = Keyspace.open(command.ksName);
-            Row r = command.getRow(keyspace);
-            ReadResponse result = ReadVerbHandler.getResponse(command, r);
+            CFMetaData cfm = command.metadata();
+            Keyspace keyspace = Keyspace.open(cfm.ksName);
+            ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfm.cfId);
+
+            PartitionIterator result = command.executeLocally(cfs);
             MessagingService.instance().addLatency(FBUtilities.getBroadcastAddress(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
-            handler.response(result);
-        }
-    }
-
-    static class LocalRangeSliceRunnable extends DroppableRunnable
-    {
-        private final AbstractRangeCommand command;
-        private final ReadCallback<RangeSliceReply, Iterable<Row>> handler;
-        private final long start = System.nanoTime();
-
-        LocalRangeSliceRunnable(AbstractRangeCommand command, ReadCallback<RangeSliceReply, Iterable<Row>> handler)
-        {
-            super(MessagingService.Verb.RANGE_SLICE);
-            this.command = command;
-            this.handler = handler;
-        }
-
-        protected void runMayThrow()
-        {
-            RangeSliceReply result = new RangeSliceReply(command.executeLocally());
-            MessagingService.instance().addLatency(FBUtilities.getBroadcastAddress(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
-            handler.response(result);
+            handler.response(command.makeResponse(result));
         }
     }
 
@@ -1390,7 +1376,7 @@ public class StorageProxy implements StorageProxyMBean
         return getLiveSortedEndpoints(keyspace, StorageService.getPartitioner().decorateKey(key));
     }
 
-    private static List<InetAddress> getLiveSortedEndpoints(Keyspace keyspace, RingPosition pos)
+    public static List<InetAddress> getLiveSortedEndpoints(Keyspace keyspace, RingPosition pos)
     {
         List<InetAddress> liveEndpoints = StorageService.instance.getLiveNaturalEndpoints(keyspace, pos);
         DatabaseDescriptor.getEndpointSnitch().sortByProximity(FBUtilities.getBroadcastAddress(), liveEndpoints);
@@ -1410,290 +1396,321 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     /**
-     * Estimate the number of result rows (either cql3 rows or storage rows, as called for by the command) per
+     * Estimate the number of result rows (either cql3 rows or "thrift" rows, as called for by the command) per
      * range in the ring based on our local data.  This assumes that ranges are uniformly distributed across the cluster
      * and that the queried data is also uniformly distributed.
      */
-    private static float estimateResultRowsPerRange(AbstractRangeCommand command, Keyspace keyspace)
+    private static float estimateResultRowsPerRange(PartitionRangeReadCommand command, Keyspace keyspace)
     {
-        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(command.columnFamily);
-        float resultRowsPerRange = Float.POSITIVE_INFINITY;
-        if (command.rowFilter != null && !command.rowFilter.isEmpty())
+        // TODO
+        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(command.metadata().cfId);
+
+        SecondaryIndexSearcher searcher = cfs.indexManager.getBestIndexSearcherFor(command);
+
+        float maxExpectedResults = searcher == null
+                                 ? command.limits().estimateTotalResults(cfs)
+                                 : searcher.highestSelectivityIndex(command.columnFilter()).estimateResultRows();
+
+        // adjust maxExpectedResults by the number of tokens this node has and the replication factor for this ks
+        return (maxExpectedResults / DatabaseDescriptor.getNumTokens()) / keyspace.getReplicationStrategy().getReplicationFactor();
+    }
+
+    private static class RangeForQuery
+    {
+        public final AbstractBounds<RowPosition> range;
+        public final List<InetAddress> liveEndpoints;
+        public final List<InetAddress> filteredEndpoints;
+
+        public RangeForQuery(AbstractBounds<RowPosition> range, List<InetAddress> liveEndpoints, List<InetAddress> filteredEndpoints)
         {
-            List<SecondaryIndexSearcher> searchers = cfs.indexManager.getIndexSearchersForQuery(command.rowFilter);
-            if (searchers.isEmpty())
+            this.range = range;
+            this.liveEndpoints = liveEndpoints;
+            this.filteredEndpoints = filteredEndpoints;
+        }
+    }
+
+    private static class RangeIterator extends AbstractIterator<RangeForQuery>
+    {
+        private final Keyspace keyspace;
+        private final ConsistencyLevel consistency;
+        private final Iterator<? extends AbstractBounds<RowPosition>> ranges;
+        private final int rangeCount;
+
+        public RangeIterator(PartitionRangeReadCommand command, Keyspace keyspace, ConsistencyLevel consistency)
+        {
+            this.keyspace = keyspace;
+            this.consistency = consistency;
+
+            List<? extends AbstractBounds<RowPosition>> l = keyspace.getReplicationStrategy() instanceof LocalStrategy
+                                                          ? command.dataRange().keyRange().unwrap()
+                                                          : getRestrictedRanges(command.dataRange().keyRange());
+            this.ranges = l.iterator();
+            this.rangeCount = l.size();
+        }
+
+        public int rangeCount()
+        {
+            return rangeCount;
+        }
+
+        protected RangeForQuery computeNext()
+        {
+            if (!ranges.hasNext())
+                return endOfData();
+
+            AbstractBounds<RowPosition> range = ranges.next();
+            List<InetAddress> liveEndpoints = getLiveSortedEndpoints(keyspace, range.right);
+            return new RangeForQuery(range,
+                                     liveEndpoints,
+                                     consistency.filterForQuery(keyspace, liveEndpoints));
+        }
+    }
+
+    private static class RangeMerger extends AbstractIterator<RangeForQuery>
+    {
+        private final Keyspace keyspace;
+        private final ConsistencyLevel consistency;
+        private final PeekingIterator<RangeForQuery> ranges;
+
+        private RangeMerger(Iterator<RangeForQuery> iterator, Keyspace keyspace, ConsistencyLevel consistency)
+        {
+            this.keyspace = keyspace;
+            this.consistency = consistency;
+            this.ranges = Iterators.peekingIterator(iterator);
+        }
+
+        protected RangeForQuery computeNext()
+        {
+            RangeForQuery current = ranges.next();
+
+            // getRestrictedRange has broken the queried range into per-[vnode] token ranges, but this doesn't take
+            // the replication factor into account. If the intersection of live endpoints for 2 consecutive ranges
+            // still meets the CL requirements, then we can merge both ranges into the same RangeSliceCommand.
+            while (ranges.hasNext())
             {
-                resultRowsPerRange = calculateResultRowsUsingEstimatedKeys(cfs);
+                // If the current range right is the min token, we should stop merging because CFS.getRangeSlice
+                // don't know how to deal with a wrapping range.
+                // Note: it would be slightly more efficient to have CFS.getRangeSlice on the destination nodes unwraps
+                // the range if necessary and deal with it. However, we can't start sending wrapped range without breaking
+                // wire compatibility, so It's likely easier not to bother;
+                if (current.range.right.isMinimum())
+                    break;
+
+                RangeForQuery next = ranges.peek();
+
+                List<InetAddress> merged = intersection(current.liveEndpoints, next.liveEndpoints);
+
+                // Check if there is enough endpoint for the merge to be possible.
+                if (!consistency.isSufficientLiveNodes(keyspace, merged))
+                    break;
+
+                List<InetAddress> filteredMerged = consistency.filterForQuery(keyspace, merged);
+
+                // Estimate whether merging will be a win or not
+                if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.filteredEndpoints, next.filteredEndpoints))
+                    break;
+
+                // If we get there, merge this range and the next one
+                current = new RangeForQuery(current.range.withNewRight(next.range.right), merged, filteredMerged);
+            }
+            return current;
+        }
+    }
+
+    private static class SingleRangeResponse extends AbstractIterator<RowIterator> implements DataIterator
+    {
+        private final ReadCallback<ReadResponse, DataIterator> handler;
+        private DataIterator result;
+
+        private SingleRangeResponse(ReadCallback<ReadResponse, DataIterator> handler)
+        {
+            this.handler = handler;
+        }
+
+        private void waitForResponse() throws ReadTimeoutException
+        {
+            try
+            {
+                result = handler.get();
+            }
+            catch (DigestMismatchException e)
+            {
+                throw new AssertionError(e); // no digests in range slices yet
+            }
+        }
+
+        protected RowIterator computeNext()
+        {
+            waitForResponse();
+            return result.hasNext() ? result.next() : endOfData();
+        }
+
+        public void close() throws IOException
+        {
+            if (result != null)
+                result.close();
+        }
+    }
+
+    private static class RangeCommandIterator extends AbstractIterator<RowIterator> implements DataIterator
+    {
+        private final Iterator<RangeForQuery> ranges;
+        private final PartitionRangeReadCommand command;
+        private final Keyspace keyspace;
+        private final ConsistencyLevel consistency;
+        private int concurrencyFactor;
+
+        private final long startTime;
+        private DataIterator sentQueryIterator;
+
+        public RangeCommandIterator(RangeIterator ranges, PartitionRangeReadCommand command, int concurrencyFactor, Keyspace keyspace, ConsistencyLevel consistency)
+        {
+            this.command = command;
+            this.concurrencyFactor = concurrencyFactor;
+            this.startTime = System.nanoTime();
+            this.ranges = new RangeMerger(ranges, keyspace, consistency);
+            this.consistency = consistency;
+            this.keyspace = keyspace;
+        }
+
+        public RowIterator computeNext()
+        {
+            if (sentQueryIterator == null || !sentQueryIterator.hasNext())
+            {
+                // If we don't have more range to handle, we're done
+                if (!ranges.hasNext())
+                    return endOfData();
+
+                // If it's not the first queries we do, we can use what has been returned so far
+                // to improve our rows-per-range estimate and update the concurrency accordingly
+                updateConcurrencyFactor();
+
+                // else, sends the next batch of concurrent queries (after having close the previous iterator)
+                if (sentQueryIterator != null)
+                {
+                    try
+                    {
+                        sentQueryIterator.close();
+                    }
+                    catch (IOException e)
+                    {
+                        throw new RuntimeException(e);
+                    }
+                }
+                sentQueryIterator = sendNextRequests();
+            }
+
+            return sentQueryIterator.next();
+        }
+
+        private void updateConcurrencyFactor()
+        {
+            // TODO
+            // we didn't get enough rows in our concurrent fetch; recalculate our concurrency factor
+            // based on the results we've seen so far (as long as we still have ranges left to query)
+            //if (i < ranges.size())
+            //{
+            //    float fetchedRows = command.countCQL3Rows() ? cql3RowCount : rows.size();
+            //    float remainingRows = command.limit() - fetchedRows;
+            //    float actualRowsPerRange;
+            //    if (fetchedRows == 0.0)
+            //    {
+            //        // we haven't actually gotten any results, so query all remaining ranges at once
+            //        actualRowsPerRange = 0.0f;
+            //        concurrencyFactor = ranges.size() - i;
+            //    }
+            //    else
+            //    {
+            //        actualRowsPerRange = i / fetchedRows;
+            //        concurrencyFactor = Math.max(1, Math.min(ranges.size() - i, Math.round(remainingRows / actualRowsPerRange)));
+            //    }
+            //    logger.debug("Didn't get enough response rows; actual rows per range: {}; remaining rows: {}, new concurrent requests: {}",
+            //            actualRowsPerRange, (int) remainingRows, concurrencyFactor);
+            //}
+        }
+
+        private SingleRangeResponse query(RangeForQuery toQuery)
+        {
+            PartitionRangeReadCommand rangeCommand = command.forSubRange(toQuery.range);
+
+            DataResolver resolver = new DataResolver(keyspace, rangeCommand.metadata(), consistency, command.nowInSec(), toQuery.filteredEndpoints.size());
+
+            int blockFor = consistency.blockFor(keyspace);
+            int minResponses = Math.min(toQuery.filteredEndpoints.size(), blockFor);
+            List<InetAddress> minimalEndpoints = toQuery.filteredEndpoints.subList(0, minResponses);
+            ReadCallback<ReadResponse, DataIterator> handler = new ReadCallback<>(resolver, consistency, rangeCommand, minimalEndpoints);
+
+            handler.assureSufficientLiveNodes();
+
+            if (toQuery.filteredEndpoints.size() == 1
+                && toQuery.filteredEndpoints.get(0).equals(FBUtilities.getBroadcastAddress())
+                && OPTIMIZE_LOCAL_REQUESTS)
+            {
+                StageManager.getStage(Stage.READ).execute(new LocalReadRunnable(rangeCommand, handler), Tracing.instance.get());
             }
             else
             {
-                // Secondary index query (cql3 or otherwise).  Estimate result rows based on most selective 2ary index.
-                for (SecondaryIndexSearcher searcher : searchers)
+                MessageOut<ReadCommand> message = rangeCommand.createMessage();
+                for (InetAddress endpoint : toQuery.filteredEndpoints)
                 {
-                    // use our own mean column count as our estimate for how many matching rows each node will have
-                    SecondaryIndex highestSelectivityIndex = searcher.highestSelectivityIndex(command.rowFilter);
-                    resultRowsPerRange = Math.min(resultRowsPerRange, highestSelectivityIndex.estimateResultRows());
+                    Tracing.trace("Enqueuing request to {}", endpoint);
+                    MessagingService.instance().sendRR(message, endpoint, handler);
                 }
             }
-        }
-        else if (!command.countCQL3Rows())
-        {
-            // non-cql3 query
-            resultRowsPerRange = cfs.estimateKeys();
-        }
-        else
-        {
-            resultRowsPerRange = calculateResultRowsUsingEstimatedKeys(cfs);
+
+            return new SingleRangeResponse(handler);
         }
 
-        // adjust resultRowsPerRange by the number of tokens this node has and the replication factor for this ks
-        return (resultRowsPerRange / DatabaseDescriptor.getNumTokens()) / keyspace.getReplicationStrategy().getReplicationFactor();
+        private DataIterator sendNextRequests()
+        {
+            List<DataIterator> concurrentQueries = new ArrayList<>(concurrencyFactor);
+            for (int i = 0; i < concurrencyFactor && ranges.hasNext(); i++)
+                concurrentQueries.add(query(ranges.next()));
+
+            Tracing.trace("Submitted {} concurrent range requests", concurrentQueries.size());
+            return DataIterators.concat(concurrentQueries);
+        }
+
+        public void close() throws IOException
+        {
+            try
+            {
+                if (sentQueryIterator != null)
+                    sentQueryIterator.close();
+            }
+            finally
+            {
+                long latency = System.nanoTime() - startTime;
+                rangeMetrics.addNano(latency);
+                Keyspace.openAndGetStore(command.metadata()).metric.coordinatorScanLatency.update(latency, TimeUnit.NANOSECONDS);
+            }
+        }
     }
 
-    private static float calculateResultRowsUsingEstimatedKeys(ColumnFamilyStore cfs)
-    {
-        if (cfs.metadata.comparator.isDense())
-        {
-            // one storage row per result row, so use key estimate directly
-            return cfs.estimateKeys();
-        }
-        else
-        {
-            float resultRowsPerStorageRow = ((float) cfs.getMeanColumns()) / cfs.metadata.regularColumns().size();
-            return resultRowsPerStorageRow * (cfs.estimateKeys());
-        }
-    }
-
-    public static List<Row> getRangeSlice(AbstractRangeCommand command, ConsistencyLevel consistency_level)
+    public static DataIterator getRangeSlice(PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel)
     throws UnavailableException, ReadTimeoutException
     {
         Tracing.trace("Computing ranges to query");
         long startTime = System.nanoTime();
 
-        Keyspace keyspace = Keyspace.open(command.keyspace);
-        List<Row> rows;
-        // now scan until we have enough results
-        try
-        {
-            int cql3RowCount = 0;
-            rows = new ArrayList<>();
+        List<ReadPartition> partitions = new ArrayList<>();
 
-            // when dealing with LocalStrategy keyspaces, we can skip the range splitting and merging (which can be
-            // expensive in clusters with vnodes)
-            List<? extends AbstractBounds<RowPosition>> ranges;
-            if (keyspace.getReplicationStrategy() instanceof LocalStrategy)
-                ranges = command.keyRange.unwrap();
-            else
-                ranges = getRestrictedRanges(command.keyRange);
+        Keyspace keyspace = Keyspace.open(command.metadata().ksName);
+        RangeIterator ranges = new RangeIterator(command, keyspace, consistencyLevel);
 
-            // our estimate of how many result rows there will be per-range
-            float resultRowsPerRange = estimateResultRowsPerRange(command, keyspace);
-            // underestimate how many rows we will get per-range in order to increase the likelihood that we'll
-            // fetch enough rows in the first round
-            resultRowsPerRange -= resultRowsPerRange * CONCURRENT_SUBREQUESTS_MARGIN;
-            int concurrencyFactor = resultRowsPerRange == 0.0
-                                  ? 1
-                                  : Math.max(1, Math.min(ranges.size(), (int) Math.ceil(command.limit() / resultRowsPerRange)));
-            logger.debug("Estimated result rows per range: {}; requested rows: {}, ranges.size(): {}; concurrent range requests: {}",
-                         resultRowsPerRange, command.limit(), ranges.size(), concurrencyFactor);
-            Tracing.trace("Submitting range requests on {} ranges with a concurrency of {} ({} rows per range expected)", new Object[]{ ranges.size(), concurrencyFactor, resultRowsPerRange});
+        // our estimate of how many result rows there will be per-range
+        float resultRowsPerRange = estimateResultRowsPerRange(command, keyspace);
+        // underestimate how many rows we will get per-range in order to increase the likelihood that we'll
+        // fetch enough rows in the first round
+        resultRowsPerRange -= resultRowsPerRange * CONCURRENT_SUBREQUESTS_MARGIN;
+        int concurrencyFactor = resultRowsPerRange == 0.0
+                              ? 1
+                              : Math.max(1, Math.min(ranges.rangeCount(), (int) Math.ceil(command.limits().count() / resultRowsPerRange)));
+        logger.debug("Estimated result rows per range: {}; requested rows: {}, ranges.size(): {}; concurrent range requests: {}",
+                     resultRowsPerRange, command.limits().count(), ranges.rangeCount(), concurrencyFactor);
+        Tracing.trace("Submitting range requests on {} ranges with a concurrency of {} ({} rows per range expected)", new Object[]{ ranges.rangeCount(), concurrencyFactor, resultRowsPerRange});
 
-            boolean haveSufficientRows = false;
-            int i = 0;
-            AbstractBounds<RowPosition> nextRange = null;
-            List<InetAddress> nextEndpoints = null;
-            List<InetAddress> nextFilteredEndpoints = null;
-            while (i < ranges.size())
-            {
-                List<Pair<AbstractRangeCommand, ReadCallback<RangeSliceReply, Iterable<Row>>>> scanHandlers = new ArrayList<>(concurrencyFactor);
-                int concurrentFetchStartingIndex = i;
-                int concurrentRequests = 0;
-                while ((i - concurrentFetchStartingIndex) < concurrencyFactor)
-                {
-                    AbstractBounds<RowPosition> range = nextRange == null
-                                                      ? ranges.get(i)
-                                                      : nextRange;
-                    List<InetAddress> liveEndpoints = nextEndpoints == null
-                                                    ? getLiveSortedEndpoints(keyspace, range.right)
-                                                    : nextEndpoints;
-                    List<InetAddress> filteredEndpoints = nextFilteredEndpoints == null
-                                                        ? consistency_level.filterForQuery(keyspace, liveEndpoints)
-                                                        : nextFilteredEndpoints;
-                    ++i;
-                    ++concurrentRequests;
-
-                    // getRestrictedRange has broken the queried range into per-[vnode] token ranges, but this doesn't take
-                    // the replication factor into account. If the intersection of live endpoints for 2 consecutive ranges
-                    // still meets the CL requirements, then we can merge both ranges into the same RangeSliceCommand.
-                    while (i < ranges.size())
-                    {
-                        nextRange = ranges.get(i);
-                        nextEndpoints = getLiveSortedEndpoints(keyspace, nextRange.right);
-                        nextFilteredEndpoints = consistency_level.filterForQuery(keyspace, nextEndpoints);
-
-                        // If the current range right is the min token, we should stop merging because CFS.getRangeSlice
-                        // don't know how to deal with a wrapping range.
-                        // Note: it would be slightly more efficient to have CFS.getRangeSlice on the destination nodes unwraps
-                        // the range if necessary and deal with it. However, we can't start sending wrapped range without breaking
-                        // wire compatibility, so It's likely easier not to bother;
-                        if (range.right.isMinimum())
-                            break;
-
-                        List<InetAddress> merged = intersection(liveEndpoints, nextEndpoints);
-
-                        // Check if there is enough endpoint for the merge to be possible.
-                        if (!consistency_level.isSufficientLiveNodes(keyspace, merged))
-                            break;
-
-                        List<InetAddress> filteredMerged = consistency_level.filterForQuery(keyspace, merged);
-
-                        // Estimate whether merging will be a win or not
-                        if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, filteredEndpoints, nextFilteredEndpoints))
-                            break;
-
-                        // If we get there, merge this range and the next one
-                        range = range.withNewRight(nextRange.right);
-                        liveEndpoints = merged;
-                        filteredEndpoints = filteredMerged;
-                        ++i;
-                    }
-
-                    AbstractRangeCommand nodeCmd = command.forSubRange(range);
-
-                    // collect replies and resolve according to consistency level
-                    RangeSliceResponseResolver resolver = new RangeSliceResponseResolver(nodeCmd.keyspace, command.timestamp);
-                    List<InetAddress> minimalEndpoints = filteredEndpoints.subList(0, Math.min(filteredEndpoints.size(), consistency_level.blockFor(keyspace)));
-                    ReadCallback<RangeSliceReply, Iterable<Row>> handler = new ReadCallback<>(resolver, consistency_level, nodeCmd, minimalEndpoints);
-                    handler.assureSufficientLiveNodes();
-                    resolver.setSources(filteredEndpoints);
-                    if (filteredEndpoints.size() == 1
-                        && filteredEndpoints.get(0).equals(FBUtilities.getBroadcastAddress())
-                        && OPTIMIZE_LOCAL_REQUESTS)
-                    {
-                        StageManager.getStage(Stage.READ).execute(new LocalRangeSliceRunnable(nodeCmd, handler), Tracing.instance.get());
-                    }
-                    else
-                    {
-                        MessageOut<? extends AbstractRangeCommand> message = nodeCmd.createMessage();
-                        for (InetAddress endpoint : filteredEndpoints)
-                        {
-                            Tracing.trace("Enqueuing request to {}", endpoint);
-                            MessagingService.instance().sendRR(message, endpoint, handler);
-                        }
-                    }
-                    scanHandlers.add(Pair.create(nodeCmd, handler));
-                }
-                Tracing.trace("Submitted {} concurrent range requests covering {} ranges", concurrentRequests, i - concurrentFetchStartingIndex);
-
-                List<AsyncOneResponse> repairResponses = new ArrayList<>();
-                for (Pair<AbstractRangeCommand, ReadCallback<RangeSliceReply, Iterable<Row>>> cmdPairHandler : scanHandlers)
-                {
-                    AbstractRangeCommand nodeCmd = cmdPairHandler.left;
-                    ReadCallback<RangeSliceReply, Iterable<Row>> handler = cmdPairHandler.right;
-                    RangeSliceResponseResolver resolver = (RangeSliceResponseResolver)handler.resolver;
-
-                    try
-                    {
-                        for (Row row : handler.get())
-                        {
-                            rows.add(row);
-                            if (nodeCmd.countCQL3Rows())
-                                cql3RowCount += row.getLiveCount(command.predicate, command.timestamp);
-                        }
-                        repairResponses.addAll(resolver.repairResults);
-                    }
-                    catch (ReadTimeoutException ex)
-                    {
-                        // we timed out waiting for responses
-                        int blockFor = consistency_level.blockFor(keyspace);
-                        int responseCount = resolver.responses.size();
-                        String gotData = responseCount > 0
-                                         ? resolver.isDataPresent() ? " (including data)" : " (only digests)"
-                                         : "";
-
-                        if (Tracing.isTracing())
-                        {
-                            Tracing.trace("Timed out; received {} of {} responses{} for range {} of {}",
-                                          new Object[]{ responseCount, blockFor, gotData, i, ranges.size() });
-                        }
-                        else if (logger.isDebugEnabled())
-                        {
-                            logger.debug("Range slice timeout; received {} of {} responses{} for range {} of {}",
-                                         responseCount, blockFor, gotData, i, ranges.size());
-                        }
-                        throw ex;
-                    }
-                    catch (DigestMismatchException e)
-                    {
-                        throw new AssertionError(e); // no digests in range slices yet
-                    }
-
-                    // if we're done, great, otherwise, move to the next range
-                    int count = nodeCmd.countCQL3Rows() ? cql3RowCount : rows.size();
-                    if (count >= nodeCmd.limit())
-                    {
-                        haveSufficientRows = true;
-                        break;
-                    }
-                }
-
-                try
-                {
-                    FBUtilities.waitOnFutures(repairResponses, DatabaseDescriptor.getWriteRpcTimeout());
-                }
-                catch (TimeoutException ex)
-                {
-                    // We got all responses, but timed out while repairing
-                    int blockFor = consistency_level.blockFor(keyspace);
-                    if (Tracing.isTracing())
-                        Tracing.trace("Timed out while read-repairing after receiving all {} data and digest responses", blockFor);
-                    else
-                        logger.debug("Range slice timeout while read-repairing after receiving all {} data and digest responses", blockFor);
-                    throw new ReadTimeoutException(consistency_level, blockFor-1, blockFor, true);
-                }
-
-                if (haveSufficientRows)
-                    return trim(command, rows);
-
-                // we didn't get enough rows in our concurrent fetch; recalculate our concurrency factor
-                // based on the results we've seen so far (as long as we still have ranges left to query)
-                if (i < ranges.size())
-                {
-                    float fetchedRows = command.countCQL3Rows() ? cql3RowCount : rows.size();
-                    float remainingRows = command.limit() - fetchedRows;
-                    float actualRowsPerRange;
-                    if (fetchedRows == 0.0)
-                    {
-                        // we haven't actually gotten any results, so query all remaining ranges at once
-                        actualRowsPerRange = 0.0f;
-                        concurrencyFactor = ranges.size() - i;
-                    }
-                    else
-                    {
-                        actualRowsPerRange = i / fetchedRows;
-                        concurrencyFactor = Math.max(1, Math.min(ranges.size() - i, Math.round(remainingRows / actualRowsPerRange)));
-                    }
-                    logger.debug("Didn't get enough response rows; actual rows per range: {}; remaining rows: {}, new concurrent requests: {}",
-                                 actualRowsPerRange, (int) remainingRows, concurrencyFactor);
-                }
-            }
-        }
-        finally
-        {
-            long latency = System.nanoTime() - startTime;
-            rangeMetrics.addNano(latency);
-            Keyspace.open(command.keyspace).getColumnFamilyStore(command.columnFamily).metric.coordinatorScanLatency.update(latency, TimeUnit.NANOSECONDS);
-        }
-        return trim(command, rows);
-    }
-
-    private static List<Row> trim(AbstractRangeCommand command, List<Row> rows)
-    {
-        // When maxIsColumns, we let the caller trim the result.
-        if (command.countCQL3Rows())
-            return rows;
-        else
-            return rows.size() > command.limit() ? rows.subList(0, command.limit()) : rows;
+        return new RangeCommandIterator(ranges, command, concurrencyFactor, keyspace, consistencyLevel);
     }
 
     public Map<String, List<String>> getSchemaVersions()

@@ -26,9 +26,8 @@ import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.index.AbstractSimplePerColumnSecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
@@ -41,9 +40,9 @@ import org.apache.cassandra.exceptions.ConfigurationException;
  */
 public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIndex
 {
-    private volatile CellNameType indexComparator;
+    private volatile ClusteringComparator indexComparator;
 
-    protected CellNameType getIndexComparator()
+    protected ClusteringComparator getIndexComparator()
     {
         // Yes, this is racy, but doing this more than once is not a big deal, we just want to avoid doing it every time
         // More seriously, we should fix that whole SecondaryIndex API so this can be a final and avoid all that non-sense.
@@ -87,7 +86,7 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
     }
 
     // Check SecondaryIndex.getIndexComparator if you want to know why this is static
-    public static CellNameType getIndexComparator(CFMetaData baseMetadata, ColumnDefinition cfDef)
+    public static ClusteringComparator getIndexComparator(CFMetaData baseMetadata, ColumnDefinition cfDef)
     {
         if (cfDef.type.isCollection())
         {
@@ -118,25 +117,23 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
         throw new AssertionError();
     }
 
-    protected CellName makeIndexColumnName(ByteBuffer rowKey, Cell cell)
-    {
-        return getIndexComparator().create(makeIndexColumnPrefix(rowKey, cell.name()), null);
-    }
+    protected abstract ClusteringPrefix makeIndexClustering(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell);
 
-    protected abstract Composite makeIndexColumnPrefix(ByteBuffer rowKey, Composite columnName);
+    public abstract IndexedEntry decodeEntry(DecoratedKey indexedValue, ClusteringPrefix indexEntryClustering, Cell indexEntry);
 
-    public abstract IndexedEntry decodeEntry(DecoratedKey indexedValue, Cell indexEntry);
-
-    public abstract boolean isStale(IndexedEntry entry, ColumnFamily data, long now);
+    public abstract boolean isStale(IndexedEntry entry, Row row, int nowInSec);
 
     public void delete(IndexedEntry entry, OpOrder.Group opGroup)
     {
-        int localDeletionTime = (int) (System.currentTimeMillis() / 1000);
-        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata);
-        cfi.addTombstone(entry.indexEntry, localDeletionTime, entry.timestamp);
-        indexCfs.apply(entry.indexValue, cfi, SecondaryIndexManager.nullUpdater, opGroup, null);
+        ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
+        RowUpdate row = RowUpdates.create(entry.indexClustering, Columns.of(idxColumn))
+                        .addCell(idxColumn, Cells.createTombsone(entry.timestamp));
+
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, entry.indexValue).add(row);
+        indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
+
         if (logger.isDebugEnabled())
-            logger.debug("removed index entry for cleaned-up value {}:{}", entry.indexValue, cfi);
+            logger.debug("removed index entry for cleaned-up value {}:{}", entry.indexValue, upd);
     }
 
     protected AbstractType<?> getExpressionComparator()
@@ -144,7 +141,7 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
         return baseCfs.metadata.getColumnDefinitionComparator(columnDef);
     }
 
-    public SecondaryIndexSearcher createSecondaryIndexSearcher(Set<ByteBuffer> columns)
+    public SecondaryIndexSearcher createSecondaryIndexSearcher(Set<ColumnDefinition> columns)
     {
         return new CompositesSearcher(baseCfs.indexManager, columns);
     }
@@ -170,30 +167,30 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
     public static class IndexedEntry
     {
         public final DecoratedKey indexValue;
-        public final CellName indexEntry;
+        public final ClusteringPrefix indexClustering;
         public final long timestamp;
 
         public final ByteBuffer indexedKey;
-        public final Composite indexedEntryPrefix;
+        public final ClusteringPrefix indexedEntryClustering;
         public final ByteBuffer indexedEntryCollectionKey; // may be null
 
-        public IndexedEntry(DecoratedKey indexValue, CellName indexEntry, long timestamp, ByteBuffer indexedKey, Composite indexedEntryPrefix)
+        public IndexedEntry(DecoratedKey indexValue, ClusteringPrefix indexClustering, long timestamp, ByteBuffer indexedKey, ClusteringPrefix indexedEntryClustering)
         {
-            this(indexValue, indexEntry, timestamp, indexedKey, indexedEntryPrefix, null);
+            this(indexValue, indexClustering, timestamp, indexedKey, indexedEntryClustering, null);
         }
 
         public IndexedEntry(DecoratedKey indexValue,
-                            CellName indexEntry,
+                            ClusteringPrefix indexClustering,
                             long timestamp,
                             ByteBuffer indexedKey,
-                            Composite indexedEntryPrefix,
+                            ClusteringPrefix indexedEntryClustering,
                             ByteBuffer indexedEntryCollectionKey)
         {
             this.indexValue = indexValue;
-            this.indexEntry = indexEntry;
+            this.indexClustering = indexClustering;
             this.timestamp = timestamp;
             this.indexedKey = indexedKey;
-            this.indexedEntryPrefix = indexedEntryPrefix;
+            this.indexedEntryClustering = indexedEntryClustering;
             this.indexedEntryCollectionKey = indexedEntryCollectionKey;
         }
     }

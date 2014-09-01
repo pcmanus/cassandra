@@ -19,7 +19,7 @@ package org.apache.cassandra.service.pager;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.db.filter.ColumnCounter;
+import org.apache.cassandra.db.filters.DataLimits;
 
 /**
  * Common interface to single partition queries (by slice and by name).
@@ -29,5 +29,5 @@ import org.apache.cassandra.db.filter.ColumnCounter;
 public interface SinglePartitionPager extends QueryPager
 {
     public ByteBuffer key();
-    public ColumnCounter columnCounter();
+    public DataLimits limits();
 }

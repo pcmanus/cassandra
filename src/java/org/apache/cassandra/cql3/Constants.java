@@ -24,8 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.CounterColumnType;
@@ -309,11 +308,10 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
-            CellName cname = cf.getComparator().create(prefix, column);
             ByteBuffer value = t.bindAndGet(params.options);
-            cf.addColumn(value == null ? params.makeTombstone(cname) : params.makeColumn(cname, value));
+            update.addCell(column, value == null ? params.makeTombstone() : params.makeCell(value));
         }
     }
 
@@ -324,14 +322,13 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
                 throw new InvalidRequestException("Invalid null value for counter increment");
             long increment = ByteBufferUtil.toLong(bytes);
-            CellName cname = cf.getComparator().create(prefix, column);
-            cf.addColumn(params.makeCounter(cname, increment));
+            update.addCell(column, params.makeCounter(increment));
         }
     }
 
@@ -342,7 +339,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -352,8 +349,7 @@ public abstract class Constants
             if (increment == Long.MIN_VALUE)
                 throw new InvalidRequestException("The negation of " + increment + " overflows supported counter precision (signed 8 bytes integer)");
 
-            CellName cname = cf.getComparator().create(prefix, column);
-            cf.addColumn(params.makeCounter(cname, -increment));
+            update.addCell(column, params.makeCounter(-increment));
         }
     }
 
@@ -366,13 +362,12 @@ public abstract class Constants
             super(column, null);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
-            CellName cname = cf.getComparator().create(prefix, column);
             if (column.type.isCollection())
-                cf.addAtom(params.makeRangeTombstone(cname.slice()));
+                update.updateComplexDeletion(column, params.complexDeletionTime());
             else
-                cf.addColumn(params.makeTombstone(cname));
+                update.addCell(column, params.makeTombstone());
         }
     };
 }

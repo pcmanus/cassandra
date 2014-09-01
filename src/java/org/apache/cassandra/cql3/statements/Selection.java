@@ -32,9 +32,7 @@ import org.apache.cassandra.cql3.functions.AggregateFunction;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.functions.Functions;
 import org.apache.cassandra.cql3.functions.ScalarFunction;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.CounterCell;
-import org.apache.cassandra.db.ExpiringCell;
+import org.apache.cassandra.db.atoms.Cell;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.Int32Type;
@@ -267,16 +265,9 @@ public abstract class Selection
         return columns;
     }
 
-    public ResultSetBuilder resultSetBuilder(long now)
+    public ResultSetBuilder resultSetBuilder(int nowInSec)
     {
-        return new ResultSetBuilder(now);
-    }
-
-    private static ByteBuffer value(Cell c)
-    {
-        return (c instanceof CounterCell)
-            ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
-            : c.value();
+        return new ResultSetBuilder(nowInSec);
     }
 
     /**
@@ -314,14 +305,14 @@ public abstract class Selection
         List<ByteBuffer> current;
         final long[] timestamps;
         final int[] ttls;
-        final long now;
+        final int nowInSec;
 
-        private ResultSetBuilder(long now)
+        private ResultSetBuilder(int nowInSec)
         {
             this.resultSet = new ResultSet(getResultMetadata().copy(), new ArrayList<List<ByteBuffer>>());
             this.timestamps = collectTimestamps ? new long[columns.size()] : null;
             this.ttls = collectTTLs ? new int[columns.size()] : null;
-            this.now = now;
+            this.nowInSec = nowInSec;
         }
 
         public void add(ByteBuffer v)
@@ -331,23 +322,25 @@ public abstract class Selection
 
         public void add(Cell c)
         {
-            current.add(isDead(c) ? null : value(c));
+            current.add(value(c));
             if (timestamps != null)
             {
-                timestamps[current.size() - 1] = isDead(c) ? -1 : c.timestamp();
+                timestamps[current.size() - 1] = c.timestamp();
             }
             if (ttls != null)
             {
                 int ttl = -1;
-                if (!isDead(c) && c instanceof ExpiringCell)
-                    ttl = c.getLocalDeletionTime() - (int) (now / 1000);
+                if (c.ttl() > 0)
+                    ttl = c.localDeletionTime() - nowInSec;
                 ttls[current.size() - 1] = ttl;
             }
         }
 
-        private boolean isDead(Cell c)
+        private ByteBuffer value(Cell c)
         {
-            return c == null || !c.isLive(now);
+            return c.isCounterCell()
+                 ? ByteBufferUtil.bytes(CounterContext.instance().total(c.value()))
+                 : c.value();
         }
 
         public void newRow() throws InvalidRequestException

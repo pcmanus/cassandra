@@ -24,16 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.CounterCell;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.DeletedCell;
-import org.apache.cassandra.db.ExpiringCell;
-import org.apache.cassandra.db.NativeCell;
-import org.apache.cassandra.db.NativeCounterCell;
 import org.apache.cassandra.db.NativeDecoratedKey;
-import org.apache.cassandra.db.NativeDeletedCell;
-import org.apache.cassandra.db.NativeExpiringCell;
 import org.apache.cassandra.io.util.IAllocator;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.slf4j.Logger;
@@ -61,29 +53,30 @@ public class NativeAllocator extends MemtableAllocator
         super(pool.onHeap.newAllocator(), pool.offHeap.newAllocator());
     }
 
-    @Override
-    public Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    {
-        return new NativeCell(this, writeOp, cell);
-    }
+    // TODO
+    //@Override
+    //public Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp)
+    //{
+    //    return new NativeCell(this, writeOp, cell);
+    //}
 
-    @Override
-    public CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    {
-        return new NativeCounterCell(this, writeOp, cell);
-    }
+    //@Override
+    //public CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp)
+    //{
+    //    return new NativeCounterCell(this, writeOp, cell);
+    //}
 
-    @Override
-    public DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    {
-        return new NativeDeletedCell(this, writeOp, cell);
-    }
+    //@Override
+    //public DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp)
+    //{
+    //    return new NativeDeletedCell(this, writeOp, cell);
+    //}
 
-    @Override
-    public ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    {
-        return new NativeExpiringCell(this, writeOp, cell);
-    }
+    //@Override
+    //public ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp)
+    //{
+    //    return new NativeExpiringCell(this, writeOp, cell);
+    //}
 
     public DecoratedKey clone(DecoratedKey key, OpOrder.Group writeOp)
     {

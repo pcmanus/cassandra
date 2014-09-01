@@ -31,11 +31,13 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.RowIterator;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageProxy;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
 /**
@@ -212,25 +214,26 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
         // we don't want to recreate mutations every time as this is particularly inefficient when applying
         // multiple batch to the same partition (see #6737).
         List<ByteBuffer> keys = statement.buildPartitionKeyNames(options);
-        Composite clusteringPrefix = statement.createClusteringPrefix(options);
+        ClusteringPrefix clusteringPrefix = statement.createClusteringPrefix(options);
         UpdateParameters params = statement.makeUpdateParameters(keys, clusteringPrefix, options, local, now);
 
         for (ByteBuffer key : keys)
         {
-            IMutation mutation = ksMap.get(key);
+            DecoratedKey dk = StorageService.getPartitioner().decorateKey(key);
+            IMutation mutation = ksMap.get(dk.getKey());
             Mutation mut;
             if (mutation == null)
             {
-                mut = new Mutation(ksName, key);
+                mut = new Mutation(ksName, dk);
                 mutation = statement.cfm.isCounter() ? new CounterMutation(mut, options.getConsistency()) : mut;
-                ksMap.put(key, mutation);
+                ksMap.put(dk.getKey(), mutation);
             }
             else
             {
                 mut = statement.cfm.isCounter() ? ((CounterMutation)mutation).getMutation() : (Mutation)mutation;
             }
 
-            statement.addUpdateForKey(mut.addOrGet(statement.cfm), key, clusteringPrefix, params);
+            statement.addUpdateForKey(mut.addOrGet(statement.cfm), clusteringPrefix, params);
         }
     }
 
@@ -238,31 +241,31 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
      * Checks batch size to ensure threshold is met. If not, a warning is logged.
      * @param cfs ColumnFamilies that will store the batch's mutations.
      */
-    public static void verifyBatchSize(Iterable<ColumnFamily> cfs) throws InvalidRequestException
+    public static void verifyBatchSize(Iterable<PartitionUpdate> updates) throws InvalidRequestException
     {
         long size = 0;
         long warnThreshold = DatabaseDescriptor.getBatchSizeWarnThreshold();
         long failThreshold = DatabaseDescriptor.getBatchSizeFailThreshold();
 
-        for (ColumnFamily cf : cfs)
-            size += cf.dataSize();
+        for (PartitionUpdate update : updates)
+            size += update.dataSize();
 
         if (size > warnThreshold)
         {
-            Set<String> ksCfPairs = new HashSet<>();
-            for (ColumnFamily cf : cfs)
-                ksCfPairs.add(cf.metadata().ksName + "." + cf.metadata().cfName);
+            Set<String> tableNames = new HashSet<>();
+            for (PartitionUpdate update : updates)
+                tableNames.add(update.metadata().ksName + "." + update.metadata().cfName);
 
             String format = "Batch of prepared statements for {} is of size {}, exceeding specified threshold of {} by {}.{}";
             if (size > failThreshold)
             {
-                Tracing.trace(format, new Object[] {ksCfPairs, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)"});
-                logger.error(format, ksCfPairs, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)");
+                Tracing.trace(format, new Object[] {tableNames, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)"});
+                logger.error(format, tableNames, size, failThreshold, size - failThreshold, " (see batch_size_fail_threshold_in_kb)");
                 throw new InvalidRequestException(String.format("Batch too large"));
             }
             else if (logger.isWarnEnabled())
             {
-                logger.warn(format, ksCfPairs, size, warnThreshold, size - warnThreshold, "");
+                logger.warn(format, tableNames, size, warnThreshold, size - warnThreshold, "");
             }
         }
     }
@@ -295,11 +298,11 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
     private void executeWithoutConditions(Collection<? extends IMutation> mutations, ConsistencyLevel cl) throws RequestExecutionException, RequestValidationException
     {
         // Extract each collection of cfs from it's IMutation and then lazily concatenate all of them into a single Iterable.
-        Iterable<ColumnFamily> cfs = Iterables.concat(Iterables.transform(mutations, new Function<IMutation, Collection<ColumnFamily>>()
+        Iterable<PartitionUpdate> cfs = Iterables.concat(Iterables.transform(mutations, new Function<IMutation, Collection<PartitionUpdate>>()
         {
-            public Collection<ColumnFamily> apply(IMutation im)
+            public Collection<PartitionUpdate> apply(IMutation im)
             {
-                return im.getColumnFamilies();
+                return im.getPartitionUpdates();
             }
         }));
         verifyBatchSize(cfs);
@@ -311,7 +314,7 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
     private ResultMessage executeWithConditions(BatchQueryOptions options, long now)
     throws RequestExecutionException, RequestValidationException
     {
-        ByteBuffer key = null;
+        DecoratedKey key = null;
         String ksName = null;
         String cfName = null;
         CQL3CasRequest casRequest = null;
@@ -327,17 +330,17 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
                 throw new IllegalArgumentException("Batch with conditions cannot span multiple partitions (you cannot use IN on the partition key)");
             if (key == null)
             {
-                key = pks.get(0);
+                key = StorageService.getPartitioner().decorateKey(pks.get(0));
                 ksName = statement.cfm.ksName;
                 cfName = statement.cfm.cfName;
                 casRequest = new CQL3CasRequest(statement.cfm, key, true);
             }
-            else if (!key.equals(pks.get(0)))
+            else if (!key.getKey().equals(pks.get(0)))
             {
                 throw new InvalidRequestException("Batch with conditions cannot span multiple partitions");
             }
 
-            Composite clusteringPrefix = statement.createClusteringPrefix(statementOptions);
+            ClusteringPrefix clusteringPrefix = statement.createClusteringPrefix(statementOptions);
             if (statement.hasConditions())
             {
                 statement.addConditions(clusteringPrefix, casRequest, statementOptions);
@@ -350,9 +353,8 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
             casRequest.addRowUpdate(clusteringPrefix, statement, statementOptions, timestamp);
         }
 
-        ColumnFamily result = StorageProxy.cas(ksName, cfName, key, casRequest, options.getSerialConsistency(), options.getConsistency());
-
-        return new ResultMessage.Rows(ModificationStatement.buildCasResultSet(ksName, key, cfName, result, columnsWithConditions, true, options.forStatement(0)));
+        RowIterator result = StorageProxy.cas(ksName, cfName, key, casRequest, options.getSerialConsistency(), options.getConsistency());
+        return new ResultMessage.Rows(ModificationStatement.buildCasResultSet(ksName, key.getKey(), cfName, result, columnsWithConditions, true, options.forStatement(0)));
     }
 
     public ResultMessage executeInternal(QueryState queryState, QueryOptions options) throws RequestValidationException, RequestExecutionException

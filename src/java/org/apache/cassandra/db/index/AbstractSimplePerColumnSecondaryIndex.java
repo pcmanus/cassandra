@@ -23,13 +23,14 @@ import java.util.concurrent.Future;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.dht.LocalToken;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 /**
@@ -52,8 +53,8 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         columnDef = columnDefs.iterator().next();
 
-        CellNameType indexComparator = SecondaryIndex.getIndexComparator(baseCfs.metadata, columnDef);
-        CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, indexComparator);
+        Pair<ClusteringComparator, LegacyLayout> p = SecondaryIndex.getIndexComparatorAndLayout(baseCfs.metadata, columnDef);
+        CFMetaData indexedCfMetadata = CFMetaData.newIndexMetadata(baseCfs.metadata, columnDef, p.left, p.right);
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
                                                              indexedCfMetadata.cfName,
                                                              new LocalPartitioner(getIndexKeyComparator()),
@@ -77,62 +78,48 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         return "_internal_";
     }
 
-    protected abstract CellName makeIndexColumnName(ByteBuffer rowKey, Cell cell);
+    protected abstract ClusteringPrefix makeIndexClustering(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell);
 
-    protected abstract ByteBuffer getIndexedValue(ByteBuffer rowKey, Cell cell);
+    protected abstract ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell);
 
-    protected abstract AbstractType getExpressionComparator();
-
-    public String expressionString(IndexExpression expr)
+    public void delete(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup)
     {
-        return String.format("'%s.%s %s %s'",
-                             baseCfs.name,
-                             getExpressionComparator().getString(expr.column),
-                             expr.operator,
-                             baseCfs.metadata.getColumnDefinition(expr.column).type.getString(expr.value));
-    }
+        assert columnDef.equals(column);
 
-    public void delete(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
-    {
-        if (!cell.isLive())
-            return;
+        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
+        ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
+        RowUpdate row = RowUpdates.create(makeIndexClustering(rowKey, clustering, cell), Columns.of(idxColumn))
+                        .addCell(idxColumn, Cells.createTombsone(cell.timestamp()));
 
-        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
-        int localDeletionTime = (int) (System.currentTimeMillis() / 1000);
-        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata, false, 1);
-        cfi.addTombstone(makeIndexColumnName(rowKey, cell), localDeletionTime, cell.timestamp());
-        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater, opGroup, null);
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey).add(row);
+        indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
         if (logger.isDebugEnabled())
-            logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, cfi);
+            logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, upd);
     }
 
-    public void insert(ByteBuffer rowKey, Cell cell, OpOrder.Group opGroup)
+    public void insert(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup)
     {
-        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, cell));
-        ColumnFamily cfi = ArrayBackedSortedColumns.factory.create(indexCfs.metadata, false, 1);
-        CellName name = makeIndexColumnName(rowKey, cell);
-        if (cell instanceof ExpiringCell)
-        {
-            ExpiringCell ec = (ExpiringCell) cell;
-            cfi.addColumn(new BufferExpiringCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, ec.timestamp(), ec.getTimeToLive(), ec.getLocalDeletionTime()));
-        }
-        else
-        {
-            cfi.addColumn(new BufferCell(name, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp()));
-        }
-        if (logger.isDebugEnabled())
-            logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.getKey()), cfi);
+        DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
 
-        indexCfs.apply(valueKey, cfi, SecondaryIndexManager.nullUpdater, opGroup, null);
+        Cell idxCell = Cells.create(ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp(), cell.ttl(), cell.localDeletionTime(), indexCfs.metadata);
+        ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
+        RowUpdate row = RowUpdates.create(makeIndexClustering(rowKey, clustering, cell), Columns.of(idxColumn))
+                        .addCell(idxColumn, idxCell);
+
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey).add(row);
+        if (logger.isDebugEnabled())
+            logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.getKey()), upd);
+
+        indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
     }
 
-    public void update(ByteBuffer rowKey, Cell oldCol, Cell col, OpOrder.Group opGroup)
+    public void update(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell, OpOrder.Group opGroup)
     {
         // insert the new value before removing the old one, so we never have a period
         // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540                    
-        insert(rowKey, col, opGroup);
-        if (SecondaryIndexManager.shouldCleanupOldValue(oldCol, col))
-            delete(rowKey, oldCol, opGroup);
+        insert(rowKey, clustering, column, cell, opGroup);
+        if (SecondaryIndexManager.shouldCleanupOldValue(oldCell, cell))
+            delete(rowKey, clustering, column, oldCell, opGroup);
     }
 
     public void removeIndex(ByteBuffer columnName)

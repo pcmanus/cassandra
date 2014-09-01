@@ -19,27 +19,39 @@ package org.apache.cassandra.db.columniterator;
 
 import java.io.IOException;
 
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.db.RowIndexEntry;
-import org.apache.cassandra.db.filter.ColumnSlice;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 
 /**
  *  A Cell Iterator over SSTable
  */
-public class SSTableSliceIterator implements OnDiskAtomIterator
+public class SSTableSliceIterator implements AtomIterator
 {
-    private final OnDiskAtomIterator reader;
-    private final DecoratedKey key;
+    protected final SSTableReader sstable;
+    protected final DecoratedKey key;
+    protected final Columns columns;
+    protected final Columns staticColumns;
+    protected final Slices slices;
+    protected final boolean reversed;
 
-    public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, ColumnSlice[] slices, boolean reversed)
+    // TODO
+    //private final OnDiskAtomIterator reader;
+
+    public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, Columns columns, Columns staticColumns, Slices slices, boolean reversed)
     {
+        this.sstable = sstable;
         this.key = key;
-        RowIndexEntry indexEntry = sstable.getPosition(key, SSTableReader.Operator.EQ);
-        this.reader = indexEntry == null ? null : createReader(sstable, indexEntry, null, slices, reversed);
+        this.columns = columns;
+        this.staticColumns = staticColumns;
+        this.slices = slices;
+        this.reversed = reversed;
+
+        // TODO
+        //RowIndexEntry indexEntry = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        //this.reader = indexEntry == null ? null : createReader(sstable, indexEntry, null, slices, reversed);
     }
 
     /**
@@ -54,37 +66,87 @@ public class SSTableSliceIterator implements OnDiskAtomIterator
      * @param reversed Results are returned in reverse order iff reversed is true.
      * @param indexEntry position of the row
      */
-    public SSTableSliceIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, ColumnSlice[] slices, boolean reversed, RowIndexEntry indexEntry)
+    public SSTableSliceIterator(SSTableReader sstable,
+                                FileDataInput file,
+                                DecoratedKey key,
+                                Columns columns,
+                                Columns staticColumns,
+                                Slices slices,
+                                boolean reversed,
+                                RowIndexEntry indexEntry)
     {
+        this.sstable = sstable;
         this.key = key;
-        reader = createReader(sstable, indexEntry, file, slices, reversed);
+        this.columns = columns;
+        this.staticColumns = staticColumns;
+        this.slices = slices;
+        this.reversed = reversed;
+
+        // TODO
+        //reader = createReader(sstable, indexEntry, file, slices, reversed);
     }
 
-    private static OnDiskAtomIterator createReader(SSTableReader sstable, RowIndexEntry indexEntry, FileDataInput file, ColumnSlice[] slices, boolean reversed)
+    public CFMetaData metadata()
     {
-        return slices.length == 1 && slices[0].start.isEmpty() && !reversed
-             ? new SimpleSliceReader(sstable, indexEntry, file, slices[0].finish)
-             : new IndexedSliceReader(sstable, indexEntry, file, slices, reversed);
+        return sstable.metadata;
     }
 
-    public DecoratedKey getKey()
+    public Columns columns()
+    {
+        return columns;
+    }
+
+    public Columns staticColumns()
+    {
+        return staticColumns;
+    }
+
+    public boolean isReverseOrder()
+    {
+        return reversed;
+    }
+
+    public DecoratedKey partitionKey()
     {
         return key;
     }
 
-    public ColumnFamily getColumnFamily()
+    public DeletionTime partitionLevelDeletion()
     {
-        return reader == null ? null : reader.getColumnFamily();
+        // TODO
+        throw new UnsupportedOperationException();
     }
+
+    public Row staticRow()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    //private static OnDiskAtomIterator createReader(SSTableReader sstable, RowIndexEntry indexEntry, FileDataInput file, ColumnSlice[] slices, boolean reversed)
+    //{
+    //    return slices.length == 1 && slices[0].start.isEmpty() && !reversed
+    //         ? new SimpleSliceReader(sstable, indexEntry, file, slices[0].finish)
+    //         : new IndexedSliceReader(sstable, indexEntry, file, slices, reversed);
+    //}
+
+    //public ColumnFamily getColumnFamily()
+    //{
+    //    return reader == null ? null : reader.getColumnFamily();
+    //}
 
     public boolean hasNext()
     {
-        return reader != null && reader.hasNext();
+        // TODO
+        throw new UnsupportedOperationException();
+        //return reader != null && reader.hasNext();
     }
 
-    public OnDiskAtom next()
+    public Atom next()
     {
-        return reader.next();
+        // TODO
+        throw new UnsupportedOperationException();
+        // return reader.next();
     }
 
     public void remove()
@@ -94,8 +156,10 @@ public class SSTableSliceIterator implements OnDiskAtomIterator
 
     public void close() throws IOException
     {
-        if (reader != null)
-            reader.close();
+        // TODO
+        throw new UnsupportedOperationException();
+        //if (reader != null)
+        //    reader.close();
     }
 
 }

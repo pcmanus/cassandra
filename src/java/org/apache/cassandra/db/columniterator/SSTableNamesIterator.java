@@ -24,8 +24,7 @@ import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -34,215 +33,269 @@ import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public class SSTableNamesIterator extends AbstractIterator<OnDiskAtom> implements OnDiskAtomIterator
+public class SSTableNamesIterator extends AbstractIterator<Atom> implements AtomIterator
 {
-    private ColumnFamily cf;
+    // TODO
     private final SSTableReader sstable;
-    private FileDataInput fileToClose;
-    private Iterator<OnDiskAtom> iter;
-    public final SortedSet<CellName> columns;
-    public final DecoratedKey key;
+    private final DecoratedKey key;
+    private final Columns columns;
+    private final Columns staticColumns;
+    private final SortedSet<ClusteringPrefix> prefixes;
 
-    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<CellName> columns)
+
+    //private ColumnFamily cf;
+    //private FileDataInput fileToClose;
+    //private Iterator<OnDiskAtom> iter;
+
+    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, Columns columns, Columns staticColumns, SortedSet<ClusteringPrefix> prefixes)
     {
-        assert columns != null;
         this.sstable = sstable;
-        this.columns = columns;
         this.key = key;
+        this.columns = columns;
+        this.staticColumns = staticColumns;
+        this.prefixes = prefixes;
 
-        RowIndexEntry indexEntry = sstable.getPosition(key, SSTableReader.Operator.EQ);
-        if (indexEntry == null)
-            return;
+        // TODO
+        //RowIndexEntry indexEntry = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        //if (indexEntry == null)
+        //    return;
 
-        try
-        {
-            read(sstable, null, indexEntry);
-        }
-        catch (IOException e)
-        {
-            sstable.markSuspect();
-            throw new CorruptSSTableException(e, sstable.getFilename());
-        }
-        finally
-        {
-            if (fileToClose != null)
-                FileUtils.closeQuietly(fileToClose);
-        }
+        //try
+        //{
+        //    read(sstable, null, indexEntry);
+        //}
+        //catch (IOException e)
+        //{
+        //    sstable.markSuspect();
+        //    throw new CorruptSSTableException(e, sstable.getFilename());
+        //}
+        //finally
+        //{
+        //    if (fileToClose != null)
+        //        FileUtils.closeQuietly(fileToClose);
+        //}
     }
 
-    public SSTableNamesIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, SortedSet<CellName> columns, RowIndexEntry indexEntry)
+    public SSTableNamesIterator(SSTableReader sstable,
+                                FileDataInput file,
+                                DecoratedKey key,
+                                Columns columns,
+                                Columns staticColumns,
+                                SortedSet<ClusteringPrefix> prefixes,
+                                RowIndexEntry indexEntry)
     {
-        assert columns != null;
         this.sstable = sstable;
-        this.columns = columns;
         this.key = key;
+        this.columns = columns;
+        this.staticColumns = staticColumns;
+        this.prefixes = prefixes;
 
-        try
-        {
-            read(sstable, file, indexEntry);
-        }
-        catch (IOException e)
-        {
-            sstable.markSuspect();
-            throw new CorruptSSTableException(e, sstable.getFilename());
-        }
+        // TODO
+        //try
+        //{
+        //    read(sstable, file, indexEntry);
+        //}
+        //catch (IOException e)
+        //{
+        //    sstable.markSuspect();
+        //    throw new CorruptSSTableException(e, sstable.getFilename());
+        //}
     }
 
-    private FileDataInput createFileDataInput(long position)
+    public CFMetaData metadata()
     {
-        fileToClose = sstable.getFileDataInput(position);
-        return fileToClose;
+        return sstable.metadata;
     }
 
-    private void read(SSTableReader sstable, FileDataInput file, RowIndexEntry indexEntry)
-    throws IOException
+    public Columns columns()
     {
-        List<IndexHelper.IndexInfo> indexList;
-
-        // If the entry is not indexed or the index is not promoted, read from the row start
-        if (!indexEntry.isIndexed())
-        {
-            if (file == null)
-                file = createFileDataInput(indexEntry.position);
-            else
-                file.seek(indexEntry.position);
-
-            DecoratedKey keyInDisk = sstable.partitioner.decorateKey(ByteBufferUtil.readWithShortLength(file));
-            assert keyInDisk.equals(key) : String.format("%s != %s in %s", keyInDisk, key, file.getPath());
-        }
-
-        indexList = indexEntry.columnsIndex();
-
-        if (!indexEntry.isIndexed())
-        {
-            ColumnFamilySerializer serializer = ColumnFamily.serializer;
-            try
-            {
-                cf = ArrayBackedSortedColumns.factory.create(sstable.metadata);
-                cf.delete(DeletionTime.serializer.deserialize(file));
-            }
-            catch (Exception e)
-            {
-                throw new IOException(serializer + " failed to deserialize " + sstable.getColumnFamilyName() + " with " + sstable.metadata + " from " + file, e);
-            }
-        }
-        else
-        {
-            cf = ArrayBackedSortedColumns.factory.create(sstable.metadata);
-            cf.delete(indexEntry.deletionTime());
-        }
-
-        List<OnDiskAtom> result = new ArrayList<OnDiskAtom>();
-        if (indexList.isEmpty())
-        {
-            readSimpleColumns(file, columns, result);
-        }
-        else
-        {
-            readIndexedColumns(sstable.metadata, file, columns, indexList, indexEntry.position, result);
-        }
-
-        // create an iterator view of the columns we read
-        iter = result.iterator();
+        return columns;
     }
 
-    private void readSimpleColumns(FileDataInput file, SortedSet<CellName> columnNames, List<OnDiskAtom> result)
+    public Columns staticColumns()
     {
-        Iterator<OnDiskAtom> atomIterator = cf.metadata().getOnDiskIterator(file, sstable.descriptor.version);
-        int n = 0;
-        while (atomIterator.hasNext())
-        {
-            OnDiskAtom column = atomIterator.next();
-            if (column instanceof Cell)
-            {
-                if (columnNames.contains(column.name()))
-                {
-                    result.add(column);
-                    if (++n >= columns.size())
-                        break;
-                }
-            }
-            else
-            {
-                result.add(column);
-            }
-        }
+        return staticColumns;
     }
 
-    private void readIndexedColumns(CFMetaData metadata,
-                                    FileDataInput file,
-                                    SortedSet<CellName> columnNames,
-                                    List<IndexHelper.IndexInfo> indexList,
-                                    long basePosition,
-                                    List<OnDiskAtom> result)
-    throws IOException
+    public boolean isReverseOrder()
     {
-        /* get the various column ranges we have to read */
-        CellNameType comparator = metadata.comparator;
-        List<IndexHelper.IndexInfo> ranges = new ArrayList<IndexHelper.IndexInfo>();
-        int lastIndexIdx = -1;
-        for (CellName name : columnNames)
-        {
-            int index = IndexHelper.indexFor(name, indexList, comparator, false, lastIndexIdx);
-            if (index < 0 || index == indexList.size())
-                continue;
-            IndexHelper.IndexInfo indexInfo = indexList.get(index);
-            // Check the index block does contain the column names and that we haven't inserted this block yet.
-            if (comparator.compare(name, indexInfo.firstName) < 0 || index == lastIndexIdx)
-                continue;
-
-            ranges.add(indexInfo);
-            lastIndexIdx = index;
-        }
-
-        if (ranges.isEmpty())
-            return;
-
-        Iterator<CellName> toFetch = columnNames.iterator();
-        CellName nextToFetch = toFetch.next();
-        for (IndexHelper.IndexInfo indexInfo : ranges)
-        {
-            long positionToSeek = basePosition + indexInfo.offset;
-
-            // With new promoted indexes, our first seek in the data file will happen at that point.
-            if (file == null)
-                file = createFileDataInput(positionToSeek);
-
-            AtomDeserializer deserializer = cf.metadata().getOnDiskDeserializer(file, sstable.descriptor.version);
-            file.seek(positionToSeek);
-            FileMark mark = file.mark();
-            while (file.bytesPastMark(mark) < indexInfo.width && nextToFetch != null)
-            {
-                int cmp = deserializer.compareNextTo(nextToFetch);
-                if (cmp == 0)
-                {
-                    nextToFetch = toFetch.hasNext() ? toFetch.next() : null;
-                    result.add(deserializer.readNext());
-                    continue;
-                }
-
-                deserializer.skipNext();
-                if (cmp > 0)
-                    nextToFetch = toFetch.hasNext() ? toFetch.next() : null;
-            }
-        }
+        return false;
     }
 
-    public DecoratedKey getKey()
+    public DecoratedKey partitionKey()
     {
         return key;
     }
 
-    public ColumnFamily getColumnFamily()
+    public DeletionTime partitionLevelDeletion()
     {
-        return cf;
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
-    protected OnDiskAtom computeNext()
+    public Row staticRow()
     {
-        if (iter == null || !iter.hasNext())
-            return endOfData();
-        return iter.next();
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    //private FileDataInput createFileDataInput(long position)
+    //{
+    //    fileToClose = sstable.getFileDataInput(position);
+    //    return fileToClose;
+    //}
+
+    //private void read(SSTableReader sstable, FileDataInput file, RowIndexEntry indexEntry)
+    //throws IOException
+    //{
+    //    List<IndexHelper.IndexInfo> indexList;
+
+    //    // If the entry is not indexed or the index is not promoted, read from the row start
+    //    if (!indexEntry.isIndexed())
+    //    {
+    //        if (file == null)
+    //            file = createFileDataInput(indexEntry.position);
+    //        else
+    //            file.seek(indexEntry.position);
+
+    //        DecoratedKey keyInDisk = sstable.partitioner.decorateKey(ByteBufferUtil.readWithShortLength(file));
+    //        assert keyInDisk.equals(key) : String.format("%s != %s in %s", keyInDisk, key, file.getPath());
+    //    }
+
+    //    indexList = indexEntry.columnsIndex();
+
+    //    if (!indexEntry.isIndexed())
+    //    {
+    //        ColumnFamilySerializer serializer = ColumnFamily.serializer;
+    //        try
+    //        {
+    //            cf = ArrayBackedSortedColumns.factory.create(sstable.metadata);
+    //            cf.delete(DeletionTime.serializer.deserialize(file));
+    //        }
+    //        catch (Exception e)
+    //        {
+    //            throw new IOException(serializer + " failed to deserialize " + sstable.getColumnFamilyName() + " with " + sstable.metadata + " from " + file, e);
+    //        }
+    //    }
+    //    else
+    //    {
+    //        cf = ArrayBackedSortedColumns.factory.create(sstable.metadata);
+    //        cf.delete(indexEntry.deletionTime());
+    //    }
+
+    //    List<OnDiskAtom> result = new ArrayList<OnDiskAtom>();
+    //    if (indexList.isEmpty())
+    //    {
+    //        readSimpleColumns(file, columns, result);
+    //    }
+    //    else
+    //    {
+    //        readIndexedColumns(sstable.metadata, file, columns, indexList, indexEntry.position, result);
+    //    }
+
+    //    // create an iterator view of the columns we read
+    //    iter = result.iterator();
+    //}
+
+    //private void readSimpleColumns(FileDataInput file, SortedSet<CellName> columnNames, List<OnDiskAtom> result)
+    //{
+    //    Iterator<OnDiskAtom> atomIterator = cf.metadata().getOnDiskIterator(file, sstable.descriptor.version);
+    //    int n = 0;
+    //    while (atomIterator.hasNext())
+    //    {
+    //        OnDiskAtom column = atomIterator.next();
+    //        if (column instanceof Cell)
+    //        {
+    //            if (columnNames.contains(column.name()))
+    //            {
+    //                result.add(column);
+    //                if (++n >= columns.size())
+    //                    break;
+    //            }
+    //        }
+    //        else
+    //        {
+    //            result.add(column);
+    //        }
+    //    }
+    //}
+
+    //private void readIndexedColumns(CFMetaData metadata,
+    //                                FileDataInput file,
+    //                                SortedSet<CellName> columnNames,
+    //                                List<IndexHelper.IndexInfo> indexList,
+    //                                long basePosition,
+    //                                List<OnDiskAtom> result)
+    //throws IOException
+    //{
+    //    /* get the various column ranges we have to read */
+    //    CellNameType comparator = metadata.comparator;
+    //    List<IndexHelper.IndexInfo> ranges = new ArrayList<IndexHelper.IndexInfo>();
+    //    int lastIndexIdx = -1;
+    //    for (CellName name : columnNames)
+    //    {
+    //        int index = IndexHelper.indexFor(name, indexList, comparator, false, lastIndexIdx);
+    //        if (index < 0 || index == indexList.size())
+    //            continue;
+    //        IndexHelper.IndexInfo indexInfo = indexList.get(index);
+    //        // Check the index block does contain the column names and that we haven't inserted this block yet.
+    //        if (comparator.compare(name, indexInfo.firstName) < 0 || index == lastIndexIdx)
+    //            continue;
+
+    //        ranges.add(indexInfo);
+    //        lastIndexIdx = index;
+    //    }
+
+    //    if (ranges.isEmpty())
+    //        return;
+
+    //    Iterator<CellName> toFetch = columnNames.iterator();
+    //    CellName nextToFetch = toFetch.next();
+    //    for (IndexHelper.IndexInfo indexInfo : ranges)
+    //    {
+    //        long positionToSeek = basePosition + indexInfo.offset;
+
+    //        // With new promoted indexes, our first seek in the data file will happen at that point.
+    //        if (file == null)
+    //            file = createFileDataInput(positionToSeek);
+
+    //        AtomDeserializer deserializer = cf.metadata().getOnDiskDeserializer(file, sstable.descriptor.version);
+    //        file.seek(positionToSeek);
+    //        FileMark mark = file.mark();
+    //        while (file.bytesPastMark(mark) < indexInfo.width && nextToFetch != null)
+    //        {
+    //            int cmp = deserializer.compareNextTo(nextToFetch);
+    //            if (cmp == 0)
+    //            {
+    //                nextToFetch = toFetch.hasNext() ? toFetch.next() : null;
+    //                result.add(deserializer.readNext());
+    //                continue;
+    //            }
+
+    //            deserializer.skipNext();
+    //            if (cmp > 0)
+    //                nextToFetch = toFetch.hasNext() ? toFetch.next() : null;
+    //        }
+    //    }
+    //}
+
+    //public DecoratedKey getKey()
+    //{
+    //    return key;
+    //}
+
+    //public ColumnFamily getColumnFamily()
+    //{
+    //    return cf;
+    //}
+
+    protected Atom computeNext()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+        //if (iter == null || !iter.hasNext())
+        //    return endOfData();
+        //return iter.next();
     }
 
     public void close() throws IOException { }

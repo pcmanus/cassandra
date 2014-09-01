@@ -26,7 +26,7 @@ import com.google.common.collect.Maps;
 
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.exceptions.*;
@@ -36,7 +36,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 import static org.apache.cassandra.utils.FBUtilities.json;
 
-public class ColumnDefinition extends ColumnSpecification
+public class ColumnDefinition extends ColumnSpecification implements Comparable<ColumnDefinition>
 {
     // system.schema_columns column names
     private static final String COLUMN_NAME = "column_name";
@@ -92,6 +92,8 @@ public class ColumnDefinition extends ColumnSpecification
      * the full column name.
      */
     private final Integer componentIndex;
+
+    private final Comparator<CellPath> cellPathComparator;
 
     public static ColumnDefinition partitionKeyDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
     {
@@ -153,6 +155,25 @@ public class ColumnDefinition extends ColumnSpecification
         this.indexName = indexName;
         this.componentIndex = componentIndex;
         this.setIndexType(indexType, indexOptions);
+        this.cellPathComparator = getCellPathComparator(kind, validator);
+    }
+
+    private static Comparator<CellPath> getCellPathComparator(Kind kind, AbstractType<?> validator)
+    {
+        if (kind == Kind.PARTITION_KEY || kind == Kind.CLUSTERING_COLUMN || !validator.isCollection())
+            return null;
+
+        final CollectionType type = (CollectionType)validator;
+        return new Comparator<CellPath>()
+        {
+            public int compare(CellPath path1, CellPath path2)
+            {
+                assert path1 instanceof CollectionPath;
+                assert path2 instanceof CollectionPath;
+
+                return type.nameComparator().compare(((CollectionPath)path1).element(), ((CollectionPath)path2).element());
+            }
+        };
     }
 
     public ColumnDefinition copy()
@@ -315,19 +336,17 @@ public class ColumnDefinition extends ColumnSpecification
      */
     public void deleteFromSchema(Mutation mutation, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(CFMetaData.SchemaColumnsCf);
-        int ldt = (int) (System.currentTimeMillis() / 1000);
-
         // Note: we do want to use name.toString(), not name.bytes directly for backward compatibility (For CQL3, this won't make a difference).
-        Composite prefix = CFMetaData.SchemaColumnsCf.comparator.make(cfName, name.toString());
-        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
+        new RowUpdateBuilder(CFMetaData.SchemaColumnsCf, timestamp).clustering(cfName, name.toString())
+                                                                   .deleteRow()
+                                                                   .buildAndAddTo(mutation);
     }
 
     public void toSchema(Mutation mutation, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(CFMetaData.SchemaColumnsCf);
-        Composite prefix = CFMetaData.SchemaColumnsCf.comparator.make(cfName, name.toString());
-        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaColumnsCf, timestamp);
+
+        adder.clustering(cfName, name.toString());
 
         adder.add(TYPE, type.toString());
         adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
@@ -335,6 +354,8 @@ public class ColumnDefinition extends ColumnSpecification
         adder.add(INDEX_NAME, indexName);
         adder.add(COMPONENT_INDEX, componentIndex);
         adder.add(KIND, kind.serialize());
+
+        adder.buildAndAddTo(mutation);
     }
 
     public ColumnDefinition apply(ColumnDefinition def)  throws ConfigurationException
@@ -364,7 +385,7 @@ public class ColumnDefinition extends ColumnSpecification
                                     kind);
     }
 
-    public static UntypedResultSet resultify(Row serializedColumns)
+    public static UntypedResultSet resultify(RowIterator serializedColumns)
     {
         String query = String.format("SELECT * FROM %s.%s", Keyspace.SYSTEM_KS, SystemKeyspace.SCHEMA_COLUMNS_CF);
         return QueryProcessor.resultify(query, serializedColumns);
@@ -376,7 +397,7 @@ public class ColumnDefinition extends ColumnSpecification
      * @param serializedColumns storage-level partition containing the column definitions
      * @return the list of processed ColumnDefinitions
      */
-    public static List<ColumnDefinition> fromSchema(UntypedResultSet serializedColumns, String ksName, String cfName, AbstractType<?> rawComparator, boolean isSuper)
+    public static List<ColumnDefinition> fromSchema(UntypedResultSet serializedColumns, String ksName, String cfName, AbstractType<?> rawComparator, AbstractType<?> rawSubComparator, boolean isSuper)
     {
         List<ColumnDefinition> cds = new ArrayList<>();
         for (UntypedResultSet.Row row : serializedColumns)
@@ -393,7 +414,7 @@ public class ColumnDefinition extends ColumnSpecification
 
             // Note: we save the column name as string, but we should not assume that it is an UTF8 name, we
             // we need to use the comparator fromString method
-            AbstractType<?> comparator = getComponentComparator(rawComparator, componentIndex, kind);
+            AbstractType<?> comparator = isSuper ? rawSubComparator : getComponentComparator(rawComparator, componentIndex, kind);
             ColumnIdentifier name = new ColumnIdentifier(comparator.fromString(row.getString(COLUMN_NAME)), comparator);
 
             AbstractType<?> validator;
@@ -475,5 +496,26 @@ public class ColumnDefinition extends ColumnSpecification
     public Map<String,String> getIndexOptions()
     {
         return indexOptions;
+    }
+
+    public int compareTo(ColumnDefinition other)
+    {
+        return ByteBufferUtil.compareUnsigned(name.bytes, other.name.bytes);
+    }
+
+    public Comparator<CellPath> cellPathComparator()
+    {
+        return cellPathComparator;
+    }
+
+    public Comparator<Cell> cellComparator()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    public boolean isComplex()
+    {
+        return cellPathComparator != null;
     }
 }

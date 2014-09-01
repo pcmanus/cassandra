@@ -19,7 +19,7 @@ package org.apache.cassandra.service.pager;
 
 import java.util.List;
 
-import org.apache.cassandra.db.Row;
+import org.apache.cassandra.db.partitions.DataIterator;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestValidationException;
 
@@ -50,7 +50,7 @@ public interface QueryPager
      * @param pageSize the maximum number of elements to return in the next page.
      * @return the page of result.
      */
-    public List<Row> fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException;
+    public DataIterator fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException;
 
     /**
      * Whether or not this pager is exhausted, i.e. whether or not a call to

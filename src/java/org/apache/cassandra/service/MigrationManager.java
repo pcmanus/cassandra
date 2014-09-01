@@ -40,6 +40,7 @@ import org.apache.cassandra.config.UTMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.functions.UDFunction;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.RowIterators;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.AlreadyExistsException;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -357,7 +358,7 @@ public class MigrationManager
     // Include the serialized keyspace for when a target node missed the CREATE KEYSPACE migration (see #5631).
     private static Mutation addSerializedKeyspace(Mutation migration, String ksName)
     {
-        migration.add(SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_KEYSPACES_CF, ksName).cf);
+        migration.add(RowIterators.toUpdate(SystemKeyspace.readSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, ksName)));
         return migration;
     }
 

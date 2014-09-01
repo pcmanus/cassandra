@@ -29,6 +29,7 @@ import com.google.common.collect.Maps;
 import org.apache.cassandra.config.TriggerDefinition;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.FBUtilities;
@@ -60,19 +61,19 @@ public class TriggerExecutor
         cachedTriggers.clear();
     }
 
-    public ColumnFamily execute(ByteBuffer key, ColumnFamily updates) throws InvalidRequestException
+    public PartitionUpdate execute(PartitionUpdate updates) throws InvalidRequestException
     {
-        List<Mutation> intermediate = executeInternal(key, updates);
+        List<Mutation> intermediate = executeInternal(updates);
         if (intermediate == null || intermediate.isEmpty())
             return updates;
 
-        validateForSinglePartition(updates.metadata().getKeyValidator(), updates.id(), key, intermediate);
+        validateForSinglePartition(updates.metadata().getKeyValidator(), updates.metadata().cfId, updates.partitionKey(), intermediate);
 
         for (Mutation mutation : intermediate)
         {
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
-                updates.addAll(cf);
+                updates.addAll(upd);
             }
         }
         return updates;
@@ -88,9 +89,9 @@ public class TriggerExecutor
             if (mutation instanceof CounterMutation)
                 hasCounters = true;
 
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
-                List<Mutation> augmentations = executeInternal(mutation.key(), cf);
+                List<Mutation> augmentations = executeInternal(upd);
                 if (augmentations == null || augmentations.isEmpty())
                     continue;
 
@@ -120,7 +121,7 @@ public class TriggerExecutor
 
         for (Mutation mutation : mutations)
         {
-            Pair<String, ByteBuffer> key = Pair.create(mutation.getKeyspaceName(), mutation.key());
+            Pair<String, ByteBuffer> key = Pair.create(mutation.getKeyspaceName(), mutation.key().getKey());
             Mutation current = groupedMutations.get(key);
             if (current == null)
             {
@@ -138,18 +139,18 @@ public class TriggerExecutor
 
     private void validateForSinglePartition(AbstractType<?> keyValidator,
                                             UUID cfId,
-                                            ByteBuffer key,
+                                            DecoratedKey key,
                                             Collection<Mutation> tmutations)
     throws InvalidRequestException
     {
         for (Mutation mutation : tmutations)
         {
-            if (keyValidator.compare(mutation.key(), key) != 0)
+            if (keyValidator.compare(mutation.key().getKey(), key.getKey()) != 0)
                 throw new InvalidRequestException("Partition key of additional mutation does not match primary update key");
 
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
-                if (! cf.id().equals(cfId))
+                if (!upd.metadata().cfId.equals(cfId))
                     throw new InvalidRequestException("table of additional mutation does not match primary update table");
             }
         }
@@ -160,10 +161,9 @@ public class TriggerExecutor
     {
         for (Mutation mutation : tmutations)
         {
-            QueryProcessor.validateKey(mutation.key());
-            for (ColumnFamily tcf : mutation.getColumnFamilies())
-                for (Cell cell : tcf)
-                    cell.validateFields(tcf.metadata());
+            QueryProcessor.validateKey(mutation.key().getKey());
+            for (PartitionUpdate update : mutation.getPartitionUpdates())
+                update.validate();
         }
     }
 
@@ -171,9 +171,9 @@ public class TriggerExecutor
      * Switch class loader before using the triggers for the column family, if
      * not loaded them with the custom class loader.
      */
-    private List<Mutation> executeInternal(ByteBuffer key, ColumnFamily columnFamily)
+    private List<Mutation> executeInternal(PartitionUpdate update)
     {
-        Map<String, TriggerDefinition> triggers = columnFamily.metadata().getTriggers();
+        Map<String, TriggerDefinition> triggers = update.metadata().getTriggers();
         if (triggers.isEmpty())
             return null;
         List<Mutation> tmutations = Lists.newLinkedList();
@@ -188,7 +188,7 @@ public class TriggerExecutor
                     trigger = loadTriggerInstance(td.classOption);
                     cachedTriggers.put(td.classOption, trigger);
                 }
-                Collection<Mutation> temp = trigger.augment(key, columnFamily);
+                Collection<Mutation> temp = trigger.augment(update);
                 if (temp != null)
                     tmutations.addAll(temp);
             }
@@ -196,7 +196,7 @@ public class TriggerExecutor
         }
         catch (Exception ex)
         {
-            throw new RuntimeException(String.format("Exception while creating trigger on table with ID: %s", columnFamily.id()), ex);
+            throw new RuntimeException(String.format("Exception while creating trigger on table with ID: %s", update.metadata().cfId), ex);
         }
         finally
         {

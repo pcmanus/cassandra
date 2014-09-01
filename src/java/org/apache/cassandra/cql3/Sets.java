@@ -31,9 +31,7 @@ import java.util.TreeSet;
 import com.google.common.base.Joiner;
 
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.db.marshal.SetType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -250,12 +248,11 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
             // delete + add
-            CellName name = cf.getComparator().create(prefix, column);
-            cf.addAtom(params.makeTombstoneForOverwrite(name.slice()));
-            Adder.doAdd(t, cf, prefix, column, params);
+            update.updateComplexDeletion(column, params.complexDeletionTimeForOverwrite());
+            Adder.doAdd(t, update, column, params);
         }
     }
 
@@ -266,12 +263,12 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
-            doAdd(t, cf, prefix, column, params);
+            doAdd(t, update, column, params);
         }
 
-        static void doAdd(Term t, ColumnFamily cf, Composite prefix, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doAdd(Term t, RowUpdate update, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -281,10 +278,7 @@ public abstract class Sets
 
             Set<ByteBuffer> toAdd = ((Sets.Value)value).elements;
             for (ByteBuffer bb : toAdd)
-            {
-                CellName cellName = cf.getComparator().create(prefix, column, bb);
-                cf.addColumn(params.makeColumn(cellName, ByteBufferUtil.EMPTY_BYTE_BUFFER));
-            }
+                update.addCell(column, params.makeCell(new CollectionPath(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER));
         }
     }
 
@@ -296,7 +290,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ColumnFamily cf, Composite prefix, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -308,9 +302,7 @@ public abstract class Sets
                                       : ((Sets.Value)value).elements;
 
             for (ByteBuffer bb : toDiscard)
-            {
-                cf.addColumn(params.makeTombstone(cf.getComparator().create(prefix, column, bb)));
-            }
+                update.addCell(column, params.makeTombstone(new CollectionPath(bb)));
         }
     }
 }

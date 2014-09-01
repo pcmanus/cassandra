@@ -20,7 +20,9 @@ package org.apache.cassandra.service.pager;
 import java.util.List;
 
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.filter.NamesQueryFilter;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.service.StorageProxy;
@@ -37,18 +39,18 @@ import org.apache.cassandra.service.StorageService;
  */
 public class RangeNamesQueryPager extends AbstractQueryPager
 {
-    private final RangeSliceCommand command;
+    private final PartitionRangeReadCommand command;
     private volatile DecoratedKey lastReturnedKey;
 
     // Don't use directly, use QueryPagers method instead
-    RangeNamesQueryPager(RangeSliceCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
+    RangeNamesQueryPager(PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
     {
-        super(consistencyLevel, command.maxResults, localQuery, command.keyspace, command.columnFamily, command.predicate, command.timestamp);
+        super(consistencyLevel, localQuery, command.metadata(), command.limits());
         this.command = command;
-        assert columnFilter instanceof NamesQueryFilter && ((NamesQueryFilter)columnFilter).countCQL3Rows();
+        assert command.isNamesQuery();
     }
 
-    RangeNamesQueryPager(RangeSliceCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
+    RangeNamesQueryPager(PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
     {
         this(command, consistencyLevel, localQuery);
 
@@ -66,33 +68,28 @@ public class RangeNamesQueryPager extends AbstractQueryPager
              : new PagingState(lastReturnedKey.getKey(), null, maxRemaining());
     }
 
-    protected List<Row> queryNextPage(int pageSize, ConsistencyLevel consistencyLevel, boolean localQuery)
+    protected DataIterator queryNextPage(int pageSize, ConsistencyLevel consistencyLevel, boolean localQuery)
     throws RequestExecutionException
     {
-        AbstractRangeCommand pageCmd = command.withUpdatedLimit(pageSize);
+        PartitionRangeReadCommand pageCmd = command.withUpdatedLimit(command.limits().forPaging(pageSize));
         if (lastReturnedKey != null)
             pageCmd = pageCmd.forSubRange(makeExcludingKeyBounds(lastReturnedKey));
 
         return localQuery
-             ? pageCmd.executeLocally()
+             ? PartitionIterators.asDataIterator(pageCmd.executeLocally(getStore()), command.nowInSec())
              : StorageProxy.getRangeSlice(pageCmd, consistencyLevel);
     }
 
-    protected boolean containsPreviousLast(Row first)
+    protected boolean shouldSkip(DecoratedKey key, Row last)
     {
         // When querying the next page, we create a bound that exclude the lastReturnedKey
         return false;
     }
 
-    protected boolean recordLast(Row last)
+    protected boolean recordLast(DecoratedKey key, Row last)
     {
-        lastReturnedKey = last.key;
+        lastReturnedKey = key;
         // We return false as that means "can that last be in the next query?"
-        return false;
-    }
-
-    protected boolean isReversed()
-    {
         return false;
     }
 
@@ -100,7 +97,7 @@ public class RangeNamesQueryPager extends AbstractQueryPager
     {
         // We return a range that always exclude lastReturnedKey, since we've already
         // returned it.
-        AbstractBounds<RowPosition> bounds = command.keyRange;
+        AbstractBounds<RowPosition> bounds = command.dataRange().keyRange();
         if (bounds instanceof Range || bounds instanceof Bounds)
         {
             return new Range<RowPosition>(lastReturnedKey, bounds.right);

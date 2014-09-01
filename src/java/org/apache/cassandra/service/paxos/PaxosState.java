@@ -27,6 +27,7 @@ import com.google.common.util.concurrent.Striped;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -40,14 +41,14 @@ public class PaxosState
     private final Commit accepted;
     private final Commit mostRecentCommit;
 
-    public PaxosState(ByteBuffer key, CFMetaData metadata)
+    public PaxosState(DecoratedKey key, CFMetaData metadata)
     {
         this(Commit.emptyCommit(key, metadata), Commit.emptyCommit(key, metadata), Commit.emptyCommit(key, metadata));
     }
 
     public PaxosState(Commit promised, Commit accepted, Commit mostRecentCommit)
     {
-        assert promised.key == accepted.key && accepted.key == mostRecentCommit.key;
+        assert promised.update.partitionKey().equals(accepted.update.partitionKey()) && accepted.update.partitionKey().equals(mostRecentCommit.update.partitionKey());
         assert promised.update.metadata() == accepted.update.metadata() && accepted.update.metadata() == mostRecentCommit.update.metadata();
 
         this.promised = promised;
@@ -57,11 +58,11 @@ public class PaxosState
 
     public static PrepareResponse prepare(Commit toPrepare)
     {
-        Lock lock = LOCKS.get(toPrepare.key);
+        Lock lock = LOCKS.get(toPrepare.update.partitionKey());
         lock.lock();
         try
         {
-            PaxosState state = SystemKeyspace.loadPaxosState(toPrepare.key, toPrepare.update.metadata());
+            PaxosState state = SystemKeyspace.loadPaxosState(toPrepare.update.partitionKey(), toPrepare.update.metadata());
             if (toPrepare.isAfter(state.promised))
             {
                 Tracing.trace("Promising ballot {}", toPrepare.ballot);
@@ -83,11 +84,11 @@ public class PaxosState
 
     public static Boolean propose(Commit proposal)
     {
-        Lock lock = LOCKS.get(proposal.key);
+        Lock lock = LOCKS.get(proposal.update.partitionKey());
         lock.lock();
         try
         {
-            Commit promised = SystemKeyspace.loadPaxosPromise(proposal.key, proposal.update.metadata());
+            Commit promised = SystemKeyspace.loadPaxosPromise(proposal.update.partitionKey(), proposal.update.metadata());
             if (proposal.hasBallot(promised.ballot) || proposal.isAfter(promised))
             {
                 Tracing.trace("Accepting proposal {}", proposal);

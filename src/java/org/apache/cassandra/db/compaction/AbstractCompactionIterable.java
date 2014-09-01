@@ -20,9 +20,10 @@ package org.apache.cassandra.db.compaction;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
-public abstract class AbstractCompactionIterable extends CompactionInfo.Holder implements Iterable<AbstractCompactedRow>
+public abstract class AbstractCompactionIterable extends CompactionInfo.Holder implements PartitionIterator
 {
     protected final OperationType type;
     protected final CompactionController controller;
@@ -73,6 +74,4 @@ public abstract class AbstractCompactionIterable extends CompactionInfo.Holder i
             counters[i] = mergeCounters[i].get();
         return counters;
     }
-
-    public abstract CloseableIterator<AbstractCompactedRow> iterator();
 }

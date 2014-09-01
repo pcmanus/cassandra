@@ -20,9 +20,7 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOException;
 
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.Descriptor;
 
 /**
@@ -35,17 +33,21 @@ import org.apache.cassandra.io.sstable.Descriptor;
  */
 public class AtomDeserializer
 {
-    private final CellNameType type;
-    private final CellNameType.Deserializer nameDeserializer;
+    private final LegacyLayout layout;
+    private final LegacyLayout.Deserializer nameDeserializer;
     private final DataInput in;
-    private final ColumnSerializer.Flag flag;
+    private final LegacyLayout.Flag flag;
     private final int expireBefore;
     private final Descriptor.Version version;
 
-    public AtomDeserializer(CellNameType type, DataInput in, ColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
+    public AtomDeserializer(LegacyLayout layout,
+                            DataInput in,
+                            LegacyLayout.Flag flag,
+                            int expireBefore,
+                            Descriptor.Version version)
     {
-        this.type = type;
-        this.nameDeserializer = type.newDeserializer(in);
+        this.layout = layout;
+        this.nameDeserializer = layout.newDeserializer(in, version);
         this.in = in;
         this.flag = flag;
         this.expireBefore = expireBefore;
@@ -70,29 +72,31 @@ public class AtomDeserializer
     }
 
     /**
-     * Compare the provided composite to the next atom to read on disk.
+     * Compare the provided prefix to the next atom to read on disk.
      *
      * This will not read/deserialize the whole atom but only what is necessary for the
      * comparison. Whenever we know what to do with this atom (read it or skip it),
      * readNext or skipNext should be called.
      */
-    public int compareNextTo(Composite composite) throws IOException
+    public int compareNextTo(ClusteringPrefix prefix) throws IOException
     {
-        return nameDeserializer.compareNextTo(composite);
+        return nameDeserializer.compareNextTo(prefix);
     }
 
     /**
      * Returns the next atom.
      */
-    public OnDiskAtom readNext() throws IOException
+    public Atom readNext() throws IOException
     {
-        Composite name = nameDeserializer.readNext();
-        assert !name.isEmpty(); // This would imply hasNext() hasn't been called
-        int b = in.readUnsignedByte();
-        if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
-            return type.rangeTombstoneSerializer().deserializeBody(in, name, version);
-        else
-            return type.columnSerializer().deserializeColumnBody(in, (CellName)name, b, flag, expireBefore);
+        // TODO
+        throw new UnsupportedOperationException();
+        //Composite name = nameDeserializer.readNext();
+        //assert !name.isEmpty(); // This would imply hasNext() hasn't been called
+        //int b = in.readUnsignedByte();
+        //if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
+        //    return type.rangeTombstoneSerializer().deserializeBody(in, name, version);
+        //else
+        //    return type.columnSerializer().deserializeColumnBody(in, (CellName)name, b, flag, expireBefore);
     }
 
     /**
@@ -100,11 +104,13 @@ public class AtomDeserializer
      */
     public void skipNext() throws IOException
     {
-        nameDeserializer.skipNext();
-        int b = in.readUnsignedByte();
-        if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
-            type.rangeTombstoneSerializer().skipBody(in, version);
-        else
-            type.columnSerializer().skipColumnBody(in, b);
+        // TODO
+        throw new UnsupportedOperationException();
+        //nameDeserializer.skipNext();
+        //int b = in.readUnsignedByte();
+        //if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
+        //    type.rangeTombstoneSerializer().skipBody(in, version);
+        //else
+        //    type.columnSerializer().skipColumnBody(in, b);
     }
 }

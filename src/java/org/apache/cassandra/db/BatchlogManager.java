@@ -127,12 +127,13 @@ public class BatchlogManager implements BatchlogManagerMBean
     @VisibleForTesting
     static Mutation getBatchlogMutationFor(Collection<Mutation> mutations, UUID uuid, int version, long now)
     {
-        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(CFMetaData.BatchlogCf);
-        CFRowAdder adder = new CFRowAdder(cf, CFMetaData.BatchlogCf.comparator.builder().build(), now);
-        adder.add("data", serializeMutations(mutations, version))
-             .add("written_at", new Date(now / 1000))
-             .add("version", version);
-        return new Mutation(Keyspace.SYSTEM_KS, UUIDType.instance.decompose(uuid), cf);
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.BatchlogCf, now)
+                                 .clustering()
+                                 .add("data", serializeMutations(mutations, version))
+                                 .add("written_at", new Date(now / 1000))
+                                 .add("version", version);
+
+        return adder.buildAndAddTo(new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(uuid))));
     }
 
     private static ByteBuffer serializeMutations(Collection<Mutation> mutations, int version)
@@ -199,7 +200,7 @@ public class BatchlogManager implements BatchlogManagerMBean
 
     private void deleteBatch(UUID id)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, UUIDType.instance.decompose(id));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(id)));
         mutation.delete(SystemKeyspace.BATCHLOG_CF, FBUtilities.timestampMicros());
         mutation.apply();
     }
@@ -379,7 +380,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             Set<InetAddress> liveEndpoints = new HashSet<>();
             String ks = mutation.getKeyspaceName();
-            Token<?> tk = StorageService.getPartitioner().getToken(mutation.key());
+            Token<?> tk = mutation.key().getToken();
 
             for (InetAddress endpoint : Iterables.concat(StorageService.instance.getNaturalEndpoints(ks, tk),
                                                          StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, ks)))

@@ -24,8 +24,8 @@ package org.apache.cassandra.triggers;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 
-import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 
 /**
  * Trigger interface, For every Mutation received by the coordinator {@link #augment(ByteBuffer, ColumnFamily)}
@@ -44,9 +44,8 @@ public interface ITrigger
     /**
      * Called exactly once per CF update, returned mutations are atomically updated.
      *
-     * @param partitionKey - partition Key for the update.
      * @param update - update received for the CF
      * @return modifications to be applied, null if no action to be performed.
      */
-    public Collection<Mutation> augment(ByteBuffer partitionKey, ColumnFamily update);
+    public Collection<Mutation> augment(PartitionUpdate update);
 }

@@ -19,7 +19,7 @@ package org.apache.cassandra.service.pager;
 
 import java.util.List;
 
-import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.SinglePartitionReadCommand;
 
 /**
  * Marker interface for commands that can be paged.
@@ -28,9 +28,9 @@ public interface Pageable
 {
     public static class ReadCommands implements Pageable
     {
-        public final List<ReadCommand> commands;
+        public final List<SinglePartitionReadCommand> commands;
 
-        public ReadCommands(List<ReadCommand> commands)
+        public ReadCommands(List<SinglePartitionReadCommand> commands)
         {
             this.commands = commands;
         }

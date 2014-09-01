@@ -25,7 +25,7 @@ import com.google.common.base.Objects;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.RowIterator;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.thrift.TriggerDef;
 
@@ -58,7 +58,7 @@ public class TriggerDefinition
      * @param serializedTriggers storage-level partition containing the trigger definitions
      * @return the list of processed TriggerDefinitions
      */
-    public static List<TriggerDefinition> fromSchema(Row serializedTriggers)
+    public static List<TriggerDefinition> fromSchema(RowIterator serializedTriggers)
     {
         List<TriggerDefinition> triggers = new ArrayList<>();
         String query = String.format("SELECT * FROM %s.%s", Keyspace.SYSTEM_KS, SystemKeyspace.SCHEMA_TRIGGERS_CF);
@@ -80,13 +80,10 @@ public class TriggerDefinition
      */
     public void toSchema(Mutation mutation, String cfName, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_TRIGGERS_CF);
-
-        CFMetaData cfm = CFMetaData.SchemaTriggersCf;
-        Composite prefix = cfm.comparator.make(cfName, name);
-        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
-
-        adder.addMapEntry(TRIGGER_OPTIONS, CLASS, classOption);
+        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaTriggersCf, timestamp);
+        builder.clustering(cfName, name)
+               .addMapEntry(TRIGGER_OPTIONS, CLASS, classOption)
+               .buildAndAddTo(mutation);
     }
 
     /**
@@ -98,11 +95,10 @@ public class TriggerDefinition
      */
     public void deleteFromSchema(Mutation mutation, String cfName, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_TRIGGERS_CF);
-        int ldt = (int) (System.currentTimeMillis() / 1000);
-
-        Composite prefix = CFMetaData.SchemaTriggersCf.comparator.make(cfName, name);
-        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
+        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaTriggersCf, timestamp);
+        builder.clustering(cfName, name)
+               .deleteRow()
+               .buildAndAddTo(mutation);
     }
 
     public static TriggerDefinition fromThrift(TriggerDef thriftDef)

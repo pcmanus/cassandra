@@ -25,6 +25,8 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.RowIterator;
+import org.apache.cassandra.db.atoms.RowIterators;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.*;
 import org.apache.cassandra.service.StorageService;
@@ -225,17 +227,17 @@ public final class KSMetaData
 
     public KSMetaData reloadAttributes()
     {
-        Row ksDefRow = SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_KEYSPACES_CF, name);
+        RowIterator ksDef = SystemKeyspace.readSchema(SystemKeyspace.SCHEMA_KEYSPACES_CF, name);
 
-        if (ksDefRow.cf == null)
+        if (RowIterators.isEmpty(ksDef))
             throw new RuntimeException(String.format("%s not found in the schema definitions keyspaceName (%s).", name, SystemKeyspace.SCHEMA_KEYSPACES_CF));
 
-        return fromSchema(ksDefRow, Collections.<CFMetaData>emptyList(), userTypes);
+        return fromSchema(ksDef, Collections.<CFMetaData>emptyList(), userTypes);
     }
 
     public Mutation dropFromSchema(long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(name));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(name));
 
         mutation.delete(SystemKeyspace.SCHEMA_KEYSPACES_CF, timestamp);
         mutation.delete(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, timestamp);
@@ -249,13 +251,13 @@ public final class KSMetaData
 
     public Mutation toSchema(long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(name));
-        ColumnFamily cf = mutation.addOrGet(CFMetaData.SchemaKeyspacesCf);
-        CFRowAdder adder = new CFRowAdder(cf, CFMetaData.SchemaKeyspacesCf.comparator.builder().build(), timestamp);
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(name));
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaKeyspacesCf, timestamp).clustering();
 
         adder.add("durable_writes", durableWrites);
         adder.add("strategy_class", strategyClass.getName());
         adder.add("strategy_options", json(strategyOptions));
+        adder.buildAndAddTo(mutation);
 
         for (CFMetaData cfm : cfMetaData.values())
             cfm.toSchema(mutation, timestamp);
@@ -271,9 +273,9 @@ public final class KSMetaData
      *
      * @return deserialized keyspace without cf_defs
      */
-    public static KSMetaData fromSchema(Row row, Iterable<CFMetaData> cfms, UTMetaData userTypes)
+    public static KSMetaData fromSchema(RowIterator partition, Iterable<CFMetaData> cfms, UTMetaData userTypes)
     {
-        UntypedResultSet.Row result = QueryProcessor.resultify("SELECT * FROM system.schema_keyspaces", row).one();
+        UntypedResultSet.Row result = QueryProcessor.resultify("SELECT * FROM system.schema_keyspaces", partition).one();
         try
         {
             return new KSMetaData(result.getString("keyspace_name"),
@@ -297,7 +299,7 @@ public final class KSMetaData
      *
      * @return deserialized keyspace with cf_defs
      */
-    public static KSMetaData fromSchema(Row serializedKs, Row serializedCFs, Row serializedUserTypes)
+    public static KSMetaData fromSchema(RowIterator serializedKs, RowIterator serializedCFs, RowIterator serializedUserTypes)
     {
         Map<String, CFMetaData> cfs = deserializeColumnFamilies(serializedCFs);
         UTMetaData userTypes = new UTMetaData(UTMetaData.fromSchema(serializedUserTypes));
@@ -309,13 +311,13 @@ public final class KSMetaData
      *
      * @return map containing name of the ColumnFamily and it's metadata for faster lookup
      */
-    public static Map<String, CFMetaData> deserializeColumnFamilies(Row row)
+    public static Map<String, CFMetaData> deserializeColumnFamilies(RowIterator partition)
     {
-        if (row.cf == null)
+        if (RowIterators.isEmpty(partition))
             return Collections.emptyMap();
 
         Map<String, CFMetaData> cfms = new HashMap<>();
-        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", row);
+        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", partition);
         for (UntypedResultSet.Row result : results)
         {
             CFMetaData cfm = CFMetaData.fromSchema(result);

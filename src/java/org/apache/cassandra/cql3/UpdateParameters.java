@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.filter.ColumnSlice;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -41,9 +41,9 @@ public class UpdateParameters
     public final int localDeletionTime;
 
     // For lists operation that require a read-before-write. Will be null otherwise.
-    private final Map<ByteBuffer, CQL3Row> prefetchedLists;
+    private final Map<ByteBuffer, Map<ClusteringPrefix, Row>> prefetchedLists;
 
-    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, Map<ByteBuffer, CQL3Row> prefetchedLists)
+    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, Map<ByteBuffer, Map<ClusteringPrefix, Row>> prefetchedLists)
     {
         this.metadata = metadata;
         this.options = options;
@@ -53,44 +53,61 @@ public class UpdateParameters
         this.prefetchedLists = prefetchedLists;
     }
 
-    public Cell makeColumn(CellName name, ByteBuffer value) throws InvalidRequestException
+    public Cell makeCell(ByteBuffer value) throws InvalidRequestException
     {
-        QueryProcessor.validateCellName(name, metadata.comparator);
-        return AbstractCell.create(name, value, timestamp, ttl, metadata);
+        return Cells.create(value, timestamp, ttl, localDeletionTime, metadata);
     }
 
-     public Cell makeCounter(CellName name, long delta) throws InvalidRequestException
+    public Cell makeCell(CellPath path, ByteBuffer value) throws InvalidRequestException
+    {
+        return Cells.create(path, value, timestamp, ttl, localDeletionTime, metadata);
+    }
+
+     public Cell makeCounter(long delta) throws InvalidRequestException
      {
-         QueryProcessor.validateCellName(name, metadata.comparator);
-         return new BufferCounterUpdateCell(name, delta, FBUtilities.timestampMicros());
+         return Cells.createCounterUpdate(delta, FBUtilities.timestampMicros());
      }
 
-    public Cell makeTombstone(CellName name) throws InvalidRequestException
+    public Cell makeTombstone() throws InvalidRequestException
     {
-        QueryProcessor.validateCellName(name, metadata.comparator);
-        return new BufferDeletedCell(name, localDeletionTime, timestamp);
+        return Cells.createTombsone(localDeletionTime, timestamp);
     }
 
-    public RangeTombstone makeRangeTombstone(ColumnSlice slice) throws InvalidRequestException
+    public Cell makeTombstone(CellPath path) throws InvalidRequestException
     {
-        QueryProcessor.validateComposite(slice.start, metadata.comparator);
-        QueryProcessor.validateComposite(slice.finish, metadata.comparator);
-        return new RangeTombstone(slice.start, slice.finish, timestamp, localDeletionTime);
+        return Cells.createTombsone(path, localDeletionTime, timestamp);
     }
 
-    public RangeTombstone makeTombstoneForOverwrite(ColumnSlice slice) throws InvalidRequestException
+    public DeletionTime deletionTime()
     {
-        QueryProcessor.validateComposite(slice.start, metadata.comparator);
-        QueryProcessor.validateComposite(slice.finish, metadata.comparator);
-        return new RangeTombstone(slice.start, slice.finish, timestamp - 1, localDeletionTime);
+        return new SimpleDeletionTime(timestamp, localDeletionTime);
     }
 
-    public List<Cell> getPrefetchedList(ByteBuffer rowKey, ColumnIdentifier cql3ColumnName)
+    public DeletionTime complexDeletionTime()
+    {
+        return new SimpleDeletionTime(timestamp, localDeletionTime);
+    }
+
+    public DeletionTime complexDeletionTimeForOverwrite()
+    {
+        return new SimpleDeletionTime(timestamp-1, localDeletionTime);
+    }
+
+    public RangeTombstone makeRangeTombstone(ClusteringPrefix prefix)
+    {
+        return new RangeTombstone(prefix.withEOC(ClusteringPrefix.EOC.START), prefix.withEOC(ClusteringPrefix.EOC.END), deletionTime());
+    }
+
+    public ColumnData getPrefetchedList(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition c)
     {
         if (prefetchedLists == null)
-            return Collections.emptyList();
+            return null;
 
-        CQL3Row row = prefetchedLists.get(rowKey);
-        return row == null ? Collections.<Cell>emptyList() : row.getCollection(cql3ColumnName);
+        Map<ClusteringPrefix, Row> m = prefetchedLists.get(rowKey);
+        if (m == null)
+            return null;
+
+        Row row = m.get(clustering);
+        return row == null ?  null : row.data(c);
     }
 }

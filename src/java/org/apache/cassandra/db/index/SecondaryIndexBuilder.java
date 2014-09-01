@@ -59,7 +59,7 @@ public class SecondaryIndexBuilder extends CompactionInfo.Holder
             if (isStopRequested())
                 throw new CompactionInterruptedException(getCompactionInfo());
             DecoratedKey key = iter.next();
-            Keyspace.indexRow(key, cfs, idxNames);
+            Keyspace.indexPartition(key, cfs, idxNames);
         }
 
         try

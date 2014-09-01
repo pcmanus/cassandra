@@ -23,9 +23,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-import org.apache.cassandra.db.composites.CType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.TypeSizes;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -70,19 +68,19 @@ public class IndexHelper
      * Deserialize the index into a structure and return it
      *
      * @param in input source
-     * @param type the comparator type for the column family
+     * @param layout the layout use for deserialization
      *
      * @return ArrayList<IndexInfo> - list of de-serialized indexes
      * @throws IOException if an I/O error occurs.
      */
-    public static List<IndexInfo> deserializeIndex(FileDataInput in, CType type) throws IOException
+    public static List<IndexInfo> deserializeIndex(FileDataInput in, LegacyLayout layout) throws IOException
     {
         int columnIndexSize = in.readInt();
         if (columnIndexSize == 0)
             return Collections.<IndexInfo>emptyList();
         ArrayList<IndexInfo> indexList = new ArrayList<IndexInfo>();
         FileMark mark = in.mark();
-        ISerializer<IndexInfo> serializer = type.indexSerializer();
+        ISerializer<IndexInfo> serializer = layout.indexSerializer();
         while (in.bytesPastMark(mark) < columnIndexSize)
         {
             indexList.add(serializer.deserialize(in));
@@ -95,25 +93,16 @@ public class IndexHelper
     /**
      * The index of the IndexInfo in which a scan starting with @name should begin.
      *
-     * @param name
-     *         name of the index
-     *
-     * @param indexList
-     *          list of the indexInfo objects
-     *
-     * @param comparator
-     *          comparator type
-     *
-     * @param reversed
-     *          is name reversed
+     * @param name name to search for
+     * @param indexList list of the indexInfo objects
+     * @param comparator the comparator to use
+     * @param reversed whether or not the search is reversed, i.e. we scan forward or backward from name
+     * @param lastIndex where to start the search from in indexList
      *
      * @return int index
      */
-    public static int indexFor(Composite name, List<IndexInfo> indexList, CType comparator, boolean reversed, int lastIndex)
+    public static int indexFor(ClusteringPrefix name, List<IndexInfo> indexList, ClusteringComparator comparator, boolean reversed, int lastIndex)
     {
-        if (name.isEmpty())
-            return lastIndex >= 0 ? lastIndex : reversed ? indexList.size() - 1 : 0;
-
         if (lastIndex >= indexList.size())
             return -1;
 
@@ -149,7 +138,7 @@ public class IndexHelper
         return startIdx + (index < 0 ? -index - (reversed ? 2 : 1) : index);
     }
 
-    public static Comparator<IndexInfo> getComparator(final CType nameComparator, boolean reversed)
+    public static Comparator<IndexInfo> getComparator(final ClusteringComparator nameComparator, boolean reversed)
     {
         return reversed ? nameComparator.indexReverseComparator() : nameComparator.indexComparator();
     }
@@ -159,11 +148,11 @@ public class IndexHelper
         private static final long EMPTY_SIZE = ObjectSizes.measure(new IndexInfo(null, null, 0, 0));
 
         public final long width;
-        public final Composite lastName;
-        public final Composite firstName;
+        public final ClusteringPrefix lastName;
+        public final ClusteringPrefix firstName;
         public final long offset;
 
-        public IndexInfo(Composite firstName, Composite lastName, long offset, long width)
+        public IndexInfo(ClusteringPrefix firstName, ClusteringPrefix lastName, long offset, long width)
         {
             this.firstName = firstName;
             this.lastName = lastName;
@@ -173,33 +162,33 @@ public class IndexHelper
 
         public static class Serializer implements ISerializer<IndexInfo>
         {
-            private final CType type;
+            private final LegacyLayout layout;
 
-            public Serializer(CType type)
+            public Serializer(LegacyLayout layout)
             {
-                this.type = type;
+                this.layout = layout;
             }
 
             public void serialize(IndexInfo info, DataOutputPlus out) throws IOException
             {
-                type.serializer().serialize(info.firstName, out);
-                type.serializer().serialize(info.lastName, out);
+                layout.discardingClusteringSerializer().serialize(info.firstName, out);
+                layout.discardingClusteringSerializer().serialize(info.lastName, out);
                 out.writeLong(info.offset);
                 out.writeLong(info.width);
             }
 
             public IndexInfo deserialize(DataInput in) throws IOException
             {
-                return new IndexInfo(type.serializer().deserialize(in),
-                                     type.serializer().deserialize(in),
+                return new IndexInfo(layout.discardingClusteringSerializer().deserialize(in),
+                                     layout.discardingClusteringSerializer().deserialize(in),
                                      in.readLong(),
                                      in.readLong());
             }
 
             public long serializedSize(IndexInfo info, TypeSizes typeSizes)
             {
-                return type.serializer().serializedSize(info.firstName, typeSizes)
-                     + type.serializer().serializedSize(info.lastName, typeSizes)
+                return layout.discardingClusteringSerializer().serializedSize(info.firstName, typeSizes)
+                     + layout.discardingClusteringSerializer().serializedSize(info.lastName, typeSizes)
                      + typeSizes.sizeof(info.offset)
                      + typeSizes.sizeof(info.width);
             }

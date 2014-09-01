@@ -21,7 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.cql3.*;
@@ -47,7 +47,7 @@ public final class UTMetaData
         this.userTypes = types;
     }
 
-    private static UserType fromSchema(UntypedResultSet.Row row)
+    public static UserType fromSchema(UntypedResultSet.Row row)
     {
         try
         {
@@ -73,9 +73,9 @@ public final class UTMetaData
         }
     }
 
-    public static Map<ByteBuffer, UserType> fromSchema(Row row)
+    public static Map<ByteBuffer, UserType> fromSchema(RowIterator atoms)
     {
-        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system." + SystemKeyspace.SCHEMA_USER_TYPES_CF, row);
+        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system." + SystemKeyspace.SCHEMA_USER_TYPES_CF, atoms);
         Map<ByteBuffer, UserType> types = new HashMap<>(results.size());
         for (UntypedResultSet.Row result : results)
         {
@@ -87,25 +87,23 @@ public final class UTMetaData
 
     public static Mutation toSchema(UserType newType, long timestamp)
     {
-        return toSchema(new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(newType.keyspace)), newType, timestamp);
+        return toSchema(new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(newType.keyspace)), newType, timestamp);
     }
 
     public static Mutation toSchema(Mutation mutation, UserType newType, long timestamp)
     {
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_USER_TYPES_CF);
-
-        Composite prefix = CFMetaData.SchemaUserTypesCf.comparator.make(newType.name);
-        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
-
-        adder.resetCollection("field_names");
-        adder.resetCollection("field_types");
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaUserTypesCf, timestamp);
+        adder.clustering(newType.name)
+             .resetCollection("field_names")
+             .resetCollection("field_types");
 
         for (int i = 0; i < newType.size(); i++)
         {
             adder.addListEntry("field_names", newType.fieldName(i));
             adder.addListEntry("field_types", newType.fieldType(i).toString());
         }
-        return mutation;
+
+        return adder.buildAndAddTo(mutation);
     }
 
     public Mutation toSchema(Mutation mutation, long timestamp)
@@ -117,14 +115,12 @@ public final class UTMetaData
 
     public static Mutation dropFromSchema(UserType droppedType, long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(droppedType.keyspace));
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_USER_TYPES_CF);
-        int ldt = (int) (System.currentTimeMillis() / 1000);
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(droppedType.keyspace));
 
-        Composite prefix = CFMetaData.SchemaUserTypesCf.comparator.make(droppedType.name);
-        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
-
-        return mutation;
+        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaUserTypesCf, timestamp);
+        return builder.clustering(droppedType.name)
+                      .deleteRow()
+                      .buildAndAddTo(mutation);
     }
 
     public UserType getType(ByteBuffer typeName)

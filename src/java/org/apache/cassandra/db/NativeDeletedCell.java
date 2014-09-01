@@ -29,97 +29,98 @@ import org.apache.cassandra.utils.memory.MemoryUtil;
 import org.apache.cassandra.utils.memory.MemtableAllocator;
 import org.apache.cassandra.utils.memory.NativeAllocator;
 
-public class NativeDeletedCell extends NativeCell implements DeletedCell
+public class NativeDeletedCell //extends NativeCell implements DeletedCell
 {
-    private static final long SIZE = ObjectSizes.measure(new NativeDeletedCell());
+    // TODO
+    //private static final long SIZE = ObjectSizes.measure(new NativeDeletedCell());
 
-    private NativeDeletedCell()
-    {}
+    //private NativeDeletedCell()
+    //{}
 
-    public NativeDeletedCell(NativeAllocator allocator, OpOrder.Group writeOp, DeletedCell copyOf)
-    {
-        super(allocator, writeOp, copyOf);
-    }
+    //public NativeDeletedCell(NativeAllocator allocator, OpOrder.Group writeOp, DeletedCell copyOf)
+    //{
+    //    super(allocator, writeOp, copyOf);
+    //}
 
-    @Override
-    public Cell reconcile(Cell cell)
-    {
-        if (cell instanceof DeletedCell)
-            return super.reconcile(cell);
-        return cell.reconcile(this);
-    }
+    //@Override
+    //public Cell reconcile(Cell cell)
+    //{
+    //    if (cell instanceof DeletedCell)
+    //        return super.reconcile(cell);
+    //    return cell.reconcile(this);
+    //}
 
-    @Override
-    public boolean isLive()
-    {
-        return false;
-    }
+    //@Override
+    //public boolean isLive()
+    //{
+    //    return false;
+    //}
 
-    @Override
-    public boolean isLive(long now)
-    {
-        return false;
-    }
+    //@Override
+    //public boolean isLive(long now)
+    //{
+    //    return false;
+    //}
 
-    @Override
-    public int getLocalDeletionTime()
-    {
-        int v = getInt(valueStartOffset());
-        return MemoryUtil.INVERTED_ORDER ? Integer.reverseBytes(v) : v;
-    }
+    //@Override
+    //public int getLocalDeletionTime()
+    //{
+    //    int v = getInt(valueStartOffset());
+    //    return MemoryUtil.INVERTED_ORDER ? Integer.reverseBytes(v) : v;
+    //}
 
-    @Override
-    public int serializationFlags()
-    {
-        return ColumnSerializer.DELETION_MASK;
-    }
+    //@Override
+    //public int serializationFlags()
+    //{
+    //    return ColumnSerializer.DELETION_MASK;
+    //}
 
-    @Override
-    public void validateFields(CFMetaData metadata) throws MarshalException
-    {
-        validateName(metadata);
+    //@Override
+    //public void validateFields(CFMetaData metadata) throws MarshalException
+    //{
+    //    validateName(metadata);
 
-        if ((int) (internalSize() - valueStartOffset()) != 4)
-            throw new MarshalException("A tombstone value should be 4 bytes long");
-        if (getLocalDeletionTime() < 0)
-            throw new MarshalException("The local deletion time should not be negative");
-    }
+    //    if ((int) (internalSize() - valueStartOffset()) != 4)
+    //        throw new MarshalException("A tombstone value should be 4 bytes long");
+    //    if (getLocalDeletionTime() < 0)
+    //        throw new MarshalException("The local deletion time should not be negative");
+    //}
 
-    @Override
-    public void updateDigest(MessageDigest digest)
-    {
-        updateWithName(digest);
-        FBUtilities.updateWithLong(digest, timestamp());
-        FBUtilities.updateWithByte(digest, serializationFlags());
-    }
+    //@Override
+    //public void updateDigest(MessageDigest digest)
+    //{
+    //    updateWithName(digest);
+    //    FBUtilities.updateWithLong(digest, timestamp());
+    //    FBUtilities.updateWithByte(digest, serializationFlags());
+    //}
 
-    @Override
-    public DeletedCell localCopy(CFMetaData metadata, AbstractAllocator allocator)
-    {
-        return new BufferDeletedCell(copy(metadata, allocator), allocator.clone(value()), timestamp());
-    }
+    //@Override
+    //public DeletedCell localCopy(CFMetaData metadata, AbstractAllocator allocator)
+    //{
+    //    return new BufferDeletedCell(copy(metadata, allocator), allocator.clone(value()), timestamp());
+    //}
 
-    @Override
-    public DeletedCell localCopy(CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group opGroup)
-    {
-        return allocator.clone(this, metadata, opGroup);
-    }
+    //@Override
+    //public DeletedCell localCopy(CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group opGroup)
+    //{
+    //    return allocator.clone(this, metadata, opGroup);
+    //}
 
-    @Override
-    public boolean equals(Cell cell)
-    {
-        return timestamp() == cell.timestamp() && getLocalDeletionTime() == cell.getLocalDeletionTime() && name().equals(cell.name());
-    }
+    //@Override
+    //public boolean equals(Cell cell)
+    //{
+    //    return timestamp() == cell.timestamp() && getLocalDeletionTime() == cell.getLocalDeletionTime() && name().equals(cell.name());
+    //}
 
-    @Override
-    public long unsharedHeapSizeExcludingData()
-    {
-        return SIZE;
-    }
+    //@Override
+    //public long unsharedHeapSizeExcludingData()
+    //{
+    //    return SIZE;
+    //}
 
-    @Override
-    public long unsharedHeapSize()
-    {
-        return SIZE;
-    }
+    //@Override
+    //public long unsharedHeapSize()
+    //{
+    //    return SIZE;
+    //}
 }

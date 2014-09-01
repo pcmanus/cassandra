@@ -21,7 +21,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.db.filters.ColumnFilter;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.exceptions.RequestValidationException;
@@ -112,20 +114,20 @@ public class ThriftConversion
         return toe;
     }
 
-    public static List<org.apache.cassandra.db.IndexExpression> fromThrift(List<IndexExpression> exprs)
+    public static ColumnFilter fromThrift(CFMetaData metadata, List<IndexExpression> exprs)
     {
         if (exprs == null)
             return null;
 
         if (exprs.isEmpty())
-            return Collections.emptyList();
+            return ColumnFilter.NONE;
 
-        List<org.apache.cassandra.db.IndexExpression> converted = new ArrayList<>(exprs.size());
+        ColumnFilter converted = new ColumnFilter(exprs.size());
         for (IndexExpression expr : exprs)
         {
-            converted.add(new org.apache.cassandra.db.IndexExpression(expr.column_name,
-                                                                      org.apache.cassandra.db.IndexExpression.Operator.findByOrdinal(expr.op.getValue()),
-                                                                      expr.value));
+            converted.add(metadata.getColumnDefinition(expr.column_name),
+                          ColumnFilter.Operator.findByOrdinal(expr.op.getValue()),
+                          expr.value);
         }
         return converted;
     }

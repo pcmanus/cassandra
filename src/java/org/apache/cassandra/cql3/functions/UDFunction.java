@@ -29,12 +29,13 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.RowIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -155,17 +156,17 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
     private static Mutation makeSchemaMutation(FunctionName name)
     {
         CompositeType kv = (CompositeType)CFMetaData.SchemaFunctionsCf.getKeyValidator();
-        return new Mutation(Keyspace.SYSTEM_KS, kv.decompose(name.namespace, name.name));
+        return new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(kv.decompose(name.namespace, name.name)));
     }
 
     public Mutation toSchemaDrop(long timestamp)
     {
         Mutation mutation = makeSchemaMutation(name);
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
-        Composite prefix = CFMetaData.SchemaFunctionsCf.comparator.make(computeSignature(argTypes));
-        int ldt = (int) (System.currentTimeMillis() / 1000);
-        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
+        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaFunctionsCf, timestamp);
+        builder.clustering(computeSignature(argTypes))
+               .deleteRow()
+               .buildAndAddTo(mutation);
 
         return mutation;
     }
@@ -173,10 +174,10 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
     public Mutation toSchemaUpdate(long timestamp)
     {
         Mutation mutation = makeSchemaMutation(name);
-        ColumnFamily cf = mutation.addOrGet(SystemKeyspace.SCHEMA_FUNCTIONS_CF);
 
-        Composite prefix = CFMetaData.SchemaFunctionsCf.comparator.make(computeSignature(argTypes));
-        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaFunctionsCf, timestamp);
+
+        adder.clustering(computeSignature(argTypes));
 
         adder.resetCollection("argument_names");
         adder.resetCollection("argument_types");
@@ -190,6 +191,8 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
             adder.addListEntry("argument_names", argNames.get(i).bytes);
             adder.addListEntry("argument_types", argTypes.get(i).toString());
         }
+
+        adder.buildAndAddTo(mutation);
 
         return mutation;
     }
@@ -253,9 +256,9 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
         }
     }
 
-    public static Map<ByteBuffer, UDFunction> fromSchema(Row row)
+    public static Map<ByteBuffer, UDFunction> fromSchema(RowIterator partition)
     {
-        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system." + SystemKeyspace.SCHEMA_FUNCTIONS_CF, row);
+        UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system." + SystemKeyspace.SCHEMA_FUNCTIONS_CF, partition);
         Map<ByteBuffer, UDFunction> udfs = new HashMap<>(results.size());
         for (UntypedResultSet.Row result : results)
             udfs.put(result.getBlob("signature"), fromSchema(result));

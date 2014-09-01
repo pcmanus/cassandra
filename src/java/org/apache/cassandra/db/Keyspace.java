@@ -41,9 +41,9 @@ import org.apache.cassandra.config.KSMetaData;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
-import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.service.StorageService;
@@ -58,7 +58,6 @@ import org.apache.cassandra.metrics.KeyspaceMetrics;
 public class Keyspace
 {
     public static final String SYSTEM_KS = "system";
-    private static final int DEFAULT_PAGE_SIZE = 10000;
 
     private static final Logger logger = LoggerFactory.getLogger(Keyspace.class);
 
@@ -149,6 +148,11 @@ public class Keyspace
             }
             return t;
         }
+    }
+
+    public static ColumnFamilyStore openAndGetStore(CFMetaData cfm)
+    {
+        return open(cfm.ksName).getColumnFamilyStore(cfm.cfId);
     }
 
     /**
@@ -339,13 +343,6 @@ public class Keyspace
         }
     }
 
-    public Row getRow(QueryFilter filter)
-    {
-        ColumnFamilyStore cfStore = getColumnFamilyStore(filter.getColumnFamilyName());
-        ColumnFamily columnFamily = cfStore.getColumnFamily(filter);
-        return new Row(filter.key, columnFamily);
-    }
-
     public void apply(Mutation mutation, boolean writeCommitLog)
     {
         apply(mutation, writeCommitLog, true);
@@ -371,21 +368,21 @@ public class Keyspace
                 replayPosition = CommitLog.instance.add(mutation);
             }
 
-            DecoratedKey key = StorageService.getPartitioner().decorateKey(mutation.key());
-            for (ColumnFamily cf : mutation.getColumnFamilies())
+            DecoratedKey key = mutation.key();
+            for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
-                ColumnFamilyStore cfs = columnFamilyStores.get(cf.id());
+                ColumnFamilyStore cfs = columnFamilyStores.get(upd.metadata().cfId);
                 if (cfs == null)
                 {
-                    logger.error("Attempting to mutate non-existant table {}", cf.id());
+                    logger.error("Attempting to mutate non-existant table {}", upd.metadata().cfId);
                     continue;
                 }
 
-                Tracing.trace("Adding to {} memtable", cf.metadata().cfName);
+                Tracing.trace("Adding to {} memtable", upd.metadata().cfName);
                 SecondaryIndexManager.Updater updater = updateIndexes
-                                                      ? cfs.indexManager.updaterFor(key, cf, opGroup)
+                                                      ? cfs.indexManager.updaterFor(upd, opGroup)
                                                       : SecondaryIndexManager.nullUpdater;
-                cfs.apply(key, cf, updater, opGroup, replayPosition);
+                cfs.apply(upd, updater, opGroup, replayPosition);
             }
         }
     }
@@ -397,30 +394,19 @@ public class Keyspace
 
     /**
      * @param key row to index
-     * @param cfs ColumnFamily to index row in
+     * @param cfs ColumnFamily to index partition in
      * @param idxNames columns to index, in comparator order
      */
-    public static void indexRow(DecoratedKey key, ColumnFamilyStore cfs, Set<String> idxNames)
+    public static void indexPartition(DecoratedKey key, ColumnFamilyStore cfs, Set<String> idxNames)
     {
         if (logger.isDebugEnabled())
             logger.debug("Indexing row {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
 
+        Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
         try (OpOrder.Group opGroup = cfs.keyspace.writeOrder.start())
         {
-            Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
-
-            Iterator<ColumnFamily> pager = QueryPagers.pageRowLocally(cfs, key.getKey(), DEFAULT_PAGE_SIZE);
-            while (pager.hasNext())
-            {
-                ColumnFamily cf = pager.next();
-                ColumnFamily cf2 = cf.cloneMeShallow();
-                for (Cell cell : cf)
-                {
-                    if (cfs.indexManager.indexes(cell.name(), indexes))
-                        cf2.addColumn(cell);
-                }
-                cfs.indexManager.indexRow(key.getKey(), cf2, opGroup);
-            }
+            SinglePartitionReadCommand cmd = ReadCommands.fullPartitionRead(cfs.metadata, key, (int)(System.currentTimeMillis() / 1000));
+            cfs.indexManager.indexPartition(cmd.queryMemtableAndDisk(cfs), opGroup, indexes);
         }
     }
 

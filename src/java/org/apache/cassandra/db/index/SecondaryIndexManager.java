@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,22 +34,18 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Future;
 
+import com.google.common.collect.Multimap;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.IndexType;
-import org.apache.cassandra.db.Cell;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.IndexExpression;
-import org.apache.cassandra.db.Row;
-import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.filters.ColumnFilter;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.filter.ExtendedFilter;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
@@ -66,12 +63,9 @@ public class SecondaryIndexManager
 
     public static final Updater nullUpdater = new Updater()
     {
-        public void insert(Cell cell) { }
-
-        public void update(Cell oldCell, Cell cell) { }
-
-        public void remove(Cell current) { }
-
+        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell) {}
+        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell) {}
+        public void remove(ClusteringPrefix clustering, ColumnDefinition Column, Cell current) {}
         public void updateRowLevelIndexes() {}
     };
 
@@ -143,6 +137,24 @@ public class SecondaryIndexManager
         return names;
     }
 
+    public Set<PerColumnSecondaryIndex> perColumnIndexes()
+    {
+        Set<PerColumnSecondaryIndex> s = new HashSet<>();
+        for (SecondaryIndex index : allIndexes)
+            if (index instanceof PerColumnSecondaryIndex)
+                s.add((PerColumnSecondaryIndex)index);
+        return s;
+    }
+
+    public Set<PerRowSecondaryIndex> perRowIndexes()
+    {
+        Set<PerRowSecondaryIndex> s = new HashSet<>();
+        for (SecondaryIndex index : allIndexes)
+            if (index instanceof PerRowSecondaryIndex)
+                s.add((PerRowSecondaryIndex)index);
+        return s;
+    }
+
     /**
      * Does a full, blocking rebuild of the indexes specified by columns from the sstables.
      * Does nothing if columns is empty.
@@ -169,12 +181,12 @@ public class SecondaryIndexManager
         logger.info("Index build of {} complete", idxNames);
     }
 
-    public boolean indexes(CellName name, Set<SecondaryIndex> indexes)
+    public boolean indexes(ClusteringPrefix clustering, ColumnDefinition column, Set<SecondaryIndex> indexes)
     {
         boolean matching = false;
         for (SecondaryIndex index : indexes)
         {
-            if (index.indexes(name))
+            if (index.indexes(clustering, column))
             {
                 matching = true;
                 break;
@@ -183,12 +195,12 @@ public class SecondaryIndexManager
         return matching;
     }
 
-    public Set<SecondaryIndex> indexFor(CellName name, Set<SecondaryIndex> indexes)
+    public Set<SecondaryIndex> indexFor(ClusteringPrefix clustering, ColumnDefinition column, Set<SecondaryIndex> indexes)
     {
         Set<SecondaryIndex> matching = null;
         for (SecondaryIndex index : indexes)
         {
-            if (index.indexes(name))
+            if (index.indexes(clustering, column))
             {
                 if (matching == null)
                     matching = new HashSet<>();
@@ -198,34 +210,14 @@ public class SecondaryIndexManager
         return matching == null ? Collections.<SecondaryIndex>emptySet() : matching;
     }
 
-    public boolean indexes(Cell cell)
+    public boolean indexes(ClusteringPrefix clustering, ColumnDefinition column)
     {
-        return indexes(cell.name());
+        return indexes(clustering, column, allIndexes);
     }
 
-    public boolean indexes(CellName name)
+    public Set<SecondaryIndex> indexFor(ClusteringPrefix clustering, ColumnDefinition column)
     {
-        return indexes(name, allIndexes);
-    }
-
-    public Set<SecondaryIndex> indexFor(CellName name)
-    {
-        return indexFor(name, allIndexes);
-    }
-
-    /**
-     * @return true if at least one of the indexes can handle the clause.
-     */
-    public boolean hasIndexFor(List<IndexExpression> clause)
-    {
-        if (clause == null || clause.isEmpty())
-            return false;
-
-        for (SecondaryIndexSearcher searcher : getIndexSearchersForQuery(clause))
-            if (searcher.canHandleIndexClause(clause))
-                return true;
-
-        return false;
+        return indexFor(clustering, column, allIndexes);
     }
 
     /**
@@ -331,9 +323,9 @@ public class SecondaryIndexManager
      * @param column the name of indexes column
      * @return the index
      */
-    public SecondaryIndex getIndexForColumn(ByteBuffer column)
+    public SecondaryIndex getIndexForColumn(ColumnDefinition column)
     {
-        return indexesByColumn.get(column);
+        return indexesByColumn.get(column.name.bytes);
     }
 
     /**
@@ -433,77 +425,100 @@ public class SecondaryIndexManager
     }
 
     /**
-     * When building an index against existing data, add the given row to the index
-     *
-     * @param key the row key
-     * @param cf the current rows data
+     * When building an index against existing data, add the given partition to the index
      */
-    public void indexRow(ByteBuffer key, ColumnFamily cf, OpOrder.Group opGroup)
+    public void indexPartition(AtomIterator atoms, OpOrder.Group opGroup, Set<SecondaryIndex> allIndexes)
     {
-        // Update entire row only once per row level index
-        Set<Class<? extends SecondaryIndex>> appliedRowLevelIndexes = null;
+        Set<PerRowSecondaryIndex> perRowIndexes = perRowIndexes();
+        Set<PerColumnSecondaryIndex> perColumnIndexes = perColumnIndexes();
 
-        for (SecondaryIndex index : allIndexes)
+        if (!perRowIndexes.isEmpty())
         {
-            if (index instanceof PerRowSecondaryIndex)
+            // Update entire row only once per row level index
+            Set<Class<? extends SecondaryIndex>> appliedRowLevelIndexes = new HashSet<>();
+            for (PerRowSecondaryIndex index : perRowIndexes)
             {
-                if (appliedRowLevelIndexes == null)
-                    appliedRowLevelIndexes = new HashSet<>();
-
                 if (appliedRowLevelIndexes.add(index.getClass()))
-                    ((PerRowSecondaryIndex)index).index(key, cf);
-            }
-            else
-            {
-                for (Cell cell : cf)
-                    if (cell.isLive() && index.indexes(cell.name()))
-                        ((PerColumnSecondaryIndex) index).insert(key, cell, opGroup);
+                    ((PerRowSecondaryIndex)index).index(atoms.partitionKey().getKey(), atoms);
             }
         }
-    }
 
-    /**
-     * Delete all columns from all indexes for this row.  For when cleanup rips a row out entirely.
-     *
-     * @param key the row key
-     * @param indexedColumnsInRow all column names in row
-     */
-    public void deleteFromIndexes(DecoratedKey key, List<Cell> indexedColumnsInRow, OpOrder.Group opGroup)
-    {
-        // Update entire row only once per row level index
-        Set<Class<? extends SecondaryIndex>> cleanedRowLevelIndexes = null;
-
-        for (Cell cell : indexedColumnsInRow)
+        if (!perColumnIndexes.isEmpty())
         {
-            for (SecondaryIndex index : indexFor(cell.name()))
+            int nowInSec = FBUtilities.nowInSeconds();
+            DecoratedKey key = atoms.partitionKey();
+            for (PerColumnSecondaryIndex index : perColumnIndexes)
             {
-                if (index instanceof PerRowSecondaryIndex)
+                indexRow(key, atoms.staticRow(), index, opGroup, nowInSec);
+                Iterator<Row> iter = AtomIterators.asRowIterator(atoms, nowInSec);
+                while (iter.hasNext())
+                    indexRow(key, iter.next(), index, opGroup, nowInSec);
+            }
+        }
+    }
+
+    private void indexRow(DecoratedKey key, Row row, PerColumnSecondaryIndex index, OpOrder.Group opGroup, int nowInSec)
+    {
+        ClusteringPrefix clustering = row.clustering();
+        for (ColumnData data : row)
+        {
+            if (!index.indexes(clustering, data.column()))
+                continue;
+
+            for (int i = 0; i < data.size(); i++)
+            {
+                Cell c = data.cell(i);
+                if (c.localDeletionTime() > nowInSec)
+                    index.insert(key.getKey(), clustering, data.column(), c, opGroup);
+            }
+        }
+    }
+
+    /**
+     * Delete all data from all indexes for this partition.  For when cleanup rips a partition out entirely.
+     */
+    public void deleteFromIndexes(AtomIterator partition, OpOrder.Group opGroup)
+    {
+        ByteBuffer key = partition.partitionKey().getKey();
+
+        for (PerRowSecondaryIndex index : perRowIndexes())
+            index.delete(key, opGroup);
+
+        Set<PerColumnSecondaryIndex> indexes = perColumnIndexes();
+
+        while (partition.hasNext())
+        {
+            Atom atom = partition.next();
+            if (atom.kind() != Atom.Kind.ROW)
+                continue;
+
+            Row row = (Row)atom;
+            ClusteringPrefix clustering = row.clustering();
+            for (ColumnData data : row)
+            {
+                ColumnDefinition column = data.column();
+                for (PerColumnSecondaryIndex index : indexes)
                 {
-                    if (cleanedRowLevelIndexes == null)
-                        cleanedRowLevelIndexes = new HashSet<>();
-                    if (cleanedRowLevelIndexes.add(index.getClass()))
-                        ((PerRowSecondaryIndex) index).delete(key, opGroup);
-                }
-                else
-                {
-                    ((PerColumnSecondaryIndex) index).delete(key.getKey(), cell, opGroup);
+                    if (!index.indexes(clustering, column))
+                        continue;
+
+                    for (int i = 0; i < data.size(); i++)
+                        index.delete(key, clustering, column, data.cell(i), opGroup);
                 }
             }
         }
     }
 
     /**
-     * This helper acts as a closure around the indexManager
-     * and updated cf data to ensure that down in
-     * Memtable's ColumnFamily implementation, the index
-     * can get updated. Note: only a CF backed by AtomicSortedColumns implements
-     * this behaviour fully, other types simply ignore the index updater.
+     * This helper acts as a closure around the indexManager and updated data
+     * to ensure that down in Memtable's ColumnFamily implementation, the index
+     * can get updated.
      */
-    public Updater updaterFor(DecoratedKey key, ColumnFamily cf, OpOrder.Group opGroup)
+    public Updater updaterFor(PartitionUpdate update, OpOrder.Group opGroup)
     {
         return (indexesByColumn.isEmpty() && rowLevelIndexMap.isEmpty())
                 ? nullUpdater
-                : new StandardUpdater(key, cf, opGroup);
+                : new StandardUpdater(update, opGroup);
     }
 
     /**
@@ -519,19 +534,19 @@ public class SecondaryIndexManager
      * @param clause the query clause
      * @return the searchers needed to query the index
      */
-    public List<SecondaryIndexSearcher> getIndexSearchersForQuery(List<IndexExpression> clause)
+    public List<SecondaryIndexSearcher> getIndexSearchersFor(ReadCommand command)
     {
-        Map<String, Set<ByteBuffer>> groupByIndexType = new HashMap<>();
+        Map<String, Set<ColumnDefinition>> groupByIndexType = new HashMap<>();
 
         //Group columns by type
-        for (IndexExpression ix : clause)
+        for (ColumnFilter.Expression e : command.columnFilter())
         {
-            SecondaryIndex index = getIndexForColumn(ix.column);
+            SecondaryIndex index = getIndexForColumn(e.column());
 
             if (index == null)
                 continue;
 
-            Set<ByteBuffer> columns = groupByIndexType.get(index.indexTypeForGrouping());
+            Set<ColumnDefinition> columns = groupByIndexType.get(index.indexTypeForGrouping());
 
             if (columns == null)
             {
@@ -539,16 +554,38 @@ public class SecondaryIndexManager
                 groupByIndexType.put(index.indexTypeForGrouping(), columns);
             }
 
-            columns.add(ix.column);
+            columns.add(e.column());
         }
 
         List<SecondaryIndexSearcher> indexSearchers = new ArrayList<>(groupByIndexType.size());
 
         //create searcher per type
-        for (Set<ByteBuffer> column : groupByIndexType.values())
+        for (Set<ColumnDefinition> column : groupByIndexType.values())
             indexSearchers.add(getIndexForColumn(column.iterator().next()).createSecondaryIndexSearcher(column));
 
         return indexSearchers;
+    }
+
+    public SecondaryIndexSearcher getBestIndexSearcherFor(ReadCommand command)
+    {
+        List<SecondaryIndexSearcher> indexSearchers = getIndexSearchersFor(command);
+
+        if (indexSearchers.isEmpty())
+            return null;
+
+        SecondaryIndexSearcher mostSelective = null;
+        long bestEstimate = Long.MAX_VALUE;
+        for (SecondaryIndexSearcher searcher : indexSearchers)
+        {
+            SecondaryIndex highestSelectivityIndex = searcher.highestSelectivityIndex(command.columnFilter());
+            long estimate = highestSelectivityIndex.estimateResultRows();
+            if (estimate <= bestEstimate)
+            {
+                bestEstimate = estimate;
+                mostSelective = searcher;
+            }
+        }
+        return mostSelective;
     }
 
     /**
@@ -557,21 +594,21 @@ public class SecondaryIndexManager
      * @param clause the query clause
      * @throws org.apache.cassandra.exceptions.InvalidRequestException in case of validation errors
      */
-    public void validateIndexSearchersForQuery(List<IndexExpression> clause) throws InvalidRequestException
+    public void validateIndexSearchersForQuery(ColumnFilter clause) throws InvalidRequestException
     {
         // Group by index type
-        Map<String, Set<IndexExpression>> expressionsByIndexType = new HashMap<>();
-        Map<String, Set<ByteBuffer>> columnsByIndexType = new HashMap<>();
-        for (IndexExpression indexExpression : clause)
+        Map<String, Set<ColumnFilter.Expression>> expressionsByIndexType = new HashMap<>();
+        Map<String, Set<ColumnDefinition>> columnsByIndexType = new HashMap<>();
+        for (ColumnFilter.Expression indexExpression : clause)
         {
-            SecondaryIndex index = getIndexForColumn(indexExpression.column);
+            SecondaryIndex index = getIndexForColumn(indexExpression.column());
 
             if (index == null)
                 continue;
 
             String canonicalIndexName = index.getClass().getCanonicalName();
-            Set<IndexExpression> expressions = expressionsByIndexType.get(canonicalIndexName);
-            Set<ByteBuffer> columns = columnsByIndexType.get(canonicalIndexName);
+            Set<ColumnFilter.Expression> expressions = expressionsByIndexType.get(canonicalIndexName);
+            Set<ColumnDefinition> columns = columnsByIndexType.get(canonicalIndexName);
             if (expressions == null)
             {
                 expressions = new HashSet<>();
@@ -581,49 +618,20 @@ public class SecondaryIndexManager
             }
 
             expressions.add(indexExpression);
-            columns.add(indexExpression.column);
+            columns.add(indexExpression.column());
         }
 
         // Validate
-        for (Map.Entry<String, Set<IndexExpression>> expressions : expressionsByIndexType.entrySet())
+        for (Map.Entry<String, Set<ColumnFilter.Expression>> expressions : expressionsByIndexType.entrySet())
         {
-            Set<ByteBuffer> columns = columnsByIndexType.get(expressions.getKey());
+            Set<ColumnDefinition> columns = columnsByIndexType.get(expressions.getKey());
             SecondaryIndex secondaryIndex = getIndexForColumn(columns.iterator().next());
             SecondaryIndexSearcher searcher = secondaryIndex.createSecondaryIndexSearcher(columns);
-            for (IndexExpression expression : expressions.getValue())
+            for (ColumnFilter.Expression expression : expressions.getValue())
             {
                 searcher.validate(expression);
             }
         }
-    }
-
-    /**
-     * Performs a search across a number of column indexes
-     *
-     * @param filter the column range to restrict to
-     * @return found indexed rows
-     */
-    public List<Row> search(ExtendedFilter filter)
-    {
-        List<SecondaryIndexSearcher> indexSearchers = getIndexSearchersForQuery(filter.getClause());
-
-        if (indexSearchers.isEmpty())
-            return Collections.emptyList();
-
-        SecondaryIndexSearcher mostSelective = null;
-        long bestEstimate = Long.MAX_VALUE;
-        for (SecondaryIndexSearcher searcher : indexSearchers)
-        {
-            SecondaryIndex highestSelectivityIndex = searcher.highestSelectivityIndex(filter.getClause());
-            long estimate = highestSelectivityIndex.estimateResultRows();
-            if (estimate <= bestEstimate)
-            {
-                bestEstimate = estimate;
-                mostSelective = searcher;
-            }
-        }
-
-        return mostSelective.search(filter);
     }
 
     public Set<SecondaryIndex> getIndexesByNames(Set<String> idxNames)
@@ -647,19 +655,20 @@ public class SecondaryIndexManager
             index.setIndexRemoved();
     }
 
-    public boolean validate(Cell cell)
-    {
-        for (SecondaryIndex index : indexFor(cell.name()))
-        {
-            if (!index.validate(cell))
-                return false;
-        }
-        return true;
-    }
+    // TODO: is this used?
+    //public boolean validate(Cell cell)
+    //{
+    //    for (SecondaryIndex index : indexFor(cell.name()))
+    //    {
+    //        if (!index.validate(cell))
+    //            return false;
+    //    }
+    //    return true;
+    //}
 
     static boolean shouldCleanupOldValue(Cell oldCell, Cell newCell)
     {
-        // If any one of name/value/timestamp are different, then we
+        // If either the value or timestamp is different, then we
         // should delete from the index. If not, then we can infer that
         // at least one of the cells is an ExpiringColumn and that the
         // difference is in the expiry time. In this case, we don't want to
@@ -667,22 +676,21 @@ public class SecondaryIndexManager
         // will just hide the inserted value.
         // Completely identical cells (including expiring columns with
         // identical ttl & localExpirationTime) will not get this far due
-        // to the oldCell.equals(newColumn) in StandardUpdater.update
-        return !oldCell.name().equals(newCell.name())
-            || !oldCell.value().equals(newCell.value())
+        // to the oldCell.equals(newCell) in StandardUpdater.update
+        return !oldCell.value().equals(newCell.value())
             || oldCell.timestamp() != newCell.timestamp();
     }
 
     public static interface Updater
     {
         /** called when constructing the index against pre-existing data */
-        public void insert(Cell cell);
+        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell);
 
         /** called when updating the index from a memtable */
-        public void update(Cell oldCell, Cell cell);
+        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell);
 
         /** called when lazy-updating the index during compaction (CASSANDRA-2897) */
-        public void remove(Cell current);
+        public void remove(ClusteringPrefix clustering, ColumnDefinition Column, Cell current);
 
         /** called after memtable updates are complete (CASSANDRA-5397) */
         public void updateRowLevelIndexes();
@@ -697,28 +705,25 @@ public class SecondaryIndexManager
             this.key = key;
         }
 
-        public void insert(Cell cell)
+        public void insert(ClusteringPrefix clustering, ColumnDefinition c, Cell cell)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void update(Cell oldCell, Cell newCell)
+        public void update(ClusteringPrefix clustering, ColumnDefinition c, Cell oldCell, Cell newCell)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void remove(Cell cell)
+        public void remove(ClusteringPrefix clustering, ColumnDefinition c, Cell cell)
         {
-            if (!cell.isLive())
-                return;
-
-            for (SecondaryIndex index : indexFor(cell.name()))
+            for (SecondaryIndex index : indexFor(clustering, c))
             {
                 if (index instanceof PerColumnSecondaryIndex)
                 {
                     try (OpOrder.Group opGroup = baseCfs.keyspace.writeOrder.start())
                     {
-                        ((PerColumnSecondaryIndex) index).delete(key.getKey(), cell, opGroup);
+                        ((PerColumnSecondaryIndex) index).delete(key.getKey(), clustering, c, cell, opGroup);
                     }
                 }
             }
@@ -727,45 +732,45 @@ public class SecondaryIndexManager
         public void updateRowLevelIndexes()
         {
             for (SecondaryIndex index : rowLevelIndexMap.values())
-                ((PerRowSecondaryIndex) index).index(key.getKey(), null);
+                ((PerRowSecondaryIndex) index).index(key.getKey(), (PartitionUpdate)null);
         }
     }
 
     private final class StandardUpdater implements Updater
     {
-        private final DecoratedKey key;
-        private final ColumnFamily cf;
+        private final PartitionUpdate update;
         private final OpOrder.Group opGroup;
+        private final int nowInSec;
 
-        public StandardUpdater(DecoratedKey key, ColumnFamily cf, OpOrder.Group opGroup)
+        public StandardUpdater(PartitionUpdate update, OpOrder.Group opGroup)
         {
-            this.key = key;
-            this.cf = cf;
+            this.update = update;
             this.opGroup = opGroup;
+            this.nowInSec = (int)(System.currentTimeMillis() / 1000);
         }
 
-        public void insert(Cell cell)
+        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell)
         {
-            if (!cell.isLive())
+            if (!Cells.isLive(cell, nowInSec))
                 return;
 
-            for (SecondaryIndex index : indexFor(cell.name()))
+            for (SecondaryIndex index : indexFor(clustering, column))
                 if (index instanceof PerColumnSecondaryIndex)
-                    ((PerColumnSecondaryIndex) index).insert(key.getKey(), cell, opGroup);
+                    ((PerColumnSecondaryIndex) index).insert(update.partitionKey().getKey(), clustering, column, cell, opGroup);
         }
 
-        public void update(Cell oldCell, Cell cell)
+        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell)
         {
             if (oldCell.equals(cell))
                 return;
-            
-            for (SecondaryIndex index : indexFor(cell.name()))
+
+            for (SecondaryIndex index : indexFor(clustering, column))
             {
                 if (index instanceof PerColumnSecondaryIndex)
                 {
-                    if (cell.isLive())
+                    if (Cells.isLive(cell, nowInSec))
                     {
-                        ((PerColumnSecondaryIndex) index).update(key.getKey(), oldCell, cell, opGroup);
+                        ((PerColumnSecondaryIndex) index).update(update.partitionKey().getKey(), clustering, column, oldCell, cell, opGroup);
                     }
                     else
                     {
@@ -775,26 +780,21 @@ public class SecondaryIndexManager
                         // identical values and ttl) Then, we don't want to delete as the
                         // tombstone will hide the new value we just inserted; see CASSANDRA-7268
                         if (shouldCleanupOldValue(oldCell, cell))
-                            ((PerColumnSecondaryIndex) index).delete(key.getKey(), oldCell, opGroup);
+                            ((PerColumnSecondaryIndex) index).delete(update.partitionKey().getKey(), clustering, column, oldCell, opGroup);
                     }
                 }
             }
         }
 
-        public void remove(Cell cell)
+        public void remove(ClusteringPrefix clustering, ColumnDefinition column, Cell cell)
         {
-            if (!cell.isLive())
-                return;
-
-            for (SecondaryIndex index : indexFor(cell.name()))
-                if (index instanceof PerColumnSecondaryIndex)
-                   ((PerColumnSecondaryIndex) index).delete(key.getKey(), cell, opGroup);
+            throw new UnsupportedOperationException();
         }
 
         public void updateRowLevelIndexes()
         {
             for (SecondaryIndex index : rowLevelIndexMap.values())
-                ((PerRowSecondaryIndex) index).index(key.getKey(), cf);
+                ((PerRowSecondaryIndex) index).index(update.partitionKey().getKey(), update);
         }
 
     }

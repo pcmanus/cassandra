@@ -30,8 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ReadCommand;
-import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
@@ -40,6 +39,7 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
@@ -49,10 +49,10 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
 
     public final IResponseResolver<TMessage, TResolved> resolver;
     private final SimpleCondition condition = new SimpleCondition();
-    final long start;
+    private final long start;
     final int blockfor;
     final List<InetAddress> endpoints;
-    private final IReadCommand command;
+    private final ReadCommand command;
     private final ConsistencyLevel consistencyLevel;
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
             = AtomicIntegerFieldUpdater.newUpdater(ReadCallback.class, "received");
@@ -62,14 +62,17 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
     /**
      * Constructor when response count has to be calculated and blocked for.
      */
-    public ReadCallback(IResponseResolver<TMessage, TResolved> resolver, ConsistencyLevel consistencyLevel, IReadCommand command, List<InetAddress> filteredEndpoints)
+    public ReadCallback(IResponseResolver<TMessage, TResolved> resolver, ConsistencyLevel consistencyLevel, ReadCommand command, List<InetAddress> filteredEndpoints)
     {
-        this(resolver, consistencyLevel, consistencyLevel.blockFor(Keyspace.open(command.getKeyspace())), command, Keyspace.open(command.getKeyspace()), filteredEndpoints);
-        if (logger.isTraceEnabled())
-            logger.trace(String.format("Blockfor is %s; setting up requests to %s", blockfor, StringUtils.join(this.endpoints, ",")));
+        this(resolver,
+             consistencyLevel,
+             consistencyLevel.blockFor(Keyspace.open(command.metadata().ksName)),
+             command,
+             Keyspace.open(command.metadata().ksName),
+             filteredEndpoints);
     }
 
-    public ReadCallback(IResponseResolver<TMessage, TResolved> resolver, ConsistencyLevel consistencyLevel, int blockfor, IReadCommand command, Keyspace keyspace, List<InetAddress> endpoints)
+    public ReadCallback(IResponseResolver<TMessage, TResolved> resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, List<InetAddress> endpoints)
     {
         this.command = command;
         this.keyspace = keyspace;
@@ -79,7 +82,10 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
         this.start = System.nanoTime();
         this.endpoints = endpoints;
         // we don't support read repair (or rapid read protection) for range scans yet (CASSANDRA-6897)
-        assert !(resolver instanceof RangeSliceResponseResolver) || blockfor >= endpoints.size();
+        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= endpoints.size();
+
+        if (logger.isTraceEnabled())
+            logger.trace(String.format("Blockfor is %s; setting up requests to %s", blockfor, StringUtils.join(this.endpoints, ",")));
     }
 
     public boolean await(long timePastStart, TimeUnit unit)
@@ -102,12 +108,22 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
             // Same as for writes, see AbstractWriteResponseHandler
             ReadTimeoutException ex = new ReadTimeoutException(consistencyLevel, received, blockfor, resolver.isDataPresent());
 
-            if (logger.isDebugEnabled())
+            if (Tracing.isTracing())
+            {
+                String gotData = received > 0 ? (resolver.isDataPresent() ? " (including data)" : " (only digests)") : "";
+                Tracing.trace("Timed out; received {} of {} responses{}", new Object[]{ received, blockfor, gotData });
+            }
+            else if (logger.isDebugEnabled())
+            {
                 logger.debug("Read timeout: {}", ex.toString());
+            }
             throw ex;
         }
 
-        return blockfor == 1 ? resolver.getData() : resolver.resolve();
+        TResolved result = blockfor == 1 ? resolver.getData() : resolver.resolve();
+        if (logger.isDebugEnabled())
+            logger.debug("Read: {} ms.", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+        return result;
     }
 
     public void response(MessageIn<TMessage> message)
@@ -168,7 +184,7 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
     {
         public void run()
         {
-            // If the resolver is a RowDigestResolver, we need to do a full data read if there is a mismatch.
+            // If the resolver is a DigestResolver, we need to do a full data read if there is a mismatch.
             // Otherwise, resolve will send the repairs directly if needs be (and in that case we should never
             // get a digest mismatch)
             try
@@ -177,18 +193,17 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
             }
             catch (DigestMismatchException e)
             {
-                assert resolver instanceof RowDigestResolver;
+                assert resolver instanceof DigestResolver;
 
                 if (logger.isDebugEnabled())
                     logger.debug("Digest mismatch:", e);
                 
                 ReadRepairMetrics.repairedBackground.mark();
                 
-                ReadCommand readCommand = (ReadCommand) command;
-                final RowDataResolver repairResolver = new RowDataResolver(readCommand.ksName, readCommand.key, readCommand.filter(), readCommand.timestamp, endpoints.size());
+                final DataResolver repairResolver = new DataResolver(keyspace, command.metadata(), consistencyLevel, command.nowInSec(), endpoints.size());
                 AsyncRepairCallback repairHandler = new AsyncRepairCallback(repairResolver, endpoints.size());
 
-                MessageOut<ReadCommand> message = ((ReadCommand) command).createMessage();
+                MessageOut<ReadCommand> message = command.createMessage();
                 for (InetAddress endpoint : endpoints)
                     MessagingService.instance().sendRR(message, endpoint, repairHandler);
             }

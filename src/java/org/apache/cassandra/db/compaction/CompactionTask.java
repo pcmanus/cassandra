@@ -155,7 +155,6 @@ public class CompactionTask extends AbstractCompactionTask
             try (AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(actuallyCompact))
             {
                 AbstractCompactionIterable ci = new CompactionIterable(compactionType, scanners.scanners, controller);
-                Iterator<AbstractCompactedRow> iter = ci.iterator();
 
                 // we can't preheat until the tracker has been set. This doesn't happen until we tell the cfs to
                 // replace the old entries.  Track entries to preheat here until then.
@@ -168,7 +167,7 @@ public class CompactionTask extends AbstractCompactionTask
                 SSTableRewriter writer = new SSTableRewriter(cfs, sstables, maxAge, compactionType, offline);
                 try
                 {
-                    if (!iter.hasNext())
+                    if (!ci.hasNext())
                     {
                         // don't mark compacted in the finally block, since if there _is_ nondeleted data,
                         // we need to sync it (via closeAndOpen) first, so there is no period during which
@@ -178,13 +177,12 @@ public class CompactionTask extends AbstractCompactionTask
                     }
 
                     writer.switchWriter(createCompactionWriter(sstableDirectory, keysPerSSTable, minRepairedAt));
-                    while (iter.hasNext())
+                    while (ci.hasNext())
                     {
                         if (ci.isStopRequested())
                             throw new CompactionInterruptedException(ci.getCompactionInfo());
 
-                        AbstractCompactedRow row = iter.next();
-                        if (writer.append(row) != null)
+                        if (writer.append(ci.next()) != null)
                         {
                             totalKeysWritten++;
                             if (newSSTableSegmentThresholdReached(writer.currentWriter()))

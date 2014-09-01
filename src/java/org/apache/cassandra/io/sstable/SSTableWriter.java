@@ -38,17 +38,9 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.ArrayBackedSortedColumns;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnIndex;
-import org.apache.cassandra.db.ColumnSerializer;
-import org.apache.cassandra.db.CounterCell;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.DeletionTime;
-import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.db.RangeTombstone;
-import org.apache.cassandra.db.RowIndexEntry;
-import org.apache.cassandra.db.compaction.AbstractCompactedRow;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
@@ -188,141 +180,130 @@ public class SSTableWriter extends SSTable
     }
 
     /**
-     * @param row
-     * @return null if the row was compacted away entirely; otherwise, the PK index entry for this row
-     */
-    public RowIndexEntry append(AbstractCompactedRow row)
-    {
-        long currentPosition = beforeAppend(row.key);
-        RowIndexEntry entry;
-        try
-        {
-            entry = row.write(currentPosition, dataFile.stream);
-            if (entry == null)
-                return null;
-        }
-        catch (IOException e)
-        {
-            throw new FSWriteError(e, dataFile.getPath());
-        }
-        sstableMetadataCollector.update(dataFile.getFilePointer() - currentPosition, row.columnStats());
-        afterAppend(row.key, currentPosition, entry);
-        return entry;
-    }
-
-    public void append(DecoratedKey decoratedKey, ColumnFamily cf)
-    {
-        long startPosition = beforeAppend(decoratedKey);
-        try
-        {
-            RowIndexEntry entry = rawAppend(cf, startPosition, decoratedKey, dataFile.stream);
-            afterAppend(decoratedKey, startPosition, entry);
-        }
-        catch (IOException e)
-        {
-            throw new FSWriteError(e, dataFile.getPath());
-        }
-        sstableMetadataCollector.update(dataFile.getFilePointer() - startPosition, cf.getColumnStats());
-    }
-
-    public static RowIndexEntry rawAppend(ColumnFamily cf, long startPosition, DecoratedKey key, DataOutputPlus out) throws IOException
-    {
-        assert cf.hasColumns() || cf.isMarkedForDelete();
-
-        ColumnIndex.Builder builder = new ColumnIndex.Builder(cf, key.getKey(), out);
-        ColumnIndex index = builder.build(cf);
-
-        out.writeShort(END_OF_ROW);
-        return RowIndexEntry.create(startPosition, cf.deletionInfo().getTopLevelDeletion(), index);
-    }
-
-    /**
-     * @throws IOException if a read from the DataInput fails
+     * Appends partition data to this writer.
+     *
+     * @param iterator the partition to write
+     * @return the created index entry if something was written, that is if {@code iterator}
+     * wasn't empty, {@code null} otherwise.
+     *
      * @throws FSWriteError if a write to the dataFile fails
      */
-    public long appendFromStream(DecoratedKey key, CFMetaData metadata, DataInput in, Descriptor.Version version) throws IOException
+    public RowIndexEntry append(AtomIterator iterator)
     {
-        long currentPosition = beforeAppend(key);
+        if (AtomIterators.isEmpty(iterator))
+            return null;
 
-        ColumnStats.MaxTracker<Long> maxTimestampTracker = new ColumnStats.MaxTracker<>(Long.MAX_VALUE);
-        ColumnStats.MinTracker<Long> minTimestampTracker = new ColumnStats.MinTracker<>(Long.MIN_VALUE);
-        ColumnStats.MaxTracker<Integer> maxDeletionTimeTracker = new ColumnStats.MaxTracker<>(Integer.MAX_VALUE);
-        List<ByteBuffer> minColumnNames = Collections.emptyList();
-        List<ByteBuffer> maxColumnNames = Collections.emptyList();
-        StreamingHistogram tombstones = new StreamingHistogram(TOMBSTONE_HISTOGRAM_BIN_SIZE);
-        boolean hasLegacyCounterShards = false;
-
-        ColumnFamily cf = ArrayBackedSortedColumns.factory.create(metadata);
-        cf.delete(DeletionTime.serializer.deserialize(in));
-
-        ColumnIndex.Builder columnIndexer = new ColumnIndex.Builder(cf, key.getKey(), dataFile.stream);
-
-        if (cf.deletionInfo().getTopLevelDeletion().localDeletionTime < Integer.MAX_VALUE)
-        {
-            tombstones.update(cf.deletionInfo().getTopLevelDeletion().localDeletionTime);
-            maxDeletionTimeTracker.update(cf.deletionInfo().getTopLevelDeletion().localDeletionTime);
-            minTimestampTracker.update(cf.deletionInfo().getTopLevelDeletion().markedForDeleteAt);
-            maxTimestampTracker.update(cf.deletionInfo().getTopLevelDeletion().markedForDeleteAt);
-        }
-
-        Iterator<RangeTombstone> rangeTombstoneIterator = cf.deletionInfo().rangeIterator();
-        while (rangeTombstoneIterator.hasNext())
-        {
-            RangeTombstone rangeTombstone = rangeTombstoneIterator.next();
-            tombstones.update(rangeTombstone.getLocalDeletionTime());
-            minTimestampTracker.update(rangeTombstone.timestamp());
-            maxTimestampTracker.update(rangeTombstone.timestamp());
-            maxDeletionTimeTracker.update(rangeTombstone.getLocalDeletionTime());
-            minColumnNames = ColumnNameHelper.minComponents(minColumnNames, rangeTombstone.min, metadata.comparator);
-            maxColumnNames = ColumnNameHelper.maxComponents(maxColumnNames, rangeTombstone.max, metadata.comparator);
-        }
-
-        Iterator<OnDiskAtom> iter = metadata.getOnDiskIterator(in, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version);
+        DecoratedKey key = iterator.partitionKey();
+        long startPosition = beforeAppend(key);
+        ColumnStatsCollector withStats = new ColumnStatsCollector(iterator);
         try
         {
-            while (iter.hasNext())
-            {
-                OnDiskAtom atom = iter.next();
-                if (atom == null)
-                    break;
+            ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile);
 
-                if (atom instanceof CounterCell)
-                {
-                    atom = ((CounterCell) atom).markLocalToBeCleared();
-                    hasLegacyCounterShards = hasLegacyCounterShards || ((CounterCell) atom).hasLegacyShards();
-                }
+            RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
+            afterAppend(key, startPosition, entry);
 
-                int deletionTime = atom.getLocalDeletionTime();
-                if (deletionTime < Integer.MAX_VALUE)
-                    tombstones.update(deletionTime);
-                minTimestampTracker.update(atom.timestamp());
-                maxTimestampTracker.update(atom.timestamp());
-                minColumnNames = ColumnNameHelper.minComponents(minColumnNames, atom.name(), metadata.comparator);
-                maxColumnNames = ColumnNameHelper.maxComponents(maxColumnNames, atom.name(), metadata.comparator);
-                maxDeletionTimeTracker.update(atom.getLocalDeletionTime());
-
-                columnIndexer.add(atom); // This write the atom on disk too
-            }
-
-            columnIndexer.maybeWriteEmptyRowHeader();
-            dataFile.stream.writeShort(END_OF_ROW);
+            sstableMetadataCollector.update(dataFile.getFilePointer() - startPosition, withStats.getStats());
+            return entry;
         }
         catch (IOException e)
         {
             throw new FSWriteError(e, dataFile.getPath());
         }
+    }
 
-        sstableMetadataCollector.updateMinTimestamp(minTimestampTracker.get())
-                                .updateMaxTimestamp(maxTimestampTracker.get())
-                                .updateMaxLocalDeletionTime(maxDeletionTimeTracker.get())
-                                .addRowSize(dataFile.getFilePointer() - currentPosition)
-                                .addColumnCount(columnIndexer.writtenAtomCount())
-                                .mergeTombstoneHistogram(tombstones)
-                                .updateMinColumnNames(minColumnNames)
-                                .updateMaxColumnNames(maxColumnNames)
-                                .updateHasLegacyCounterShards(hasLegacyCounterShards);
-        afterAppend(key, currentPosition, RowIndexEntry.create(currentPosition, cf.deletionInfo().getTopLevelDeletion(), columnIndexer.build()));
-        return currentPosition;
+    private static class ColumnStatsCollector extends WrappingAtomIterator
+    {
+        // note that we default to MIN_VALUE/MAX_VALUE here to be able to override them later in this method
+        // we are checking row/range tombstones and actual cells - there should always be data that overrides
+        // these with actual values
+        int cellCount;
+        ColumnStats.MinTracker<Long> minTimestampTracker = new ColumnStats.MinTracker<>(Long.MIN_VALUE);
+        ColumnStats.MaxTracker<Long> maxTimestampTracker = new ColumnStats.MaxTracker<>(Long.MAX_VALUE);
+        StreamingHistogram tombstones = new StreamingHistogram(SSTable.TOMBSTONE_HISTOGRAM_BIN_SIZE);
+        ColumnStats.MaxTracker<Integer> maxDeletionTimeTracker = new ColumnStats.MaxTracker<>(Integer.MAX_VALUE);
+        List<ByteBuffer> minColumnNamesSeen = Collections.emptyList();
+        List<ByteBuffer> maxColumnNamesSeen = Collections.emptyList();
+        boolean hasLegacyCounterShards = false;
+
+        ColumnStatsCollector(AtomIterator iter)
+        {
+            super(iter);
+
+            DeletionTime dt = iter.partitionLevelDeletion();
+            if (!dt.isLive())
+            {
+                tombstones.update(dt.localDeletionTime());
+                maxDeletionTimeTracker.update(dt.localDeletionTime());
+                minTimestampTracker.update(dt.markedForDeleteAt());
+                maxTimestampTracker.update(dt.markedForDeleteAt());
+            }
+        }
+
+        @Override
+        public Atom next()
+        {
+            Atom atom = super.next();
+
+            ClusteringPrefix clustering = atom.clustering();
+            ClusteringComparator comparator = wrapped.metadata().comparator;
+            minColumnNamesSeen = ColumnNameHelper.minComponents(minColumnNamesSeen, clustering, comparator);
+            maxColumnNamesSeen = ColumnNameHelper.maxComponents(maxColumnNamesSeen, clustering, comparator);
+
+            switch (atom.kind())
+            {
+                case ROW:
+                    Row row = (Row)atom;
+                    updateTimestamp(row.timestamp());
+                    for (ColumnData data : row)
+                    {
+                        if (!data.complexDeletionTime().isLive())
+                            update(data.complexDeletionTime().markedForDeleteAt(), data.complexDeletionTime().localDeletionTime());
+
+                        for (int i = 0; i < data.size(); i++)
+                        {
+                            Cell cell = data.cell(i);
+                            ++cellCount;
+                            update(cell.timestamp(), cell.localDeletionTime());
+                            if (cell.isCounterCell())
+                                hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
+                        }
+                    }
+                    break;
+                case RANGE_TOMBSTONE_MARKER:
+                    DeletionTime dt = ((RangeTombstoneMarker)atom).delTime();
+                    update(dt.markedForDeleteAt(), dt.localDeletionTime());
+                    break;
+            }
+            return atom;
+        }
+
+        private void updateTimestamp(long timestamp)
+        {
+            minTimestampTracker.update(timestamp);
+            maxTimestampTracker.update(timestamp);
+        }
+
+        private void update(long timestamp, int localDelTime)
+        {
+            updateTimestamp(timestamp);
+            maxDeletionTimeTracker.update(localDelTime);
+
+            if (localDelTime < Integer.MAX_VALUE)
+                tombstones.update(localDelTime);
+        }
+
+        public ColumnStats getStats()
+        {
+            return new ColumnStats(cellCount,
+                                   minTimestampTracker.get(),
+                                   maxTimestampTracker.get(),
+                                   maxDeletionTimeTracker.get(),
+                                   tombstones,
+                                   minColumnNamesSeen,
+                                   maxColumnNamesSeen,
+                                   hasLegacyCounterShards);
+        }
     }
 
     /**
@@ -487,7 +468,6 @@ public class SSTableWriter extends SSTable
 
     }
 
-
     private static void writeMetadata(Descriptor desc, Map<MetadataType, MetadataComponent> components)
     {
         SequentialWriter out = SequentialWriter.open(new File(desc.filenameFor(Component.STATS)));
@@ -569,7 +549,7 @@ public class SSTableWriter extends SSTable
             try
             {
                 ByteBufferUtil.writeWithShortLength(key.getKey(), indexFile.stream);
-                metadata.comparator.rowIndexEntrySerializer().serialize(indexEntry, indexFile.stream);
+                metadata.layout().rowIndexEntrySerializer().serialize(indexEntry, indexFile.stream);
             }
             catch (IOException e)
             {

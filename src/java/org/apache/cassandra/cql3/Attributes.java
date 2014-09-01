@@ -19,7 +19,7 @@ package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.db.ExpiringCell;
+import org.apache.cassandra.db.atoms.Cells;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -98,8 +98,8 @@ public class Attributes
         if (ttl < 0)
             throw new InvalidRequestException("A TTL must be greater or equal to 0");
 
-        if (ttl > ExpiringCell.MAX_TTL)
-            throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)", ttl, ExpiringCell.MAX_TTL));
+        if (ttl > Cells.MAX_TTL_SEC)
+            throw new InvalidRequestException(String.format("ttl is too large. requested (%d) maximum (%d)", ttl, Cells.MAX_TTL_SEC));
 
         return ttl;
     }

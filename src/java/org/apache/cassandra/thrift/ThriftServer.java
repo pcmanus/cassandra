@@ -92,7 +92,9 @@ public class ThriftServer implements CassandraDaemon.Server
 
     protected TProcessor getProcessor(CassandraServer server)
     {
-        return new Cassandra.Processor<Cassandra.Iface>(server);
+        // TODO
+        throw new UnsupportedOperationException();
+        //return new Cassandra.Processor<Cassandra.Iface>(server);
     }
 
     protected TTransportFactory getTransportFactory()

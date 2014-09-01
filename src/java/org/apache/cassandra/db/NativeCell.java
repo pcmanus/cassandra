@@ -20,7 +20,6 @@ package org.apache.cassandra.db;
 import java.security.MessageDigest;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.concurrent.OpOrder;
@@ -28,61 +27,62 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
 import org.apache.cassandra.utils.memory.MemtableAllocator;
 import org.apache.cassandra.utils.memory.NativeAllocator;
 
-public class NativeCell extends AbstractNativeCell
+public class NativeCell //extends AbstractNativeCell
 {
-    private static final long SIZE = ObjectSizes.measure(new NativeCell());
+    // TODO
+    //private static final long SIZE = ObjectSizes.measure(new NativeCell());
 
-    NativeCell()
-    {}
+    //NativeCell()
+    //{}
 
-    public NativeCell(NativeAllocator allocator, OpOrder.Group writeOp, Cell copyOf)
-    {
-        super(allocator, writeOp, copyOf);
-    }
+    //public NativeCell(NativeAllocator allocator, OpOrder.Group writeOp, Cell copyOf)
+    //{
+    //    super(allocator, writeOp, copyOf);
+    //}
 
-    @Override
-    public CellName name()
-    {
-        return this;
-    }
+    //@Override
+    //public CellName name()
+    //{
+    //    return this;
+    //}
 
-    @Override
-    public long timestamp()
-    {
-        return getLong(TIMESTAMP_OFFSET);
-    }
+    //@Override
+    //public long timestamp()
+    //{
+    //    return getLong(TIMESTAMP_OFFSET);
+    //}
 
-    @Override
-    public Cell localCopy(CFMetaData metadata, AbstractAllocator allocator)
-    {
-        return new BufferCell(copy(metadata, allocator), allocator.clone(value()), timestamp());
-    }
+    //@Override
+    //public Cell localCopy(CFMetaData metadata, AbstractAllocator allocator)
+    //{
+    //    return new BufferCell(copy(metadata, allocator), allocator.clone(value()), timestamp());
+    //}
 
-    @Override
-    public Cell localCopy(CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group opGroup)
-    {
-        return allocator.clone(this, metadata, opGroup);
-    }
+    //@Override
+    //public Cell localCopy(CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group opGroup)
+    //{
+    //    return allocator.clone(this, metadata, opGroup);
+    //}
 
-    @Override
-    public void updateDigest(MessageDigest digest)
-    {
-        updateWithName(digest);  // name
-        updateWithValue(digest); // value
+    //@Override
+    //public void updateDigest(MessageDigest digest)
+    //{
+    //    updateWithName(digest);  // name
+    //    updateWithValue(digest); // value
 
-        FBUtilities.updateWithLong(digest, timestamp());
-        FBUtilities.updateWithByte(digest, serializationFlags());
-    }
+    //    FBUtilities.updateWithLong(digest, timestamp());
+    //    FBUtilities.updateWithByte(digest, serializationFlags());
+    //}
 
-    @Override
-    public long unsharedHeapSizeExcludingData()
-    {
-        return SIZE;
-    }
+    //@Override
+    //public long unsharedHeapSizeExcludingData()
+    //{
+    //    return SIZE;
+    //}
 
-    @Override
-    public long unsharedHeapSize()
-    {
-        return SIZE;
-    }
+    //@Override
+    //public long unsharedHeapSize()
+    //{
+    //    return SIZE;
+    //}
 }

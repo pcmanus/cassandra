@@ -27,10 +27,8 @@ import static com.google.common.collect.Lists.newArrayList;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.filter.ColumnSlice;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -145,17 +143,16 @@ public class ColumnCondition
         /**
          * Validates whether this condition applies to {@code current}.
          */
-        public abstract boolean appliesTo(Composite rowPrefix, ColumnFamily current, long now) throws InvalidRequestException;
+        public abstract boolean appliesTo(Row row) throws InvalidRequestException;
 
         public ByteBuffer getCollectionElementValue()
         {
             return null;
         }
 
-        protected boolean isSatisfiedByValue(ByteBuffer value, Cell c, AbstractType<?> type, Relation.Type operator, long now) throws InvalidRequestException
+        protected boolean isSatisfiedByValue(ByteBuffer value, Cell c, AbstractType<?> type, Relation.Type operator) throws InvalidRequestException
         {
-            ByteBuffer columnValue = (c == null || !c.isLive(now)) ? null : c.value();
-            return compareWithOperator(operator, type, value, columnValue);
+            return compareWithOperator(operator, type, value, c == null ? null : c.value());
         }
 
         /** Returns true if the operator is satisfied (i.e. "value operator otherValue == true"), false otherwise. */
@@ -198,21 +195,6 @@ public class ColumnCondition
                     throw new AssertionError();
             }
         }
-
-        protected Iterator<Cell> collectionColumns(CellName collection, ColumnFamily cf, final long now)
-        {
-            // We are testing for collection equality, so we need to have the expected values *and* only those.
-            ColumnSlice[] collectionSlice = new ColumnSlice[]{ collection.slice() };
-            // Filter live columns, this makes things simpler afterwards
-            return Iterators.filter(cf.iterator(collectionSlice), new Predicate<Cell>()
-            {
-                public boolean apply(Cell c)
-                {
-                    // we only care about live columns
-                    return c.isLive(now);
-                }
-            });
-        }
     }
 
     /**
@@ -230,10 +212,9 @@ public class ColumnCondition
             this.value = condition.value.bindAndGet(options);
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
-            CellName name = current.metadata().comparator.create(rowPrefix, column);
-            return isSatisfiedByValue(value, current.getColumn(name), column.type, operator, now);
+            return isSatisfiedByValue(value, Rows.getCell(row, column), column.type, operator);
         }
 
         @Override
@@ -265,12 +246,12 @@ public class ColumnCondition
             }
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
-            CellName name = current.metadata().comparator.create(rowPrefix, column);
+            Cell c = Rows.getCell(row, column);
             for (ByteBuffer value : inValues)
             {
-                if (isSatisfiedByValue(value, current.getColumn(name), column.type, Relation.Type.EQ, now))
+                if (isSatisfiedByValue(value, c, column.type, Relation.Type.EQ))
                     return true;
             }
             return false;
@@ -298,22 +279,20 @@ public class ColumnCondition
             this.value = condition.value.bindAndGet(options);
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, final long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
             if (collectionElement == null)
                 throw new InvalidRequestException("Invalid null value for " + (column.type instanceof MapType ? "map" : "list") + " element access");
 
             if (column.type instanceof MapType)
             {
-                Cell cell = current.getColumn(current.metadata().comparator.create(rowPrefix, column, collectionElement));
-                return isSatisfiedByValue(value, cell, ((MapType) column.type).values, operator, now);
+                Cell cell = Rows.getCell(row, column, new CollectionPath(collectionElement));
+                return isSatisfiedByValue(value, cell, ((MapType) column.type).values, operator);
             }
 
             // sets don't have element access, so it's a list
             assert column.type instanceof ListType;
-            ByteBuffer columnValue = getListItem(
-                    collectionColumns(current.metadata().comparator.create(rowPrefix, column), current, now),
-                    getListIndex(collectionElement));
+            ByteBuffer columnValue = getListItem(Rows.getCells(row, column), getListIndex(collectionElement));
             return compareWithOperator(operator, ((ListType)column.type).elements, value, columnValue);
         }
 
@@ -367,29 +346,25 @@ public class ColumnCondition
             }
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, final long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
             if (collectionElement == null)
                 throw new InvalidRequestException("Invalid null value for " + (column.type instanceof MapType ? "map" : "list") + " element access");
 
-            CellNameType nameType = current.metadata().comparator;
             if (column.type instanceof MapType)
             {
-                CellName name = nameType.create(rowPrefix, column, collectionElement);
-                Cell item = current.getColumn(name);
+                Cell item = Rows.getCell(row, column, new CollectionPath(collectionElement));
                 AbstractType<?> valueType = ((MapType) column.type).values;
                 for (ByteBuffer value : inValues)
                 {
-                    if (isSatisfiedByValue(value, item, valueType, Relation.Type.EQ, now))
+                    if (isSatisfiedByValue(value, item, valueType, Relation.Type.EQ))
                         return true;
                 }
                 return false;
             }
 
             assert column.type instanceof ListType;
-            ByteBuffer columnValue = ElementAccessBound.getListItem(
-                    collectionColumns(nameType.create(rowPrefix, column), current, now),
-                    ElementAccessBound.getListIndex(collectionElement));
+            ByteBuffer columnValue = ElementAccessBound.getListItem(Rows.getCells(row, column), ElementAccessBound.getListIndex(collectionElement));
 
             AbstractType<?> valueType = ((ListType) column.type).elements;
             for (ByteBuffer value : inValues)
@@ -420,11 +395,11 @@ public class ColumnCondition
             this.value = condition.value.bind(options);
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, final long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
             CollectionType type = (CollectionType)column.type;
 
-            Iterator<Cell> iter = collectionColumns(current.metadata().comparator.create(rowPrefix, column), current, now);
+            Iterator<Cell> iter = Rows.getCells(row, column);
             if (value == null)
             {
                 if (operator.equals(Relation.Type.EQ))
@@ -440,9 +415,6 @@ public class ColumnCondition
 
         static boolean valueAppliesTo(CollectionType type, Iterator<Cell> iter, Term.Terminal value, Relation.Type operator)
         {
-            if (value == null)
-                return !iter.hasNext();
-
             switch (type.kind)
             {
                 case LIST: return listAppliesTo((ListType)type, iter, ((Lists.Value)value).elements, operator);
@@ -460,7 +432,7 @@ public class ColumnCondition
                     return operator.equals(Relation.Type.GT) || operator.equals(Relation.Type.GTE) || operator.equals(Relation.Type.NEQ);
 
                 // for lists we use the cell value; for sets we use the cell name
-                ByteBuffer cellValue = isSet? iter.next().name().collectionElement() : iter.next().value();
+                ByteBuffer cellValue = isSet ? ((CollectionPath)iter.next().path()).element() : iter.next().value();
                 int comparison = type.compare(cellValue, conditionIter.next());
                 if (comparison != 0)
                     return evaluateComparisonWithOperator(comparison, operator);
@@ -518,7 +490,7 @@ public class ColumnCondition
                 Cell c = iter.next();
 
                 // compare the keys
-                int comparison = type.keys.compare(c.name().collectionElement(), conditionEntry.getKey());
+                int comparison = type.keys.compare(((CollectionPath)c.path()).element(), conditionEntry.getKey());
                 if (comparison != 0)
                     return evaluateComparisonWithOperator(comparison, operator);
 
@@ -614,16 +586,13 @@ public class ColumnCondition
             }
         }
 
-        public boolean appliesTo(Composite rowPrefix, ColumnFamily current, final long now) throws InvalidRequestException
+        public boolean appliesTo(Row row) throws InvalidRequestException
         {
             CollectionType type = (CollectionType)column.type;
-            CellName name = current.metadata().comparator.create(rowPrefix, column);
 
-            // copy iterator contents so that we can properly reuse them for each comparison with an IN value
-            List<Cell> cells = newArrayList(collectionColumns(name, current, now));
             for (Term.Terminal value : inValues)
             {
-                if (CollectionBound.valueAppliesTo(type, cells.iterator(), value, Relation.Type.EQ))
+                if (CollectionBound.valueAppliesTo(type, Rows.getCells(row, column), value, Relation.Type.EQ))
                     return true;
             }
             return false;

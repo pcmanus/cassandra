@@ -22,60 +22,49 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.dht.*;
 
 /**
- * Groups key range and column filter for range queries.
+ * Groups both the range of partitions to query, and the partition filter to
+ * apply for each partition (for a (partition) range query).
  *
- * The main "trick" of this class is that the column filter can only
- * be obtained by providing the row key on which the column filter will
- * be applied (which we always know before actually querying the columns).
- *
- * This allows the paging DataRange to return a filter for most rows but a
- * potentially different ones for the starting and stopping key. Could
- * allow more fancy stuff in the future too, like column filters that
- * depend on the actual key value :)
+ * The main "trick" is that the partition filter can only be obtained by
+ * providing the partition key on which the filter will be applied. This is
+ * necessary when paging range queries, as we might want a different filter
+ * for the starting and stopping key than for other keys (because the previous
+ * page we had queried may have ended in the middle of a partition).
  */
 public class DataRange
 {
     private final AbstractBounds<RowPosition> keyRange;
-    protected IDiskAtomFilter columnFilter;
-    protected final boolean selectFullRow;
+    protected final PartitionFilter partitionFilter;
 
-    public DataRange(AbstractBounds<RowPosition> range, IDiskAtomFilter columnFilter)
+    public DataRange(AbstractBounds<RowPosition> range, PartitionFilter partitionFilter)
     {
         this.keyRange = range;
-        this.columnFilter = columnFilter;
-        this.selectFullRow = columnFilter instanceof SliceQueryFilter
-                           ? isFullRowSlice((SliceQueryFilter)columnFilter)
-                           : false;
+        this.partitionFilter = partitionFilter;
     }
 
-    public static boolean isFullRowSlice(SliceQueryFilter filter)
+    public static DataRange allData(CFMetaData metadata, IPartitioner partitioner)
     {
-        return filter.slices.length == 1
-            && filter.start().isEmpty()
-            && filter.finish().isEmpty()
-            && filter.count == Integer.MAX_VALUE;
+        return forKeyRange(metadata, new Range<Token>(partitioner.getMinimumToken(), partitioner.getMinimumToken()));
     }
 
-    public static DataRange allData(IPartitioner partitioner)
+    public static DataRange forKeyRange(CFMetaData metadata, Range<Token> keyRange)
     {
-        return forKeyRange(new Range<Token>(partitioner.getMinimumToken(), partitioner.getMinimumToken()));
-    }
-
-    public static DataRange forKeyRange(Range<Token> keyRange)
-    {
-        return new DataRange(keyRange.toRowBounds(), new IdentityQueryFilter());
+        return new DataRange(keyRange.toRowBounds(), PartitionFilters.fullPartitionFilter(metadata));
     }
 
     public AbstractBounds<RowPosition> keyRange()
     {
         return keyRange;
+    }
+
+    public boolean isNamesQuery()
+    {
+        return partitionFilter instanceof NamesPartitionFilter;
     }
 
     public RowPosition startKey()
@@ -100,131 +89,42 @@ public class DataRange
         return keyRange.contains(pos);
     }
 
-    public int getLiveCount(ColumnFamily data, long now)
+    public PartitionFilter partitionFilter(ClusteringComparator comparator, DecoratedKey key)
     {
-        return columnFilter instanceof SliceQueryFilter
-             ? ((SliceQueryFilter)columnFilter).lastCounted()
-             : columnFilter.getLiveCount(data, now);
+        return partitionFilter;
     }
 
-    public boolean selectsFullRowFor(ByteBuffer rowKey)
+    public DataRange forPaging(AbstractBounds<RowPosition> range, ClusteringPrefix firstPartitionStart, ClusteringPrefix lastPartitionEnd)
     {
-        return selectFullRow;
+        return new Paging(range, partitionFilter, firstPartitionStart, lastPartitionEnd);
     }
 
-    public IDiskAtomFilter columnFilter(ByteBuffer rowKey)
+    private static class Paging extends DataRange
     {
-        return columnFilter;
-    }
+        private final ClusteringPrefix firstPartitionStart;
+        private final ClusteringPrefix lastPartitionEnd;
 
-    public void updateColumnsLimit(int count)
-    {
-        columnFilter.updateColumnsLimit(count);
-    }
-
-    public static class Paging extends DataRange
-    {
-        private final SliceQueryFilter sliceFilter;
-        private final Comparator<Composite> comparator;
-        private final Composite columnStart;
-        private final Composite columnFinish;
-
-        private Paging(AbstractBounds<RowPosition> range, SliceQueryFilter filter, Composite columnStart, Composite columnFinish, Comparator<Composite> comparator)
+        private Paging(AbstractBounds<RowPosition> range, PartitionFilter filter, ClusteringPrefix firstPartitionStart, ClusteringPrefix lastPartitionEnd)
         {
             super(range, filter);
 
             // When using a paging range, we don't allow wrapped ranges, as it's unclear how to handle them properly.
-            // This is ok for now since we only need this in range slice queries, and the range are "unwrapped" in that case.
+            // This is ok for now since we only need this in range queries, and the range are "unwrapped" in that case.
             assert !(range instanceof Range) || !((Range)range).isWrapAround() || range.right.isMinimum() : range;
 
-            this.sliceFilter = filter;
-            this.comparator = comparator;
-            this.columnStart = columnStart;
-            this.columnFinish = columnFinish;
-        }
-
-        public Paging(AbstractBounds<RowPosition> range, SliceQueryFilter filter, Composite columnStart, Composite columnFinish, CellNameType comparator)
-        {
-            this(range, filter, columnStart, columnFinish, filter.isReversed() ? comparator.reverseComparator() : comparator);
+            this.firstPartitionStart = firstPartitionStart;
+            this.lastPartitionEnd = lastPartitionEnd;
         }
 
         @Override
-        public boolean selectsFullRowFor(ByteBuffer rowKey)
+        public PartitionFilter partitionFilter(ClusteringComparator comparator, DecoratedKey key)
         {
-            // If we initial filter is not the full filter, don't bother
-            if (!selectFullRow)
-                return false;
-
-            if (!equals(startKey(), rowKey) && !equals(stopKey(), rowKey))
-                return selectFullRow;
-
-            return isFullRowSlice((SliceQueryFilter)columnFilter(rowKey));
-        }
-
-        private boolean equals(RowPosition pos, ByteBuffer rowKey)
-        {
-            return pos instanceof DecoratedKey && ((DecoratedKey)pos).getKey().equals(rowKey);
-        }
-
-        @Override
-        public IDiskAtomFilter columnFilter(ByteBuffer rowKey)
-        {
-            /*
-             * We have that ugly hack that for slice queries, when we ask for
-             * the live count, we reach into the query filter to get the last
-             * counter number of columns to avoid recounting.
-             * Maybe we should just remove that hack, but in the meantime, we
-             * need to keep a reference the last returned filter.
-             */
-            columnFilter = equals(startKey(), rowKey) || equals(stopKey(), rowKey)
-                         ? sliceFilter.withUpdatedSlices(slicesForKey(rowKey))
-                         : sliceFilter;
-            return columnFilter;
-        }
-
-        private ColumnSlice[] slicesForKey(ByteBuffer key)
-        {
-            // We don't call that until it's necessary, so assume we have to do some hard work
-            // it doesn't expand on them. As such, we can ignore the case where they are empty and we do
-            // as it screw up with the logic below (see #6592)
-            Composite newStart = equals(startKey(), key) && !columnStart.isEmpty() ? columnStart : null;
-            Composite newFinish = equals(stopKey(), key) && !columnFinish.isEmpty() ? columnFinish : null;
-
-            List<ColumnSlice> newSlices = new ArrayList<ColumnSlice>(sliceFilter.slices.length); // in the common case, we'll have the same number of slices
-
-            for (ColumnSlice slice : sliceFilter.slices)
-            {
-                if (newStart != null)
-                {
-                    if (slice.isBefore(comparator, newStart))
-                        continue; // we skip that slice
-
-                    if (slice.includes(comparator, newStart))
-                        slice = new ColumnSlice(newStart, slice.finish);
-
-                    // Whether we've updated the slice or not, we don't have to bother about newStart anymore
-                    newStart = null;
-                }
-
-                assert newStart == null;
-                if (newFinish != null && !slice.isBefore(comparator, newFinish))
-                {
-                    if (slice.includes(comparator, newFinish))
-                        newSlices.add(new ColumnSlice(slice.start, newFinish));
-                    // In any case, we're done
-                    break;
-                }
-                newSlices.add(slice);
-            }
-
-            return newSlices.toArray(new ColumnSlice[newSlices.size()]);
-        }
-
-        @Override
-        public void updateColumnsLimit(int count)
-        {
-            columnFilter.updateColumnsLimit(count);
-            sliceFilter.updateColumnsLimit(count);
+            PartitionFilter filter = partitionFilter;
+            if (firstPartitionStart != null && key.equals(startKey()))
+                filter = filter.withUpdatedStart(comparator, firstPartitionStart);
+            if (lastPartitionEnd != null && key.equals(stopKey()))
+                filter = filter.withUpdatedEnd(comparator, lastPartitionEnd);
+            return filter;
         }
     }
 }

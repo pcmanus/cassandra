@@ -21,12 +21,13 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.ClusteringComparator;
+import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.marshal.AbstractType;
 
 import static org.apache.cassandra.utils.ByteBufferUtil.minimalBufferFor;
 
+// TODO: we should rename this class, maybe move it to ColumnStats
 public class ColumnNameHelper
 {
     private static List<ByteBuffer> maybeGrow(List<ByteBuffer> l, int size)
@@ -41,10 +42,10 @@ public class ColumnNameHelper
         return nl;
     }
 
-    private static List<ByteBuffer> getComponents(Composite prefix, int size)
+    private static List<ByteBuffer> getComponents(ClusteringPrefix prefix)
     {
-        List<ByteBuffer> l = new ArrayList<>(size);
-        for (int i = 0; i < size; i++)
+        List<ByteBuffer> l = new ArrayList<>(prefix.size());
+        for (int i = 0; i < prefix.size(); i++)
             l.add(prefix.get(i));
         return l;
     }
@@ -59,15 +60,12 @@ public class ColumnNameHelper
      * @param comparator the comparator to use
      * @return a list with the max column(s)
      */
-    public static List<ByteBuffer> maxComponents(List<ByteBuffer> maxSeen, Composite candidate, CellNameType comparator)
+    public static List<ByteBuffer> maxComponents(List<ByteBuffer> maxSeen, ClusteringPrefix candidate, ClusteringComparator comparator)
     {
-        // For a cell name, no reason to look more than the clustering prefix
-        // (and comparing the collection element would actually crash)
-        int size = Math.min(candidate.size(), comparator.clusteringPrefixSize());
-
         if (maxSeen.isEmpty())
-            return getComponents(candidate, size);
+            return getComponents(candidate);
 
+        int size = candidate.size();
         // In most case maxSeen is big enough to hold the result so update it in place in those cases
         maxSeen = maybeGrow(maxSeen, size);
 
@@ -87,15 +85,12 @@ public class ColumnNameHelper
      * @param comparator the comparator to use
      * @return a list with the min column(s)
      */
-    public static List<ByteBuffer> minComponents(List<ByteBuffer> minSeen, Composite candidate, CellNameType comparator)
+    public static List<ByteBuffer> minComponents(List<ByteBuffer> minSeen, ClusteringPrefix candidate, ClusteringComparator comparator)
     {
-        // For a cell name, no reason to look more than the clustering prefix
-        // (and comparing the collection element would actually crash)
-        int size = Math.min(candidate.size(), comparator.clusteringPrefixSize());
-
         if (minSeen.isEmpty())
-            return getComponents(candidate, size);
+            return getComponents(candidate);
 
+        int size = candidate.size();
         // In most case maxSeen is big enough to hold the result so update it in place in those cases
         minSeen = maybeGrow(minSeen, size);
 
@@ -157,7 +152,7 @@ public class ColumnNameHelper
      * @param comparator comparator to use
      * @return a list with smallest column names according to (sub)comparator
      */
-    public static List<ByteBuffer> mergeMin(List<ByteBuffer> minColumnNames, List<ByteBuffer> candidates, CellNameType comparator)
+    public static List<ByteBuffer> mergeMin(List<ByteBuffer> minColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
     {
         if (minColumnNames.isEmpty())
             return minimalBuffersFor(candidates);
@@ -195,7 +190,7 @@ public class ColumnNameHelper
      * @param comparator comparator to use
      * @return a list with biggest column names according to (sub)comparator
      */
-    public static List<ByteBuffer> mergeMax(List<ByteBuffer> maxColumnNames, List<ByteBuffer> candidates, CellNameType comparator)
+    public static List<ByteBuffer> mergeMax(List<ByteBuffer> maxColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
     {
         if (maxColumnNames.isEmpty())
             return minimalBuffersFor(candidates);

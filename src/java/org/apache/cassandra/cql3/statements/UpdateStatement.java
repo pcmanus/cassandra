@@ -24,7 +24,9 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.atoms.RowUpdate;
+import org.apache.cassandra.db.atoms.RowUpdates;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
@@ -47,30 +49,21 @@ public class UpdateStatement extends ModificationStatement
         return true;
     }
 
-    public void addUpdateForKey(ColumnFamily cf, ByteBuffer key, Composite prefix, UpdateParameters params)
+    public void addUpdateForKey(PartitionUpdate update, ClusteringPrefix clustering, UpdateParameters params)
     throws InvalidRequestException
     {
-        // Inserting the CQL row marker (see #4361)
-        // We always need to insert a marker for INSERT, because of the following situation:
-        //   CREATE TABLE t ( k int PRIMARY KEY, c text );
-        //   INSERT INTO t(k, c) VALUES (1, 1)
-        //   DELETE c FROM t WHERE k = 1;
-        //   SELECT * FROM t;
-        // The last query should return one row (but with c == null). Adding the marker with the insert make sure
-        // the semantic is correct (while making sure a 'DELETE FROM t WHERE k = 1' does remove the row entirely)
-        //
-        // We do not insert the marker for UPDATE however, as this amount to updating the columns in the WHERE
-        // clause which is inintuitive (#6782)
-        //
-        // We never insert markers for Super CF as this would confuse the thrift side.
-        if (type == StatementType.INSERT && cfm.isCQL3Table() && !prefix.isStatic())
-            cf.addColumn(params.makeColumn(cfm.comparator.rowMarker(prefix), ByteBufferUtil.EMPTY_BYTE_BUFFER));
+        RowUpdate row = RowUpdates.create(clustering, updatedColumns());
+        update.add(row);
+
+        // We update the row timestamp (ex-row marker) only on INSERT (#6782)
+        if (type == StatementType.INSERT)
+            row.updateRowTimestamp(params.timestamp);
 
         List<Operation> updates = getOperations();
 
-        if (cfm.comparator.isDense())
+        if (cfm.layout().isDense())
         {
-            if (prefix.isEmpty())
+            if (clustering.size() == 0)
                 throw new InvalidRequestException(String.format("Missing PRIMARY KEY part %s", cfm.clusteringColumns().get(0)));
 
             // An empty name for the compact value is what we use to recognize the case where there is not column
@@ -79,7 +72,7 @@ public class UpdateStatement extends ModificationStatement
             {
                 // There is no column outside the PK. So no operation could have passed through validation
                 assert updates.isEmpty();
-                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(key, cf, prefix, params);
+                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(update.partitionKey().getKey(), row, params);
             }
             else
             {
@@ -87,14 +80,14 @@ public class UpdateStatement extends ModificationStatement
                 if (updates.isEmpty())
                     throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfm.compactValueColumn().name));
 
-                for (Operation update : updates)
-                    update.execute(key, cf, prefix, params);
+                for (Operation op : updates)
+                    op.execute(update.partitionKey().getKey(), row, params);
             }
         }
         else
         {
-            for (Operation update : updates)
-                update.execute(key, cf, prefix, params);
+            for (Operation op : updates)
+                op.execute(update.partitionKey().getKey(), row, params);
         }
     }
 

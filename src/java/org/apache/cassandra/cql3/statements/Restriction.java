@@ -21,7 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.db.IndexExpression;
+import org.apache.cassandra.db.filters.ColumnFilter;
 import org.apache.cassandra.cql3.*;
 
 /**
@@ -62,7 +62,7 @@ public interface Restriction
 
         public Relation.Type getRelation(Bound eocBound, Bound inclusiveBound);
 
-        public IndexExpression.Operator getIndexOperator(Bound b);
+        public ColumnFilter.Operator getIndexOperator(Bound b);
 
         public void setBound(ColumnIdentifier name, Relation.Type type, Term t) throws InvalidRequestException;
     }

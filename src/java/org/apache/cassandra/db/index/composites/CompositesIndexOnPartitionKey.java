@@ -24,7 +24,7 @@ import java.util.List;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.*;
 
@@ -48,52 +48,52 @@ import org.apache.cassandra.db.marshal.*;
  */
 public class CompositesIndexOnPartitionKey extends CompositesIndex
 {
-    public static CellNameType buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
+    public static ClusteringComparator buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
     {
         int ckCount = baseMetadata.clusteringColumns().size();
         List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(ckCount + 1);
         types.add(SecondaryIndex.keyComparator);
         for (int i = 0; i < ckCount; i++)
             types.add(baseMetadata.comparator.subtype(i));
-        return new CompoundDenseCellNameType(types);
+        return new ClusteringComparator(types);
     }
 
-    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, Cell cell)
+    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
         CompositeType keyComparator = (CompositeType)baseCfs.metadata.getKeyValidator();
         ByteBuffer[] components = keyComparator.split(rowKey);
         return components[columnDef.position()];
     }
 
-    protected Composite makeIndexColumnPrefix(ByteBuffer rowKey, Composite columnName)
+    protected ClusteringPrefix makeIndexClustering(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
-        int count = Math.min(baseCfs.metadata.clusteringColumns().size(), columnName.size());
-        CBuilder builder = getIndexComparator().prefixBuilder();
+        int count = Math.min(baseCfs.metadata.clusteringColumns().size(), clustering.size());
+        CBuilder builder = new CBuilder(getIndexComparator());
         builder.add(rowKey);
         for (int i = 0; i < count; i++)
-            builder.add(columnName.get(i));
+            builder.add(clustering.get(i));
         return builder.build();
     }
 
-    public IndexedEntry decodeEntry(DecoratedKey indexedValue, Cell indexEntry)
+    public IndexedEntry decodeEntry(DecoratedKey indexedValue, ClusteringPrefix indexClustering, Cell indexEntry)
     {
         int ckCount = baseCfs.metadata.clusteringColumns().size();
-        CBuilder builder = baseCfs.getComparator().builder();
+        CBuilder builder = new CBuilder(baseCfs.getComparator());
         for (int i = 0; i < ckCount; i++)
-            builder.add(indexEntry.name().get(i + 1));
+            builder.add(indexClustering.get(i + 1));
 
-        return new IndexedEntry(indexedValue, indexEntry.name(), indexEntry.timestamp(), indexEntry.name().get(0), builder.build());
+        return new IndexedEntry(indexedValue, indexClustering, indexEntry.timestamp(), indexClustering.get(0), builder.build());
     }
 
     @Override
-    public boolean indexes(CellName name)
+    public boolean indexes(ClusteringPrefix clustering, ColumnDefinition c)
     {
         // Since a partition key is always full, we always index it
         return true;
     }
 
-    public boolean isStale(IndexedEntry entry, ColumnFamily data, long now)
+    public boolean isStale(IndexedEntry entry, Row data, int nowInSec)
     {
-        return data.hasOnlyTombstones(now);
+        return !Rows.hasLiveData(data, nowInSec);
     }
 }

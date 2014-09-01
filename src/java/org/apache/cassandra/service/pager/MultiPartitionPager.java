@@ -20,7 +20,12 @@ package org.apache.cassandra.service.pager;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.collect.AbstractIterator;
+
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.filters.DataLimits;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 
@@ -41,49 +46,47 @@ import org.apache.cassandra.exceptions.RequestExecutionException;
 class MultiPartitionPager implements QueryPager
 {
     private final SinglePartitionPager[] pagers;
-    private final long timestamp;
 
     private int remaining;
     private int current;
 
-    MultiPartitionPager(List<ReadCommand> commands, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
+    MultiPartitionPager(List<SinglePartitionReadCommand> commands, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
     {
         int i = 0;
         // If it's not the beginning (state != null), we need to find where we were and skip previous commands
         // since they are done.
         if (state != null)
             for (; i < commands.size(); i++)
-                if (commands.get(i).key.equals(state.partitionKey))
+                if (commands.get(i).partitionKey().getKey().equals(state.partitionKey))
                     break;
 
         if (i >= commands.size())
         {
             pagers = null;
-            timestamp = -1;
             return;
         }
 
         pagers = new SinglePartitionPager[commands.size() - i];
         // 'i' is on the first non exhausted pager for the previous page (or the first one)
         pagers[0] = makePager(commands.get(i), consistencyLevel, localQuery, state);
-        timestamp = commands.get(i).timestamp;
+        int nowInSec = commands.get(i).nowInSec();
 
         // Following ones haven't been started yet
         for (int j = i + 1; j < commands.size(); j++)
         {
-            ReadCommand command = commands.get(j);
-            if (command.timestamp != timestamp)
+            SinglePartitionReadCommand command = commands.get(j);
+            if (command.nowInSec() != nowInSec)
                 throw new IllegalArgumentException("All commands must have the same timestamp or weird results may happen.");
             pagers[j - i] = makePager(command, consistencyLevel, localQuery, null);
         }
         remaining = state == null ? computeRemaining(pagers) : state.remaining;
     }
 
-    private static SinglePartitionPager makePager(ReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
+    private static SinglePartitionPager makePager(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
     {
-        return command instanceof SliceFromReadCommand
-             ? new SliceQueryPager((SliceFromReadCommand)command, consistencyLevel, localQuery, state)
-             : new NamesQueryPager((SliceByNamesReadCommand)command, consistencyLevel, localQuery);
+        return command instanceof SinglePartitionSliceCommand
+             ? new SliceQueryPager((SinglePartitionSliceCommand)command, consistencyLevel, localQuery, state)
+             : new NamesQueryPager((SinglePartitionNamesCommand)command, consistencyLevel, localQuery);
     }
 
     private static int computeRemaining(SinglePartitionPager[] pagers)
@@ -119,35 +122,48 @@ class MultiPartitionPager implements QueryPager
         return true;
     }
 
-    public List<Row> fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException
+    public DataIterator fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException
     {
-        List<Row> result = new ArrayList<Row>();
+        return new CountingDataIterator(new PagersIterator(pageSize), pagers[0].limits().forPaging(pageSize));
+    }
 
-        int remainingThisQuery = pageSize;
-        while (remainingThisQuery > 0 && !isExhausted())
+    private class PagersIterator extends AbstractIterator<RowIterator> implements DataIterator
+    {
+        private final int pageSize;
+        private DataIterator result;
+        private DataLimits.RowCounter counter;
+
+        public PagersIterator(int pageSize)
         {
-            // isExhausted has set us on the first non-exhausted pager
-            List<Row> page = pagers[current].fetchPage(remainingThisQuery);
-            if (page.isEmpty())
-                continue;
-
-            Row row = page.get(0);
-            int fetched = pagers[current].columnCounter().countAll(row.cf).live();
-            remaining -= fetched;
-            remainingThisQuery -= fetched;
-            result.add(row);
+            this.pageSize = pageSize;
         }
 
-        return result;
+        public void setCounter(DataLimits.RowCounter counter)
+        {
+            this.counter = counter;
+        }
+
+        protected RowIterator computeNext()
+        {
+            while (result == null || !result.hasNext())
+            {
+                // This sets us on the first non-exhausted pager
+                if (isExhausted())
+                    return endOfData();
+
+                result = pagers[current].fetchPage(pageSize - counter.counted());
+            }
+            return result.next();
+        }
+
+        public void close()
+        {
+            remaining -= counter.counted();
+        }
     }
 
     public int maxRemaining()
     {
         return remaining;
-    }
-
-    public long timestamp()
-    {
-        return timestamp;
     }
 }

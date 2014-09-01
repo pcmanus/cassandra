@@ -56,30 +56,11 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.statements.CFStatement;
 import org.apache.cassandra.cql3.statements.CreateTableStatement;
-import org.apache.cassandra.db.AbstractCell;
-import org.apache.cassandra.db.AtomDeserializer;
-import org.apache.cassandra.db.CFRowAdder;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ColumnFamilyType;
-import org.apache.cassandra.db.ColumnSerializer;
-import org.apache.cassandra.db.Directories;
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.db.RangeTombstone;
-import org.apache.cassandra.db.Row;
-import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.compaction.AbstractCompactionStrategy;
 import org.apache.cassandra.db.compaction.LeveledCompactionStrategy;
 import org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy;
-import org.apache.cassandra.db.composites.CType;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.CellNames;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.composites.CompoundCType;
-import org.apache.cassandra.db.composites.SimpleCType;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
@@ -103,6 +84,7 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
+import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.utils.FBUtilities.fromJsonList;
 import static org.apache.cassandra.utils.FBUtilities.fromJsonMap;
@@ -129,15 +111,6 @@ public final class CFMetaData
 
     // Note that this is the default only for user created tables
     public final static String DEFAULT_COMPRESSOR = LZ4Compressor.class.getCanonicalName();
-
-    // Note that this need to come *before* any CFMetaData is defined so before the compile below.
-    private static final Comparator<ColumnDefinition> regularColumnComparator = new Comparator<ColumnDefinition>()
-    {
-        public int compare(ColumnDefinition def1, ColumnDefinition def2)
-        {
-            return ByteBufferUtil.compareUnsigned(def1.name.bytes, def2.name.bytes);
-        }
-    };
 
     public static final CFMetaData IndexCf = compile("CREATE TABLE \"" + SystemKeyspace.INDEX_CF + "\" ("
                                                      + "table_name text,"
@@ -428,7 +401,9 @@ public final class CFMetaData
     public final String ksName;                       // name of keyspace
     public final String cfName;                       // name of this column family
     public final ColumnFamilyType cfType;             // standard, super
-    public volatile CellNameType comparator;          // bytes, long, timeuuid, utf8, etc.
+    public volatile ClusteringComparator comparator;  // bytes, long, timeuuid, utf8, etc.
+
+    private final LegacyLayout layout;
 
     //OPTIONAL
     private volatile String comment = "";
@@ -460,16 +435,11 @@ public final class CFMetaData
     public static final String DEFAULT_COLUMN_ALIAS = "column";
     public static final String DEFAULT_VALUE_ALIAS = "value";
 
-    // We call dense a CF for which each component of the comparator is a clustering column, i.e. no
-    // component is used to store a regular column names. In other words, non-composite static "thrift"
-    // and CQL3 CF are *not* dense.
-    private volatile Boolean isDense; // null means "we don't know and need to infer from other data"
-
     private volatile Map<ByteBuffer, ColumnDefinition> columnMetadata = new HashMap<>();
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringColumns;    // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
-    private volatile SortedSet<ColumnDefinition> regularColumns;  // We use a sorted set so iteration is of predictable order (for SELECT for instance)
-    private volatile SortedSet<ColumnDefinition> staticColumns;   // Same as above
+    private volatile Columns regularColumns;
+    private volatile Columns staticColumns;
     private volatile ColumnDefinition compactValueColumn;
 
     public volatile Class<? extends AbstractCompactionStrategy> compactionStrategyClass = DEFAULT_COMPACTION_STRATEGY_CLASS;
@@ -498,7 +468,6 @@ public final class CFMetaData
     public CFMetaData speculativeRetry(SpeculativeRetry prop) {speculativeRetry = prop; return this;}
     public CFMetaData droppedColumns(Map<ColumnIdentifier, Long> cols) {droppedColumns = cols; return this;}
     public CFMetaData triggers(Map<String, TriggerDefinition> prop) {triggers = prop; return this;}
-    public CFMetaData isDense(Boolean prop) {isDense = prop; return this;}
     /**
      * Create new ColumnFamily metadata with generated random ID.
      * When loading from existing schema, use CFMetaData
@@ -507,30 +476,31 @@ public final class CFMetaData
      * @param name column family name
      * @param comp default comparator
      */
-    public CFMetaData(String keyspace, String name, ColumnFamilyType type, CellNameType comp)
+    public CFMetaData(String keyspace, String name, ColumnFamilyType type, ClusteringComparator comp, LegacyLayout layout)
     {
-        this(keyspace, name, type, comp, UUIDGen.getTimeUUID());
+        this(keyspace, name, type, comp, UUIDGen.getTimeUUID(), layout);
     }
 
-    private CFMetaData(String keyspace, String name, ColumnFamilyType type, CellNameType comp, UUID id)
+    private CFMetaData(String keyspace, String name, ColumnFamilyType type, ClusteringComparator comp, UUID id, LegacyLayout layout)
     {
         cfId = id;
         ksName = keyspace;
         cfName = name;
         cfType = type;
         comparator = comp;
+        this.layout = layout;
     }
 
     public static CFMetaData denseCFMetaData(String keyspace, String name, AbstractType<?> comp, AbstractType<?> subcc)
     {
-        CellNameType cellNameType = CellNames.fromAbstractType(makeRawAbstractType(comp, subcc), true);
-        return new CFMetaData(keyspace, name, subcc == null ? ColumnFamilyType.Standard : ColumnFamilyType.Super, cellNameType);
+        Pair<ClusteringComparator, LegacyLayout> p = makeLayoutAndComparator(comp, subcc, true);
+        return new CFMetaData(keyspace, name, subcc == null ? ColumnFamilyType.Standard : ColumnFamilyType.Super, p.left, p.right);
     }
 
     public static CFMetaData sparseCFMetaData(String keyspace, String name, AbstractType<?> comp)
     {
-        CellNameType cellNameType = CellNames.fromAbstractType(comp, false);
-        return new CFMetaData(keyspace, name, ColumnFamilyType.Standard, cellNameType);
+        ClusteringComparator comparator = LegacyLayout.clusteringComparatorFromAbstractType(comp);
+        return new CFMetaData(keyspace, name, ColumnFamilyType.Standard, comparator, new LegacyLayout(false, comp instanceof CompositeType, comparator.size()));
     }
 
     public static CFMetaData denseCFMetaData(String keyspace, String name, AbstractType<?> comp)
@@ -538,9 +508,13 @@ public final class CFMetaData
         return denseCFMetaData(keyspace, name, comp, null);
     }
 
-    private static AbstractType<?> makeRawAbstractType(AbstractType<?> comparator, AbstractType<?> subComparator)
+    private static Pair<ClusteringComparator, LegacyLayout> makeLayoutAndComparator(AbstractType<?> comparator, AbstractType<?> subComparator, boolean isDense)
     {
-        return subComparator == null ? comparator : CompositeType.getInstance(Arrays.asList(comparator, subComparator));
+        assert isDense || subComparator == null : "SuperColumnFamily should be dense";
+
+        AbstractType<?> rawComparator = subComparator == null ? comparator : CompositeType.getInstance(Arrays.asList(comparator, subComparator));
+        ClusteringComparator cc = LegacyLayout.clusteringComparatorFromAbstractType(rawComparator);
+        return Pair.create(cc, new LegacyLayout(isDense, rawComparator instanceof CompositeType, cc.size()));
     }
 
     public Map<String, TriggerDefinition> getTriggers()
@@ -561,7 +535,7 @@ public final class CFMetaData
             CFStatement parsed = (CFStatement)QueryProcessor.parseStatement(cql);
             parsed.prepareKeyspace(keyspace);
             CreateTableStatement statement = (CreateTableStatement) parsed.prepare().statement;
-            CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator);
+            CFMetaData cfm = newSystemMetadata(keyspace, statement.columnFamily(), "", statement.comparator(), statement.layout());
             statement.applyPropertiesTo(cfm);
             return cfm.rebuild();
         }
@@ -582,9 +556,9 @@ public final class CFMetaData
         return UUID.nameUUIDFromBytes(ArrayUtils.addAll(ksName.getBytes(), cfName.getBytes()));
     }
 
-    private static CFMetaData newSystemMetadata(String keyspace, String cfName, String comment, CellNameType comparator)
+    private static CFMetaData newSystemMetadata(String keyspace, String cfName, String comment, ClusteringComparator comparator, LegacyLayout layout)
     {
-        return new CFMetaData(keyspace, cfName, ColumnFamilyType.Standard, comparator, generateLegacyCfId(keyspace, cfName))
+        return new CFMetaData(keyspace, cfName, ColumnFamilyType.Standard, comparator, generateLegacyCfId(keyspace, cfName), layout)
                              .comment(comment)
                              .readRepairChance(0)
                              .dcLocalReadRepairChance(0)
@@ -601,7 +575,7 @@ public final class CFMetaData
      * @param indexComparator Comparator for secondary index
      * @return CFMetaData for secondary index
      */
-    public static CFMetaData newIndexMetadata(CFMetaData parent, ColumnDefinition info, CellNameType indexComparator)
+    public static CFMetaData newIndexMetadata(CFMetaData parent, ColumnDefinition info, ClusteringComparator indexComparator, LegacyLayout layout)
     {
         // Depends on parent's cache setting, turn on its index CF's cache.
         // Row caching is never enabled; see CASSANDRA-5732
@@ -609,7 +583,7 @@ public final class CFMetaData
                              ? CachingOptions.KEYS_ONLY
                              : CachingOptions.NONE;
 
-        return new CFMetaData(parent.ksName, parent.indexColumnFamilyName(info), ColumnFamilyType.Standard, indexComparator, parent.cfId)
+        return new CFMetaData(parent.ksName, parent.indexColumnFamilyName(info), ColumnFamilyType.Standard, indexComparator, parent.cfId, layout)
                              .keyValidator(info.type)
                              .readRepairChance(0.0)
                              .dcLocalReadRepairChance(0.0)
@@ -634,7 +608,7 @@ public final class CFMetaData
 
     public CFMetaData copy()
     {
-        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, cfId), this);
+        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, cfId, layout), this);
     }
 
     /**
@@ -645,7 +619,7 @@ public final class CFMetaData
      */
     public CFMetaData copy(UUID newCfId)
     {
-        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, newCfId), this);
+        return copyOpts(new CFMetaData(ksName, cfName, cfType, comparator, newCfId, layout), this);
     }
 
     static CFMetaData copyOpts(CFMetaData newCFMD, CFMetaData oldCFMD)
@@ -675,7 +649,6 @@ public final class CFMetaData
                       .memtableFlushPeriod(oldCFMD.memtableFlushPeriod)
                       .droppedColumns(new HashMap<>(oldCFMD.droppedColumns))
                       .triggers(new HashMap<>(oldCFMD.triggers))
-                      .isDense(oldCFMD.isDense)
                       .rebuild();
     }
 
@@ -826,12 +799,12 @@ public final class CFMetaData
         return clusteringColumns;
     }
 
-    public Set<ColumnDefinition> regularColumns()
+    public Columns regularColumns()
     {
         return regularColumns;
     }
 
-    public Set<ColumnDefinition> staticColumns()
+    public Columns staticColumns()
     {
         return staticColumns;
     }
@@ -846,13 +819,11 @@ public final class CFMetaData
         return compactValueColumn;
     }
 
-    // TODO: we could use CType for key validation too to make this unnecessary but
-    // it's unclear it would be a win overall
-    public CType getKeyValidatorAsCType()
+    public ClusteringComparator getKeyValidatorAsClusteringComparator()
     {
-        return keyValidator instanceof CompositeType
-             ? new CompoundCType(((CompositeType) keyValidator).types)
-             : new SimpleCType(keyValidator);
+        return new ClusteringComparator(keyValidator instanceof CompositeType
+                                        ? ((CompositeType) keyValidator).types
+                                        : Collections.<AbstractType<?>>singletonList(keyValidator));
     }
 
     public double getBloomFilterFpChance()
@@ -898,9 +869,12 @@ public final class CFMetaData
         return droppedColumns;
     }
 
-    public Boolean getIsDense()
+    public Set<ColumnIdentifier> droppedCollections()
     {
-        return isDense;
+        // TODO (we should keep somewhere dropped collections which are currently in ColumnToCollectionType
+        // because for now we can't allow re-adding column for those: this would mess up comparison. Even
+        // when we pushed column dropping before any comparison happens, there is still the issue of memtables)
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -940,7 +914,7 @@ public final class CFMetaData
             && Objects.equal(speculativeRetry, other.speculativeRetry)
             && Objects.equal(droppedColumns, other.droppedColumns)
             && Objects.equal(triggers, other.triggers)
-            && Objects.equal(isDense, other.isDense);
+            && Objects.equal(layout, other.layout);
     }
 
     @Override
@@ -973,15 +947,16 @@ public final class CFMetaData
             .append(speculativeRetry)
             .append(droppedColumns)
             .append(triggers)
-            .append(isDense)
+            .append(layout)
             .toHashCode();
     }
 
-    public AbstractType<?> getValueValidator(CellName cellName)
-    {
-        ColumnDefinition def = getColumnDefinition(cellName);
-        return def == null ? defaultValidator : def.type;
-    }
+    // TODO
+    //public AbstractType<?> getValueValidator(CellName cellName)
+    //{
+    //    ColumnDefinition def = getColumnDefinition(cellName);
+    //    return def == null ? defaultValidator : def.type;
+    //}
 
     /** applies implicit defaults to cf definition. useful in updates */
     private static void applyImplicitDefaults(org.apache.cassandra.thrift.CfDef cf_def)
@@ -1050,8 +1025,6 @@ public final class CFMetaData
                                           ? null
                                           : cf_def.subcomparator_type == null ? BytesType.instance : TypeParser.parse(cf_def.subcomparator_type);
 
-            AbstractType<?> fullRawComparator = makeRawAbstractType(rawComparator, subComparator);
-
             AbstractType<?> keyValidator = cf_def.isSetKey_validation_class() ? TypeParser.parse(cf_def.key_validation_class) : null;
 
             // Convert the REGULAR definitions from the input CfDef
@@ -1076,13 +1049,12 @@ public final class CFMetaData
                 defs.add(def);
             }
 
-            CellNameType comparator = CellNames.fromAbstractType(fullRawComparator, calculateIsDense(fullRawComparator, defs));
-
             UUID cfId = Schema.instance.getId(cf_def.keyspace, cf_def.name);
             if (cfId == null)
                 cfId = UUIDGen.getTimeUUID();
 
-            CFMetaData newCFMD = new CFMetaData(cf_def.keyspace, cf_def.name, cfType, comparator, cfId);
+            Pair<ClusteringComparator, LegacyLayout> p = makeLayoutAndComparator(rawComparator, subComparator, subComparator != null ? true : calculateIsDense(rawComparator, defs));
+            CFMetaData newCFMD = new CFMetaData(cf_def.keyspace, cf_def.name, cfType, p.left, cfId, p.right);
 
             newCFMD.addAllColumnDefinitions(defs);
 
@@ -1158,14 +1130,14 @@ public final class CFMetaData
 
     public void reload()
     {
-        Row cfDefRow = SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, ksName, cfName);
+        RowIterator partition = SystemKeyspace.readSchema(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, ksName, cfName);
 
-        if (cfDefRow.cf == null || !cfDefRow.cf.hasColumns())
+        if (RowIterators.isEmpty(partition))
             throw new RuntimeException(String.format("%s not found in the schema definitions keyspace.", ksName + ":" + cfName));
 
         try
         {
-            apply(fromSchema(cfDefRow));
+            apply(fromSchema(partition));
         }
         catch (ConfigurationException e)
         {
@@ -1235,8 +1207,6 @@ public final class CFMetaData
         compressionParameters = cfm.compressionParameters;
 
         triggers = cfm.triggers;
-
-        isDense(cfm.isDense);
 
         rebuild();
         logger.debug("application result is {}", this);
@@ -1384,23 +1354,24 @@ public final class CFMetaData
     /**
      * Returns a ColumnDefinition given a cell name.
      */
-    public ColumnDefinition getColumnDefinition(CellName cellName)
-    {
-        ColumnIdentifier id = cellName.cql3ColumnName(this);
-        ColumnDefinition def = id == null
-                             ? getColumnDefinition(cellName.toByteBuffer())  // Means a dense layout, try the full column name
-                             : getColumnDefinition(id);
+    // TODO
+    //public ColumnDefinition getColumnDefinition(CellName cellName)
+    //{
+    //    ColumnIdentifier id = cellName.cql3ColumnName(this);
+    //    ColumnDefinition def = id == null
+    //                         ? getColumnDefinition(cellName.toByteBuffer())  // Means a dense layout, try the full column name
+    //                         : getColumnDefinition(id);
 
-        // It's possible that the def is a PRIMARY KEY or COMPACT_VALUE one in case a concrete cell
-        // name conflicts with a CQL column name, which can happen in 2 cases:
-        // 1) because the user inserted a cell through Thrift that conflicts with a default "alias" used
-        //    by CQL for thrift tables (see #6892).
-        // 2) for COMPACT STORAGE tables with a single utf8 clustering column, the cell name can be anything,
-        //    including a CQL column name (without this being a problem).
-        // In any case, this is fine, this just mean that columnDefinition is not the ColumnDefinition we are
-        // looking for.
-        return def != null && def.isPartOfCellName() ? def : null;
-    }
+    //    // It's possible that the def is a PRIMARY KEY or COMPACT_VALUE one in case a concrete cell
+    //    // name conflicts with a CQL column name, which can happen in 2 cases:
+    //    // 1) because the user inserted a cell through Thrift that conflicts with a default "alias" used
+    //    //    by CQL for thrift tables (see #6892).
+    //    // 2) for COMPACT STORAGE tables with a single utf8 clustering column, the cell name can be anything,
+    //    //    including a CQL column name (without this being a problem).
+    //    // In any case, this is fine, this just mean that columnDefinition is not the ColumnDefinition we are
+    //    // looking for.
+    //    return def != null && def.isPartOfCellName() ? def : null;
+    //}
 
     public ColumnDefinition getColumnDefinitionForIndex(String indexName)
     {
@@ -1458,21 +1429,6 @@ public final class CFMetaData
     public static String getDefaultIndexName(String cfName, ColumnIdentifier columnName)
     {
         return (cfName + "_" + columnName + "_idx").replaceAll("\\W", "");
-    }
-
-    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput in, Descriptor.Version version)
-    {
-        return getOnDiskIterator(in, ColumnSerializer.Flag.LOCAL, Integer.MIN_VALUE, version);
-    }
-
-    public Iterator<OnDiskAtom> getOnDiskIterator(DataInput in, ColumnSerializer.Flag flag, int expireBefore, Descriptor.Version version)
-    {
-        return AbstractCell.onDiskIterator(in, flag, expireBefore, version, comparator);
-    }
-
-    public AtomDeserializer getOnDiskDeserializer(DataInput in, Descriptor.Version version)
-    {
-        return new AtomDeserializer(comparator, in, ColumnSerializer.Flag.LOCAL, Integer.MIN_VALUE, version);
     }
 
     public static boolean isNameValid(String name)
@@ -1607,7 +1563,7 @@ public final class CFMetaData
      */
     public Mutation toSchemaUpdate(CFMetaData newState, long modificationTimestamp, boolean fromThrift)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(ksName));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(ksName));
 
         newState.toSchemaNoColumnsNoTriggers(mutation, modificationTimestamp);
 
@@ -1657,12 +1613,9 @@ public final class CFMetaData
      */
     public Mutation dropFromSchema(long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(ksName));
-        ColumnFamily cf = mutation.addOrGet(SchemaColumnFamiliesCf);
-        int ldt = (int) (System.currentTimeMillis() / 1000);
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(ksName));
 
-        Composite prefix = SchemaColumnFamiliesCf.comparator.make(cfName);
-        cf.addAtom(new RangeTombstone(prefix, prefix.end(), timestamp, ldt));
+        new RowUpdateBuilder(SchemaColumnFamiliesCf, timestamp).clustering(cfName).deleteRow().buildAndAddTo(mutation);
 
         for (ColumnDefinition cd : allColumns())
             cd.deleteFromSchema(mutation, timestamp);
@@ -1671,10 +1624,7 @@ public final class CFMetaData
             td.deleteFromSchema(mutation, cfName, timestamp);
 
         for (String indexName : Keyspace.open(this.ksName).getColumnFamilyStore(this.cfName).getBuiltIndexes())
-        {
-            ColumnFamily indexCf = mutation.addOrGet(IndexCf);
-            indexCf.addTombstone(indexCf.getComparator().makeCellName(indexName), ldt, timestamp);
-        }
+            new RowUpdateBuilder(IndexCf, timestamp).clustering(indexName).deleteRow().buildAndAddTo(mutation);
 
         return mutation;
     }
@@ -1704,9 +1654,8 @@ public final class CFMetaData
     {
         // For property that can be null (and can be changed), we insert tombstones, to make sure
         // we don't keep a property the user has removed
-        ColumnFamily cf = mutation.addOrGet(SchemaColumnFamiliesCf);
-        Composite prefix = SchemaColumnFamiliesCf.comparator.make(cfName);
-        CFRowAdder adder = new CFRowAdder(cf, prefix, timestamp);
+        RowUpdateBuilder adder = new RowUpdateBuilder(SchemaColumnsCf, timestamp);
+        adder.clustering(cfName);
 
         adder.add("cf_id", cfId);
         adder.add("type", cfType.toString());
@@ -1748,12 +1697,12 @@ public final class CFMetaData
         for (Map.Entry<ColumnIdentifier, Long> entry : droppedColumns.entrySet())
             adder.addMapEntry("dropped_columns", entry.getKey().toString(), entry.getValue());
 
-        adder.add("is_dense", isDense);
-
         // Save the CQL3 metadata "the old way" for compatibility sake
         adder.add("key_aliases", aliasesToJson(partitionKeyColumns));
         adder.add("column_aliases", aliasesToJson(clusteringColumns));
         adder.add("value_alias", compactValueColumn == null ? null : compactValueColumn.name.toString());
+
+        adder.buildAndAddTo(mutation);
     }
 
     // Package protected for use by tests
@@ -1768,27 +1717,20 @@ public final class CFMetaData
             AbstractType<?> subComparator = result.has("subcomparator") ? TypeParser.parse(result.getString("subcomparator")) : null;
             ColumnFamilyType cfType = ColumnFamilyType.valueOf(result.getString("type"));
 
-            AbstractType<?> fullRawComparator = makeRawAbstractType(rawComparator, subComparator);
-
             List<ColumnDefinition> columnDefs = ColumnDefinition.fromSchema(serializedColumnDefinitions,
                                                                             ksName,
                                                                             cfName,
-                                                                            fullRawComparator,
+                                                                            rawComparator,
+                                                                            subComparator,
                                                                             cfType == ColumnFamilyType.Super);
-
-            boolean isDense = result.has("is_dense")
-                            ? result.getBoolean("is_dense")
-                            : calculateIsDense(fullRawComparator, columnDefs);
-
-            CellNameType comparator = CellNames.fromAbstractType(fullRawComparator, isDense);
 
             // if we are upgrading, we use id generated from names initially
             UUID cfId = result.has("cf_id")
                       ? result.getUUID("cf_id")
                       : generateLegacyCfId(ksName, cfName);
 
-            CFMetaData cfm = new CFMetaData(ksName, cfName, cfType, comparator, cfId);
-            cfm.isDense(isDense);
+            Pair<ClusteringComparator, LegacyLayout> p = makeLayoutAndComparator(rawComparator, subComparator, result.getBoolean("is_dense"));
+            CFMetaData cfm = new CFMetaData(ksName, cfName, cfType, p.left, cfId, p.right);
 
             cfm.readRepairChance(result.getDouble("read_repair_chance"));
             cfm.dcLocalReadRepairChance(result.getDouble("local_read_repair_chance"));
@@ -1820,20 +1762,6 @@ public final class CFMetaData
             if (result.has("max_index_interval"))
                 cfm.maxIndexInterval(result.getInt("max_index_interval"));
 
-            /*
-             * The info previously hold by key_aliases, column_aliases and value_alias is now stored in columnMetadata (because 1) this
-             * make more sense and 2) this allow to store indexing information).
-             * However, for upgrade sake we need to still be able to read those old values. Moreover, we cannot easily
-             * remove those old columns once "converted" to columnMetadata because that would screw up nodes that may
-             * not have upgraded. So for now we keep the both info and in sync, even though its redundant.
-             */
-            if (result.has("key_aliases"))
-                cfm.addColumnMetadataFromAliases(aliasesFromStrings(fromJsonList(result.getString("key_aliases"))), cfm.keyValidator, ColumnDefinition.Kind.PARTITION_KEY);
-            if (result.has("column_aliases"))
-                cfm.addColumnMetadataFromAliases(aliasesFromStrings(fromJsonList(result.getString("column_aliases"))), cfm.comparator.asAbstractType(), ColumnDefinition.Kind.CLUSTERING_COLUMN);
-            if (result.has("value_alias"))
-                cfm.addColumnMetadataFromAliases(Collections.singletonList(result.getBytes("value_alias")), cfm.defaultValidator, ColumnDefinition.Kind.COMPACT_VALUE);
-
             if (result.has("dropped_columns"))
                 cfm.droppedColumns(convertDroppedColumns(result.getMap("dropped_columns", UTF8Type.instance, LongType.instance)));
 
@@ -1848,25 +1776,11 @@ public final class CFMetaData
         }
     }
 
-    public void addColumnMetadataFromAliases(List<ByteBuffer> aliases, AbstractType<?> comparator, ColumnDefinition.Kind kind)
+    public void addColumnMetadataFromAliases(List<ByteBuffer> aliases, List<AbstractType<?>> types, ColumnDefinition.Kind kind)
     {
-        if (comparator instanceof CompositeType)
-        {
-            CompositeType ct = (CompositeType)comparator;
-            for (int i = 0; i < aliases.size(); ++i)
-            {
-                if (aliases.get(i) != null)
-                {
-                    addOrReplaceColumnDefinition(new ColumnDefinition(this, aliases.get(i), ct.types.get(i), i, kind));
-                }
-            }
-        }
-        else
-        {
-            assert aliases.size() <= 1;
-            if (!aliases.isEmpty() && aliases.get(0) != null)
-                addOrReplaceColumnDefinition(new ColumnDefinition(this, aliases.get(0), comparator, null, kind));
-        }
+        for (int i = 0; i < aliases.size(); ++i)
+            if (aliases.get(i) != null)
+                addOrReplaceColumnDefinition(new ColumnDefinition(this, aliases.get(i), types.get(i), i, kind));
     }
 
     /**
@@ -1879,18 +1793,18 @@ public final class CFMetaData
         String ksName = result.getString("keyspace_name");
         String cfName = result.getString("columnfamily_name");
 
-        Row serializedColumns = SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_COLUMNS_CF, ksName, cfName);
+        RowIterator serializedColumns = SystemKeyspace.readSchema(SystemKeyspace.SCHEMA_COLUMNS_CF, ksName, cfName);
         CFMetaData cfm = fromSchemaNoTriggers(result, ColumnDefinition.resultify(serializedColumns));
 
-        Row serializedTriggers = SystemKeyspace.readSchemaRow(SystemKeyspace.SCHEMA_TRIGGERS_CF, ksName, cfName);
+        RowIterator serializedTriggers = SystemKeyspace.readSchema(SystemKeyspace.SCHEMA_TRIGGERS_CF, ksName, cfName);
         addTriggerDefinitionsFromSchema(cfm, serializedTriggers);
 
         return cfm;
     }
 
-    private static CFMetaData fromSchema(Row row)
+    private static CFMetaData fromSchema(RowIterator partition)
     {
-        UntypedResultSet.Row result = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", row).one();
+        UntypedResultSet.Row result = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", partition).one();
         return fromSchema(result);
     }
 
@@ -1932,7 +1846,7 @@ public final class CFMetaData
      */
     public Mutation toSchema(long timestamp) throws ConfigurationException
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSKey(ksName));
+        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(ksName));
         toSchema(mutation, timestamp);
         return mutation;
     }
@@ -1950,7 +1864,7 @@ public final class CFMetaData
         {
             case REGULAR:
                 if (componentIndex == null)
-                    return comparator.asAbstractType();
+                    return layout().abstractTypeFromClusteringComparator(comparator);
 
                 AbstractType<?> t = comparator.subtype(componentIndex);
                 assert t != null : "Non-sensical component index";
@@ -1980,20 +1894,16 @@ public final class CFMetaData
     // know this cannot happen.
     public CFMetaData addOrReplaceColumnDefinition(ColumnDefinition def)
     {
-        if (def.kind == ColumnDefinition.Kind.REGULAR)
-            comparator.addCQL3Column(def.name);
         columnMetadata.put(def.name.bytes, def);
         return this;
     }
 
     public boolean removeColumnDefinition(ColumnDefinition def)
     {
-        if (def.kind == ColumnDefinition.Kind.REGULAR)
-            comparator.removeCQL3Column(def.name);
         return columnMetadata.remove(def.name.bytes) != null;
     }
 
-    private static void addTriggerDefinitionsFromSchema(CFMetaData cfDef, Row serializedTriggerDefinitions)
+    private static void addTriggerDefinitionsFromSchema(CFMetaData cfDef, RowIterator serializedTriggerDefinitions)
     {
         for (TriggerDefinition td : TriggerDefinition.fromSchema(serializedTriggerDefinitions))
             cfDef.triggers.put(td.name, td);
@@ -2050,14 +1960,9 @@ public final class CFMetaData
 
     public CFMetaData rebuild()
     {
-        if (isDense == null)
-            isDense(calculateIsDense(comparator.asAbstractType(), allColumns()));
-
         List<ColumnDefinition> pkCols = nullInitializedList(keyValidator.componentsCount());
-        List<ColumnDefinition> ckCols = nullInitializedList(comparator.clusteringPrefixSize());
-        // We keep things sorted to get consistent/predictable order in select queries
-        SortedSet<ColumnDefinition> regCols = new TreeSet<>(regularColumnComparator);
-        SortedSet<ColumnDefinition> statCols = new TreeSet<>(regularColumnComparator);
+        List<ColumnDefinition> ckCols = nullInitializedList(comparator.size());
+        Columns.Builder cols = Columns.builder();
         ColumnDefinition compactCol = null;
 
         for (ColumnDefinition def : allColumns())
@@ -2069,14 +1974,12 @@ public final class CFMetaData
                     pkCols.set(def.position(), def);
                     break;
                 case CLUSTERING_COLUMN:
-                    assert !(def.isOnAllComponents() && comparator.isCompound());
+                    assert !(def.isOnAllComponents() && layout.isCompound());
                     ckCols.set(def.position(), def);
                     break;
                 case REGULAR:
-                    regCols.add(def);
-                    break;
                 case STATIC:
-                    statCols.add(def);
+                    cols.add(def);
                     break;
                 case COMPACT_VALUE:
                     assert compactCol == null : "There shouldn't be more than one compact value defined: got " + compactCol + " and " + def;
@@ -2088,8 +1991,8 @@ public final class CFMetaData
         // Now actually assign the correct value. This is not atomic, but then again, updating CFMetaData is never atomic anyway.
         partitionKeyColumns = addDefaultKeyAliases(pkCols);
         clusteringColumns = addDefaultColumnAliases(ckCols);
-        regularColumns = regCols;
-        staticColumns = statCols;
+        regularColumns = cols.regularColumns();
+        staticColumns = cols.staticColumns();
         compactValueColumn = addDefaultValueAlias(compactCol);
         return this;
     }
@@ -2126,7 +2029,7 @@ public final class CFMetaData
             {
                 Integer idx;
                 AbstractType<?> type;
-                if (comparator.isCompound())
+                if (layout.isCompound())
                 {
                     idx = i;
                     type = comparator.subtype(i);
@@ -2134,7 +2037,7 @@ public final class CFMetaData
                 else
                 {
                     idx = null;
-                    type = comparator.asAbstractType();
+                    type = layout.abstractTypeFromClusteringComparator(comparator);
                 }
                 ByteBuffer name = ByteBufferUtil.bytes(DEFAULT_COLUMN_ALIAS + (i + 1));
                 ColumnDefinition newDef = ColumnDefinition.clusteringKeyDef(this, name, type, idx);
@@ -2147,7 +2050,7 @@ public final class CFMetaData
 
     private ColumnDefinition addDefaultValueAlias(ColumnDefinition compactValueDef)
     {
-        if (comparator.isDense())
+        if (layout.isDense())
         {
             if (compactValueDef != null)
                 return compactValueDef;
@@ -2223,7 +2126,7 @@ public final class CFMetaData
 
     public boolean isCQL3Table()
     {
-        return !isSuper() && !comparator.isDense() && comparator.isCompound();
+        return !isSuper() && !layout.isDense() && layout.isCompound();
     }
 
     private static <T> List<T> nullInitializedList(int size)
@@ -2253,7 +2156,7 @@ public final class CFMetaData
         }
 
         // The table might also have no REGULAR columns (be PK-only), but still be "thrift incompatible". See #7832.
-        if (isCQL3OnlyPKComparator(comparator.asAbstractType()) && !isDense)
+        if (isCQL3OnlyPKComparator(layout.abstractTypeFromClusteringComparator(comparator)) && !layout.isDense())
             return false;
 
         return true;
@@ -2267,6 +2170,18 @@ public final class CFMetaData
     public boolean hasStaticColumns()
     {
         return !staticColumns.isEmpty();
+    }
+
+    public LegacyLayout layout()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    public AbstractType<?> getThriftComparator()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -2299,7 +2214,7 @@ public final class CFMetaData
             .append("speculativeRetry", speculativeRetry)
             .append("droppedColumns", droppedColumns)
             .append("triggers", triggers.values())
-            .append("isDense", isDense)
+            .append("layout", layout)
             .toString();
     }
 }

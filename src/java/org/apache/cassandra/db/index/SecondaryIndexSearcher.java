@@ -20,8 +20,10 @@ package org.apache.cassandra.db.index;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.filter.ExtendedFilter;
+import org.apache.cassandra.db.filters.ColumnFilter;
+import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
@@ -29,35 +31,35 @@ import org.apache.cassandra.utils.FBUtilities;
 public abstract class SecondaryIndexSearcher
 {
     protected final SecondaryIndexManager indexManager;
-    protected final Set<ByteBuffer> columns;
+    protected final Set<ColumnDefinition> columns;
     protected final ColumnFamilyStore baseCfs;
 
-    public SecondaryIndexSearcher(SecondaryIndexManager indexManager, Set<ByteBuffer> columns)
+    public SecondaryIndexSearcher(SecondaryIndexManager indexManager, Set<ColumnDefinition> columns)
     {
         this.indexManager = indexManager;
         this.columns = columns;
         this.baseCfs = indexManager.baseCfs;
     }
 
-    public SecondaryIndex highestSelectivityIndex(List<IndexExpression> clause)
+    public SecondaryIndex highestSelectivityIndex(ColumnFilter filter)
     {
-        IndexExpression expr = highestSelectivityPredicate(clause);
-        return expr == null ? null : indexManager.getIndexForColumn(expr.column);
+        ColumnFilter.Expression expr = highestSelectivityPredicate(filter);
+        return expr == null ? null : indexManager.getIndexForColumn(expr.column());
     }
 
-    public abstract List<Row> search(ExtendedFilter filter);
+    public abstract PartitionIterator search(ReadCommand command);
 
     /**
      * @return true this index is able to handle the given index expressions.
      */
-    public boolean canHandleIndexClause(List<IndexExpression> clause)
+    public boolean canHandle(ColumnFilter filter)
     {
-        for (IndexExpression expression : clause)
+        for (ColumnFilter.Expression expression : filter)
         {
-            if (!columns.contains(expression.column) || !expression.operator.allowsIndexQuery())
+            if (!columns.contains(expression.column()) || !expression.operator().allowsIndexQuery())
                 continue;
 
-            SecondaryIndex index = indexManager.getIndexForColumn(expression.column);
+            SecondaryIndex index = indexManager.getIndexForColumn(expression.column());
             if (index != null && index.getIndexCfs() != null)
                 return true;
         }
@@ -71,31 +73,31 @@ public abstract class SecondaryIndexSearcher
      * @param indexExpression An {@link IndexExpression} to be validated
      * @throws org.apache.cassandra.exceptions.InvalidRequestException in case of validation errors
      */
-    public void validate(IndexExpression indexExpression) throws InvalidRequestException
+    public void validate(ColumnFilter.Expression expression) throws InvalidRequestException
     {
     }
 
-    protected IndexExpression highestSelectivityPredicate(List<IndexExpression> clause)
+    protected ColumnFilter.Expression highestSelectivityPredicate(ColumnFilter filter)
     {
-        IndexExpression best = null;
+        ColumnFilter.Expression best = null;
         int bestMeanCount = Integer.MAX_VALUE;
         Map<SecondaryIndex, Integer> candidates = new HashMap<>();
 
-        for (IndexExpression expression : clause)
+        for (ColumnFilter.Expression expression : filter)
         {
             // skip columns belonging to a different index type
-            if (!columns.contains(expression.column))
+            if (!columns.contains(expression.column()))
                 continue;
 
-            SecondaryIndex index = indexManager.getIndexForColumn(expression.column);
-            if (index == null || index.getIndexCfs() == null || !expression.operator.allowsIndexQuery())
+            SecondaryIndex index = indexManager.getIndexForColumn(expression.column());
+            if (index == null || index.getIndexCfs() == null || !expression.operator().allowsIndexQuery())
                 continue;
-            int columns = index.getIndexCfs().getMeanColumns();
-            candidates.put(index, columns);
-            if (columns < bestMeanCount)
+            int meanColumns = index.getIndexCfs().getMeanColumns();
+            candidates.put(index, meanColumns);
+            if (meanColumns < bestMeanCount)
             {
                 best = expression;
-                bestMeanCount = columns;
+                bestMeanCount = meanColumns;
             }
         }
 
@@ -103,7 +105,7 @@ public abstract class SecondaryIndexSearcher
             Tracing.trace("No applicable indexes found");
         else
             Tracing.trace("Candidate index mean cardinalities are {}. Scanning with {}.",
-                          FBUtilities.toString(candidates), indexManager.getIndexForColumn(best.column).getIndexName());
+                          FBUtilities.toString(candidates), indexManager.getIndexForColumn(best.column()).getIndexName());
 
         return best;
     }

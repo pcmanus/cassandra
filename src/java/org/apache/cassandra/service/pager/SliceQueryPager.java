@@ -21,9 +21,12 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 
+import com.google.common.base.Objects;
+
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.filter.SliceQueryFilter;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.service.StorageProxy;
@@ -37,76 +40,72 @@ public class SliceQueryPager extends AbstractQueryPager implements SinglePartiti
 {
     private static final Logger logger = LoggerFactory.getLogger(SliceQueryPager.class);
 
-    private final SliceFromReadCommand command;
+    private final SinglePartitionSliceCommand command;
 
-    private volatile CellName lastReturned;
+    private volatile ClusteringPrefix lastReturned;
 
     // Don't use directly, use QueryPagers method instead
-    SliceQueryPager(SliceFromReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
+    SliceQueryPager(SinglePartitionSliceCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
     {
-        super(consistencyLevel, command.filter.count, localQuery, command.ksName, command.cfName, command.filter, command.timestamp);
+        super(consistencyLevel, localQuery, command.metadata(), command.limits());
         this.command = command;
     }
 
-    SliceQueryPager(SliceFromReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
+    SliceQueryPager(SinglePartitionSliceCommand command, ConsistencyLevel consistencyLevel, boolean localQuery, PagingState state)
     {
         this(command, consistencyLevel, localQuery);
 
         if (state != null)
         {
-            lastReturned = cfm.comparator.cellFromByteBuffer(state.cellName);
+            lastReturned = cfm.layout().decodeCellName(state.cellName).left;
             restoreState(state.remaining, true);
         }
     }
 
     public ByteBuffer key()
     {
-        return command.key;
+        return command.partitionKey().getKey();
+    }
+
+    public DataLimits limits()
+    {
+        return command.limits();
     }
 
     public PagingState state()
     {
         return lastReturned == null
              ? null
-             : new PagingState(null, lastReturned.toByteBuffer(), maxRemaining());
+             : new PagingState(null, cfm.layout().encodeCellName(lastReturned, null), maxRemaining());
     }
 
-    protected List<Row> queryNextPage(int pageSize, ConsistencyLevel consistencyLevel, boolean localQuery)
+    protected DataIterator queryNextPage(int pageSize, ConsistencyLevel consistencyLevel, boolean localQuery)
     throws RequestValidationException, RequestExecutionException
     {
-        SliceQueryFilter filter = command.filter.withUpdatedCount(pageSize);
+        SlicePartitionFilter filter = command.partitionFilter();
         if (lastReturned != null)
-            filter = filter.withUpdatedStart(lastReturned, cfm.comparator);
+            filter = filter.withUpdatedStart(command.metadata().comparator, lastReturned);
 
         logger.debug("Querying next page of slice query; new filter: {}", filter);
-        ReadCommand pageCmd = command.withUpdatedFilter(filter);
+        SinglePartitionReadCommand pageCmd = new SinglePartitionSliceCommand(command.metadata(),
+                                                                             command.nowInSec(),
+                                                                             command.columnFilter(),
+                                                                             command.limits().forPaging(pageSize),
+                                                                             command.partitionKey(),
+                                                                             filter);
         return localQuery
-             ? Collections.singletonList(pageCmd.getRow(Keyspace.open(command.ksName)))
+             ? PartitionIterators.asDataIterator(pageCmd.executeLocally(getStore()), command.nowInSec())
              : StorageProxy.read(Collections.singletonList(pageCmd), consistencyLevel);
     }
 
-    protected boolean containsPreviousLast(Row first)
+    protected boolean shouldSkip(DecoratedKey key, Row row)
     {
-        if (lastReturned == null)
-            return false;
-
-        Cell firstCell = isReversed() ? lastCell(first.cf) : firstCell(first.cf);
-        // Note: we only return true if the column is the lastReturned *and* it is live. If it is deleted, it is ignored by the
-        // rest of the paging code (it hasn't been counted as live in particular) and we want to act as if it wasn't there.
-        return !first.cf.deletionInfo().isDeleted(firstCell)
-            && firstCell.isLive(timestamp())
-            && lastReturned.equals(firstCell.name());
+        return Objects.equal(lastReturned, row.clustering());
     }
 
-    protected boolean recordLast(Row last)
+    protected boolean recordLast(DecoratedKey key, Row last)
     {
-        Cell lastCell = isReversed() ? firstCell(last.cf) : lastCell(last.cf);
-        lastReturned = lastCell.name();
+        lastReturned = last.clustering().takeAlias();
         return true;
-    }
-
-    protected boolean isReversed()
-    {
-        return command.filter.reversed;
     }
 }

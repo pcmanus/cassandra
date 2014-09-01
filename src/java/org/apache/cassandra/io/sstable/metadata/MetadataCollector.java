@@ -31,8 +31,8 @@ import com.google.common.collect.Maps;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
-import org.apache.cassandra.db.composites.CellNameType;
 import org.apache.cassandra.io.sstable.ColumnNameHelper;
 import org.apache.cassandra.io.sstable.ColumnStats;
 import org.apache.cassandra.io.sstable.Component;
@@ -102,14 +102,14 @@ public class MetadataCollector
      * See CASSANDRA-5906 for detail.
      */
     protected ICardinality cardinality = new HyperLogLogPlus(13, 25);
-    private final CellNameType columnNameComparator;
+    private final ClusteringComparator columnNameComparator;
 
-    public MetadataCollector(CellNameType columnNameComparator)
+    public MetadataCollector(ClusteringComparator columnNameComparator)
     {
         this.columnNameComparator = columnNameComparator;
     }
 
-    public MetadataCollector(Collection<SSTableReader> sstables, CellNameType columnNameComparator, int level)
+    public MetadataCollector(Collection<SSTableReader> sstables, ClusteringComparator columnNameComparator, int level)
     {
         this(columnNameComparator);
 

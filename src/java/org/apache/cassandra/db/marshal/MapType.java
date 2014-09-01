@@ -20,7 +20,9 @@ package org.apache.cassandra.db.marshal;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.db.Cell;
+import org.apache.cassandra.db.atoms.Cell;
+import org.apache.cassandra.db.atoms.ColumnData;
+import org.apache.cassandra.db.atoms.CollectionPath;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.CollectionSerializer;
@@ -122,12 +124,13 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
         sb.append(getClass().getName()).append(TypeParser.stringifyTypeParameters(Arrays.asList(keys, values)));
     }
 
-    public List<ByteBuffer> serializedValues(List<Cell> cells)
+    public List<ByteBuffer> serializedValues(ColumnData data, int size)
     {
-        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(cells.size() * 2);
-        for (Cell c : cells)
+        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(size * 2);
+        for (int i = 0; i < size; i++)
         {
-            bbs.add(c.name().collectionElement());
+            Cell c = data.cell(i);
+            bbs.add(((CollectionPath)c.path()).element());
             bbs.add(c.value());
         }
         return bbs;

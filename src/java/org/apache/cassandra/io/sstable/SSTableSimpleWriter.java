@@ -36,57 +36,58 @@ import org.apache.cassandra.io.FSError;
  *
  * @see AbstractSSTableSimpleWriter
  */
-public class SSTableSimpleWriter extends AbstractSSTableSimpleWriter
+public class SSTableSimpleWriter //extends AbstractSSTableSimpleWriter
 {
-    private final SSTableWriter writer;
+    // TODO
+    //private final SSTableWriter writer;
 
-    /**
-     * Create a new writer.
-     * @param directory the directory where to write the sstable
-     * @param partitioner the partitioner
-     * @param keyspace the keyspace name
-     * @param columnFamily the column family name
-     * @param comparator the column family comparator
-     * @param subComparator the column family subComparator or null if not a Super column family.
-     */
-    public SSTableSimpleWriter(File directory,
-                               IPartitioner partitioner,
-                               String keyspace,
-                               String columnFamily,
-                               AbstractType<?> comparator,
-                               AbstractType<?> subComparator)
-    {
-        this(directory, CFMetaData.denseCFMetaData(keyspace, columnFamily, comparator, subComparator), partitioner);
-    }
+    ///**
+    // * Create a new writer.
+    // * @param directory the directory where to write the sstable
+    // * @param partitioner the partitioner
+    // * @param keyspace the keyspace name
+    // * @param columnFamily the column family name
+    // * @param comparator the column family comparator
+    // * @param subComparator the column family subComparator or null if not a Super column family.
+    // */
+    //public SSTableSimpleWriter(File directory,
+    //                           IPartitioner partitioner,
+    //                           String keyspace,
+    //                           String columnFamily,
+    //                           AbstractType<?> comparator,
+    //                           AbstractType<?> subComparator)
+    //{
+    //    this(directory, CFMetaData.denseCFMetaData(keyspace, columnFamily, comparator, subComparator), partitioner);
+    //}
 
-    public SSTableSimpleWriter(File directory, CFMetaData metadata, IPartitioner partitioner)
-    {
-        super(directory, metadata, partitioner);
-        writer = getWriter();
-    }
+    //public SSTableSimpleWriter(File directory, CFMetaData metadata, IPartitioner partitioner)
+    //{
+    //    super(directory, metadata, partitioner);
+    //    writer = getWriter();
+    //}
 
-    public void close()
-    {
-        try
-        {
-            if (currentKey != null)
-                writeRow(currentKey, columnFamily);
-            writer.close();
-        }
-        catch (FSError e)
-        {
-            writer.abort();
-            throw e;
-        }
-    }
+    //public void close()
+    //{
+    //    try
+    //    {
+    //        if (currentKey != null)
+    //            writeRow(currentKey, columnFamily);
+    //        writer.close();
+    //    }
+    //    catch (FSError e)
+    //    {
+    //        writer.abort();
+    //        throw e;
+    //    }
+    //}
 
-    protected void writeRow(DecoratedKey key, ColumnFamily columnFamily)
-    {
-        writer.append(key, columnFamily);
-    }
+    //protected void writeRow(DecoratedKey key, ColumnFamily columnFamily)
+    //{
+    //    writer.append(key, columnFamily);
+    //}
 
-    protected ColumnFamily getColumnFamily()
-    {
-        return ArrayBackedSortedColumns.factory.create(metadata);
-    }
+    //protected ColumnFamily getColumnFamily()
+    //{
+    //    return ArrayBackedSortedColumns.factory.create(metadata);
+    //}
 }

@@ -29,6 +29,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.RowIterator;
+import org.apache.cassandra.db.atoms.RowIterators;
+import org.apache.cassandra.db.partitions.DataIterator;
+import org.apache.cassandra.db.partitions.DataIterators;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -371,15 +375,12 @@ public class Schema
         {
             MessageDigest versionDigest = MessageDigest.getInstance("MD5");
 
-            for (Row row : SystemKeyspace.serializedSchema())
+            for (DataIterator schemaTable : SystemKeyspace.serializedSchema().values())
             {
-                if (invalidSchemaRow(row) || ignoredSchemaRow(row))
-                    continue;
-
-                // we want to digest only live columns
-                ColumnFamilyStore.removeDeletedColumnsOnly(row.cf, Integer.MAX_VALUE, SecondaryIndexManager.nullUpdater);
-                row.cf.purgeTombstones(Integer.MAX_VALUE);
-                row.cf.updateDigest(versionDigest);
+                try (DataIterator iter = schemaTable)
+                {
+                    DataIterators.digest(iter, versionDigest);
+                }
             }
 
             version = UUID.nameUUIDFromBytes(versionDigest.digest());
@@ -416,16 +417,16 @@ public class Schema
         updateVersionAndAnnounce();
     }
 
-    public static boolean invalidSchemaRow(Row row)
+    public static boolean invalidSchemaPartition(RowIterator partition)
     {
-        return row.cf == null || (row.cf.isMarkedForDelete() && !row.cf.hasColumns());
+        return RowIterators.isEmpty(partition);
     }
 
-    public static boolean ignoredSchemaRow(Row row)
+    public static boolean ignoredSchemaPartition(RowIterator partition)
     {
         try
         {
-            return systemKeyspaceNames.contains(ByteBufferUtil.string(row.key.getKey()));
+            return systemKeyspaceNames.contains(ByteBufferUtil.string(partition.partitionKey().getKey()));
         }
         catch (CharacterCodingException e)
         {

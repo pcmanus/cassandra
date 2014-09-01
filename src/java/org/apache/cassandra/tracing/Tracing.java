@@ -33,15 +33,15 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CellName;
 import org.apache.cassandra.db.marshal.TimeUUIDType;
-import org.apache.cassandra.exceptions.OverloadedException;
-import org.apache.cassandra.exceptions.UnavailableException;
-import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.StorageProxy;
+import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -59,7 +59,7 @@ public class Tracing
     public static final String SESSIONS_CF = "sessions";
     public static final String TRACE_HEADER = "TraceSession";
 
-    private static final int TTL = 24 * 3600;
+    public static final int TTL = 24 * 3600;
 
     private static final Logger logger = LoggerFactory.getLogger(Tracing.class);
 
@@ -71,43 +71,31 @@ public class Tracing
 
     public static final Tracing instance = new Tracing();
 
-    public static void addColumn(ColumnFamily cf, CellName name, InetAddress address)
+    // Work around initialization dependency
+    private static enum InternalStateInstance
     {
-        addColumn(cf, name, ByteBufferUtil.bytes(address));
-    }
+        INSTANCE;
 
-    public static void addColumn(ColumnFamily cf, CellName name, int value)
-    {
-        addColumn(cf, name, ByteBufferUtil.bytes(value));
-    }
+        private final QueryState queryState;
 
-    public static void addColumn(ColumnFamily cf, CellName name, long value)
-    {
-        addColumn(cf, name, ByteBufferUtil.bytes(value));
-    }
-
-    public static void addColumn(ColumnFamily cf, CellName name, String value)
-    {
-        addColumn(cf, name, ByteBufferUtil.bytes(value));
-    }
-
-    private static void addColumn(ColumnFamily cf, CellName name, ByteBuffer value)
-    {
-        cf.addColumn(new BufferExpiringCell(name, value, System.currentTimeMillis(), TTL));
-    }
-
-    public void addParameterColumns(ColumnFamily cf, Map<String, String> rawPayload)
-    {
-        for (Map.Entry<String, String> entry : rawPayload.entrySet())
+        InternalStateInstance()
         {
-            cf.addColumn(new BufferExpiringCell(buildName(CFMetaData.TraceSessionsCf, "parameters", entry.getKey()),
-                                                bytes(entry.getValue()), System.currentTimeMillis(), TTL));
+            ClientState state = ClientState.forInternalCalls();
+            try
+            {
+                state.setKeyspace(TRACE_KS);
+            }
+            catch (InvalidRequestException e)
+            {
+                throw new RuntimeException();
+            }
+            this.queryState = new QueryState(state);
         }
     }
 
-    public static CellName buildName(CFMetaData meta, Object... args)
+    private static QueryState internalQueryState()
     {
-        return meta.comparator.makeCellName(args);
+        return InternalStateInstance.INSTANCE.queryState;
     }
 
     public UUID getSessionId()
@@ -165,10 +153,8 @@ public class Tracing
             {
                 public void run()
                 {
-                    CFMetaData cfMeta = CFMetaData.TraceSessionsCf;
-                    ColumnFamily cf = ArrayBackedSortedColumns.factory.create(cfMeta);
-                    addColumn(cf, buildName(cfMeta, "duration"), elapsed);
-                    mutateWithCatch(new Mutation(TRACE_KS, sessionIdBytes, cf));
+                    String q = String.format("UPDATE %s.%s USING TTL %s SET duration = ? WHERE session_id = ?", Tracing.TRACE_KS, Tracing.SESSIONS_CF, TTL);
+                    Tracing.executeWithCatch(q, sessionIdBytes, elapsed);
                 }
             });
 
@@ -203,14 +189,9 @@ public class Tracing
         {
             public void run()
             {
-                CFMetaData cfMeta = CFMetaData.TraceSessionsCf;
-                ColumnFamily cf = ArrayBackedSortedColumns.factory.create(cfMeta);
-                addColumn(cf, buildName(cfMeta, "coordinator"), FBUtilities.getBroadcastAddress());
-                addParameterColumns(cf, parameters);
-                addColumn(cf, buildName(cfMeta, bytes("request")), request);
-                addColumn(cf, buildName(cfMeta, bytes("started_at")), started_at);
-                addParameterColumns(cf, parameters);
-                mutateWithCatch(new Mutation(TRACE_KS, sessionIdBytes, cf));
+                String q = String.format("INSERT INTO %s.%s (session_id, coordinator, request, started_at, parameters) "
+                                                  + "VALUES (?, ?, ?, ?, ?, ?) USING TTL ?", Tracing.TRACE_KS, Tracing.SESSIONS_CF, TTL);
+                Tracing.executeWithCatch(q, sessionIdBytes, FBUtilities.getBroadcastAddress(), request, started_at, parameters);
             }
         });
     }
@@ -282,20 +263,20 @@ public class Tracing
         state.trace(format, args);
     }
 
-    static void mutateWithCatch(Mutation mutation)
+    static void executeWithCatch(String query, Object... values)
     {
         try
         {
-            StorageProxy.mutate(Arrays.asList(mutation), ConsistencyLevel.ANY);
-        }
-        catch (UnavailableException | WriteTimeoutException e)
-        {
-            // should never happen; ANY does not throw UAE or WTE
-            throw new AssertionError(e);
+            QueryProcessor.execute(query, ConsistencyLevel.ANY, internalQueryState(), values);
         }
         catch (OverloadedException e)
         {
             logger.warn("Too many nodes are overloaded to save trace events");
+        }
+        catch (RequestExecutionException e)
+        {
+            // should never happen; ANY does not throw UAE or WTE
+            throw new AssertionError(e);
         }
     }
 }

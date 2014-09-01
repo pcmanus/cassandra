@@ -22,20 +22,16 @@ import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.serializers.MarshalException;
+import org.apache.cassandra.utils.FBUtilities;
 
-public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterator>, OnDiskAtomIterator
+public class SSTableIdentityIterator extends SSTableAtomIterator implements Comparable<SSTableIdentityIterator>, AtomIterator
 {
+    private final CFMetaData metadata;
     private final DecoratedKey key;
-    private final DataInput in;
-    public final long dataSize; // we [still] require this so compaction can tell if it's safe to read the row into memory
-    public final ColumnSerializer.Flag flag;
-
-    private final ColumnFamily columnFamily;
-    private final Iterator<OnDiskAtom> atomIterator;
-    private final boolean validateColumns;
+    private final DeletionTime partitionLevelDeletion;
     private final String filename;
 
     /**
@@ -43,53 +39,28 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
      * @param sstable SSTable we are reading ffrom.
      * @param file Reading using this file.
      * @param key Key of this row.
-     * @param dataSize length of row data
      */
-    public SSTableIdentityIterator(SSTableReader sstable, RandomAccessReader file, DecoratedKey key, long dataSize)
+    public SSTableIdentityIterator(SSTableReader sstable, RandomAccessReader file, DecoratedKey key)
     {
-        this(sstable, file, key, dataSize, false);
+        this(sstable.metadata, file, file.getPath(), key, sstable, LegacyLayout.Flag.LOCAL);
     }
 
-    /**
-     * Used to iterate through the columns of a row.
-     * @param sstable SSTable we are reading ffrom.
-     * @param file Reading using this file.
-     * @param key Key of this row.
-     * @param dataSize length of row data
-     * @param checkData if true, do its best to deserialize and check the coherence of row data
-     */
-    public SSTableIdentityIterator(SSTableReader sstable, RandomAccessReader file, DecoratedKey key, long dataSize, boolean checkData)
-    {
-        this(sstable.metadata, file, file.getPath(), key, dataSize, checkData, sstable, ColumnSerializer.Flag.LOCAL);
-    }
-
-    // sstable may be null *if* checkData is false
-    // If it is null, we assume the data is in the current file format
+    // sstable may be null, in which case we assume the data is in the current file format
     private SSTableIdentityIterator(CFMetaData metadata,
                                     DataInput in,
                                     String filename,
                                     DecoratedKey key,
-                                    long dataSize,
-                                    boolean checkData,
                                     SSTableReader sstable,
-                                    ColumnSerializer.Flag flag)
+                                    LegacyLayout.Flag flag)
     {
-        assert !checkData || (sstable != null);
-        this.in = in;
+        super(in, flag, FBUtilities.nowInSeconds(), sstable == null ? Descriptor.Version.CURRENT : sstable.descriptor.version);
+        this.metadata = metadata;
         this.filename = filename;
         this.key = key;
-        this.dataSize = dataSize;
-        this.flag = flag;
-        this.validateColumns = checkData;
-
-        Descriptor.Version dataVersion = sstable == null ? Descriptor.Version.CURRENT : sstable.descriptor.version;
-        int expireBefore = (int) (System.currentTimeMillis() / 1000);
-        columnFamily = ArrayBackedSortedColumns.factory.create(metadata);
 
         try
         {
-            columnFamily.delete(DeletionTime.serializer.deserialize(in));
-            atomIterator = columnFamily.metadata().getOnDiskIterator(in, flag, expireBefore, dataVersion);
+            this.partitionLevelDeletion = DeletionTime.serializer.deserialize(in);
         }
         catch (IOException e)
         {
@@ -99,49 +70,39 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         }
     }
 
-    public DecoratedKey getKey()
+    public CFMetaData metadata()
+    {
+        return metadata;
+    }
+
+    public Columns columns()
+    {
+        return metadata.regularColumns();
+    }
+
+    public Columns staticColumns()
+    {
+        return metadata.staticColumns();
+    }
+
+    public boolean isReverseOrder()
+    {
+        return false;
+    }
+
+    public DecoratedKey partitionKey()
     {
         return key;
     }
 
-    public ColumnFamily getColumnFamily()
+    public DeletionTime partitionLevelDeletion()
     {
-        return columnFamily;
+        return partitionLevelDeletion;
     }
 
-    public boolean hasNext()
+    public Row staticRow()
     {
-        try
-        {
-            return atomIterator.hasNext();
-        }
-        catch (IOError e)
-        {
-            // catch here b/c atomIterator is an AbstractIterator; hasNext reads the value
-            if (e.getCause() instanceof IOException)
-                throw new CorruptSSTableException((IOException)e.getCause(), filename);
-            else
-                throw e;
-        }
-    }
-
-    public OnDiskAtom next()
-    {
-        try
-        {
-            OnDiskAtom atom = atomIterator.next();
-            if (validateColumns)
-                atom.validateFields(columnFamily.metadata());
-            return atom;
-        }
-        catch (MarshalException me)
-        {
-            throw new CorruptSSTableException(me, filename);
-        }
-    }
-
-    public void remove()
-    {
+        // TODO
         throw new UnsupportedOperationException();
     }
 
@@ -152,16 +113,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
 
     public String getPath()
     {
-        // if input is from file, then return that path, otherwise it's from streaming
-        if (in instanceof RandomAccessReader)
-        {
-            RandomAccessReader file = (RandomAccessReader) in;
-            return file.getPath();
-        }
-        else
-        {
-            throw new UnsupportedOperationException();
-        }
+        return filename;
     }
 
     public int compareTo(SSTableIdentityIterator o)

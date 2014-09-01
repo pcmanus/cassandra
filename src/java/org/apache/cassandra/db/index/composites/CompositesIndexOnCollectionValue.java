@@ -24,11 +24,7 @@ import java.util.List;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CBuilder;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.composites.CompoundDenseCellNameType;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.*;
 
@@ -45,7 +41,7 @@ import org.apache.cassandra.db.marshal.*;
  */
 public class CompositesIndexOnCollectionValue extends CompositesIndex
 {
-    public static CellNameType buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
+    public static ClusteringComparator buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
     {
         int prefixSize = columnDef.position();
         List<AbstractType<?>> types = new ArrayList<>(prefixSize + 2);
@@ -53,7 +49,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
         for (int i = 0; i < prefixSize; i++)
             types.add(baseMetadata.comparator.subtype(i));
         types.add(((CollectionType)columnDef.type).nameComparator()); // collection key
-        return new CompoundDenseCellNameType(types);
+        return new ClusteringComparator(types);
     }
 
     @Override
@@ -62,50 +58,44 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
         return ((CollectionType)columnDef.type).valueComparator();
     }
 
-    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, Cell cell)
+    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
         return cell.value();
     }
 
-    protected Composite makeIndexColumnPrefix(ByteBuffer rowKey, Composite cellName)
+    protected ClusteringPrefix makeIndexClustering(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
-        CBuilder builder = getIndexComparator().prefixBuilder();
+        CBuilder builder = new CBuilder(getIndexComparator());
         builder.add(rowKey);
-        for (int i = 0; i < Math.min(columnDef.position(), cellName.size()); i++)
-            builder.add(cellName.get(i));
+        for (int i = 0; i < Math.min(columnDef.position(), clustering.size()); i++)
+            builder.add(clustering.get(i));
 
-        // When indexing, cellName is a full name including the collection
-        // key. When searching, restricted clustering columns are included
-        // but the collection key is not. In this case, don't try to add an
-        // element to the builder for it, as it will just end up null and
-        // error out when retrieving cells from the index cf (CASSANDRA-7525)
-        if (cellName.size() >= columnDef.position() + 1)
-            builder.add(cellName.get(columnDef.position() + 1));
+        // When indexing, cell will be present, but when searching, it won't  (CASSANDRA-7525)
+        if (cell != null)
+            builder.add(((CollectionPath)cell.path()).element());
         return builder.build();
     }
 
-    public IndexedEntry decodeEntry(DecoratedKey indexedValue, Cell indexEntry)
+    public IndexedEntry decodeEntry(DecoratedKey indexedValue, ClusteringPrefix indexClustering, Cell indexEntry)
     {
         int prefixSize = columnDef.position();
-        CellName name = indexEntry.name();
-        CBuilder builder = baseCfs.getComparator().builder();
+        CBuilder builder = new CBuilder(baseCfs.getComparator());
         for (int i = 0; i < prefixSize; i++)
-            builder.add(name.get(i + 1));
-        return new IndexedEntry(indexedValue, name, indexEntry.timestamp(), name.get(0), builder.build(), name.get(prefixSize + 1));
+            builder.add(indexClustering.get(i + 1));
+        return new IndexedEntry(indexedValue, indexClustering, indexEntry.timestamp(), indexClustering.get(0), builder.build(), indexClustering.get(prefixSize + 1));
     }
 
     @Override
-    public boolean indexes(CellName name)
+    public boolean indexes(ClusteringPrefix clustering, ColumnDefinition column)
     {
-        AbstractType<?> comp = baseCfs.metadata.getColumnDefinitionComparator(columnDef);
-        return name.size() > columnDef.position()
-            && comp.compare(name.get(columnDef.position()), columnDef.name.bytes) == 0;
+        return column.name.equals(columnDef.name);
     }
 
-    public boolean isStale(IndexedEntry entry, ColumnFamily data, long now)
+    public boolean isStale(IndexedEntry entry, Row data, int nowInSec)
     {
-        CellName name = data.getComparator().create(entry.indexedEntryPrefix, columnDef, entry.indexedEntryCollectionKey);
-        Cell cell = data.getColumn(name);
-        return cell == null || !cell.isLive(now) || ((CollectionType) columnDef.type).valueComparator().compare(entry.indexValue.getKey(), cell.value()) != 0;
+        Cell cell = Rows.getCell(data, columnDef, new CollectionPath(entry.indexedEntryCollectionKey));
+        return cell == null
+            || !Cells.isLive(cell, nowInSec)
+            || ((CollectionType) columnDef.type).valueComparator().compare(entry.indexValue.getKey(), cell.value()) != 0;
     }
 }

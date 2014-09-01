@@ -24,11 +24,7 @@ import java.util.List;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.composites.CBuilder;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.CellNameType;
-import org.apache.cassandra.db.composites.Composite;
-import org.apache.cassandra.db.composites.CompoundDenseCellNameType;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.*;
 
@@ -48,14 +44,14 @@ import org.apache.cassandra.db.marshal.*;
  */
 public class CompositesIndexOnCollectionKey extends CompositesIndex
 {
-    public static CellNameType buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
+    public static ClusteringComparator buildIndexComparator(CFMetaData baseMetadata, ColumnDefinition columnDef)
     {
         int count = 1 + baseMetadata.clusteringColumns().size(); // row key + clustering prefix
         List<AbstractType<?>> types = new ArrayList<AbstractType<?>>(count);
         types.add(SecondaryIndex.keyComparator);
         for (int i = 0; i < count - 1; i++)
             types.add(baseMetadata.comparator.subtype(i));
-        return new CompoundDenseCellNameType(types);
+        return new ClusteringComparator(types);
     }
 
     @Override
@@ -64,43 +60,39 @@ public class CompositesIndexOnCollectionKey extends CompositesIndex
         return ((CollectionType)columnDef.type).nameComparator();
     }
 
-    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, Cell cell)
+    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
-        return cell.name().get(columnDef.position() + 1);
+        return clustering.get(columnDef.position() + 1);
     }
 
-    protected Composite makeIndexColumnPrefix(ByteBuffer rowKey, Composite cellName)
+    protected ClusteringPrefix makeIndexClustering(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)
     {
         int count = 1 + baseCfs.metadata.clusteringColumns().size();
-        CBuilder builder = getIndexComparator().builder();
+        CBuilder builder = new CBuilder(getIndexComparator());
         builder.add(rowKey);
         for (int i = 0; i < count - 1; i++)
-            builder.add(cellName.get(i));
+            builder.add(clustering.get(i));
         return builder.build();
     }
 
-    public IndexedEntry decodeEntry(DecoratedKey indexedValue, Cell indexEntry)
+    public IndexedEntry decodeEntry(DecoratedKey indexedValue, ClusteringPrefix indexClustering, Cell indexEntry)
     {
         int count = 1 + baseCfs.metadata.clusteringColumns().size();
-        CBuilder builder = baseCfs.getComparator().builder();
+        CBuilder builder = new CBuilder(baseCfs.getComparator());
         for (int i = 0; i < count - 1; i++)
-            builder.add(indexEntry.name().get(i + 1));
-        return new IndexedEntry(indexedValue, indexEntry.name(), indexEntry.timestamp(), indexEntry.name().get(0), builder.build());
+            builder.add(indexClustering.get(i + 1));
+        return new IndexedEntry(indexedValue, indexClustering, indexEntry.timestamp(), indexClustering.get(0), builder.build());
     }
 
     @Override
-    public boolean indexes(CellName name)
+    public boolean indexes(ClusteringPrefix clustering, ColumnDefinition column)
     {
-        // We index if the CQL3 column name is the one of the collection we index
-        AbstractType<?> comp = baseCfs.metadata.getColumnDefinitionComparator(columnDef);
-        return name.size() > columnDef.position()
-            && comp.compare(name.get(columnDef.position()), columnDef.name.bytes) == 0;
+        return column.name.equals(columnDef.name);
     }
 
-    public boolean isStale(IndexedEntry entry, ColumnFamily data, long now)
+    public boolean isStale(IndexedEntry entry, Row data, int nowInSec)
     {
-        CellName name = data.getComparator().create(entry.indexedEntryPrefix, columnDef, entry.indexValue.getKey());
-        Cell cell = data.getColumn(name);
-        return cell == null || !cell.isLive(now);
+        Cell cell = Rows.getCell(data, columnDef);
+        return cell == null || !Cells.isLive(cell, nowInSec);
     }
 }

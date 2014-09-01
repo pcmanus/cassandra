@@ -17,34 +17,158 @@
  */
 package org.apache.cassandra.db.compaction;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
 
-import org.apache.cassandra.db.columniterator.OnDiskAtomIterator;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.metrics.CompactionMetrics;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 
+// TODO: this should be merged with AbstractCompactionIterable (it's not the only implementation) and
+// we should rename it as CompactionIterator
 public class CompactionIterable extends AbstractCompactionIterable
 {
-    private static final Comparator<OnDiskAtomIterator> comparator = new Comparator<OnDiskAtomIterator>()
-    {
-        public int compare(OnDiskAtomIterator i1, OnDiskAtomIterator i2)
-        {
-            return i1.getKey().compareTo(i2.getKey());
-        }
-    };
+    private static final long ATOMS_TO_UPDATE_PROGRESS = 100;
+
+    private final PartitionIterator mergedIterator;
+    private final AtomicInteger atomsMerged = new AtomicInteger();
+    private final CompactionMetrics metrics;
 
     public CompactionIterable(OperationType type, List<ICompactionScanner> scanners, CompactionController controller)
     {
-        super(controller, type, scanners);
+        this(type, scanners, controller, null);
     }
 
-    public CloseableIterator<AbstractCompactedRow> iterator()
+    public CompactionIterable(OperationType type, List<ICompactionScanner> scanners, CompactionController controller, CompactionMetrics metrics)
     {
-        return MergeIterator.get(scanners, comparator, new Reducer());
+        super(controller, type, scanners);
+        this.mergedIterator = new PurgingPartitionIterator(PartitionIterators.merge(scanners, 
+                                                                                    (int)(System.currentTimeMillis() / 1000),
+                                                                                    listener()),
+                                                           controller);
+
+        this.metrics = metrics;
+
+        if (metrics != null)
+            metrics.beginCompaction(this);
+    }
+
+    private PartitionIterators.MergeListener listener()
+    {
+        return new PartitionIterators.MergeListener()
+        {
+            public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, AtomIterator[] versions)
+            {
+                int merged = 0;
+                for (int i = 0; i < versions.length; i++)
+                    if (versions[i] != null)
+                        merged++;
+                CompactionIterable.this.updateCounterFor(merged);
+
+                /*
+                 * The atom level listener does 2 things:
+                 *  - It updates 2ndary indexes for deleted/shadowed cells
+                 *  - It updates progress regularly (every ATOMS_TO_UPDATE_PROGRESS atoms)
+                 */
+                final SecondaryIndexManager.Updater indexer = controller.cfs.indexManager.gcUpdaterFor(partitionKey);
+                return new AtomIterators.MergeListener()
+                {
+                    private ClusteringPrefix clustering;
+                    private ColumnDefinition column;
+
+                    public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
+                    {
+                        this.clustering = clustering;
+                    }
+
+                    public void onMergedColumns(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTimeArray versions)
+                    {
+                        this.column = c;
+                    }
+
+                    public void onMergedCells(Cell mergedCell, Cell[] versions)
+                    {
+                        if (indexer == SecondaryIndexManager.nullUpdater)
+                            return;
+
+                        for (int i = 0; i < versions.length; i++)
+                        {
+                            Cell version = versions[i];
+                            if (version != null && (mergedCell == null || !mergedCell.equals(version)))
+                                indexer.remove(clustering, column, version);
+                        }
+                    }
+
+                    public void onRowDone()
+                    {
+                        int merged = atomsMerged.incrementAndGet();
+                        if (merged % ATOMS_TO_UPDATE_PROGRESS == 0)
+                            updateBytesRead();
+                    }
+
+                    public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions)
+                    {
+                        int merged = atomsMerged.incrementAndGet();
+                        if (merged % ATOMS_TO_UPDATE_PROGRESS == 0)
+                            updateBytesRead();
+                    }
+
+                    public void close()
+                    {
+                    }
+                };
+            }
+
+            public void close()
+            {
+            }
+        };
+    }
+
+    private void updateBytesRead()
+    {
+        long n = 0;
+        for (ICompactionScanner scanner : scanners)
+            n += scanner.getCurrentPosition();
+        bytesRead = n;
+    }
+
+    public boolean hasNext()
+    {
+        return mergedIterator.hasNext();
+    }
+
+    public AtomIterator next()
+    {
+        return mergedIterator.next();
+    }
+
+    public void remove()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    public void close() throws IOException
+    {
+        try
+        {
+            mergedIterator.close();
+        }
+        finally
+        {
+            if (metrics != null)
+                metrics.finishCompaction(this);
+        }
     }
 
     public String toString()
@@ -52,35 +176,50 @@ public class CompactionIterable extends AbstractCompactionIterable
         return this.getCompactionInfo().toString();
     }
 
-    protected class Reducer extends MergeIterator.Reducer<OnDiskAtomIterator, AbstractCompactedRow>
+    private static class PurgingPartitionIterator extends AbstractFilteringIterator
     {
-        protected final List<OnDiskAtomIterator> rows = new ArrayList<>();
+        private final CompactionController controller;
+        private long maxPurgeableTimestamp;
 
-        public void reduce(OnDiskAtomIterator current)
+        private PurgingPartitionIterator(PartitionIterator toPurge, CompactionController controller)
         {
-            rows.add(current);
+            super(toPurge);
+            this.controller = controller;
         }
 
-        protected AbstractCompactedRow getReduced()
+        protected boolean shouldFilter(AtomIterator atoms)
         {
-            assert !rows.isEmpty();
+            // tombstones with a localDeletionTime before this can be purged.  This is the minimum timestamp for any sstable
+            // containing `key` outside of the set of sstables involved in this compaction.
+            maxPurgeableTimestamp = controller.maxPurgeableTimestamp(atoms.partitionKey());
 
-            CompactionIterable.this.updateCounterFor(rows.size());
-            try
-            {
-                // create a new container for rows, since we're going to clear ours for the next one,
-                // and the AbstractCompactionRow code should be able to assume that the collection it receives
-                // won't be pulled out from under it.
-                return new LazilyCompactedRow(controller, ImmutableList.copyOf(rows));
-            }
-            finally
-            {
-                rows.clear();
-                long n = 0;
-                for (ICompactionScanner scanner : scanners)
-                    n += scanner.getCurrentPosition();
-                bytesRead = n;
-            }
+            // TODO: we could be able to skip filtering if AtomIterator was giving us some stats
+            // (like the smallest local deletion time).
+            return true;
+        }
+
+        protected boolean shouldFilterPartitionDeletion(DeletionTime dt)
+        {
+            return dt.markedForDeleteAt() < maxPurgeableTimestamp
+                && dt.localDeletionTime() < controller.gcBefore;
+        }
+
+        protected boolean shouldFilterRangeTombstoneMarker(RangeTombstoneMarker marker)
+        {
+            return marker.delTime().markedForDeleteAt() < maxPurgeableTimestamp
+                && marker.delTime().localDeletionTime() < controller.gcBefore;
+        }
+
+        protected boolean shouldFilterComplexDeletionTime(ColumnDefinition c, DeletionTime dt)
+        {
+            return dt.markedForDeleteAt() < maxPurgeableTimestamp
+                && dt.localDeletionTime() < controller.gcBefore;
+        }
+
+        protected boolean shouldFilterCell(ColumnDefinition c, Cell cell)
+        {
+            return cell.timestamp() < maxPurgeableTimestamp
+                && cell.localDeletionTime() < controller.gcBefore;
         }
     }
 }

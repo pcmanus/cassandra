@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.RowUpdate;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
 
@@ -58,10 +59,11 @@ public abstract class MemtableAllocator
         this.offHeap = offHeap;
     }
 
-    public abstract Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp);
-    public abstract ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp);
+    // TODO
+    //public abstract Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp);
+    //public abstract CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp);
+    //public abstract DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp);
+    //public abstract ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp);
     public abstract DecoratedKey clone(DecoratedKey key, OpOrder.Group opGroup);
     public abstract DataReclaimer reclaimer();
 
@@ -106,8 +108,8 @@ public abstract class MemtableAllocator
 
     public static interface DataReclaimer
     {
-        public DataReclaimer reclaim(Cell cell);
-        public DataReclaimer reclaimImmediately(Cell cell);
+        public DataReclaimer reclaim(RowUpdate update);
+        public DataReclaimer reclaimImmediately(RowUpdate update);
         public DataReclaimer reclaimImmediately(DecoratedKey key);
         public void cancel();
         public void commit();
@@ -115,12 +117,12 @@ public abstract class MemtableAllocator
 
     public static final DataReclaimer NO_OP = new DataReclaimer()
     {
-        public DataReclaimer reclaim(Cell cell)
+        public DataReclaimer reclaim(RowUpdate update)
         {
             return this;
         }
 
-        public DataReclaimer reclaimImmediately(Cell cell)
+        public DataReclaimer reclaimImmediately(RowUpdate update)
         {
             return this;
         }

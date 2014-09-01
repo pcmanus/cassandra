@@ -27,7 +27,6 @@ import java.util.List;
 import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
-import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.IndexHelper;
@@ -46,7 +45,7 @@ public class RowIndexEntry implements IMeasurableMemory
         this.position = position;
     }
 
-    protected int promotedSize(CType type)
+    protected int promotedSize(LegacyLayout layout)
     {
         return 0;
     }
@@ -91,23 +90,23 @@ public class RowIndexEntry implements IMeasurableMemory
 
     public static class Serializer
     {
-        private final CType type;
+        private final LegacyLayout layout;
 
-        public Serializer(CType type)
+        public Serializer(LegacyLayout layout)
         {
-            this.type = type;
+            this.layout = layout;
         }
 
         public void serialize(RowIndexEntry rie, DataOutputPlus out) throws IOException
         {
             out.writeLong(rie.position);
-            out.writeInt(rie.promotedSize(type));
+            out.writeInt(rie.promotedSize(layout));
 
             if (rie.isIndexed())
             {
                 DeletionTime.serializer.serialize(rie.deletionTime(), out);
                 out.writeInt(rie.columnsIndex().size());
-                ISerializer<IndexHelper.IndexInfo> idxSerializer = type.indexSerializer();
+                ISerializer<IndexHelper.IndexInfo> idxSerializer = layout.indexSerializer();
                 for (IndexHelper.IndexInfo info : rie.columnsIndex())
                     idxSerializer.serialize(info, out);
             }
@@ -123,7 +122,7 @@ public class RowIndexEntry implements IMeasurableMemory
                 DeletionTime deletionTime = DeletionTime.serializer.deserialize(in);
 
                 int entries = in.readInt();
-                ISerializer<IndexHelper.IndexInfo> idxSerializer = type.indexSerializer();
+                ISerializer<IndexHelper.IndexInfo> idxSerializer = layout.indexSerializer();
                 List<IndexHelper.IndexInfo> columnsIndex = new ArrayList<IndexHelper.IndexInfo>(entries);
                 for (int i = 0; i < entries; i++)
                     columnsIndex.add(idxSerializer.deserialize(in));
@@ -153,7 +152,7 @@ public class RowIndexEntry implements IMeasurableMemory
 
         public int serializedSize(RowIndexEntry rie)
         {
-            int size = TypeSizes.NATIVE.sizeof(rie.position) + TypeSizes.NATIVE.sizeof(rie.promotedSize(type));
+            int size = TypeSizes.NATIVE.sizeof(rie.position) + TypeSizes.NATIVE.sizeof(rie.promotedSize(layout));
 
             if (rie.isIndexed())
             {
@@ -162,7 +161,7 @@ public class RowIndexEntry implements IMeasurableMemory
                 size += DeletionTime.serializer.serializedSize(rie.deletionTime(), TypeSizes.NATIVE);
                 size += TypeSizes.NATIVE.sizeof(index.size());
 
-                ISerializer<IndexHelper.IndexInfo> idxSerializer = type.indexSerializer();
+                ISerializer<IndexHelper.IndexInfo> idxSerializer = layout.indexSerializer();
                 for (IndexHelper.IndexInfo info : index)
                     size += idxSerializer.serializedSize(info, TypeSizes.NATIVE);
             }
@@ -204,12 +203,12 @@ public class RowIndexEntry implements IMeasurableMemory
         }
 
         @Override
-        public int promotedSize(CType type)
+        public int promotedSize(LegacyLayout layout)
         {
             TypeSizes typeSizes = TypeSizes.NATIVE;
             long size = DeletionTime.serializer.serializedSize(deletionTime, typeSizes);
             size += typeSizes.sizeof(columnsIndex.size()); // number of entries
-            ISerializer<IndexHelper.IndexInfo> idxSerializer = type.indexSerializer();
+            ISerializer<IndexHelper.IndexInfo> idxSerializer = layout.indexSerializer();
             for (IndexHelper.IndexInfo info : columnsIndex)
                 size += idxSerializer.serializedSize(info, typeSizes);
 

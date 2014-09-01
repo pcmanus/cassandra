@@ -22,7 +22,9 @@ import java.util.Collections;
 import java.util.List;
 
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.filter.ColumnCounter;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.service.StorageProxy;
@@ -32,7 +34,7 @@ import org.apache.cassandra.service.StorageProxy;
  */
 public class NamesQueryPager implements SinglePartitionPager
 {
-    private final SliceByNamesReadCommand command;
+    private final SinglePartitionNamesCommand command;
     private final ConsistencyLevel consistencyLevel;
     private final boolean localQuery;
 
@@ -49,7 +51,7 @@ public class NamesQueryPager implements SinglePartitionPager
      * count every cell individually) and the names filter asks for more than pageSize columns.
      */
     // Don't use directly, use QueryPagers method instead
-    NamesQueryPager(SliceByNamesReadCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
+    NamesQueryPager(SinglePartitionNamesCommand command, ConsistencyLevel consistencyLevel, boolean localQuery)
     {
         this.command = command;
         this.consistencyLevel = consistencyLevel;
@@ -58,13 +60,12 @@ public class NamesQueryPager implements SinglePartitionPager
 
     public ByteBuffer key()
     {
-        return command.key;
+        return command.partitionKey().getKey();
     }
 
-    public ColumnCounter columnCounter()
+    public DataLimits limits()
     {
-        // We know NamesQueryFilter.columnCounter don't care about his argument
-        return command.filter.columnCounter(null, command.timestamp);
+        return command.limits();
     }
 
     public PagingState state()
@@ -77,29 +78,19 @@ public class NamesQueryPager implements SinglePartitionPager
         return queried;
     }
 
-    public List<Row> fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException
+    public DataIterator fetchPage(int pageSize) throws RequestValidationException, RequestExecutionException
     {
-        assert command.filter.countCQL3Rows() || command.filter.columns.size() <= pageSize;
-
         if (isExhausted())
-            return Collections.<Row>emptyList();
+            return DataIterators.EMPTY;
 
         queried = true;
         return localQuery
-             ? Collections.singletonList(command.getRow(Keyspace.open(command.ksName)))
-             : StorageProxy.read(Collections.<ReadCommand>singletonList(command), consistencyLevel);
+             ? PartitionIterators.asDataIterator(command.executeLocally(Keyspace.openAndGetStore(command.metadata())), command.nowInSec())
+             : StorageProxy.read(Collections.<SinglePartitionReadCommand>singletonList(command), consistencyLevel);
     }
 
     public int maxRemaining()
     {
-        if (queried)
-            return 0;
-
-        return command.filter.countCQL3Rows() ? 1 : command.filter.columns.size();
-    }
-
-    public long timestamp()
-    {
-        return command.timestamp;
+        return queried ? 0 : 1;
     }
 }

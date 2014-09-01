@@ -27,12 +27,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.db.composites.CellName;
-import org.apache.cassandra.db.composites.Composite;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,35 +51,25 @@ public class Mutation implements IMutation
     // when we remove it, also restore SerializationsTest.testMutationRead to not regenerate new Mutations each test
     private final String keyspaceName;
 
-    private final ByteBuffer key;
+    private final DecoratedKey key;
     // map of column family id to mutations for that column family.
-    private final Map<UUID, ColumnFamily> modifications;
+    private final Map<UUID, PartitionUpdate> modifications;
 
-    public Mutation(String keyspaceName, ByteBuffer key)
+    public Mutation(String keyspaceName, DecoratedKey key)
     {
-        this(keyspaceName, key, new HashMap<UUID, ColumnFamily>());
+        this(keyspaceName, key, new HashMap<UUID, PartitionUpdate>());
     }
 
-    public Mutation(String keyspaceName, ByteBuffer key, ColumnFamily cf)
+    public Mutation(PartitionUpdate update)
     {
-        this(keyspaceName, key, Collections.singletonMap(cf.id(), cf));
+        this(update.metadata().ksName, update.partitionKey(), Collections.singletonMap(update.metadata().cfId, update));
     }
 
-    public Mutation(String keyspaceName, Row row)
-    {
-        this(keyspaceName, row.key.getKey(), row.cf);
-    }
-
-    protected Mutation(String keyspaceName, ByteBuffer key, Map<UUID, ColumnFamily> modifications)
+    protected Mutation(String keyspaceName, DecoratedKey key, Map<UUID, PartitionUpdate> modifications)
     {
         this.keyspaceName = keyspaceName;
         this.key = key;
         this.modifications = modifications;
-    }
-
-    public Mutation(ByteBuffer key, ColumnFamily cf)
-    {
-        this(cf.metadata().ksName, key, cf);
     }
 
     public Mutation copy()
@@ -98,91 +88,57 @@ public class Mutation implements IMutation
         return modifications.keySet();
     }
 
-    public ByteBuffer key()
+    public DecoratedKey key()
     {
         return key;
     }
 
-    public Collection<ColumnFamily> getColumnFamilies()
+    public Collection<PartitionUpdate> getPartitionUpdates()
     {
         return modifications.values();
     }
 
-    public ColumnFamily getColumnFamily(UUID cfId)
+    public PartitionUpdate getPartitionUpdate(UUID cfId)
     {
         return modifications.get(cfId);
     }
 
-    /*
-     * Specify a column family name and the corresponding column
-     * family object.
-     * param @ cf - column family name
-     * param @ columnFamily - the column family.
-     */
-    public void add(ColumnFamily columnFamily)
+    public void add(PartitionUpdate update)
     {
-        assert columnFamily != null;
-        ColumnFamily prev = modifications.put(columnFamily.id(), columnFamily);
+        assert update != null;
+        PartitionUpdate prev = modifications.put(update.metadata().cfId, update);
         if (prev != null)
             // developer error
-            throw new IllegalArgumentException("Table " + columnFamily + " already has modifications in this mutation: " + prev);
+            throw new IllegalArgumentException("Table " + update.metadata().cfName + " already has modifications in this mutation: " + prev);
     }
 
     /**
      * @return the ColumnFamily in this Mutation corresponding to @param cfName, creating an empty one if necessary.
      */
-    public ColumnFamily addOrGet(String cfName)
+    public PartitionUpdate addOrGet(String cfName)
     {
         return addOrGet(Schema.instance.getCFMetaData(keyspaceName, cfName));
     }
 
-    public ColumnFamily addOrGet(CFMetaData cfm)
+    public PartitionUpdate addOrGet(CFMetaData cfm)
     {
-        ColumnFamily cf = modifications.get(cfm.cfId);
-        if (cf == null)
+        PartitionUpdate update = modifications.get(cfm.cfId);
+        if (update == null)
         {
-            cf = ArrayBackedSortedColumns.factory.create(cfm);
-            modifications.put(cfm.cfId, cf);
+            update = new PartitionUpdate(cfm, key);
+            modifications.put(cfm.cfId, update);
         }
-        return cf;
+        return update;
+    }
+
+    public void delete(String cfName, long timestamp)
+    {
+        addOrGet(cfName).deletionInfo().add(new SimpleDeletionTime(timestamp, (int) (System.currentTimeMillis() / 1000)));
     }
 
     public boolean isEmpty()
     {
         return modifications.isEmpty();
-    }
-
-    public void add(String cfName, CellName name, ByteBuffer value, long timestamp, int timeToLive)
-    {
-        addOrGet(cfName).addColumn(name, value, timestamp, timeToLive);
-    }
-
-    public void addCounter(String cfName, CellName name, long value)
-    {
-        addOrGet(cfName).addCounter(name, value);
-    }
-
-    public void add(String cfName, CellName name, ByteBuffer value, long timestamp)
-    {
-        add(cfName, name, value, timestamp, 0);
-    }
-
-    public void delete(String cfName, long timestamp)
-    {
-        int localDeleteTime = (int) (System.currentTimeMillis() / 1000);
-        addOrGet(cfName).delete(new DeletionInfo(timestamp, localDeleteTime));
-    }
-
-    public void delete(String cfName, CellName name, long timestamp)
-    {
-        int localDeleteTime = (int) (System.currentTimeMillis() / 1000);
-        addOrGet(cfName).addTombstone(name, localDeleteTime, timestamp);
-    }
-
-    public void deleteRange(String cfName, Composite start, Composite end, long timestamp)
-    {
-        int localDeleteTime = (int) (System.currentTimeMillis() / 1000);
-        addOrGet(cfName).addAtom(new RangeTombstone(start, end, timestamp, localDeleteTime));
     }
 
     public void addAll(IMutation m)
@@ -194,13 +150,13 @@ public class Mutation implements IMutation
         if (!keyspaceName.equals(mutation.keyspaceName) || !key.equals(mutation.key))
             throw new IllegalArgumentException();
 
-        for (Map.Entry<UUID, ColumnFamily> entry : mutation.modifications.entrySet())
+        for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
         {
             // It's slighty faster to assume the key wasn't present and fix if
             // not in the case where it wasn't there indeed.
-            ColumnFamily cf = modifications.put(entry.getKey(), entry.getValue());
-            if (cf != null)
-                entry.getValue().addAll(cf);
+            PartitionUpdate update = modifications.put(entry.getKey(), entry.getValue());
+            if (update != null)
+                entry.getValue().addAll(update);
         }
     }
 
@@ -243,7 +199,7 @@ public class Mutation implements IMutation
     {
         StringBuilder buff = new StringBuilder("Mutation(");
         buff.append("keyspace='").append(keyspaceName).append('\'');
-        buff.append(", key='").append(ByteBufferUtil.bytesToHex(key)).append('\'');
+        buff.append(", key='").append(ByteBufferUtil.bytesToHex(key.getKey())).append('\'');
         buff.append(", modifications=[");
         if (shallow)
         {
@@ -263,7 +219,7 @@ public class Mutation implements IMutation
     public Mutation without(UUID cfId)
     {
         Mutation mutation = new Mutation(keyspaceName, key);
-        for (Map.Entry<UUID, ColumnFamily> entry : modifications.entrySet())
+        for (Map.Entry<UUID, PartitionUpdate> entry : modifications.entrySet())
             if (!entry.getKey().equals(cfId))
                 mutation.add(entry.getValue());
         return mutation;
@@ -276,76 +232,74 @@ public class Mutation implements IMutation
             if (version < MessagingService.VERSION_20)
                 out.writeUTF(mutation.getKeyspaceName());
 
-            ByteBufferUtil.writeWithShortLength(mutation.key(), out);
+            // TODO: we could consider writing the token (provided this is done by the partitioner,
+            // LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
+            // partition would be a single long)
+            ByteBufferUtil.writeWithShortLength(mutation.key().getKey(), out);
 
             /* serialize the modifications in the mutation */
             int size = mutation.modifications.size();
             out.writeInt(size);
             assert size > 0;
-            for (Map.Entry<UUID, ColumnFamily> entry : mutation.modifications.entrySet())
-                ColumnFamily.serializer.serialize(entry.getValue(), out, version);
+            for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
+                PartitionUpdate.serializer.serialize(entry.getValue(), out, version);
         }
 
-        public Mutation deserialize(DataInput in, int version, ColumnSerializer.Flag flag) throws IOException
+        public Mutation deserialize(DataInput in, int version, LegacyLayout.Flag flag) throws IOException
         {
             String keyspaceName = null; // will always be set from cf.metadata but javac isn't smart enough to see that
             if (version < MessagingService.VERSION_20)
                 keyspaceName = in.readUTF();
 
-            ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
+            DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+
             int size = in.readInt();
             assert size > 0;
 
-            Map<UUID, ColumnFamily> modifications;
+            Map<UUID, PartitionUpdate> modifications;
             if (size == 1)
             {
-                ColumnFamily cf = deserializeOneCf(in, version, flag);
-                modifications = Collections.singletonMap(cf.id(), cf);
-                keyspaceName = cf.metadata().ksName;
+                PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag);
+                modifications = Collections.singletonMap(update.metadata().cfId, update);
+                keyspaceName = update.metadata().ksName;
             }
             else
             {
-                modifications = new HashMap<UUID, ColumnFamily>();
+                modifications = new HashMap<UUID, PartitionUpdate>();
                 for (int i = 0; i < size; ++i)
                 {
-                    ColumnFamily cf = deserializeOneCf(in, version, flag);
-                    modifications.put(cf.id(), cf);
-                    keyspaceName = cf.metadata().ksName;
+                    PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag);
+                    modifications.put(update.metadata().cfId, update);
+                    keyspaceName = update.metadata().ksName;
                 }
             }
 
             return new Mutation(keyspaceName, key, modifications);
         }
 
-        private ColumnFamily deserializeOneCf(DataInput in, int version, ColumnSerializer.Flag flag) throws IOException
-        {
-            ColumnFamily cf = ColumnFamily.serializer.deserialize(in, ArrayBackedSortedColumns.factory, flag, version);
-            // We don't allow Mutation with null column family, so we should never get null back.
-            assert cf != null;
-            return cf;
-        }
-
         public Mutation deserialize(DataInput in, int version) throws IOException
         {
-            return deserialize(in, version, ColumnSerializer.Flag.FROM_REMOTE);
+            return deserialize(in, version, LegacyLayout.Flag.FROM_REMOTE);
         }
 
         public long serializedSize(Mutation mutation, int version)
         {
-            TypeSizes sizes = TypeSizes.NATIVE;
-            int size = 0;
+            // TODO (hopefully not needed with #8100)
+            throw new UnsupportedOperationException();
+            //TypeSizes sizes = TypeSizes.NATIVE;
+            //int size = 0;
 
-            if (version < MessagingService.VERSION_20)
-                size += sizes.sizeof(mutation.getKeyspaceName());
+            //if (version < MessagingService.VERSION_20)
+            //    size += sizes.sizeof(mutation.getKeyspaceName());
 
-            int keySize = mutation.key().remaining();
-            size += sizes.sizeof((short) keySize) + keySize;
+            //int keySize = mutation.key().remaining();
+            //size += sizes.sizeof((short) keySize) + keySize;
 
-            size += sizes.sizeof(mutation.modifications.size());
-            for (Map.Entry<UUID,ColumnFamily> entry : mutation.modifications.entrySet())
-                size += ColumnFamily.serializer.serializedSize(entry.getValue(), TypeSizes.NATIVE, version);
+            //size += sizes.sizeof(mutation.modifications.size());
+            //for (Map.Entry<UUID,ColumnFamily> entry : mutation.modifications.entrySet())
+            //    size += ColumnFamily.serializer.serializedSize(entry.getValue(), TypeSizes.NATIVE, version);
 
-            return size;
+            //return size;
         }
     }
 }
