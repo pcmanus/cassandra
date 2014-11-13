@@ -1060,8 +1060,8 @@
         <path refid="cassandra.classpath"/>
       </classpath>
       <src path="${test.unit.src}"/>
-      <src path="${test.long.src}"/>
-      <src path="${test.pig.src}"/>
+      <!--<src path="${test.long.src}"/>
+      <src path="${test.pig.src}"/>-->
     </javac>
 
     <!-- Non-java resources needed by the test suite -->
@@ -1245,6 +1245,7 @@
     </testmacro>
   </target>
 
+  <!--
   <target name="long-test" depends="build-test" description="Execute functional tests">
     <testmacro suitename="long" inputdir="${test.long.src}"
                timeout="${test.long.timeout}">
@@ -1252,6 +1253,7 @@
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
     </testmacro>
   </target>
+  -->
 
   <target name="cql-test" depends="build-test" description="Execute CQL tests">
     <sequential>
@@ -1324,14 +1326,16 @@
     </sequential>
   </target>
 
+  <!--
   <target name="pig-test" depends="build-test,maven-ant-tasks-retrieve-pig-test" description="Excute Pig tests">
     <testmacro suitename="pig" inputdir="${test.pig.src}" 
                timeout="1200000">
     </testmacro>
   </target>
+  -->
 
   <target name="test-all" 
-          depends="test,long-test,test-compression,pig-test,test-clientutil-jar" 
+          depends="test,test-compression,test-clientutil-jar" 
           description="Run all tests" />
   
   <!-- Use JaCoCo ant extension without needing externally saved lib -->
@@ -1535,7 +1539,6 @@
   <classpathentry kind="src" path="src/gen-java"/>
   <classpathentry kind="src" path="interface/thrift/gen-java"/>
   <classpathentry kind="src" path="test/unit"/>
-  <classpathentry kind="src" path="test/long"/>
   <classpathentry kind="src" path="test/pig"/>
   <classpathentry kind="src" path="tools/stress/src"/>
   <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
