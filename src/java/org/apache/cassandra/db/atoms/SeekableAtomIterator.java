@@ -17,14 +17,18 @@
  */
 package org.apache.cassandra.db.atoms;
 
-import org.apache.cassandra.db.Clusterable;
+import org.apache.cassandra.db.ClusteringPrefix;
 
 public interface SeekableAtomIterator extends AtomIterator
 {
     /**
-     * Seek forward in the iterator so that the next returned Atom a is
-     * the smallest atom such that c <= a (resp. the biggest atom such that
-     * c >= a if the isReverseOrder is true for the iterator).
+     * Seek forward (resp. backward if isReverseOrder() is true fro the iterator) in
+     * the iterator so that the next returned Atom a is the smallest atom between
+     * {@code from} and {@code to}, that is such that {@code from <= a} (resp. {@code from >= a}
+     * and {@code a <= to} (resp. {@code a >= to}). This method returns true if
+     * such atom exists (in which case the next call to {@code next()} should return
+     * that atom) and false otherwise (in which case the state of the iterator is unknown
+     * and shouldn't be relied upon until the next successful call to seekTo).
      */
-    public void seekTo(Clusterable c);
+    public boolean seekTo(ClusteringPrefix from, ClusteringPrefix to);
 }

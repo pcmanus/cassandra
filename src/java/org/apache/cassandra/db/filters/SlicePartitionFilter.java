@@ -22,7 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
-import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
+import org.apache.cassandra.db.columniterator.SSTableIterator;
 import org.apache.cassandra.db.partitions.CachedPartition;
 import org.apache.cassandra.db.partitions.Partition;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -144,12 +144,20 @@ public class SlicePartitionFilter implements PartitionFilter
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, DecoratedKey key)
     {
-        return new SSTableSliceIterator(sstable, key, selectedColumns, selectedStaticColumns, slices, reversed);
+        if (reversed)
+            // TODO
+            throw new UnsupportedOperationException();
+
+        return slices.makeSliceIterator(new SSTableIterator(sstable, key, selectedColumns, selectedStaticColumns));
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
     {
-        return new SSTableSliceIterator(sstable, file, key, selectedColumns, selectedStaticColumns, slices, reversed, indexEntry);
+        if (reversed)
+            // TODO
+            throw new UnsupportedOperationException();
+
+        return slices.makeSliceIterator(new SSTableIterator(sstable, file, key, selectedColumns, selectedStaticColumns, indexEntry));
     }
 
     public AtomIterator getAtomIterator(Partition partition)

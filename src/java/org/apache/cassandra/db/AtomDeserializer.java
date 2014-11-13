@@ -17,9 +17,12 @@
  */
 package org.apache.cassandra.db;
 
+import java.nio.ByteBuffer;
 import java.io.DataInput;
 import java.io.IOException;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.Descriptor;
 
@@ -33,25 +36,40 @@ import org.apache.cassandra.io.sstable.Descriptor;
  */
 public class AtomDeserializer
 {
-    private final LegacyLayout layout;
+    private final CFMetaData metadata;
     private final LegacyLayout.Deserializer nameDeserializer;
     private final DataInput in;
     private final LegacyLayout.Flag flag;
     private final int expireBefore;
     private final Descriptor.Version version;
+    private final Columns columns;
 
-    public AtomDeserializer(LegacyLayout layout,
+    private RangeTombstone openTombstone;
+
+    private final ReusableRangeTombstoneMarker marker;
+    private final ReusableRow row;
+    private final ReusableRow.Writer writer;
+
+    private LegacyLayout.DeserializedCell cell;
+    private ColumnDefinition currentColumn;
+
+    public AtomDeserializer(CFMetaData metadata,
                             DataInput in,
                             LegacyLayout.Flag flag,
                             int expireBefore,
-                            Descriptor.Version version)
+                            Descriptor.Version version,
+                            Columns columns)
     {
-        this.layout = layout;
-        this.nameDeserializer = layout.newDeserializer(in, version);
+        this.metadata = metadata;
+        this.nameDeserializer = metadata.layout().newDeserializer(in, version);
         this.in = in;
         this.flag = flag;
         this.expireBefore = expireBefore;
         this.version = version;
+        this.columns = columns;
+        this.marker = new ReusableRangeTombstoneMarker();
+        this.row = new ReusableRow(columns);
+        this.writer = row.newWriter();
     }
 
     /**
@@ -59,7 +77,7 @@ public class AtomDeserializer
      */
     public boolean hasNext() throws IOException
     {
-        return nameDeserializer.hasNext();
+        return hasUnprocessed() || nameDeserializer.hasNext();
     }
 
     /**
@@ -68,7 +86,7 @@ public class AtomDeserializer
      */
     public boolean hasUnprocessed() throws IOException
     {
-        return nameDeserializer.hasUnprocessed();
+        return openTombstone != null || nameDeserializer.hasUnprocessed();
     }
 
     /**
@@ -78,8 +96,11 @@ public class AtomDeserializer
      * comparison. Whenever we know what to do with this atom (read it or skip it),
      * readNext or skipNext should be called.
      */
-    public int compareNextTo(ClusteringPrefix prefix) throws IOException
+    public int compareNextTo(Clusterable prefix) throws IOException
     {
+        if (openTombstone != null && nameDeserializer.compareNextTo(openTombstone.max) > 0)
+            return metadata.comparator.compare(openTombstone.max, prefix);
+
         return nameDeserializer.compareNextTo(prefix);
     }
 
@@ -88,15 +109,94 @@ public class AtomDeserializer
      */
     public Atom readNext() throws IOException
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //Composite name = nameDeserializer.readNext();
-        //assert !name.isEmpty(); // This would imply hasNext() hasn't been called
-        //int b = in.readUnsignedByte();
-        //if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
-        //    return type.rangeTombstoneSerializer().deserializeBody(in, name, version);
-        //else
-        //    return type.columnSerializer().deserializeColumnBody(in, (CellName)name, b, flag, expireBefore);
+        if (openTombstone != null && nameDeserializer.compareNextTo(openTombstone.max) > 0)
+            return marker.setTo(openTombstone.max, false, openTombstone.data);
+
+        ClusteringPrefix prefix = nameDeserializer.readNextClustering();
+        int b = in.readUnsignedByte();
+        if ((b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0)
+        {
+            // TODO: deal with new style RT
+            openTombstone = metadata.layout().rangeTombstoneSerializer().deserializeBody(in, prefix, version);
+            return marker.setTo(openTombstone.min, true, openTombstone.data);
+        }
+
+        row.reset();
+        writer.reset();
+        currentColumn = null;
+
+        writer.setClustering(prefix);
+
+        // If there is a row marker, it's the first cell
+        ByteBuffer columnName = nameDeserializer.getNextColumnName();
+        if (columnName != null && !columnName.hasRemaining())
+        {
+            metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
+            writer.setTimestamp(cell.timestamp());
+        }
+        else
+        {
+            writer.setTimestamp(Long.MIN_VALUE);
+            currentColumn = getDefinition(nameDeserializer.getNextColumnName());
+            if (columns.contains(currentColumn))
+            {
+                metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
+                writer.newCell(cell);
+            }
+            else
+            {
+                metadata.layout().skipCellBody(in, b);
+            }
+        }
+
+        // Read the rest of the cells belonging to this CQL row
+        while (nameDeserializer.hasNext() && nameDeserializer.compareNextPrefixTo(prefix) == 0)
+        {
+            nameDeserializer.readNextClustering();
+            b = in.readUnsignedByte();
+            ColumnDefinition def = getDefinition(nameDeserializer.getNextColumnName());
+            if ((b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0)
+            {
+                if (!columns.contains(def))
+                {
+                    metadata.layout().rangeTombstoneSerializer().skipBody(in, version);
+                    continue;
+                }
+
+                // This is a collection tombstone
+                currentColumn = def;
+                RangeTombstone rt = metadata.layout().rangeTombstoneSerializer().deserializeBody(in, prefix, version);
+                // TODO: we could assert that the min and max are what we think they are. Just in case
+                // someone thrift side has done something *really* nasty.
+                writer.newColumn(currentColumn, rt.data);
+            }
+            else
+            {
+                if (!columns.contains(def))
+                {
+                    metadata.layout().skipCellBody(in, b);
+                    continue;
+                }
+
+                if (!def.equals(currentColumn))
+                {
+                    writer.newColumn(def, DeletionTime.LIVE);
+                    currentColumn = def;
+                }
+                metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
+                writer.newCell(cell);
+            }
+        }
+        return row;
+    }
+
+    private ColumnDefinition getDefinition(ByteBuffer columnName)
+    {
+        // For non-CQL3 layouts, every defined column metadata is handled by the static row
+        if (!metadata.layout().isCQL3Layout())
+            return metadata.compactValueColumn();
+
+        return metadata.getColumnDefinition(columnName);
     }
 
     /**
@@ -104,13 +204,25 @@ public class AtomDeserializer
      */
     public void skipNext() throws IOException
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //nameDeserializer.skipNext();
-        //int b = in.readUnsignedByte();
-        //if ((b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0)
-        //    type.rangeTombstoneSerializer().skipBody(in, version);
-        //else
-        //    type.columnSerializer().skipColumnBody(in, b);
+        ClusteringPrefix prefix = nameDeserializer.readNextClustering();
+        int b = in.readUnsignedByte();
+        if ((b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0)
+        {
+            metadata.layout().rangeTombstoneSerializer().skipBody(in, version);
+            return;
+        }
+
+        metadata.layout().skipCellBody(in, b);
+
+        // Skip the rest of the cells belonging to this CQL row
+        while (nameDeserializer.hasNext() && nameDeserializer.compareNextPrefixTo(prefix) == 0)
+        {
+            nameDeserializer.skipNext();
+            b = in.readUnsignedByte();
+            if ((b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0)
+                metadata.layout().rangeTombstoneSerializer().skipBody(in, version);
+            else
+                metadata.layout().skipCellBody(in, b);
+        }
     }
 }

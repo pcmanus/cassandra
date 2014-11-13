@@ -24,10 +24,14 @@ import java.util.Comparator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.atoms.Atom;
+import org.apache.cassandra.db.atoms.Cell;
+import org.apache.cassandra.db.atoms.CellPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.io.sstable.IndexHelper.IndexInfo;
@@ -55,15 +59,25 @@ public class LegacyLayout
         LOCAL, FROM_REMOTE, PRESERVE_SIZE;
     }
 
+    public final static int DELETION_MASK        = 0x01;
+    public final static int EXPIRATION_MASK      = 0x02;
+    public final static int COUNTER_MASK         = 0x04;
+    public final static int COUNTER_UPDATE_MASK  = 0x08;
+    public final static int RANGE_TOMBSTONE_MASK = 0x10;
+
     private final boolean isDense;
     private final boolean isCompound;
     private final int clusteringSize;
+
+    private final RangeTombstone.Serializer rangeTombstoneSerializer;
 
     public LegacyLayout(boolean isDense, boolean isCompound, int clusteringSize)
     {
         this.isDense = isDense;
         this.isCompound = isCompound;
         this.clusteringSize = clusteringSize;
+
+        this.rangeTombstoneSerializer = new RangeTombstone.Serializer(this);
     }
 
     // We call dense a CF for which each component of the comparator is a clustering column, i.e. no
@@ -77,6 +91,11 @@ public class LegacyLayout
     public boolean isCompound()
     {
         return isCompound;
+    }
+
+    public boolean isCQL3Layout()
+    {
+        return !isDense() && isCompound();
     }
 
     public static ByteBuffer serializeAsOldComposite(ClusteringPrefix prefix)
@@ -135,10 +154,83 @@ public class LegacyLayout
         throw new UnsupportedOperationException();
     }
 
+    public void deserializeCellBody(DataInput in, DeserializedCell cell, ByteBuffer collectionElement, int mask, Flag flag, int expireBefore)
+    throws IOException
+    {
+        if ((mask & COUNTER_MASK) != 0)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+            ///long timestampOfLastDelete = in.readLong();
+            ///long ts = in.readLong();
+            ///ByteBuffer value = ByteBufferUtil.readWithLength(in);
+            ///return BufferCounterCell.create(name, value, ts, timestampOfLastDelete, flag);
+        }
+        else if ((mask & COUNTER_UPDATE_MASK) != 0)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+        else if ((mask & EXPIRATION_MASK) != 0)
+        {
+            assert collectionElement == null;
+            cell.isCounter = false;
+            cell.ttl = in.readInt();
+            cell.localDeletionTime = in.readInt();
+            cell.timestamp = in.readLong();
+            cell.value = ByteBufferUtil.readWithLength(in);
+            cell.path = null;
+
+            // Transform expired cell to tombstone (as it basically saves the value)
+            if (cell.localDeletionTime < expireBefore && flag != Flag.PRESERVE_SIZE)
+            {
+                // The column is now expired, we can safely return a simple tombstone. Note that
+                // as long as the expiring column and the tombstone put together live longer than GC grace seconds,
+                // we'll fulfil our responsibility to repair.  See discussion at
+                // http://cassandra-user-incubator-apache-org.3065146.n2.nabble.com/repair-compaction-and-tombstone-rows-td7583481.html
+                cell.localDeletionTime = cell.localDeletionTime - cell.ttl;
+                cell.ttl = 0;
+                cell.value = null;
+            }
+
+        }
+        else
+        {
+            cell.isCounter = false;
+            cell.ttl = 0;
+            cell.path = null;
+
+            cell.timestamp = in.readLong();
+            ByteBuffer value = ByteBufferUtil.readWithLength(in);
+
+            boolean isDeleted = (mask & DELETION_MASK) != 0;
+            cell.value = isDeleted ? null : value;
+            cell.localDeletionTime = isDeleted ? ByteBufferUtil.toInt(value) : Integer.MAX_VALUE;
+        }
+    }
+
+    public void skipCellBody(DataInput in, int mask)
+    throws IOException
+    {
+        if ((mask & COUNTER_MASK) != 0)
+            FileUtils.skipBytesFully(in, 16);
+        else if ((mask & EXPIRATION_MASK) != 0)
+            FileUtils.skipBytesFully(in, 16);
+        else
+            FileUtils.skipBytesFully(in, 8);
+
+        int length = in.readInt();
+        FileUtils.skipBytesFully(in, length);
+    }
+
     //public abstract IVersionedSerializer<ColumnSlice> sliceSerializer();
     //public abstract IVersionedSerializer<SliceQueryFilter> sliceQueryFilterSerializer();
     //public abstract DeletionInfo.Serializer deletionInfoSerializer();
-    //public abstract RangeTombstone.Serializer rangeTombstoneSerializer();
+
+    public RangeTombstone.Serializer rangeTombstoneSerializer()
+    {
+        return rangeTombstoneSerializer;
+    }
 
     public RowIndexEntry.Serializer rowIndexEntrySerializer()
     {
@@ -159,174 +251,66 @@ public class LegacyLayout
          * Comparare the next name to read to the provided Composite.
          * This does not consume the next name.
          */
-        public int compareNextTo(ClusteringPrefix composite) throws IOException;
+        public int compareNextTo(Clusterable composite) throws IOException;
+        public int compareNextPrefixTo(ClusteringPrefix prefix) throws IOException;
         /**
          * Actually consume the next name and return it.
          */
-        public ClusteringPrefix readNext() throws IOException;
+        public ClusteringPrefix readNextClustering() throws IOException;
+        public ByteBuffer getNextColumnName();
+        public ByteBuffer getNextCollectionElement();
+
         /**
-         * Skip the next name (consuming it).
+         * Skip the next name (consuming it). This skip all the name (clustering, column name and collection element).
          */
         public void skipNext() throws IOException;
     }
 
-    //public class ColumnSerializer implements ISerializer<Cell>
-    //{
-    //    public final static int DELETION_MASK        = 0x01;
-    //    public final static int EXPIRATION_MASK      = 0x02;
-    //    public final static int COUNTER_MASK         = 0x04;
-    //    public final static int COUNTER_UPDATE_MASK  = 0x08;
-    //    public final static int RANGE_TOMBSTONE_MASK = 0x10;
-    //
-    //    /**
-    //     * Flag affecting deserialization behavior.
-    //     *  - LOCAL: for deserialization of local data (Expired columns are
-    //     *      converted to tombstones (to gain disk space)).
-    //     *  - FROM_REMOTE: for deserialization of data received from remote hosts
-    //     *      (Expired columns are converted to tombstone and counters have
-    //     *      their delta cleared)
-    //     *  - PRESERVE_SIZE: used when no transformation must be performed, i.e,
-    //     *      when we must ensure that deserializing and reserializing the
-    //     *      result yield the exact same bytes. Streaming uses this.
-    //     */
-    //    public static enum Flag
-    //    {
-    //        LOCAL, FROM_REMOTE, PRESERVE_SIZE;
-    //    }
-    //
-    //    private final CellNameType type;
-    //
-    //    public ColumnSerializer(CellNameType type)
-    //    {
-    //        this.type = type;
-    //    }
-    //
-    //    public void serialize(Cell cell, DataOutputPlus out) throws IOException
-    //    {
-    //        assert !cell.name().isEmpty();
-    //        type.cellSerializer().serialize(cell.name(), out);
-    //        try
-    //        {
-    //            out.writeByte(cell.serializationFlags());
-    //            if (cell instanceof CounterCell)
-    //            {
-    //                out.writeLong(((CounterCell) cell).timestampOfLastDelete());
-    //            }
-    //            else if (cell instanceof ExpiringCell)
-    //            {
-    //                out.writeInt(((ExpiringCell) cell).getTimeToLive());
-    //                out.writeInt(cell.getLocalDeletionTime());
-    //            }
-    //            out.writeLong(cell.timestamp());
-    //            ByteBufferUtil.writeWithLength(cell.value(), out);
-    //        }
-    //        catch (IOException e)
-    //        {
-    //            throw new RuntimeException(e);
-    //        }
-    //    }
-    //
-    //    public Cell deserialize(DataInput in) throws IOException
-    //    {
-    //        return deserialize(in, Flag.LOCAL);
-    //    }
-    //
-    //    /*
-    //     * For counter columns, we must know when we deserialize them if what we
-    //     * deserialize comes from a remote host. If it does, then we must clear
-    //     * the delta.
-    //     */
-    //    public Cell deserialize(DataInput in, ColumnSerializer.Flag flag) throws IOException
-    //    {
-    //        return deserialize(in, flag, Integer.MIN_VALUE);
-    //    }
-    //
-    //    public Cell deserialize(DataInput in, ColumnSerializer.Flag flag, int expireBefore) throws IOException
-    //    {
-    //        CellName name = type.cellSerializer().deserialize(in);
-    //
-    //        int b = in.readUnsignedByte();
-    //        return deserializeColumnBody(in, name, b, flag, expireBefore);
-    //    }
-    //
-    //    Cell deserializeColumnBody(DataInput in, CellName name, int mask, ColumnSerializer.Flag flag, int expireBefore) throws IOException
-    //    {
-    //        if ((mask & COUNTER_MASK) != 0)
-    //        {
-    //            long timestampOfLastDelete = in.readLong();
-    //            long ts = in.readLong();
-    //            ByteBuffer value = ByteBufferUtil.readWithLength(in);
-    //            return BufferCounterCell.create(name, value, ts, timestampOfLastDelete, flag);
-    //        }
-    //        else if ((mask & EXPIRATION_MASK) != 0)
-    //        {
-    //            int ttl = in.readInt();
-    //            int expiration = in.readInt();
-    //            long ts = in.readLong();
-    //            ByteBuffer value = ByteBufferUtil.readWithLength(in);
-    //            return BufferExpiringCell.create(name, value, ts, ttl, expiration, expireBefore, flag);
-    //        }
-    //        else
-    //        {
-    //            long ts = in.readLong();
-    //            ByteBuffer value = ByteBufferUtil.readWithLength(in);
-    //            return (mask & COUNTER_UPDATE_MASK) != 0
-    //                   ? new BufferCounterUpdateCell(name, value, ts)
-    //                   : ((mask & DELETION_MASK) == 0
-    //                      ? new BufferCell(name, value, ts)
-    //                      : new BufferDeletedCell(name, value, ts));
-    //        }
-    //    }
-    //
-    //    void skipColumnBody(DataInput in, int mask) throws IOException
-    //    {
-    //        if ((mask & COUNTER_MASK) != 0)
-    //            FileUtils.skipBytesFully(in, 16);
-    //        else if ((mask & EXPIRATION_MASK) != 0)
-    //            FileUtils.skipBytesFully(in, 16);
-    //        else
-    //            FileUtils.skipBytesFully(in, 8);
-    //
-    //        int length = in.readInt();
-    //        FileUtils.skipBytesFully(in, length);
-    //    }
-    //
-    //    public long serializedSize(Cell cell, TypeSizes typeSizes)
-    //    {
-    //        return cell.serializedSize(type, typeSizes);
-    //    }
-    //
-    //    public static class CorruptColumnException extends IOException
-    //    {
-    //        public CorruptColumnException(String s)
-    //        {
-    //            super(s);
-    //        }
-    //
-    //        public static CorruptColumnException create(DataInput in, ByteBuffer name)
-    //        {
-    //            assert name.remaining() <= 0;
-    //            String format = "invalid column name length %d%s";
-    //            String details = "";
-    //            if (in instanceof FileDataInput)
-    //            {
-    //                FileDataInput fdis = (FileDataInput)in;
-    //                long remaining;
-    //                try
-    //                {
-    //                    remaining = fdis.bytesRemaining();
-    //                }
-    //                catch (IOException e)
-    //                {
-    //                    throw new FSReadError(e, fdis.getPath());
-    //                }
-    //                details = String.format(" (%s, %d bytes remaining)", fdis.getPath(), remaining);
-    //            }
-    //            return new CorruptColumnException(String.format(format, name.remaining(), details));
-    //        }
-    //    }
-    //}
+    public static class DeserializedCell implements Cell
+    {
+        private boolean isCounter;
+        private ByteBuffer value;
+        private long timestamp;
+        private int localDeletionTime;
+        private int ttl;
+        private CellPath path;
 
+        public boolean isCounterCell()
+        {
+            return isCounter;
+        }
+
+        public ByteBuffer value()
+        {
+            return value;
+        }
+
+        public long timestamp()
+        {
+            return timestamp;
+        }
+
+        public int localDeletionTime()
+        {
+            return localDeletionTime;
+        }
+
+        public int ttl()
+        {
+            return ttl;
+        }
+
+        public CellPath path()
+        {
+            return path;
+        }
+
+        public Cell takeAlias()
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+    }
 
     // From OnDiskAtom
     //public static class Serializer implements ISSTableSerializer<OnDiskAtom>

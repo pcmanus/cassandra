@@ -331,15 +331,12 @@ public abstract class Slices
                         else
                         {
                             // Seek to the potential first element for the current slice
-                            ((SeekableAtomIterator)wrapped).seekTo(starts[currentSlice]);
-                            next = wrapped.next();
-                            // Check that we do have a result for the current slice before returning
-                            if (comparator.compare(ends[currentSlice], next) >= 0)
+                            if (((SeekableAtomIterator)wrapped).seekTo(starts[currentSlice], ends[currentSlice]))
                             {
                                 inSlice = true;
+                                next = wrapped.next();
                                 return;
                             }
-                            next = null;
                             ++currentSlice;
                         }
                     }

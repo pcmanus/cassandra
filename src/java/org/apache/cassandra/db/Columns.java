@@ -72,6 +72,11 @@ public class Columns implements Iterable<ColumnDefinition>
         return -1;
     }
 
+    public boolean contains(ColumnDefinition c)
+    {
+        return indexOf(c) >= 0;
+    }
+
     public int indexOfComplex(ColumnDefinition c)
     {
         int idx = 0;

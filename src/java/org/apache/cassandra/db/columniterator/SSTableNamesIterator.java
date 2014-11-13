@@ -42,7 +42,6 @@ public class SSTableNamesIterator extends AbstractIterator<Atom> implements Atom
     private final Columns staticColumns;
     private final SortedSet<ClusteringPrefix> prefixes;
 
-
     //private ColumnFamily cf;
     //private FileDataInput fileToClose;
     //private Iterator<OnDiskAtom> iter;

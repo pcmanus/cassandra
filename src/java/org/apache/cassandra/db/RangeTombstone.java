@@ -86,53 +86,52 @@ public class RangeTombstone extends Interval<ClusteringPrefix, DeletionTime>
         return comparator.compare(name, min) >= 0 && comparator.compare(name, max) <= 0;
     }
 
-    // TODO
-    //public static class Serializer implements ISSTableSerializer<RangeTombstone>
-    //{
-    //    private final LegacyLayout layout;
+    public static class Serializer implements ISSTableSerializer<RangeTombstone>
+    {
+        private final LegacyLayout layout;
 
-    //    public Serializer(LegacyLayout layout)
-    //    {
-    //        this.layout = layout;
-    //    }
+        public Serializer(LegacyLayout layout)
+        {
+            this.layout = layout;
+        }
 
-    //    public void serializeForSSTable(RangeTombstone t, DataOutputPlus out) throws IOException
-    //    {
-    //        layout.serializer().serialize(t.min, out);
-    //        out.writeByte(ColumnSerializer.RANGE_TOMBSTONE_MASK);
-    //        type.serializer().serialize(t.max, out);
-    //        DeletionTime.serializer.serialize(t.data, out);
-    //    }
+        public void serializeForSSTable(RangeTombstone t, DataOutputPlus out) throws IOException
+        {
+            layout.discardingClusteringSerializer().serialize(t.min, out);
+            out.writeByte(LegacyLayout.RANGE_TOMBSTONE_MASK);
+            layout.discardingClusteringSerializer().serialize(t.max, out);
+            DeletionTime.serializer.serialize(t.data, out);
+        }
 
-    //    public RangeTombstone deserializeFromSSTable(DataInput in, Descriptor.Version version) throws IOException
-    //    {
-    //        ClusteringPrefix min = type.serializer().deserialize(in);
+        public RangeTombstone deserializeFromSSTable(DataInput in, Descriptor.Version version) throws IOException
+        {
+            ClusteringPrefix min = layout.discardingClusteringSerializer().deserialize(in);
 
-    //        int b = in.readUnsignedByte();
-    //        assert (b & ColumnSerializer.RANGE_TOMBSTONE_MASK) != 0;
-    //        return deserializeBody(in, min, version);
-    //    }
+            int b = in.readUnsignedByte();
+            assert (b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0;
+            return deserializeBody(in, min, version);
+        }
 
-    //    public RangeTombstone deserializeBody(DataInput in, ClusteringPrefix min, Descriptor.Version version) throws IOException
-    //    {
-    //        ClusteringPrefix max = type.serializer().deserialize(in);
-    //        DeletionTime dt = DeletionTime.serializer.deserialize(in);
-    //        return new RangeTombstone(min, max, dt);
-    //    }
+        public RangeTombstone deserializeBody(DataInput in, ClusteringPrefix min, Descriptor.Version version) throws IOException
+        {
+            ClusteringPrefix max = layout.discardingClusteringSerializer().deserialize(in);
+            DeletionTime dt = DeletionTime.serializer.deserialize(in);
+            return new RangeTombstone(min, max, dt);
+        }
 
-    //    public void skipBody(DataInput in, Descriptor.Version version) throws IOException
-    //    {
-    //        type.serializer().skip(in);
-    //        DeletionTime.serializer.skip(in);
-    //    }
+        public void skipBody(DataInput in, Descriptor.Version version) throws IOException
+        {
+            layout.discardingClusteringSerializer().deserialize(in);
+            DeletionTime.serializer.skip(in);
+        }
 
-    //    public long serializedSizeForSSTable(RangeTombstone t)
-    //    {
-    //        TypeSizes typeSizes = TypeSizes.NATIVE;
-    //        return type.serializer().serializedSize(t.min, typeSizes)
-    //             + 1 // serialization flag
-    //             + type.serializer().serializedSize(t.max, typeSizes)
-    //             + DeletionTime.serializer.serializedSize(t.data, typeSizes);
-    //    }
-    //}
+        public long serializedSizeForSSTable(RangeTombstone t)
+        {
+            TypeSizes typeSizes = TypeSizes.NATIVE;
+            return layout.discardingClusteringSerializer().serializedSize(t.min, typeSizes)
+                 + 1 // serialization flag
+                 + layout.discardingClusteringSerializer().serializedSize(t.max, typeSizes)
+                 + DeletionTime.serializer.serializedSize(t.data, typeSizes);
+        }
+    }
 }
