@@ -20,12 +20,16 @@ package org.apache.cassandra.db.atoms;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.utils.FBUtilities;
 
 public abstract class Cells
 {
-    private Cells() {}
-
     public static final int MAX_TTL_SEC = 20 * 365 * 24 * 60 * 60; // 20 years in seconds
+
+    public static final int NO_TTL = 0;
+    public static final int NO_DELETION_TIME = Integer.MAX_VALUE;
+
+    private Cells() {}
 
     public static boolean isLive(Cell cell, int nowInSec)
     {
@@ -34,20 +38,12 @@ public abstract class Cells
 
     public static Cell create(ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
     {
-        return create(value, timestamp, ttl, ttl > 0 ? (int)(System.currentTimeMillis() / 1000) : Integer.MAX_VALUE, metadata);
+        return create(value, timestamp, ttl, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, metadata);
     }
 
     public static Cell create(ByteBuffer value, long timestamp, int ttl, int localDelTime, CFMetaData metadata)
     {
-        assert ttl <= 0 || localDelTime == Integer.MAX_VALUE;
-        // TODO
-        throw new UnsupportedOperationException();
-        //if (ttl <= 0 && metadata != null)
-        //    ttl = metadata.getDefaultTimeToLive();
-
-        //return ttl > 0
-        //        ? new BufferExpiringCell(name, value, timestamp, ttl)
-        //        : new BufferCell(name, value, timestamp);
+        return create(null, value, timestamp, ttl, localDelTime, metadata);
     }
 
     public static Cell create(CellPath path, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
@@ -58,14 +54,10 @@ public abstract class Cells
     public static Cell create(CellPath path, ByteBuffer value, long timestamp, int ttl, int localDelTime, CFMetaData metadata)
     {
         assert ttl <= 0 || localDelTime == Integer.MAX_VALUE;
-        // TODO
-        throw new UnsupportedOperationException();
-        //if (ttl <= 0)
-        //    ttl = metadata.getDefaultTimeToLive();
+        if (ttl <= 0)
+            ttl = metadata.getDefaultTimeToLive();
 
-        //return ttl > 0
-        //        ? new BufferExpiringCell(name, value, timestamp, ttl)
-        //        : new BufferCell(name, value, timestamp);
+        return new SimpleCell(value, timestamp, localDelTime, ttl, path);
     }
 
     public static Cell createCounterUpdate(long delta, long timestamp)
@@ -82,20 +74,17 @@ public abstract class Cells
 
     public static Cell createTombsone(long timestamp)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return createTombsone(FBUtilities.nowInSeconds(), timestamp);
     }
 
     public static Cell createTombsone(int localDeletionTime, long timestamp)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return createTombsone(null, localDeletionTime, timestamp);
     }
 
     public static Cell createTombsone(CellPath path, int localDeletionTime, long timestamp)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new SimpleCell(null, timestamp, localDeletionTime, NO_TTL, path);
     }
 
     public static Cell diff(Cell merged, Cell cell)
@@ -125,22 +114,22 @@ public abstract class Cells
 
     public static Cell reconcile(Cell c1, Cell c2, int nowInSec)
     {
+        if (c1.isCounterCell())
+        {
+            assert c2.isCounterCell();
+            throw new UnsupportedOperationException();
+        }
+
+        long ts1 = c1.timestamp(), ts2 = c2.timestamp();
+        if (ts1 != ts2)
+            return ts1 < ts2 ? c2 : c1;
+        boolean c1Live = isLive(c1, nowInSec);
+        if (c1Live != isLive(c2, nowInSec))
+            return c1Live ? c1 : c2;
+        return c1.value().compareTo(c2.value()) < 0 ? c1 : c2;
+
+
         // TODO
-        throw new UnsupportedOperationException();
-        //if (left.timestamp() < right.timestamp())
-        //    return false;
-        //if (left.timestamp() > right.timestamp())
-        //    return true;
-
-        //// Tombstones take precedence (if the other is also a tombstone, it doesn't matter).
-        //if (left.isDeleted(now))
-        //    return true;
-        //if (right.isDeleted(now))
-        //    return true;
-
-        //// Same timestamp, no tombstones, compare values
-        //return left.value().compareTo(right.value()) < 0;
-
         // For Counters
         //assert this instanceof CounterCell : "Wrong class type: " + getClass();
 
@@ -171,5 +160,59 @@ public abstract class Cells
         //                                 context,
         //                                 Math.max(timestamp(), cell.timestamp()),
         //                                 Math.max(timestampOfLastDelete, ((CounterCell) cell).timestampOfLastDelete()));
+    }
+
+    // TODO: we could have more specialized version of cells...
+    private static class SimpleCell implements Cell
+    {
+        private final ByteBuffer value;
+        private final long timestamp;
+        private final int localDeletionTime;
+        private final int ttl;
+        private final CellPath path;
+
+        private SimpleCell(ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
+        {
+            this.value = value;
+            this.timestamp = timestamp;
+            this.localDeletionTime = localDeletionTime;
+            this.ttl = ttl;
+            this.path = path;
+        }
+
+        public boolean isCounterCell()
+        {
+            return false;
+        }
+
+        public ByteBuffer value()
+        {
+            return value;
+        }
+
+        public long timestamp()
+        {
+            return timestamp;
+        }
+
+        public int localDeletionTime()
+        {
+            return localDeletionTime;
+        }
+
+        public int ttl()
+        {
+            return ttl;
+        }
+
+        public CellPath path()
+        {
+            return path;
+        }
+
+        public Cell takeAlias()
+        {
+            return this;
+        }
     }
 }

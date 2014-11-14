@@ -162,9 +162,7 @@ public class SlicePartitionFilter implements PartitionFilter
 
     public AtomIterator getAtomIterator(Partition partition)
     {
-        // TODO: we should filter out the selectedColumns and deal with static columns
-        throw new UnsupportedOperationException();
-        //return partition.atomIterator(slices);
+        return AtomIterators.filterColumns(partition.atomIterator(slices, reversed), selectedColumns, selectedStaticColumns);
     }
 
     public boolean shouldInclude(SSTableReader sstable)

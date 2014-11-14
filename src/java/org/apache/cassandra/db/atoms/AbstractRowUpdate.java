@@ -25,12 +25,13 @@ import org.apache.cassandra.db.*;
 
 public abstract class AbstractRowUpdate implements RowUpdate
 {
-    private final ClusteringPrefix clustering;
+    protected ClusteringPrefix clustering;
     protected long rowTimestamp = Long.MIN_VALUE;
 
-    protected AbstractRowUpdate(ClusteringPrefix clustering)
+    public RowUpdate setClustering(ClusteringPrefix clustering)
     {
         this.clustering = clustering.takeAlias();
+        return this;
     }
 
     public Row takeAlias()

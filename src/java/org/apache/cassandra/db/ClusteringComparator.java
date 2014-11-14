@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.db;
 
+import java.nio.ByteBuffer;
 import java.util.Comparator;
 import java.util.List;
 
@@ -93,8 +94,19 @@ public class ClusteringComparator implements Comparator<Clusterable>
 
     public ClusteringPrefix make(Object... values)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        if (values.length > size())
+            throw new IllegalArgumentException("Too many components, max is " + size());
+
+        CBuilder builder = new CBuilder(this);
+        for (int i = 0; i < values.length; i++)
+        {
+            Object val = values[i];
+            if (val instanceof ByteBuffer)
+                builder.add((ByteBuffer)val);
+            else
+                builder.add(val);
+        }
+        return builder.build();
     }
 
     public ClusteringComparator setSubtype(int idx, AbstractType<?> type)

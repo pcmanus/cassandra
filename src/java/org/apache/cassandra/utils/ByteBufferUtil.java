@@ -33,6 +33,7 @@ import java.util.Arrays;
 import java.util.UUID;
 
 import net.nicoulaj.compilecommand.annotations.Inline;
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
@@ -334,6 +335,12 @@ public class ByteBufferUtil
     public static ByteBuffer readWithShortLength(DataInput in) throws IOException
     {
         return ByteBufferUtil.read(in, readShortLength(in));
+    }
+
+    public static int serializedSizeWithShortLength(ByteBuffer buffer, TypeSizes sizes)
+    {
+        int size = buffer.remaining();
+        return sizes.sizeof((short)size) + size;
     }
 
     /**

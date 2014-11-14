@@ -39,16 +39,15 @@ public class RowUpdateWithSimpleColumns extends AbstractRowUpdate
 
     private final ColumnDataCursor dataCursor = new ColumnDataCursor();
 
-    private RowUpdateWithSimpleColumns(ClusteringPrefix clustering, Columns columns, Cell[] cells)
+    private RowUpdateWithSimpleColumns(Columns columns, Cell[] cells)
     {
-        super(clustering);
         this.columns = columns;
         this.cells = cells;
     }
 
-    public RowUpdateWithSimpleColumns(ClusteringPrefix clustering, Columns columns)
+    public RowUpdateWithSimpleColumns(Columns columns)
     {
-        this(clustering, columns, new Cell[columns.size()]);
+        this(columns, new Cell[columns.size()]);
     }
 
     public Columns columns()
@@ -61,7 +60,7 @@ public class RowUpdateWithSimpleColumns extends AbstractRowUpdate
         if (other instanceof RowUpdateWithSimpleColumns)
         {
             Columns newColumns = columns.mergeTo(other.columns());
-            RowUpdateWithSimpleColumns merged = new RowUpdateWithSimpleColumns(clustering(), newColumns);
+            RowUpdateWithSimpleColumns merged = new RowUpdateWithSimpleColumns(newColumns);
             Rows.merge(clustering(), this, other, FBUtilities.nowInSeconds(), merged.dataCursor, indexManager);
             return merged;
         }
@@ -195,9 +194,14 @@ public class RowUpdateWithSimpleColumns extends AbstractRowUpdate
             return this;
         }
 
+        public void setClustering(ClusteringPrefix clustering)
+        {
+            RowUpdateWithSimpleColumns.this.clustering = clustering.takeAlias();
+        }
+
         public void setTimestamp(long rowTimestamp)
         {
-            rowTimestamp = rowTimestamp;
+            RowUpdateWithSimpleColumns.this.rowTimestamp = rowTimestamp;
         }
 
         public void newColumn(ColumnDefinition c, DeletionTime complexDeletion)

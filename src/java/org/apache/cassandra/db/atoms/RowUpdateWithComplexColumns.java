@@ -36,16 +36,15 @@ class RowUpdateWithComplexColumns extends AbstractRowUpdate
     private final Columns columns;
     private final ColumnData[] data;
 
-    private RowUpdateWithComplexColumns(ClusteringPrefix clustering, Columns columns, ColumnData[] data)
+    private RowUpdateWithComplexColumns(Columns columns, ColumnData[] data)
     {
-        super(clustering);
         this.columns = columns;
         this.data = data;
     }
 
-    public RowUpdateWithComplexColumns(ClusteringPrefix clustering, Columns columns)
+    public RowUpdateWithComplexColumns(Columns columns)
     {
-        this(clustering, columns, new ColumnData[columns.size()]);
+        this(columns, new ColumnData[columns.size()]);
     }
 
     public Columns columns()
@@ -56,7 +55,7 @@ class RowUpdateWithComplexColumns extends AbstractRowUpdate
     public RowUpdate mergeTo(RowUpdate other, SecondaryIndexManager.Updater indexUpdater)
     {
         Columns newColumns = columns.mergeTo(other.columns());
-        RowUpdateWithComplexColumns merged = new RowUpdateWithComplexColumns(clustering(), newColumns);
+        RowUpdateWithComplexColumns merged = new RowUpdateWithComplexColumns(newColumns);
         Rows.merge(clustering(), this, other, FBUtilities.nowInSeconds(), merged.new Writer(), indexUpdater);
         return merged;
     }
@@ -165,9 +164,14 @@ class RowUpdateWithComplexColumns extends AbstractRowUpdate
     {
         private int columnIdx;
 
+        public void setClustering(ClusteringPrefix clustering)
+        {
+            RowUpdateWithComplexColumns.this.clustering = clustering.takeAlias();
+        }
+
         public void setTimestamp(long rowTimestamp)
         {
-            rowTimestamp = rowTimestamp;
+            RowUpdateWithComplexColumns.this.rowTimestamp = rowTimestamp;
         }
 
         public void newColumn(ColumnDefinition c, DeletionTime complexDeletion)

@@ -57,6 +57,11 @@ public class DataRange
         return new DataRange(keyRange.toRowBounds(), PartitionFilters.fullPartitionFilter(metadata));
     }
 
+    public static DataRange allData(IPartitioner partitioner, PartitionFilter filter)
+    {
+        return new DataRange(new Range<Token>(partitioner.getMinimumToken(), partitioner.getMinimumToken()).toRowBounds(), filter);
+    }
+
     public AbstractBounds<RowPosition> keyRange()
     {
         return keyRange;

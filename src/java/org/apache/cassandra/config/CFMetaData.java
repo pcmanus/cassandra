@@ -402,6 +402,7 @@ public final class CFMetaData
     public final String cfName;                       // name of this column family
     public final ColumnFamilyType cfType;             // standard, super
     public volatile ClusteringComparator comparator;  // bytes, long, timeuuid, utf8, etc.
+    public volatile AbstractType<?> columnNameComparator;
 
     private final LegacyLayout layout;
 
@@ -489,6 +490,8 @@ public final class CFMetaData
         cfType = type;
         comparator = comp;
         this.layout = layout;
+        // TODO: this might not be the case for some old thrift tables, we need to fix this
+        columnNameComparator = UTF8Type.instance;
     }
 
     public static CFMetaData denseCFMetaData(String keyspace, String name, AbstractType<?> comp, AbstractType<?> subcc)
@@ -1863,12 +1866,7 @@ public final class CFMetaData
         switch (kind)
         {
             case REGULAR:
-                if (componentIndex == null)
-                    return layout().abstractTypeFromClusteringComparator(comparator);
-
-                AbstractType<?> t = comparator.subtype(componentIndex);
-                assert t != null : "Non-sensical component index";
-                return t;
+                return columnNameComparator;
             default:
                 // CQL3 column names are UTF8
                 return UTF8Type.instance;

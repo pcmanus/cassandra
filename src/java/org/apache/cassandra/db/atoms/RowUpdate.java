@@ -34,6 +34,7 @@ public interface RowUpdate extends Row
 
     public RowUpdate mergeTo(RowUpdate other, SecondaryIndexManager.Updater indexUpdater);
 
+    public RowUpdate setClustering(ClusteringPrefix clustering);
     public RowUpdate updateRowTimestamp(long timestamp);
     public RowUpdate updateComplexDeletion(ColumnDefinition c, DeletionTime time);
     public RowUpdate addCell(ColumnDefinition column, Cell cell);

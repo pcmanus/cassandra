@@ -38,6 +38,12 @@ public abstract class DataLimits
         throw new UnsupportedOperationException();
     }
 
+    public static DataLimits cqlLimits(int cqlRowLimit, int perPartitionLimit, boolean isDistinct)
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
     public static DataLimits thriftLimits(int partitionLimit, int cellPerPartitionLimit)
     {
         // TODO

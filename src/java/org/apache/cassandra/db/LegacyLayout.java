@@ -23,9 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.Comparator;
 
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.atoms.Atom;
-import org.apache.cassandra.db.atoms.Cell;
-import org.apache.cassandra.db.atoms.CellPath;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.ISSTableSerializer;
@@ -70,6 +68,8 @@ public class LegacyLayout
     private final int clusteringSize;
 
     private final RangeTombstone.Serializer rangeTombstoneSerializer;
+    private final DeletionInfo.Serializer deletionInfoSerializer;
+    private final Rows.Serializer rowsSerializer;
 
     public LegacyLayout(boolean isDense, boolean isCompound, int clusteringSize)
     {
@@ -78,6 +78,8 @@ public class LegacyLayout
         this.clusteringSize = clusteringSize;
 
         this.rangeTombstoneSerializer = new RangeTombstone.Serializer(this);
+        this.deletionInfoSerializer = new DeletionInfo.Serializer(this);
+        this.rowsSerializer = new Rows.Serializer(this);
     }
 
     // We call dense a CF for which each component of the comparator is a clustering column, i.e. no
@@ -129,6 +131,17 @@ public class LegacyLayout
     {
         // TODO
         throw new UnsupportedOperationException();
+    }
+
+    public ISerializer<ClusteringPrefix> clusteringSerializer()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    public Rows.Serializer rowsSerializer()
+    {
+        return rowsSerializer;
     }
 
     public ISerializer<IndexInfo> indexSerializer()
@@ -225,7 +238,11 @@ public class LegacyLayout
 
     //public abstract IVersionedSerializer<ColumnSlice> sliceSerializer();
     //public abstract IVersionedSerializer<SliceQueryFilter> sliceQueryFilterSerializer();
-    //public abstract DeletionInfo.Serializer deletionInfoSerializer();
+
+    public DeletionInfo.Serializer deletionInfoSerializer()
+    {
+        return deletionInfoSerializer;
+    }
 
     public RangeTombstone.Serializer rangeTombstoneSerializer()
     {

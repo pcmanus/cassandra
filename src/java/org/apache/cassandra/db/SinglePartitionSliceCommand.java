@@ -26,6 +26,7 @@ import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.filters.ColumnFilter;
 import org.apache.cassandra.db.filters.DataLimits;
 import org.apache.cassandra.db.filters.SlicePartitionFilter;
+import org.apache.cassandra.db.partitions.Partition;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.DataResolver;
@@ -90,7 +91,11 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Slic
 
         for (Memtable memtable : view.memtables)
         {
-            AtomIterator iter = filter.getAtomIterator(memtable.getPartition(partitionKey()));
+            Partition partition = memtable.getPartition(partitionKey());
+            if (partition == null)
+                continue;
+
+            AtomIterator iter = filter.getAtomIterator(partition);
             if (copyOnHeap)
                 iter = AtomIterators.cloningIterator(iter, HeapAllocator.instance);
             iterators.add(iter);

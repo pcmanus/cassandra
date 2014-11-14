@@ -23,14 +23,20 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.UUID;
 import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
  * Stores updates on a partition.
@@ -52,22 +58,26 @@ public class PartitionUpdate implements Iterable<RowUpdate>
     private PartitionUpdate(CFMetaData metadata,
                             DecoratedKey key,
                             DeletionInfo deletionInfo,
-                            List<RowUpdate> rowUpdates)
+                            List<RowUpdate> rowUpdates,
+                            boolean isSorted,
+                            boolean hasStatic)
     {
         this.metadata = metadata;
         this.key = key;
         this.deletionInfo = deletionInfo;
         this.rowUpdates = rowUpdates;
+        this.isSorted = isSorted;
+        this.hasStatic = hasStatic;
     }
 
     public PartitionUpdate(CFMetaData metadata, DecoratedKey key)
     {
-        this(metadata, key, DeletionInfo.live(), new ArrayList<RowUpdate>());
+        this(metadata, key, DeletionInfo.live(), new ArrayList<RowUpdate>(), false, false);
     }
 
     public static PartitionUpdate fromBytes(ByteBuffer bytes)
     {
-        // This is for paxos and so we should be able to read the previous ColumnFamily format.
+        // This is for paxos and so we need to be able to read the previous ColumnFamily format.
         // The simplest solution is probably to include a version in the paxos table and assume
         // that no version == old serialization format
         // TODO
@@ -210,25 +220,146 @@ public class PartitionUpdate implements Iterable<RowUpdate>
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
+
+                // if (cf == null)
+                // {
+                //     out.writeBoolean(false);
+                //     return;
+                // }
+
+                // out.writeBoolean(true);
+                // serializeCfId(cf.id(), out, version);
+                // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
+                // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+                // int count = cf.getColumnCount();
+                // out.writeInt(count);
+                // int written = 0;
+                // for (Cell cell : cf)
+                // {
+                //     columnSerializer.serialize(cell, out);
+                //     written++;
+                // }
+                // assert count == written: "Table had " + count + " columns, but " + written + " written";
+            }
+
+            CFMetaData metadata = update.metadata;
+
+            serializeCfId(metadata.cfId, out, version);
+
+            // TODO: we could consider writing the token (provided this is done by the partitioner,
+            // LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
+            // partition would be a single long)
+            ByteBufferUtil.writeWithShortLength(update.partitionKey().getKey(), out);
+
+            metadata.layout().deletionInfoSerializer().serialize(update.deletionInfo(), out, version);
+            out.writeInt(update.rowUpdates.size());
+            for (RowUpdate row : update.rowUpdates)
+                metadata.layout().rowsSerializer().serialize(row, out);
         }
 
-        public PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag) throws IOException
+        public PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            CFMetaData metadata;
+            DeletionInfo delInfo;
+            List<RowUpdate> updates;
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
+                //if (!in.readBoolean())
+                //    return null;
+
+                //ColumnFamily cf = factory.create(Schema.instance.getCFMetaData(deserializeCfId(in, version)));
+
+                //if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
+                //{
+                //    SuperColumns.deserializerSuperColumnFamily(in, cf, flag, version);
+                //}
+                //else
+                //{
+                //    cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
+
+                //    ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+                //    int size = in.readInt();
+                //    for (int i = 0; i < size; ++i)
+                //        cf.addColumn(columnSerializer.deserialize(in, flag));
+                //}
+                //return cf;
+            }
+            else
+            {
+                metadata = Schema.instance.getCFMetaData(deserializeCfId(in, version));
+                key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+                delInfo = metadata.layout().deletionInfoSerializer().deserialize(in, version);
+                int size = in.readInt();
+                updates = new ArrayList<>(size);
+                throw new UnsupportedOperationException();
+                //for (int i = 0; i < size; i++)
+                //{
+                //    metadata.layout().rowsSerializer().deserialize(in, version, flag, writer, metadata);
+                //}
+            }
         }
 
         public PartitionUpdate deserialize(DataInput in, int version) throws IOException
         {
-            return deserialize(in, version, LegacyLayout.Flag.FROM_REMOTE);
+            throw new UnsupportedOperationException();
         }
 
         public long serializedSize(PartitionUpdate update, int version)
         {
-            // TODO (hopefully not needed with #8100)
-            throw new UnsupportedOperationException();
+            return serializedSize(update, TypeSizes.NATIVE, version);
+        }
+
+        public long serializedSize(PartitionUpdate update, TypeSizes sizes, int version)
+        {
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
+                //if (cf == null)
+                //{
+                //    return typeSizes.sizeof(false);
+                //}
+                //else
+                //{
+                //    return typeSizes.sizeof(true)  /* nullness bool */
+                //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
+                //        + contentSerializedSize(cf, typeSizes, version);
+                //}
+            }
+
+            int size = cfIdSerializedSize(update.metadata().cfId,  sizes, version);
+            size += ByteBufferUtil.serializedSizeWithShortLength(update.partitionKey().getKey(), sizes);
+            size += update.metadata().layout().deletionInfoSerializer().serializedSize(update.deletionInfo(), version);
+
+            size += sizes.sizeof(update.rowUpdates.size());
+            for (RowUpdate row : update.rowUpdates)
+                size += update.metadata().layout().rowsSerializer().serializedSize(row, sizes);
+            return size;
+        }
+
+        public void serializeCfId(UUID cfId, DataOutputPlus out, int version) throws IOException
+        {
+            UUIDSerializer.serializer.serialize(cfId, out, version);
+        }
+
+        public UUID deserializeCfId(DataInput in, int version) throws IOException
+        {
+            UUID cfId = UUIDSerializer.serializer.deserialize(in, version);
+            if (Schema.instance.getCF(cfId) == null)
+                throw new UnknownColumnFamilyException("Couldn't find cfId=" + cfId, cfId);
+
+            return cfId;
+        }
+
+        public int cfIdSerializedSize(UUID cfId, TypeSizes typeSizes, int version)
+        {
+            return typeSizes.sizeof(cfId);
         }
     }
 }

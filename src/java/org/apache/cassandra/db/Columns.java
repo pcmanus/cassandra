@@ -59,6 +59,14 @@ public class Columns implements Iterable<ColumnDefinition>
         return columns.length;
     }
 
+    public boolean hasComplex()
+    {
+        for (int i = 0; i < columns.length; i++)
+            if (columns[i].isComplex())
+                return true;
+        return false;
+    }
+
     public ColumnDefinition get(int i)
     {
         return columns[i];
@@ -91,6 +99,25 @@ public class Columns implements Iterable<ColumnDefinition>
             ++idx;
         }
         return -1;
+    }
+
+    public boolean includesAll(Columns other)
+    {
+        if (columns.length < other.columns.length)
+            return false;
+
+        int i = 0;
+        for (int j = 0; j < other.columns.length; j++)
+        {
+            int cmp = 0;
+            while (i < columns.length && (cmp = columns[i].compareTo(other.columns[j])) < 0)
+                i++;
+            if (i >= columns.length || cmp != 0)
+                return false;
+            else
+                i++;
+        }
+        return true;
     }
 
     public Columns mergeTo(Columns other)

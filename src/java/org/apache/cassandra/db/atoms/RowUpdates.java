@@ -31,7 +31,10 @@ public abstract class RowUpdates
 
     public static RowUpdate create(ClusteringPrefix clustering, Columns columns)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        RowUpdate upd = columns.hasComplex()
+                      ? new RowUpdateWithComplexColumns(columns)
+                      : new RowUpdateWithSimpleColumns(columns);
+        upd.setClustering(clustering);
+        return upd;
     }
 }

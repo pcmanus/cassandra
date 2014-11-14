@@ -232,10 +232,8 @@ public class Mutation implements IMutation
             if (version < MessagingService.VERSION_20)
                 out.writeUTF(mutation.getKeyspaceName());
 
-            // TODO: we could consider writing the token (provided this is done by the partitioner,
-            // LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
-            // partition would be a single long)
-            ByteBufferUtil.writeWithShortLength(mutation.key().getKey(), out);
+            if (version < MessagingService.VERSION_30)
+                ByteBufferUtil.writeWithShortLength(mutation.key().getKey(), out);
 
             /* serialize the modifications in the mutation */
             int size = mutation.modifications.size();
@@ -251,7 +249,9 @@ public class Mutation implements IMutation
             if (version < MessagingService.VERSION_20)
                 keyspaceName = in.readUTF();
 
-            DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+            DecoratedKey key = null;
+            if (version < MessagingService.VERSION_30)
+                key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
 
             int size = in.readInt();
             assert size > 0;
@@ -259,7 +259,7 @@ public class Mutation implements IMutation
             Map<UUID, PartitionUpdate> modifications;
             if (size == 1)
             {
-                PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag);
+                PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag, key);
                 modifications = Collections.singletonMap(update.metadata().cfId, update);
                 keyspaceName = update.metadata().ksName;
             }
@@ -268,7 +268,7 @@ public class Mutation implements IMutation
                 modifications = new HashMap<UUID, PartitionUpdate>();
                 for (int i = 0; i < size; ++i)
                 {
-                    PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag);
+                    PartitionUpdate update = PartitionUpdate.serializer.deserialize(in, version, flag, key);
                     modifications.put(update.metadata().cfId, update);
                     keyspaceName = update.metadata().ksName;
                 }
@@ -284,22 +284,23 @@ public class Mutation implements IMutation
 
         public long serializedSize(Mutation mutation, int version)
         {
-            // TODO (hopefully not needed with #8100)
-            throw new UnsupportedOperationException();
-            //TypeSizes sizes = TypeSizes.NATIVE;
-            //int size = 0;
+            TypeSizes sizes = TypeSizes.NATIVE;
+            int size = 0;
 
-            //if (version < MessagingService.VERSION_20)
-            //    size += sizes.sizeof(mutation.getKeyspaceName());
+            if (version < MessagingService.VERSION_20)
+                size += sizes.sizeof(mutation.getKeyspaceName());
 
-            //int keySize = mutation.key().remaining();
-            //size += sizes.sizeof((short) keySize) + keySize;
+            if (version < MessagingService.VERSION_30)
+            {
+                int keySize = mutation.key().getKey().remaining();
+                size += sizes.sizeof((short) keySize) + keySize;
+            }
 
-            //size += sizes.sizeof(mutation.modifications.size());
-            //for (Map.Entry<UUID,ColumnFamily> entry : mutation.modifications.entrySet())
-            //    size += ColumnFamily.serializer.serializedSize(entry.getValue(), TypeSizes.NATIVE, version);
+            size += sizes.sizeof(mutation.modifications.size());
+            for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
+                size += PartitionUpdate.serializer.serializedSize(entry.getValue(), TypeSizes.NATIVE, version);
 
-            //return size;
+            return size;
         }
     }
 }

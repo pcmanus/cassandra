@@ -45,9 +45,9 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.dht.IPartitioner;
@@ -480,7 +480,12 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         if (logger.isDebugEnabled())
           logger.debug("Started scheduleAllDeliveries");
 
-        ReadCommand cmd = ReadCommands.allKeysRead(hintStore.metadata, (int)(System.currentTimeMillis() / 1000));
+        ReadCommand cmd = new PartitionRangeReadCommand(hintStore.metadata,
+                                                        FBUtilities.nowInSeconds(),
+                                                        ColumnFilter.NONE,
+                                                        DataLimits.cqlLimits(Integer.MAX_VALUE, 1, true),
+                                                        DataRange.allData(hintStore.metadata, StorageService.getPartitioner()));
+
         try (PartitionIterator iter = cmd.executeLocally(hintStore))
         {
             while (iter.hasNext())

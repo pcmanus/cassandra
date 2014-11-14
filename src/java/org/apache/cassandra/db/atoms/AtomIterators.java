@@ -21,7 +21,9 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.*;
 
+import com.google.common.base.Predicate;
 import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
@@ -80,8 +82,7 @@ public abstract class AtomIterators
      */
     public static RowIterator asRowIterator(AtomIterator iter, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new RowIteratorFromAtomIterator(iter, nowInSec);
     }
 
     /**
@@ -218,6 +219,96 @@ public abstract class AtomIterators
         //{
         //    throw new CorruptSSTableException(me, filename);
         //}
+    }
+
+    public static AtomIterator filterColumns(AtomIterator iterator, final Columns columns, final Columns staticColumns)
+    {
+        if (columns.includesAll(iterator.columns()) && staticColumns.includesAll(iterator.staticColumns()))
+            return iterator;
+
+        return new WrappingAtomIterator(iterator)
+        {
+            private final FilteringRow filteringRow = new FilteringRow(columns);
+
+            public Row staticRow()
+            {
+                return staticColumns.isEmpty()
+                     ? Rows.EMPTY_STATIC_ROW
+                     : new FilteringRow(staticColumns).setTo(super.staticRow());
+            }
+
+            public Atom next()
+            {
+                Atom next = super.next();
+                if (next.kind() != Atom.Kind.ROW)
+                    return next;
+
+                return filteringRow.setTo((Row)next);
+            }
+        };
+    }
+
+    private static class FilteringRow implements Row
+    {
+        private final Columns columns;
+        private Row toFilter;
+
+        public FilteringRow(Columns columns)
+        {
+            this.columns = columns;
+        }
+
+        public FilteringRow setTo(Row toFilter)
+        {
+            this.toFilter = toFilter;
+            return this;
+        }
+
+        public Atom.Kind kind()
+        {
+            return Atom.Kind.ROW;
+        }
+
+        public ClusteringPrefix clustering()
+        {
+            return toFilter.clustering();
+        }
+
+        public long timestamp()
+        {
+            return toFilter.timestamp();
+        }
+
+        public boolean isEmpty()
+        {
+            return timestamp() == Long.MIN_VALUE && !iterator().hasNext();
+        }
+
+        public ColumnData data(ColumnDefinition c)
+        {
+            if (!columns.contains(c))
+                return null;
+            return toFilter.data(c);
+        }
+
+        public Iterator<ColumnData> iterator()
+        {
+            // TODO: as the iterator iterate in columns order, we could do something slightly faster
+            return Iterators.filter(toFilter.iterator(), new Predicate<ColumnData>()
+            {
+                public boolean apply(ColumnData c)
+                {
+                    return columns.contains(c.column());
+                }
+            });
+        }
+
+        @Override
+        public Row takeAlias()
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
     }
 
     /**

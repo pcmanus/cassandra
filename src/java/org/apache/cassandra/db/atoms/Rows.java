@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db.atoms;
 
+import java.io.DataInput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -27,6 +29,8 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Static utilities to work on Row objects.
@@ -75,6 +79,7 @@ public abstract class Rows
 
     public interface Writer
     {
+        public void setClustering(ClusteringPrefix prefix);
         public void setTimestamp(long rowTimestamp);
         public void newColumn(ColumnDefinition c, DeletionTime complexDeletion);
         public void newCell(Cell cell);
@@ -263,6 +268,7 @@ public abstract class Rows
         {
             public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
             {
+                writer.setClustering(clustering);
                 writer.setTimestamp(mergedTimestamp);
             }
 
@@ -298,6 +304,7 @@ public abstract class Rows
                              Rows.Writer writer,
                              SecondaryIndexManager.Updater indexUpdater)
     {
+        writer.setClustering(r1.clustering());
         writer.setTimestamp(Math.max(r1.timestamp(), r2.timestamp()));
 
         Iterator<ColumnData> it1 = r1.iterator();
@@ -376,6 +383,91 @@ public abstract class Rows
             }
         }
         writer.endOfRow();
+    }
+
+    public static class Serializer
+    {
+        private final LegacyLayout layout;
+
+        public Serializer(LegacyLayout layout)
+        {
+            this.layout = layout;
+        }
+
+        public void serialize(Row row, DataOutputPlus out)
+        {
+            throw new UnsupportedOperationException();
+            //layout.clusteringSerializer().serialize(row.clustering(), out);
+            //out.writeLong(row.timestamp());
+            //for (ColumnData data : row)
+            //{
+            //    ByteBufferUtil.writeWithShortLength(data.column().name.bytes, out);
+            //    if (data.column().isComplex())
+            //    {
+            //        DeletionTime.serializer.serialize(data.complexDeletionTime(), out);
+            //        out.writeInt(data.size());
+            //    }
+            //    for (int i = 0; i < data.size(); i++)
+            //        layout.serializeCellBody(data.cell(i), out);
+            //}
+            //out.writeShort(0);
+        }
+
+        public void deserialize(DataInput in, LegacyLayout.Flag flag, Rows.Writer writer, CFMetaData metadata)
+        {
+            throw new UnsupportedOperationException();
+            //writer.setClustering(layout.clusteringSerializer().deserialize(in));
+            //writer.setTimestamp(in.readLong());
+            //int size = in.readUnsignedShort();
+
+            //// TODO: could reuse at a more high level
+            //Rows.DeserializedCell cell = new Rows.DeserializedCell();
+            //while (size > 0)
+            //{
+            //    ByteBuffer name = ByteBufferUtil.read(in, size);
+            //    ColumnDefinition def = metadata.getColumnDefinition(name);
+
+            //    assert def != null; // TODO - this is possibly fragile
+            //    int count;
+            //    if (def.isComplex())
+            //    {
+            //        count = in.readInt();
+            //        writer.newColumn(def, DeletionTime.serializer.deserialize(in));
+            //    }
+            //    else
+            //    {
+            //        count = 1;
+            //        writer.newColumn(def, DeletionTime.LIVE);
+            //    }
+            //    for (int i = 0; i < count; i++)
+            //    {
+            //        layout.deserializeCellBody(in, cell);
+            //        writer.newCell(cell);
+            //    }
+            //}
+            //writer.endOfRow();
+        }
+
+        public long serializedSize(Row row, TypeSizes sizes)
+        {
+            throw new UnsupportedOperationException();
+            //long size = layout.clusteringSerializer().serializedSize(row.clustering(), sizes)
+            //          + sizes.sizeof(row.timestamp());
+
+            //for (ColumnData data : row)
+            //{
+            //    size += ByteBufferUtil.serializedSizeWithShortLength(data.column().name.bytes, sizes);
+            //    if (data.column().isComplex())
+            //    {
+            //        size += DeletionTime.serializer.serializedSize(data.complexDeletionTime(), sizes);
+            //        size += sizes.sizeof(data.size());
+            //    }
+            //    for (int i = 0; i < data.size(); i++)
+            //        size += serializedSizeCell(data.cell(i));
+            //}
+            //size += sizes.sizeof((short)0);
+            //return size;
+        }
     }
 
     /**

@@ -21,8 +21,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.filters.DataLimits;
-import org.apache.cassandra.db.filters.PartitionFilter;
+import org.apache.cassandra.db.filters.*;
 import org.apache.cassandra.service.StorageService;
 
 public abstract class ReadCommands
@@ -31,27 +30,25 @@ public abstract class ReadCommands
 
     public static SinglePartitionReadCommand fullPartitionRead(CFMetaData metadata, DecoratedKey key, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return fullSlicesRead(metadata, key, Slices.ALL, nowInSec);
     }
 
     public static SinglePartitionReadCommand fullSlicesRead(CFMetaData metadata, DecoratedKey key, Slices slices, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        SlicePartitionFilter filter = new SlicePartitionFilter(metadata.regularColumns(),
+                                                               metadata.staticColumns(),
+                                                               slices,
+                                                               false);
+        return new SinglePartitionSliceCommand(metadata, nowInSec, ColumnFilter.NONE, DataLimits.NONE, key, filter);
     }
 
     public static ReadCommand allDataRead(CFMetaData metadata, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    // Only read the partition keys
-    public static ReadCommand allKeysRead(CFMetaData metadata, int nowInSec)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new PartitionRangeReadCommand(metadata,
+                                             nowInSec,
+                                             ColumnFilter.NONE,
+                                             DataLimits.NONE,
+                                             DataRange.allData(metadata, StorageService.getPartitioner()));
     }
 
     public static SinglePartitionReadCommand create(CFMetaData metadata, ByteBuffer key, PartitionFilter filter, DataLimits limits, int nowInSec)
@@ -62,7 +59,9 @@ public abstract class ReadCommands
 
     public static SinglePartitionReadCommand create(CFMetaData metadata, DecoratedKey key, PartitionFilter filter, DataLimits limits, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        if (filter instanceof SlicePartitionFilter)
+            return new SinglePartitionSliceCommand(metadata, nowInSec, ColumnFilter.NONE, DataLimits.NONE, key, (SlicePartitionFilter)filter);
+        else
+            return new SinglePartitionNamesCommand(metadata, nowInSec, ColumnFilter.NONE, DataLimits.NONE, key, (NamesPartitionFilter)filter);
     }
 }
