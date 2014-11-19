@@ -48,19 +48,10 @@ public interface AtomIterator extends Iterator<Atom>, Closeable
     public CFMetaData metadata();
 
     /**
-     * The columns for the (non-static) rows returned by this iterator. Every row
-     * returned by this iterator must guarantee that it has only those columns
-     * and that the Row.iterator() returns columns in the order of the array
-     * returned by this method.
+     * A subset of the columns for the (static and regular) rows returned by this iterator.
+     * Every row returned by this iterator must guarantee that it has only those columns.
      */
-    public Columns columns();
-
-    /**
-     * The columns contained by the static row of this iterator. This is the
-     * equivalent of columns() for the row returned by staticRow(). If said
-     * row is empty, the return array here will be empty too.
-     */
-    public Columns staticColumns();
+    public PartitionColumns columns();
 
     /**
      * Whether or not the atom returned by this iterator are in reversed

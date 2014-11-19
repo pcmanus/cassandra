@@ -20,8 +20,9 @@ package org.apache.cassandra.utils.memory;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.db.BufferDecoratedKey;
-import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 public abstract class MemtableBufferAllocator extends MemtableAllocator
@@ -32,25 +33,13 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         super(onHeap, offHeap);
     }
 
-    //public Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return cell.localCopy(cfm, allocator(writeOp));
-    //}
+    public RowAllocator newRowAllocator(CFMetaData cfm, OpOrder.Group writeOp)
+    {
+        if (cfm.isCounter())
+            throw new UnsupportedOperationException();
 
-    //public CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return cell.localCopy(cfm, allocator(writeOp));
-    //}
-
-    //public DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return cell.localCopy(cfm, allocator(writeOp));
-    //}
-
-    //public ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return cell.localCopy(cfm, allocator(writeOp));
-    //}
+        return new RowBufferAllocator(allocator(writeOp));
+    }
 
     public DecoratedKey clone(DecoratedKey key, OpOrder.Group writeOp)
     {
@@ -62,5 +51,55 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
     protected AbstractAllocator allocator(OpOrder.Group writeOp)
     {
         return new ContextAllocator(writeOp, this);
+    }
+
+    private static class RowBufferAllocator extends RowDataBlock.Writer
+    {
+        private final AbstractAllocator allocator;
+
+        private MemtableRow.BufferClusteringPrefix clustering;
+        private long rowTimestamp;
+        private RowDataBlock data;
+
+        private RowBufferAllocator(AbstractAllocator allocator)
+        {
+            this.allocator = allocator;
+        }
+
+        public void allocateNewRow(Columns columns)
+        {
+            data = new RowDataBlock(columns, 1);
+            updateWriter(data);
+        }
+
+        public MemtableRow getRow()
+        {
+            MemtableRow row = new BufferRow(clustering, rowTimestamp, data);
+
+            clustering = null;
+            rowTimestamp = Rows.NO_TIMESTAMP;
+            data = null;
+
+            return row;
+        }
+
+        public void setClustering(ClusteringPrefix clustering)
+        {
+            clustering = BufferClusteringPrefix.clone(clustering, allocator);
+        }
+
+        public void setTimestamp(long timestamp)
+        {
+            rowTimestamp = timestamp;
+        }
+
+        @Override
+        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path);
+        {
+            if (column.isComplex())
+                complexWriter.addCell(column, isCounter, allocator.clone(value), timestamp, localDeletionTime, ttl, BufferCellPath.clone(path));
+            else
+                simpleWriter.addCell(column, isCounter, allocator.clone(value), timestamp, localDeletionTime, ttl, BufferCellPath.clone(path));
+        }
     }
 }

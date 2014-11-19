@@ -22,7 +22,9 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Function;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.ListMultimap;
 import org.github.jamm.MemoryMeter;
 
 import org.apache.cassandra.auth.Permission;
@@ -62,7 +64,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     private final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<ColumnIdentifier, Restriction>();
 
     // TODO
-    private Columns updatedColumns;
+    private PartitionColumns updatedColumns;
     private final List<Operation> columnOperations = new ArrayList();
 
     // Separating normal and static conditions makes things somewhat easier
@@ -170,7 +172,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         columnOperations.add(op);
     }
 
-    public Columns updatedColumns()
+    public PartitionColumns updatedColumns()
     {
         // TODO: we need to populate updatedColumns
         throw new UnsupportedOperationException();
@@ -426,7 +428,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return false;
     }
 
-    protected Map<ByteBuffer, Map<ClusteringPrefix, Row>> readRequiredLists(Collection<ByteBuffer> partitionKeys, ClusteringPrefix clusteringPrefix, boolean local, ConsistencyLevel cl)
+    protected ListMultimap<ColumnPath, Cell> readRequiredLists(Collection<ByteBuffer> partitionKeys, ClusteringPrefix clusteringPrefix, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
         if (!requiresRead())
@@ -442,12 +444,12 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         }
 
         // TODO: no point in recomputing that every time. Should move to preparation phase.
-        Columns.Builder builder = Columns.builder();
+        PartitionColumns.Builder builder = PartitionColumns.builder();
         for (Operation op : columnOperations)
             if (op.requiresRead())
                 builder.add(op.column);
-        Columns toRead = builder.regularColumns();
-        Columns staticToRead = builder.staticColumns();
+
+        PartitionColumns toRead = builder.build();
 
         Slices slices = Slices.make(cfm.comparator, clusteringPrefix);
         List<SinglePartitionReadCommand> commands = new ArrayList<>(partitionKeys.size());
@@ -458,27 +460,25 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                                                          ColumnFilter.NONE,
                                                          DataLimits.NONE,
                                                          StorageService.getPartitioner().decorateKey(key),
-                                                         new SlicePartitionFilter(toRead, staticToRead, slices, false)));
+                                                         new SlicePartitionFilter(toRead, slices, false)));
 
         DataIterator partitions = local
                                 ? SelectStatement.readLocally(commands, Keyspace.openAndGetStore(cfm), nowInSec)
                                 : StorageProxy.read(commands, cl);
 
-        Map<ByteBuffer, Map<ClusteringPrefix, Row>> map = new HashMap<>();
+        ListMultimap<ColumnPath, Cell> map = ArrayListMultimap.create();
 
         try (DataIterator iter = partitions)
         {
             while (iter.hasNext())
             {
                 RowIterator partition = iter.next();
-                Map<ClusteringPrefix, Row> m = map.get(partition.partitionKey().getKey());
+                DecoratedKey key = partition.partitionKey();
 
                 Row staticRow = partition.staticRow();
                 if (!staticRow.isEmpty())
                 {
-                    if (m == null)
-                        m = new HashMap<>();
-                    m.put(staticRow.clustering().takeAlias(), staticRow.takeAlias());
+                    m.put(new ColumnPath(key, staticRow.clustering(), );
                 }
 
                 while (partition.hasNext())
@@ -700,7 +700,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         {
             ThriftValidation.validateKey(cfm, key);
             DecoratedKey dk = StorageService.getPartitioner().decorateKey(key);
-            PartitionUpdate upd = new PartitionUpdate(cfm, dk);
+            PartitionUpdate upd = new PartitionUpdate(cfm, dk, updatedColumns(), 1);
             addUpdateForKey(upd, clusteringPrefix, params);
             Mutation mut = new Mutation(upd);
 
@@ -717,8 +717,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     throws RequestExecutionException, RequestValidationException
     {
         // Some lists operation requires reading
-        Map<ByteBuffer, Map<ClusteringPrefix, Row>> rows = readRequiredLists(keys, prefix, local, options.getConsistency());
-        return new UpdateParameters(cfm, options, getTimestamp(now, options), getTimeToLive(options), rows);
+        ListMultimap<ColumnPath, Cell> lists = readRequiredLists(keys, prefix, local, options.getConsistency());
+        return new UpdateParameters(cfm, options, getTimestamp(now, options), getTimeToLive(options), lists);
     }
 
     public static abstract class Parsed extends CFStatement

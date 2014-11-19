@@ -74,7 +74,7 @@ public abstract class AtomIterators
     }
 
     /**
-     * Returns a iterator that only returns the row.
+     * Returns a iterator that only returns rows with only live content.
      *
      * This is mainly used in the CQL layer when we know we don't care about deletion
      * infos (and since an AtomIterator cannot shadow it's own data, we know everyting
@@ -90,8 +90,9 @@ public abstract class AtomIterators
      */
     public static AtomIterator merge(List<AtomIterator> iterators, int nowInSec)
     {
-        assert !iterators.isEmpty();
-        return iterators.size() == 1 ? iterators.get(0) : new AtomMergeIterator(iterators, nowInSec);
+        throw new UnsupportedOperationException();
+        //assert !iterators.isEmpty();
+        //return iterators.size() == 1 ? iterators.get(0) : new AtomMergeIterator(iterators, nowInSec);
     }
 
     /**
@@ -102,7 +103,8 @@ public abstract class AtomIterators
      */
     public static AtomIterator merge(List<AtomIterator> iterators, int nowInSec, MergeListener mergeListener)
     {
-        return new AtomMergeIterator(iterators, nowInSec, mergeListener);
+        throw new UnsupportedOperationException();
+        //return new AtomMergeIterator(iterators, nowInSec, mergeListener);
     }
 
     /**
@@ -122,12 +124,7 @@ public abstract class AtomIterators
                 return isReverseOrder;
             }
 
-            public Columns columns()
-            {
-                return Columns.NONE;
-            }
-
-            public Columns staticColumns()
+            public PartitionColumns columns()
             {
                 return Columns.NONE;
             }
@@ -221,96 +218,6 @@ public abstract class AtomIterators
         //}
     }
 
-    public static AtomIterator filterColumns(AtomIterator iterator, final Columns columns, final Columns staticColumns)
-    {
-        if (columns.includesAll(iterator.columns()) && staticColumns.includesAll(iterator.staticColumns()))
-            return iterator;
-
-        return new WrappingAtomIterator(iterator)
-        {
-            private final FilteringRow filteringRow = new FilteringRow(columns);
-
-            public Row staticRow()
-            {
-                return staticColumns.isEmpty()
-                     ? Rows.EMPTY_STATIC_ROW
-                     : new FilteringRow(staticColumns).setTo(super.staticRow());
-            }
-
-            public Atom next()
-            {
-                Atom next = super.next();
-                if (next.kind() != Atom.Kind.ROW)
-                    return next;
-
-                return filteringRow.setTo((Row)next);
-            }
-        };
-    }
-
-    private static class FilteringRow implements Row
-    {
-        private final Columns columns;
-        private Row toFilter;
-
-        public FilteringRow(Columns columns)
-        {
-            this.columns = columns;
-        }
-
-        public FilteringRow setTo(Row toFilter)
-        {
-            this.toFilter = toFilter;
-            return this;
-        }
-
-        public Atom.Kind kind()
-        {
-            return Atom.Kind.ROW;
-        }
-
-        public ClusteringPrefix clustering()
-        {
-            return toFilter.clustering();
-        }
-
-        public long timestamp()
-        {
-            return toFilter.timestamp();
-        }
-
-        public boolean isEmpty()
-        {
-            return timestamp() == Long.MIN_VALUE && !iterator().hasNext();
-        }
-
-        public ColumnData data(ColumnDefinition c)
-        {
-            if (!columns.contains(c))
-                return null;
-            return toFilter.data(c);
-        }
-
-        public Iterator<ColumnData> iterator()
-        {
-            // TODO: as the iterator iterate in columns order, we could do something slightly faster
-            return Iterators.filter(toFilter.iterator(), new Predicate<ColumnData>()
-            {
-                public boolean apply(ColumnData c)
-                {
-                    return columns.contains(c.column());
-                }
-            });
-        }
-
-        @Override
-        public Row takeAlias()
-        {
-            // TODO
-            throw new UnsupportedOperationException();
-        }
-    }
-
     /**
      * A wrapper over MergeIterator to implement the AtomIterator interface.
      *
@@ -319,375 +226,375 @@ public abstract class AtomIterators
      * being said, it's not really harder to consider that both method are always destructive so we
      * live with it.
      */
-    private static class AtomMergeIterator extends AbstractIterator<Atom> implements AtomIterator
-    {
-        private final CFMetaData metadata;
-        private final DecoratedKey partitionKey;
-        private final DeletionTime partitionLevelDeletion;
-        private final IMergeIterator<Atom, Atom> mergeIterator;
-        private final MergeListener listener;
-        private final Columns columns;
-        private final Columns staticColumns;
-        private final Row staticRow;
-        private final boolean isReverseOrder;
+    //private static class AtomMergeIterator extends AbstractIterator<Atom> implements AtomIterator
+    //{
+    //    private final CFMetaData metadata;
+    //    private final DecoratedKey partitionKey;
+    //    private final DeletionTime partitionLevelDeletion;
+    //    private final IMergeIterator<Atom, Atom> mergeIterator;
+    //    private final MergeListener listener;
+    //    private final Columns columns;
+    //    private final Columns staticColumns;
+    //    private final Row staticRow;
+    //    private final boolean isReverseOrder;
 
-        private AtomMergeIterator(List<AtomIterator> iterators, int nowInSec, MergeListener listener)
-        {
-            assert iterators.size() > 1;
+    //    private AtomMergeIterator(List<AtomIterator> iterators, int nowInSec, MergeListener listener)
+    //    {
+    //        assert iterators.size() > 1;
 
-            // TODO: we could assert all iterators are on the same table, key, columns and order.
-            AtomIterator first = iterators.get(0);
+    //        // TODO: we could assert all iterators are on the same table, key, columns and order.
+    //        AtomIterator first = iterators.get(0);
 
-            this.metadata = first.metadata();
-            this.partitionKey = first.partitionKey();
-            this.isReverseOrder = first.isReverseOrder();
-            // TODO: not sure that's actually ok
-            this.columns = first.columns();
-            this.staticColumns = first.staticColumns();
-            this.partitionLevelDeletion = collectPartitionLevelDeletion(iterators);
-            this.mergeIterator = MergeIterator.get(iterators,
-                                                   metadata.comparator.atomComparator,
-                                                   new MergeReducer(nowInSec, iterators.size(), first.columns(), listener));
-            this.listener = listener;
-            this.staticRow = mergeStaticRows(iterators, nowInSec, listener);
-        }
+    //        this.metadata = first.metadata();
+    //        this.partitionKey = first.partitionKey();
+    //        this.isReverseOrder = first.isReverseOrder();
+    //        // TODO: not sure that's actually ok
+    //        this.columns = first.columns();
+    //        this.staticColumns = first.staticColumns();
+    //        this.partitionLevelDeletion = collectPartitionLevelDeletion(iterators);
+    //        this.mergeIterator = MergeIterator.get(iterators,
+    //                                               metadata.comparator.atomComparator,
+    //                                               new MergeReducer(nowInSec, iterators.size(), first.columns(), listener));
+    //        this.listener = listener;
+    //        this.staticRow = mergeStaticRows(iterators, nowInSec, listener);
+    //    }
 
-        private AtomMergeIterator(List<AtomIterator> iterators, int nowInSec)
-        {
-            this(iterators, nowInSec, null);
-        }
+    //    private AtomMergeIterator(List<AtomIterator> iterators, int nowInSec)
+    //    {
+    //        this(iterators, nowInSec, null);
+    //    }
 
-        private static DeletionTime collectPartitionLevelDeletion(List<AtomIterator> iterators)
-        {
-            DeletionTime delTime = DeletionTime.LIVE;
-            for (AtomIterator iter : iterators)
-                if (delTime.compareTo(iter.partitionLevelDeletion()) < 0)
-                    delTime = iter.partitionLevelDeletion();
-            return delTime;
-        }
+    //    private static DeletionTime collectPartitionLevelDeletion(List<AtomIterator> iterators)
+    //    {
+    //        DeletionTime delTime = DeletionTime.LIVE;
+    //        for (AtomIterator iter : iterators)
+    //            if (delTime.compareTo(iter.partitionLevelDeletion()) < 0)
+    //                delTime = iter.partitionLevelDeletion();
+    //        return delTime;
+    //    }
 
-        private static Row mergeStaticRows(List<AtomIterator> iterators, int nowInSec, MergeListener listener)
-        {
-            Columns staticColumns = iterators.get(0).staticColumns();
-            if (staticColumns.isEmpty())
-                return Rows.EMPTY_STATIC_ROW;
+    //    private static Row mergeStaticRows(List<AtomIterator> iterators, int nowInSec, MergeListener listener)
+    //    {
+    //        Columns staticColumns = iterators.get(0).staticColumns();
+    //        if (staticColumns.isEmpty())
+    //            return Rows.EMPTY_STATIC_ROW;
 
-            Row[] toMerge = new Row[iterators.size()];
-            for (int i = 0; i < iterators.size(); i++)
-                toMerge[i] = iterators.get(i).staticRow();
+    //        Row[] toMerge = new Row[iterators.size()];
+    //        for (int i = 0; i < iterators.size(); i++)
+    //            toMerge[i] = iterators.get(i).staticRow();
 
-            ReusableRow row = new ReusableRow(staticColumns, staticColumns.size());
-            Rows.merge(EmptyClusteringPrefix.STATIC_PREFIX, toMerge, nowInSec, row.newWriter());
-            return row;
-        }
+    //        ReusableRow row = new ReusableRow(staticColumns, staticColumns.size());
+    //        Rows.merge(EmptyClusteringPrefix.STATIC_PREFIX, toMerge, nowInSec, row.newWriter());
+    //        return row;
+    //    }
 
-        public boolean isReverseOrder()
-        {
-            return isReverseOrder();
-        }
+    //    public boolean isReverseOrder()
+    //    {
+    //        return isReverseOrder();
+    //    }
 
-        public Columns columns()
-        {
-            return columns;
-        }
+    //    public Columns columns()
+    //    {
+    //        return columns;
+    //    }
 
-        public Columns staticColumns()
-        {
-            return staticColumns;
-        }
+    //    public Columns staticColumns()
+    //    {
+    //        return staticColumns;
+    //    }
 
-        protected Atom computeNext()
-        {
-            while (mergeIterator.hasNext())
-            {
-                Atom atom = mergeIterator.next();
-                if (atom != null)
-                    return atom;
-            }
-            return endOfData();
-        }
+    //    protected Atom computeNext()
+    //    {
+    //        while (mergeIterator.hasNext())
+    //        {
+    //            Atom atom = mergeIterator.next();
+    //            if (atom != null)
+    //                return atom;
+    //        }
+    //        return endOfData();
+    //    }
 
-        public CFMetaData metadata()
-        {
-            return metadata;
-        }
+    //    public CFMetaData metadata()
+    //    {
+    //        return metadata;
+    //    }
 
-        public Row staticRow()
-        {
-            return staticRow();
-        }
+    //    public Row staticRow()
+    //    {
+    //        return staticRow();
+    //    }
 
-        public DecoratedKey partitionKey()
-        {
-            return partitionKey;
-        }
+    //    public DecoratedKey partitionKey()
+    //    {
+    //        return partitionKey;
+    //    }
 
-        public DeletionTime partitionLevelDeletion()
-        {
-            return partitionLevelDeletion;
-        }
+    //    public DeletionTime partitionLevelDeletion()
+    //    {
+    //        return partitionLevelDeletion;
+    //    }
 
-        public void close()
-        {
-            // This will close the input iterators
-            FileUtils.closeQuietly(mergeIterator);
-        }
+    //    public void close()
+    //    {
+    //        // This will close the input iterators
+    //        FileUtils.closeQuietly(mergeIterator);
+    //    }
 
-        /**
-         * Specific reducer for merge operations that rewrite the same reusable
-         * row every time. This also skip cells shadowed by range tombstones when writing.
-         */
-        private class MergeReducer extends MergeIterator.Reducer<Atom, Atom> implements MergeListener
-        {
-            private final int size;
+    //    /**
+    //     * Specific reducer for merge operations that rewrite the same reusable
+    //     * row every time. This also skip cells shadowed by range tombstones when writing.
+    //     */
+    //    private class MergeReducer extends MergeIterator.Reducer<Atom, Atom> implements MergeListener
+    //    {
+    //        private final int size;
 
-            private Atom.Kind nextKind;
-            private ClusteringPrefix nextClustering;
+    //        private Atom.Kind nextKind;
+    //        private ClusteringPrefix nextClustering;
 
-            private final ReusableRow reader;
-            private final ReusableRow.Writer writer;
+    //        private final ReusableRow reader;
+    //        private final ReusableRow.Writer writer;
 
-            private final Rows.MergeHelper helper;
-            private final Row[] rows;
+    //        private final Rows.MergeHelper helper;
+    //        private final Row[] rows;
 
-            private ColumnDefinition prevColumn;
-            private DeletionTime prevColumnDeletion;
-            private DeletionTimeArray prevColumnDeletionVersions;
+    //        private ColumnDefinition prevColumn;
+    //        private DeletionTime prevColumnDeletion;
+    //        private DeletionTimeArray prevColumnDeletionVersions;
 
-            private final DeletionTimeArray openMarkers;
-            private final DeletionTimeArray.Cursor openMarkersCursor;
-            private final RangeTombstoneMarker[] markers;
+    //        private final DeletionTimeArray openMarkers;
+    //        private final DeletionTimeArray.Cursor openMarkersCursor;
+    //        private final RangeTombstoneMarker[] markers;
 
-            private final ReusableRangeTombstoneMarker reusableMarker;
+    //        private final ReusableRangeTombstoneMarker reusableMarker;
 
-            private int openMarker = -1;
+    //        private int openMarker = -1;
 
-            private final MergeListener listener;
+    //        private final MergeListener listener;
 
-            private MergeReducer(int nowInSec, int size, Columns columns, MergeListener listener)
-            {
-                this.size = size;
-                this.helper = new Rows.MergeHelper(nowInSec, size);
+    //        private MergeReducer(int nowInSec, int size, Columns columns, MergeListener listener)
+    //        {
+    //            this.size = size;
+    //            this.helper = new Rows.MergeHelper(nowInSec, size);
 
-                // TODO: we could maybe do better for the estimation of the initial cell capacities of that container.
-                // Myabe the AtomIterator interface could give use an estimate that we would average/max over all iterators?
-                this.reader = new ReusableRow(columns, columns.size());
-                this.writer = reader.newWriter();
+    //            // TODO: we could maybe do better for the estimation of the initial cell capacities of that container.
+    //            // Myabe the AtomIterator interface could give use an estimate that we would average/max over all iterators?
+    //            this.reader = new ReusableRow(columns, columns.size());
+    //            this.writer = reader.newWriter();
 
-                this.rows = new Row[size];
-                this.prevColumnDeletionVersions = new DeletionTimeArray(size);
+    //            this.rows = new Row[size];
+    //            this.prevColumnDeletionVersions = new DeletionTimeArray(size);
 
-                this.openMarkers = new DeletionTimeArray(size);
-                this.openMarkersCursor = openMarkers.newCursor();
-                this.markers = new RangeTombstoneMarker[size];
-                this.reusableMarker = new ReusableRangeTombstoneMarker();
+    //            this.openMarkers = new DeletionTimeArray(size);
+    //            this.openMarkersCursor = openMarkers.newCursor();
+    //            this.markers = new RangeTombstoneMarker[size];
+    //            this.reusableMarker = new ReusableRangeTombstoneMarker();
 
-                this.listener = listener;
-            }
+    //            this.listener = listener;
+    //        }
 
-            public boolean trivialReduceIsTrivial()
-            {
-                return true;
-            }
+    //        public boolean trivialReduceIsTrivial()
+    //        {
+    //            return true;
+    //        }
 
-            public void reduce(int idx, Atom current)
-            {
-                nextKind = current.kind();
-                nextClustering = current.clustering();
-                switch (nextKind)
-                {
-                    case ROW:
-                        rows[idx] = (Row)current;
-                        break;
-                    case RANGE_TOMBSTONE_MARKER:
-                        markers[idx] = (RangeTombstoneMarker)current;
-                        break;
-                }
-            }
+    //        public void reduce(int idx, Atom current)
+    //        {
+    //            nextKind = current.kind();
+    //            nextClustering = current.clustering();
+    //            switch (nextKind)
+    //            {
+    //                case ROW:
+    //                    rows[idx] = (Row)current;
+    //                    break;
+    //                case RANGE_TOMBSTONE_MARKER:
+    //                    markers[idx] = (RangeTombstoneMarker)current;
+    //                    break;
+    //            }
+    //        }
 
-            protected Atom getReduced()
-            {
-                switch (nextKind)
-                {
-                    case ROW:
-                        reader.reset();
-                        Rows.merge(nextClustering, rows, helper, this);
-                        for (int i = 0; i < size; i++)
-                            rows[i] = null;
+    //        protected Atom getReduced()
+    //        {
+    //            switch (nextKind)
+    //            {
+    //                case ROW:
+    //                    reader.reset();
+    //                    Rows.merge(nextClustering, rows, helper, this);
+    //                    for (int i = 0; i < size; i++)
+    //                        rows[i] = null;
 
-                        // Because shadowed cells are skipped, the row could be empty. In which case
-                        // we return null and the enclosing iterator will just skip it.
-                        return reader.isEmpty() ? null : reader;
-                    case RANGE_TOMBSTONE_MARKER:
-                        int toReturn = -1;
-                        boolean hasCloseMarker = false;
-                        for (int i = 0; i < size; i++)
-                        {
-                            RangeTombstoneMarker marker = markers[i];
-                            if (marker == null)
-                                continue;
+    //                    // Because shadowed cells are skipped, the row could be empty. In which case
+    //                    // we return null and the enclosing iterator will just skip it.
+    //                    return reader.isEmpty() ? null : reader;
+    //                case RANGE_TOMBSTONE_MARKER:
+    //                    int toReturn = -1;
+    //                    boolean hasCloseMarker = false;
+    //                    for (int i = 0; i < size; i++)
+    //                    {
+    //                        RangeTombstoneMarker marker = markers[i];
+    //                        if (marker == null)
+    //                            continue;
 
-                            // We can completely ignore any marker that is shadowed by a partition level
-                            // deletion
-                            if (partitionLevelDeletion.supersedes(marker.delTime()))
-                                continue;
+    //                        // We can completely ignore any marker that is shadowed by a partition level
+    //                        // deletion
+    //                        if (partitionLevelDeletion.supersedes(marker.delTime()))
+    //                            continue;
 
-                            // It's slightly easier to deal with close marker in a 2nd step
-                            if (!marker.isOpenMarker())
-                            {
-                                hasCloseMarker = true;
-                                continue;
-                            }
+    //                        // It's slightly easier to deal with close marker in a 2nd step
+    //                        if (!marker.isOpenMarker())
+    //                        {
+    //                            hasCloseMarker = true;
+    //                            continue;
+    //                        }
 
-                            DeletionTime dt = marker.delTime();
-                            openMarkers.set(i, dt);
-                            markers[i] = null;
-                            // We only want to return that open marker is it's bigger than the current one
-                            if (!openMarkers.supersedes(i, dt))
-                                openMarker = toReturn = i;
-                        }
+    //                        DeletionTime dt = marker.delTime();
+    //                        openMarkers.set(i, dt);
+    //                        markers[i] = null;
+    //                        // We only want to return that open marker is it's bigger than the current one
+    //                        if (!openMarkers.supersedes(i, dt))
+    //                            openMarker = toReturn = i;
+    //                    }
 
-                        if (hasCloseMarker)
-                        {
-                            for (int i = 0; i < size; i++)
-                            {
-                                RangeTombstoneMarker marker = markers[i];
-                                if (marker == null)
-                                    continue;
+    //                    if (hasCloseMarker)
+    //                    {
+    //                        for (int i = 0; i < size; i++)
+    //                        {
+    //                            RangeTombstoneMarker marker = markers[i];
+    //                            if (marker == null)
+    //                                continue;
 
-                                // We've cleaned the open ones already
-                                assert !marker.isOpenMarker();
+    //                            // We've cleaned the open ones already
+    //                            assert !marker.isOpenMarker();
 
-                                openMarkers.clear(i);
-                                // What we do depends on what the current open marker is. If it's not i, then we can just
-                                // ignore that close. If it's i, then we need to find the next biggest open marker. If
-                                // there is none, then we're closing the only open marker by returning this close marker,
-                                // otherwise, that new biggest marker is the new open one and we should return it.
-                                if (i == openMarker)
-                                {
-                                    // We've cleaned i so updateOpenMarker will turn the second new biggest one
-                                    updateOpenMarker();
-                                    if (openMarker < 0)
-                                    {
-                                        // We've closed the last open marker so not only should we return
-                                        // this close marker, but we know we're done with the iteration here
-                                        onMergedRangeTombstoneMarkers(nextClustering, false, marker.delTime(), markers);
-                                        return reusableMarker.setTo(nextClustering, false, marker.delTime());
-                                    }
+    //                            openMarkers.clear(i);
+    //                            // What we do depends on what the current open marker is. If it's not i, then we can just
+    //                            // ignore that close. If it's i, then we need to find the next biggest open marker. If
+    //                            // there is none, then we're closing the only open marker by returning this close marker,
+    //                            // otherwise, that new biggest marker is the new open one and we should return it.
+    //                            if (i == openMarker)
+    //                            {
+    //                                // We've cleaned i so updateOpenMarker will turn the second new biggest one
+    //                                updateOpenMarker();
+    //                                if (openMarker < 0)
+    //                                {
+    //                                    // We've closed the last open marker so not only should we return
+    //                                    // this close marker, but we know we're done with the iteration here
+    //                                    onMergedRangeTombstoneMarkers(nextClustering, false, marker.delTime(), markers);
+    //                                    return reusableMarker.setTo(nextClustering, false, marker.delTime());
+    //                                }
 
-                                    // Note that if toReturn is set at the beginning of this loop, it's necessarily equal
-                                    // to openMarker. So if we've closed the previous biggest open marker, it's ok to
-                                    // also update toReturn
-                                    toReturn = openMarker;
-                                }
-                            }
-                        }
+    //                                // Note that if toReturn is set at the beginning of this loop, it's necessarily equal
+    //                                // to openMarker. So if we've closed the previous biggest open marker, it's ok to
+    //                                // also update toReturn
+    //                                toReturn = openMarker;
+    //                            }
+    //                        }
+    //                    }
 
-                        if (toReturn >= 0)
-                        {
-                            // Note that we can only arrive here if we have an open marker to return
-                            openMarkersCursor.setTo(toReturn);
-                            onMergedRangeTombstoneMarkers(nextClustering, true, openMarkersCursor, markers);
-                            return reusableMarker.setTo(nextClustering, true, openMarkersCursor);
-                        }
-                        return null;
-                }
-                throw new AssertionError();
-            }
+    //                    if (toReturn >= 0)
+    //                    {
+    //                        // Note that we can only arrive here if we have an open marker to return
+    //                        openMarkersCursor.setTo(toReturn);
+    //                        onMergedRangeTombstoneMarkers(nextClustering, true, openMarkersCursor, markers);
+    //                        return reusableMarker.setTo(nextClustering, true, openMarkersCursor);
+    //                    }
+    //                    return null;
+    //            }
+    //            throw new AssertionError();
+    //        }
 
-            private void updateOpenMarker()
-            {
-                openMarker = -1;
-                for (int i = 0; i < openMarkers.size(); i++)
-                {
-                    if (openMarkers.isLive(i) && (openMarker < 0 || openMarkers.supersedes(i, openMarker)))
-                        openMarker = i;
-                }
-            }
+    //        private void updateOpenMarker()
+    //        {
+    //            openMarker = -1;
+    //            for (int i = 0; i < openMarkers.size(); i++)
+    //            {
+    //                if (openMarkers.isLive(i) && (openMarker < 0 || openMarkers.supersedes(i, openMarker)))
+    //                    openMarker = i;
+    //            }
+    //        }
 
-            protected void onKeyChange()
-            {
-                writer.reset();
-                reader.reset();
-            }
+    //        protected void onKeyChange()
+    //        {
+    //            writer.reset();
+    //            reader.reset();
+    //        }
 
-            public void onMergingRows(ClusteringPrefix clustering, long timestamp, Row[] versions)
-            {
-                // If the row is shadowed by a more recent deletion, delete it's timestamp
-                long merged = partitionLevelDeletion.deletes(timestamp) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
-                            ? Long.MIN_VALUE
-                            : timestamp;
+    //        public void onMergingRows(ClusteringPrefix clustering, long timestamp, Row[] versions)
+    //        {
+    //            // If the row is shadowed by a more recent deletion, delete it's timestamp
+    //            long merged = partitionLevelDeletion.deletes(timestamp) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
+    //                        ? Long.MIN_VALUE
+    //                        : timestamp;
 
-                if (listener != null)
-                    listener.onMergingRows(clustering, merged, versions);
+    //            if (listener != null)
+    //                listener.onMergingRows(clustering, merged, versions);
 
-                writer.setClustering(clustering);
-                writer.setTimestamp(merged);
-            }
+    //            writer.setClustering(clustering);
+    //            writer.setTimestamp(merged);
+    //        }
 
-            public void onMergedColumns(ColumnDefinition c, DeletionTime compositeDeletion, DeletionTimeArray versions)
-            {
-                // if the previous column had no cells but do have deletion info, write it now
-                if (prevColumn != null && !prevColumnDeletion.isLive())
-                {
-                    if (listener != null)
-                        onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                    writer.newColumn(prevColumn, prevColumnDeletion);
-                }
+    //        public void onMergedColumns(ColumnDefinition c, DeletionTime compositeDeletion, DeletionTimeArray versions)
+    //        {
+    //            // if the previous column had no cells but do have deletion info, write it now
+    //            if (prevColumn != null && !prevColumnDeletion.isLive())
+    //            {
+    //                if (listener != null)
+    //                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+    //                writer.newColumn(prevColumn, prevColumnDeletion);
+    //            }
 
-                // We don't want to call writer.newColumn just yet because it could be that the whole column
-                // ends up being fully shadowed by a top-level deletion or range tombstone
-                prevColumn = c;
-                prevColumnDeletion = partitionLevelDeletion.supersedes(compositeDeletion) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).supersedes(compositeDeletion))
-                                   ? DeletionTime.LIVE
-                                   : compositeDeletion.takeAlias();
-                prevColumnDeletionVersions.copy(versions);
-            }
+    //            // We don't want to call writer.newColumn just yet because it could be that the whole column
+    //            // ends up being fully shadowed by a top-level deletion or range tombstone
+    //            prevColumn = c;
+    //            prevColumnDeletion = partitionLevelDeletion.supersedes(compositeDeletion) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).supersedes(compositeDeletion))
+    //                               ? DeletionTime.LIVE
+    //                               : compositeDeletion.takeAlias();
+    //            prevColumnDeletionVersions.copy(versions);
+    //        }
 
-            public void onMergedCells(Cell cell, Cell[] versions)
-            {
-                // Skip shadowed cells
-                long timestamp = cell.timestamp();
-                if (partitionLevelDeletion.deletes(timestamp)
-                        || (openMarker > 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
-                        || prevColumnDeletion.deletes(timestamp))
-                {
-                    if (listener != null)
-                        onMergedCells(null, versions);
-                    return;
-                }
+    //        public void onMergedCells(Cell cell, Cell[] versions)
+    //        {
+    //            // Skip shadowed cells
+    //            long timestamp = cell.timestamp();
+    //            if (partitionLevelDeletion.deletes(timestamp)
+    //                    || (openMarker > 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
+    //                    || prevColumnDeletion.deletes(timestamp))
+    //            {
+    //                if (listener != null)
+    //                    onMergedCells(null, versions);
+    //                return;
+    //            }
 
-                if (prevColumn != null)
-                {
-                    if (listener != null)
-                        onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                    writer.newColumn(prevColumn, prevColumnDeletion);
-                    prevColumn = null;
-                }
+    //            if (prevColumn != null)
+    //            {
+    //                if (listener != null)
+    //                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+    //                writer.newColumn(prevColumn, prevColumnDeletion);
+    //                prevColumn = null;
+    //            }
 
-                if (listener != null)
-                    onMergedCells(cell, versions);
-                writer.newCell(cell);
-            }
+    //            if (listener != null)
+    //                onMergedCells(cell, versions);
+    //            writer.newCell(cell);
+    //        }
 
-            public void onRowDone()
-            {
-                if (prevColumn != null && !prevColumnDeletion.isLive())
-                {
-                    if (listener != null)
-                        onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                    writer.newColumn(prevColumn, prevColumnDeletion);
-                }
+    //        public void onRowDone()
+    //        {
+    //            if (prevColumn != null && !prevColumnDeletion.isLive())
+    //            {
+    //                if (listener != null)
+    //                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+    //                writer.newColumn(prevColumn, prevColumnDeletion);
+    //            }
 
-                prevColumn = null;
-                writer.endOfRow();
-            }
+    //            prevColumn = null;
+    //            writer.endOfRow();
+    //        }
 
-            public void onMergedRangeTombstoneMarkers(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime, RangeTombstoneMarker[] versions)
-            {
-                if (listener != null)
-                    listener.onMergedRangeTombstoneMarkers(clustering, isOpenMarker, delTime, versions);
-            }
-        }
-    }
+    //        public void onMergedRangeTombstoneMarkers(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime, RangeTombstoneMarker[] versions)
+    //        {
+    //            if (listener != null)
+    //                listener.onMergedRangeTombstoneMarkers(clustering, isOpenMarker, delTime, versions);
+    //        }
+    //    }
+    //}
 }

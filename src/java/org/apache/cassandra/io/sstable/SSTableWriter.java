@@ -255,19 +255,21 @@ public class SSTableWriter extends SSTable
                 case ROW:
                     Row row = (Row)atom;
                     updateTimestamp(row.timestamp());
-                    for (ColumnData data : row)
+                    for (Cell cell : row)
                     {
-                        if (!data.complexDeletionTime().isLive())
-                            update(data.complexDeletionTime().markedForDeleteAt(), data.complexDeletionTime().localDeletionTime());
-
-                        for (int i = 0; i < data.size(); i++)
-                        {
-                            Cell cell = data.cell(i);
-                            ++cellCount;
-                            update(cell.timestamp(), cell.localDeletionTime());
-                            if (cell.isCounterCell())
-                                hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
+                        ++cellCount;
+                        update(cell.timestamp(), cell.localDeletionTime());
+                        if (cell.isCounterCell())
+                            hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
                         }
+                    }
+
+                    for (int i = 0; i < row.columns().complexColumnCount(); i++)
+                    {
+                        ColumnDefinition c = row.columns().getComplex(i);
+                        DeletionTime dt = row.getDeletion(c);
+                        if (!dt.isLive())
+                            update(dt.markedForDeleteAt(), dt.localDeletionTime());
                     }
                     break;
                 case RANGE_TOMBSTONE_MARKER:

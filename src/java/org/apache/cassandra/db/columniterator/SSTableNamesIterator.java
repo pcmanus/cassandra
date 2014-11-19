@@ -38,20 +38,18 @@ public class SSTableNamesIterator extends AbstractIterator<Atom> implements Atom
     // TODO
     private final SSTableReader sstable;
     private final DecoratedKey key;
-    private final Columns columns;
-    private final Columns staticColumns;
+    private final PartitionColumns columns;
     private final SortedSet<ClusteringPrefix> prefixes;
 
     //private ColumnFamily cf;
     //private FileDataInput fileToClose;
     //private Iterator<OnDiskAtom> iter;
 
-    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, Columns columns, Columns staticColumns, SortedSet<ClusteringPrefix> prefixes)
+    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, PartitionColumns columns, SortedSet<ClusteringPrefix> prefixes)
     {
         this.sstable = sstable;
         this.key = key;
         this.columns = columns;
-        this.staticColumns = staticColumns;
         this.prefixes = prefixes;
 
         // TODO
@@ -78,15 +76,13 @@ public class SSTableNamesIterator extends AbstractIterator<Atom> implements Atom
     public SSTableNamesIterator(SSTableReader sstable,
                                 FileDataInput file,
                                 DecoratedKey key,
-                                Columns columns,
-                                Columns staticColumns,
+                                PartitionColumns columns,
                                 SortedSet<ClusteringPrefix> prefixes,
                                 RowIndexEntry indexEntry)
     {
         this.sstable = sstable;
         this.key = key;
         this.columns = columns;
-        this.staticColumns = staticColumns;
         this.prefixes = prefixes;
 
         // TODO
@@ -106,14 +102,9 @@ public class SSTableNamesIterator extends AbstractIterator<Atom> implements Atom
         return sstable.metadata;
     }
 
-    public Columns columns()
+    public PartitionColumns columns()
     {
         return columns;
-    }
-
-    public Columns staticColumns()
-    {
-        return staticColumns;
     }
 
     public boolean isReverseOrder()

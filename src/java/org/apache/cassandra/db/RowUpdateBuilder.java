@@ -132,31 +132,38 @@ public class RowUpdateBuilder
 
     public Mutation buildAndAddTo(Mutation mutation)
     {
-        PartitionUpdate update = mutation.addOrGet(metadata);
+        // TODO
+        // We should probably always use all columns for the table, but it's wasted when we do a
+        // deletion. So we might want to separate deletions from this object. But we might also
+        // want to check when this is used and pass the builder directly instead of the Mutation?
 
-        if (isRowDeletion)
-        {
-            update.deletionInfo().add(new RangeTombstone(clustering.withEOC(ClusteringPrefix.EOC.START),
-                                                         clustering.withEOC(ClusteringPrefix.EOC.END),
-                                                         timestamp, ldt), metadata.comparator);
-            return mutation;
-        }
+        throw new UnsupportedOperationException();
+        //PartitionUpdate update = mutation.addOrGet(metadata, isRowDeletion ? Columns.NONE : Columns.from(cells.keySet()));
 
-        RowUpdate row = RowUpdates.create(clustering, Columns.from(cells.keySet()));
-        update.add(row);
+        //if (isRowDeletion)
+        //{
+        //    update.deletionInfo().add(new RangeTombstone(clustering.withEOC(ClusteringPrefix.EOC.START),
+        //                                                 clustering.withEOC(ClusteringPrefix.EOC.END),
+        //                                                 timestamp, ldt), metadata.comparator);
+        //    return mutation;
+        //}
 
-        // If a CQL3 table, add the row marker
-        if (metadata.isCQL3Table())
-            row.updateRowTimestamp(timestamp);
+        //Rows.Writer writer = update.writer();
+        //writer.setClustering(clustering);
 
-        DeletionTime dt = new SimpleDeletionTime(timestamp - 1, ldt);
-        for (ColumnDefinition c : collectionsToReset)
-            row.updateComplexDeletion(c, dt);
+        //// If a CQL3 table, add the row marker
+        //if (metadata.isCQL3Table())
+        //    writer.setTimestamp(timestamp);
 
-        for (Map.Entry<ColumnDefinition, Set<Cell>> entry : cells.entrySet())
-            for (Cell cell : entry.getValue())
-                row.addCell(entry.getKey(), cell);
+        //DeletionTime dt = new SimpleDeletionTime(timestamp - 1, ldt);
+        //for (ColumnDefinition c : collectionsToReset)
+        //    writer.setComplexDeletion(c, dt);
 
-        return mutation;
+        //for (Map.Entry<ColumnDefinition, Set<Cell>> entry : cells.entrySet())
+        //    for (Cell cell : entry.getValue())
+        //        writer.addCell(cell);
+
+        //writer.endOfRow();
+        //return mutation;
     }
 }

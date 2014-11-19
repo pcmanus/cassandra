@@ -186,11 +186,13 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                     sentinelReplaced = true;
                 }
 
-                // We then re-filter out what this query wants. Not that in the case where we don't cache full partitions, it's possible
-                // that the current query is interested in more than what we've cached, so we can't just use toCache.
+                // We then re-filter out what this query wants.
+                // Note that in the case where we don't cache full partitions, it's possible that the current query is interested in more
+                // than what we've cached, so we can't just use toCache.
+                AtomIterator cacheIterator = partitionFilter().filter(toCache);
                 return cacheFullPartitions
-                     ? partitionFilter().filter(toCache)
-                     : partitionFilter().filter(AtomIterators.concat(toCache.atomIterator(Slices.ALL, false), iter));
+                     ? cacheIterator
+                     : AtomIterators.concat(cacheIterator, partitionFilter().filter(iter));
             }
             finally
             {

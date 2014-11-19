@@ -32,25 +32,19 @@ import org.apache.cassandra.io.util.FileDataInput;
  */
 public class NamesPartitionFilter implements PartitionFilter
 {
-    private final Columns selectedColumns;
-    private final Columns selectedStaticColumns;
+    private final PartitionColumns selectedColumns;
     private final SortedSet<ClusteringPrefix> prefixes;
 
-    public NamesPartitionFilter(Columns columns, Columns staticColumns, SortedSet<ClusteringPrefix> prefixes)
+    public NamesPartitionFilter(PartitionColumns columns, SortedSet<ClusteringPrefix> prefixes)
     {
         this.selectedColumns = columns;
         this.selectedStaticColumns = staticColumns;
         this.prefixes = prefixes;
     }
 
-    public Columns selectedColumns()
+    public PartitionColumns selectedColumns()
     {
         return selectedColumns;
-    }
-
-    public Columns selectedStaticColumns()
-    {
-        return selectedStaticColumns;
     }
 
     public boolean selectsAllPartition()
@@ -68,7 +62,7 @@ public class NamesPartitionFilter implements PartitionFilter
         if (comparator.compare(newStart, prefixes.first()) <= 0)
             return this;
         else
-            return new NamesPartitionFilter(selectedColumns, selectedStaticColumns, prefixes.tailSet(newStart));
+            return new NamesPartitionFilter(selectedColumns, prefixes.tailSet(newStart));
     }
 
     public PartitionFilter withUpdatedEnd(ClusteringComparator comparator, ClusteringPrefix newEnd)
@@ -76,7 +70,7 @@ public class NamesPartitionFilter implements PartitionFilter
         if (comparator.compare(prefixes.last(), newEnd) <= 0)
             return this;
         else
-            return new NamesPartitionFilter(selectedColumns, selectedStaticColumns, prefixes.headSet(newEnd));
+            return new NamesPartitionFilter(selectedColumns, prefixes.headSet(newEnd));
     }
 
     public boolean isFullyCoveredBy(CachedPartition partition, DataLimits limits, int nowInSec)
@@ -126,12 +120,12 @@ public class NamesPartitionFilter implements PartitionFilter
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, DecoratedKey key)
     {
-        return new SSTableNamesIterator(sstable, key, selectedColumns, selectedStaticColumns, prefixes);
+        return new SSTableNamesIterator(sstable, key, selectedColumns, prefixes);
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
     {
-        return new SSTableNamesIterator(sstable, file, key, selectedColumns, selectedStaticColumns, prefixes, indexEntry);
+        return new SSTableNamesIterator(sstable, file, key, selectedColumns, prefixes, indexEntry);
     }
 
     public AtomIterator getAtomIterator(Partition partition)
@@ -148,7 +142,7 @@ public class NamesPartitionFilter implements PartitionFilter
 
     public int maxQueried(boolean countCells)
     {
-        return countCells ? prefixes.size() * selectedColumns.size() : prefixes.size();
+        return countCells ? prefixes.size() * selectedColumns.regulars.size() : prefixes.size();
     }
 
     // From NamesQueryFilter

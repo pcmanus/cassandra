@@ -322,6 +322,12 @@ public abstract class Selection
 
         public void add(Cell c)
         {
+            if (c == null)
+            {
+                current.add(null);
+                return;
+            }
+
             current.add(value(c));
             if (timestamps != null)
             {

@@ -25,41 +25,32 @@ import org.apache.cassandra.db.atoms.*;
  * Abstract class to make it easier to write iterators that filter some
  * parts of another iterator (used for purging tombstones and removing dropped columns).
  */
+// TODO rename to FilteringPartitionIterator for consistency
 public abstract class AbstractFilteringIterator extends WrappingPartitionIterator
 {
+    protected final FilteringRow filter;
+
     private AtomIterator next;
 
-    protected AbstractFilteringIterator(PartitionIterator iter)
+    protected AbstractFilteringIterator(PartitionIterator iter, FilteringRow filter)
     {
         super(iter);
+        this.filter = filter;
     }
 
+    // Whether or not we should bother filtering the provided atom iterator. This
+    // exists mainly for preformance
     protected boolean shouldFilter(AtomIterator iterator)
     {
         return true;
     }
 
-    protected boolean shouldFilterPartitionDeletion(DeletionTime dt)
+    protected boolean includeRangeTombstoneMarker(RangeTombstoneMarker marker)
     {
         return false;
     }
 
-    protected boolean shouldFilterRangeTombstoneMarker(RangeTombstoneMarker marker)
-    {
-        return false;
-    }
-
-    protected boolean shouldFilterRowTimestamp(long timestamp)
-    {
-        return false;
-    }
-
-    protected boolean shouldFilterComplexDeletionTime(ColumnDefinition c, DeletionTime dt)
-    {
-        return false;
-    }
-
-    protected boolean shouldFilterCell(ColumnDefinition c, Cell cell)
+    protected boolean includePartitionDeletion(DeletionTime dt)
     {
         return false;
     }
@@ -71,7 +62,7 @@ public abstract class AbstractFilteringIterator extends WrappingPartitionIterato
             next = super.next();
             if (shouldFilter(next))
             {
-                next = new AtomFilteringIterator(next);
+                next = new FilteringIterator(next, filter);
                 if (AtomIterators.isEmpty(next))
                     next = null;
             }
@@ -89,91 +80,23 @@ public abstract class AbstractFilteringIterator extends WrappingPartitionIterato
         return toReturn;
     }
 
-    private class AtomFilteringIterator extends WrappingAtomIterator
+    private class FilteringIterator extends RowFilteringAtomIterator
     {
-        private final Row staticRow;
-
-        private Atom next;
-        private final ReusableRow buffer;
-        private final ReusableRow.Writer writer;
-
-        private AtomFilteringIterator(AtomIterator iter)
+        private FilteringIterator(AtomIterator iterator, FilteringRow filter)
         {
-            super(iter);
-
-            Row r = super.staticRow();
-            if (!r.isEmpty())
-            {
-                ReusableRow tmp = new ReusableRow(iter.staticColumns());
-                r = filterRow(r, tmp, tmp.newWriter());
-            }
-            this.staticRow = r == null ? Rows.EMPTY_STATIC_ROW : r;
-
-            this.buffer = new ReusableRow(iter.columns());
-            this.writer = buffer.newWriter();
+            super(iterator, filter);
         }
 
-        public DeletionTime partitionLevelDeletion()
+        @Override
+        protected boolean includeRangeTombstoneMarker(RangeTombstoneMarker marker)
         {
-            DeletionTime dt = super.partitionLevelDeletion();
-            return shouldFilterPartitionDeletion(dt) ? DeletionTime.LIVE : dt;
+            return AbstractFilteringIterator.this.includeRangeTombstoneMarker(marker);
         }
 
-        public Row staticRow()
+        @Override
+        protected boolean includePartitionDeletion(DeletionTime dt)
         {
-            return staticRow;
-        }
-
-        public boolean hasNext()
-        {
-            while (next == null && super.hasNext())
-            {
-                next = super.next();
-                if (next.kind() == Atom.Kind.ROW)
-                    next = filterRow((Row)next, buffer, writer);
-                else
-                    next = filterMarker((RangeTombstoneMarker)next);
-
-                if (next != null)
-                    return true;
-            }
-            return false;
-        }
-
-        public Atom next()
-        {
-            Atom toReturn = next;
-            next = null;
-            return toReturn;
-        }
-
-        public Row filterRow(Row row, ReusableRow buffer, ReusableRow.Writer writer)
-        {
-            writer.reset();
-            writer.setTimestamp(shouldFilterRowTimestamp(row.timestamp()) ? Long.MIN_VALUE : row.timestamp());
-
-            for (ColumnData data : row)
-            {
-                ColumnDefinition c = data.column();
-                DeletionTime dt = data.complexDeletionTime();
-                DeletionTime filtered = c.isComplex() && !shouldFilterComplexDeletionTime(c, dt) ? dt : DeletionTime.LIVE;
-                writer.newColumn(c, filtered);
-
-                for (int i = 0; i < data.size(); i++)
-                {
-                    Cell cell = data.cell(i);
-                    if (!shouldFilterCell(c, cell))
-                        writer.newCell(cell);
-                }
-            }
-
-            writer.endOfRow();
-            return buffer.isEmpty() ? null : buffer;
-        }
-
-        public RangeTombstoneMarker filterMarker(RangeTombstoneMarker marker)
-        {
-            return shouldFilterRangeTombstoneMarker(marker) ? null : marker;
+            return AbstractFilteringIterator.this.includePartitionDeletion(dt);
         }
     }
 }

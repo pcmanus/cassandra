@@ -23,7 +23,7 @@ import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.atoms.Atom;
-import org.apache.cassandra.db.atoms.RowUpdate;
+import org.apache.cassandra.db.atoms.Row;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -37,9 +37,7 @@ public class ClusteringComparator implements Comparator<Clusterable>
     // won't need that.
     public final Comparator<Atom> atomComparator;
 
-    public final Comparator<RowUpdate> rowUpdateComparator;
-
-
+    public final Comparator<Row> rowComparator;
 
     private final List<AbstractType<?>> clusteringTypes;
     private final boolean isByteOrderComparable;
@@ -65,13 +63,14 @@ public class ClusteringComparator implements Comparator<Clusterable>
                     return a2.kind() == Atom.Kind.ROW ? -1 : 0;
             }
         };
-        this.rowUpdateComparator = new Comparator<RowUpdate>()
+        this.rowComparator = new Comparator<Row>()
         {
-            public int compare(RowUpdate upd1, RowUpdate upd2)
+            public int compare(Row upd1, Row upd2)
             {
                 return ClusteringComparator.this.compare(upd1, upd2);
             }
         };
+
     }
 
     private static boolean isByteOrderComparable(Iterable<AbstractType<?>> types)

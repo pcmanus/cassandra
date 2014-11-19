@@ -286,11 +286,11 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + append
-            update.updateComplexDeletion(column, params.complexDeletionTimeForOverwrite());
-            Appender.doAppend(t, update, column, params);
+            params.setComplexDeletionTimeForOverwrite(column, writer);
+            Appender.doAppend(t, writer, column, params);
         }
     }
 
@@ -317,7 +317,7 @@ public abstract class Lists
             idx.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer index = idx.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -325,15 +325,15 @@ public abstract class Lists
             if (index == null)
                 throw new InvalidRequestException("Invalid null value for list index");
 
-            ColumnData existingList = params.getPrefetchedList(rowKey, update.clustering(), column);
+            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
             int idx = ByteBufferUtil.toInt(index);
             if (idx < 0 || existingList == null || idx >= existingList.size())
                 throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, (existingList == null ? 0 : existingList.size())));
 
-            CellPath elementPath = existingList.cell(idx).path();
+            CellPath elementPath = existingList.get(idx).path();
             if (value == null)
             {
-                update.addCell(column, params.makeTombstone(elementPath));
+                params.addTombstone(column, writer, elementPath);
             }
             else
             {
@@ -343,7 +343,7 @@ public abstract class Lists
                                                                     FBUtilities.MAX_UNSIGNED_SHORT,
                                                                     value.remaining()));
 
-                update.addCell(column, params.makeCell(elementPath, value));
+                params.addCell(column, writer, elementPath, value);
             }
         }
     }
@@ -355,12 +355,12 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
-            doAppend(t, update, column, params);
+            doAppend(t, writer, column, params);
         }
 
-        static void doAppend(Term t, RowUpdate update, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doAppend(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             // If we append null, do nothing. Note that for Setter, we've
@@ -373,7 +373,7 @@ public abstract class Lists
             for (int i = 0; i < toAdd.size(); i++)
             {
                 ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes());
-                update.addCell(column, params.makeCell(new CollectionPath(uuid), toAdd.get(i)));
+                params.addCell(column, writer, new CollectionPath(uuid), toAdd.get(i));
             }
         }
     }
@@ -385,7 +385,7 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -399,7 +399,7 @@ public abstract class Lists
             {
                 PrecisionTime pt = PrecisionTime.getNext(time);
                 ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes(pt.millis, pt.nanos));
-                update.addCell(column, params.makeCell(new CollectionPath(uuid), toAdd.get(i)));
+                params.addCell(column, writer, new CollectionPath(uuid), toAdd.get(i));
             }
         }
     }
@@ -417,9 +417,9 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
-            ColumnData existingList = params.getPrefetchedList(rowKey, update.clustering(), column);
+            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
             // We want to call bind before possibly returning to reject queries where the value provided is not a list.
             Term.Terminal value = t.bind(params.options);
 
@@ -438,9 +438,9 @@ public abstract class Lists
             List<ByteBuffer> toDiscard = ((Lists.Value)value).elements;
             for (int i = 0; i < existingList.size(); i++)
             {
-                Cell cell = existingList.cell(i);
+                Cell cell = existingList.get(i);
                 if (toDiscard.contains(cell.value()))
-                    update.addCell(column, params.makeTombstone(cell.path()));
+                    params.addTombstone(column, writer, cell.path());
             }
         }
     }
@@ -458,7 +458,7 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal index = t.bind(params.options);
             if (index == null)
@@ -466,12 +466,12 @@ public abstract class Lists
 
             assert index instanceof Constants.Value;
 
-            ColumnData existingList = params.getPrefetchedList(rowKey, update.clustering(), column);
+            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
             int idx = ByteBufferUtil.toInt(((Constants.Value)index).bytes);
             if (idx < 0 || existingList == null || idx >= existingList.size())
                 throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, (existingList == null ? 0 : existingList.size())));
 
-            update.addCell(column, params.makeTombstone(existingList.cell(idx).path()));
+            params.addTombstone(column, writer, existingList.get(idx).path());
         }
     }
 }

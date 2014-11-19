@@ -21,35 +21,27 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.utils.ObjectSizes;
 
-public class SimpleClusteringPrefix implements ClusteringPrefix
+public class SimpleClusteringPrefix extends AbstractClusteringPrefix
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleClusteringPrefix(new ByteBuffer[0], 0, EOC.NONE));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleClusteringPrefix(new ByteBuffer[0], EOC.NONE));
 
     private final ByteBuffer[] values;
-    private final int size;
-    private final ClusteringPrefix.EOC eoc;
+    private final EOC eoc;
 
-    public SimpleClusteringPrefix(ByteBuffer[] values, int size, ClusteringPrefix.EOC eoc)
+    public SimpleClusteringPrefix(ByteBuffer[] values, ClusteringPrefix.EOC eoc)
     {
-        assert size > 0;
         this.values = values;
-        this.size = size;
         this.eoc = eoc;
     }
 
     public SimpleClusteringPrefix(ByteBuffer value)
     {
-        this(new ByteBuffer[]{ value }, 1, EOC.NONE);
-    }
-
-    public ClusteringPrefix clustering()
-    {
-        return this;
+        this(new ByteBuffer[]{ value }, EOC.NONE);
     }
 
     public int size()
     {
-        return size;
+        return values.size();
     }
 
     public ByteBuffer get(int i)
@@ -57,17 +49,10 @@ public class SimpleClusteringPrefix implements ClusteringPrefix
         return values[i];
     }
 
+    @Override
     public EOC eoc()
     {
         return eoc;
-    }
-
-    public int dataSize()
-    {
-        int size = 0;
-        for (int i = 0; i < size(); i++)
-            size += get(i).remaining();
-        return size;
     }
 
     public long unsharedHeapSize()
@@ -75,12 +60,13 @@ public class SimpleClusteringPrefix implements ClusteringPrefix
         return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(values);
     }
 
+    @Override
     public ClusteringPrefix withEOC(EOC eoc)
     {
         if (this.eoc == eoc)
             return this;
 
-        return new SimpleClusteringPrefix(values, size, eoc);
+        return new SimpleClusteringPrefix(values, eoc);
     }
 
     public ClusteringPrefix takeAlias()

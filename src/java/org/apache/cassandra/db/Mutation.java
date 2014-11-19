@@ -112,28 +112,9 @@ public class Mutation implements IMutation
             throw new IllegalArgumentException("Table " + update.metadata().cfName + " already has modifications in this mutation: " + prev);
     }
 
-    /**
-     * @return the ColumnFamily in this Mutation corresponding to @param cfName, creating an empty one if necessary.
-     */
-    public PartitionUpdate addOrGet(String cfName)
+    public PartitionUpdate get(CFMetaData cfm)
     {
-        return addOrGet(Schema.instance.getCFMetaData(keyspaceName, cfName));
-    }
-
-    public PartitionUpdate addOrGet(CFMetaData cfm)
-    {
-        PartitionUpdate update = modifications.get(cfm.cfId);
-        if (update == null)
-        {
-            update = new PartitionUpdate(cfm, key);
-            modifications.put(cfm.cfId, update);
-        }
-        return update;
-    }
-
-    public void delete(String cfName, long timestamp)
-    {
-        addOrGet(cfName).deletionInfo().add(new SimpleDeletionTime(timestamp, (int) (System.currentTimeMillis() / 1000)));
+        return modifications.get(cfm.cfId);
     }
 
     public boolean isEmpty()

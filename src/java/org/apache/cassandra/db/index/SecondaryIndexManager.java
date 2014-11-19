@@ -63,9 +63,9 @@ public class SecondaryIndexManager
 
     public static final Updater nullUpdater = new Updater()
     {
-        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell) {}
-        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell) {}
-        public void remove(ClusteringPrefix clustering, ColumnDefinition Column, Cell current) {}
+        public void insert(ClusteringPrefix clustering, Cell cell) {}
+        public void update(ClusteringPrefix clustering, Cell oldCell, Cell cell) {}
+        public void remove(ClusteringPrefix clustering, Cell current) {}
         public void updateRowLevelIndexes() {}
     };
 
@@ -460,17 +460,13 @@ public class SecondaryIndexManager
     private void indexRow(DecoratedKey key, Row row, PerColumnSecondaryIndex index, OpOrder.Group opGroup, int nowInSec)
     {
         ClusteringPrefix clustering = row.clustering();
-        for (ColumnData data : row)
+        for (Cell cell : row)
         {
-            if (!index.indexes(clustering, data.column()))
+            if (!index.indexes(clustering, cell.column()))
                 continue;
 
-            for (int i = 0; i < data.size(); i++)
-            {
-                Cell c = data.cell(i);
-                if (c.localDeletionTime() > nowInSec)
-                    index.insert(key.getKey(), clustering, data.column(), c, opGroup);
-            }
+            if (cell.localDeletionTime() > nowInSec)
+                index.insert(key.getKey(), clustering, cell, opGroup);
         }
     }
 
@@ -494,16 +490,14 @@ public class SecondaryIndexManager
 
             Row row = (Row)atom;
             ClusteringPrefix clustering = row.clustering();
-            for (ColumnData data : row)
+            for (Cell cell : row)
             {
-                ColumnDefinition column = data.column();
                 for (PerColumnSecondaryIndex index : indexes)
                 {
-                    if (!index.indexes(clustering, column))
+                    if (!index.indexes(clustering, cell.column()))
                         continue;
 
-                    for (int i = 0; i < data.size(); i++)
-                        index.delete(key, clustering, column, data.cell(i), opGroup);
+                    index.delete(key, clustering, cell, opGroup);
                 }
             }
         }
@@ -684,13 +678,13 @@ public class SecondaryIndexManager
     public static interface Updater
     {
         /** called when constructing the index against pre-existing data */
-        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell);
+        public void insert(ClusteringPrefix clustering, Cell cell);
 
         /** called when updating the index from a memtable */
-        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell);
+        public void update(ClusteringPrefix clustering, Cell oldCell, Cell cell);
 
         /** called when lazy-updating the index during compaction (CASSANDRA-2897) */
-        public void remove(ClusteringPrefix clustering, ColumnDefinition Column, Cell current);
+        public void remove(ClusteringPrefix clustering, Cell current);
 
         /** called after memtable updates are complete (CASSANDRA-5397) */
         public void updateRowLevelIndexes();
@@ -705,25 +699,25 @@ public class SecondaryIndexManager
             this.key = key;
         }
 
-        public void insert(ClusteringPrefix clustering, ColumnDefinition c, Cell cell)
+        public void insert(ClusteringPrefix clustering, Cell cell)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void update(ClusteringPrefix clustering, ColumnDefinition c, Cell oldCell, Cell newCell)
+        public void update(ClusteringPrefix clustering, Cell oldCell, Cell newCell)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void remove(ClusteringPrefix clustering, ColumnDefinition c, Cell cell)
+        public void remove(ClusteringPrefix clustering, Cell cell)
         {
-            for (SecondaryIndex index : indexFor(clustering, c))
+            for (SecondaryIndex index : indexFor(clustering, cell.column()))
             {
                 if (index instanceof PerColumnSecondaryIndex)
                 {
                     try (OpOrder.Group opGroup = baseCfs.keyspace.writeOrder.start())
                     {
-                        ((PerColumnSecondaryIndex) index).delete(key.getKey(), clustering, c, cell, opGroup);
+                        ((PerColumnSecondaryIndex) index).delete(key.getKey(), clustering, cell, opGroup);
                     }
                 }
             }
@@ -749,28 +743,28 @@ public class SecondaryIndexManager
             this.nowInSec = (int)(System.currentTimeMillis() / 1000);
         }
 
-        public void insert(ClusteringPrefix clustering, ColumnDefinition column, Cell cell)
+        public void insert(ClusteringPrefix clustering, Cell cell)
         {
             if (!Cells.isLive(cell, nowInSec))
                 return;
 
-            for (SecondaryIndex index : indexFor(clustering, column))
+            for (SecondaryIndex index : indexFor(clustering, cell.column()))
                 if (index instanceof PerColumnSecondaryIndex)
-                    ((PerColumnSecondaryIndex) index).insert(update.partitionKey().getKey(), clustering, column, cell, opGroup);
+                    ((PerColumnSecondaryIndex) index).insert(update.partitionKey().getKey(), clustering, cell, opGroup);
         }
 
-        public void update(ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell)
+        public void update(ClusteringPrefix clustering, Cell oldCell, Cell cell)
         {
             if (oldCell.equals(cell))
                 return;
 
-            for (SecondaryIndex index : indexFor(clustering, column))
+            for (SecondaryIndex index : indexFor(clustering, cell.column()))
             {
                 if (index instanceof PerColumnSecondaryIndex)
                 {
                     if (Cells.isLive(cell, nowInSec))
                     {
-                        ((PerColumnSecondaryIndex) index).update(update.partitionKey().getKey(), clustering, column, oldCell, cell, opGroup);
+                        ((PerColumnSecondaryIndex) index).update(update.partitionKey().getKey(), clustering, oldCell, cell, opGroup);
                     }
                     else
                     {
@@ -780,13 +774,13 @@ public class SecondaryIndexManager
                         // identical values and ttl) Then, we don't want to delete as the
                         // tombstone will hide the new value we just inserted; see CASSANDRA-7268
                         if (shouldCleanupOldValue(oldCell, cell))
-                            ((PerColumnSecondaryIndex) index).delete(update.partitionKey().getKey(), clustering, column, oldCell, opGroup);
+                            ((PerColumnSecondaryIndex) index).delete(update.partitionKey().getKey(), clustering, oldCell, opGroup);
                     }
                 }
             }
         }
 
-        public void remove(ClusteringPrefix clustering, ColumnDefinition column, Cell cell)
+        public void remove(ClusteringPrefix clustering, Cell cell)
         {
             throw new UnsupportedOperationException();
         }

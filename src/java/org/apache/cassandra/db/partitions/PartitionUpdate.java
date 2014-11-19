@@ -36,43 +36,38 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
  * Stores updates on a partition.
  */
-public class PartitionUpdate implements Iterable<RowUpdate>
+public class PartitionUpdate extends AbstractPartitionData implements Iterable<Row>
 {
     public static final PartitionUpdateSerializer serializer = new PartitionUpdateSerializer();
 
-    private final CFMetaData metadata;
-    private final DecoratedKey key;
-
-    private final DeletionInfo deletionInfo;
-
-    private final List<RowUpdate> rowUpdates;
-
     private boolean isSorted;
-    private boolean hasStatic;
+
+    private final Columns staticColumns;
+    private final Rows.Writer writer = new Writer();
 
     private PartitionUpdate(CFMetaData metadata,
                             DecoratedKey key,
-                            DeletionInfo deletionInfo,
-                            List<RowUpdate> rowUpdates,
-                            boolean isSorted,
-                            boolean hasStatic)
+                            DeletionInfo delInfo,
+                            RowDataBlock data,
+                            Columns staticColumns,
+                            int initialRowCapacity)
     {
-        this.metadata = metadata;
-        this.key = key;
-        this.deletionInfo = deletionInfo;
-        this.rowUpdates = rowUpdates;
-        this.isSorted = isSorted;
-        this.hasStatic = hasStatic;
+        super(metadata, key, delInfo, data, initialRowCapacity);
+        this.staticColumns = staticColumns;
     }
 
-    public PartitionUpdate(CFMetaData metadata, DecoratedKey key)
+    public PartitionUpdate(CFMetaData metadata,
+                           DecoratedKey key,
+                           PartitionColumns columns,
+                           int initialRowCapacity)
     {
-        this(metadata, key, DeletionInfo.live(), new ArrayList<RowUpdate>(), false, false);
+        this(metadata, key, DeletionInfo.live(), new RowDataBlock(columns.regulars, initialRowCapacity), columns.statics, initialRowCapacity);
     }
 
     public static PartitionUpdate fromBytes(ByteBuffer bytes)
@@ -90,29 +85,21 @@ public class PartitionUpdate implements Iterable<RowUpdate>
         throw new UnsupportedOperationException();
     }
 
-    public CFMetaData metadata()
+    public static PartitionUpdate fullPartitionDelete(CFMetaData metadata, DecoratedKey key, long timestamp)
     {
-        return metadata;
-    }
-
-    public DecoratedKey partitionKey()
-    {
-        return key;
-    }
-
-    public DeletionInfo deletionInfo()
-    {
-        return deletionInfo;
-    }
-
-    public boolean isEmpty()
-    {
-        return deletionInfo.isLive() && rowUpdates.isEmpty();
+        return new PartitionUpdate(metadata,
+                                   key,
+                                   new DeletionInfo(timestamp, FBUtilities.nowInSeconds()),
+                                   new RowDataBlock(Columns.NONE, 0),
+                                   Columns.None,
+                                   0);
     }
 
     public int operationCount()
     {
-        return rowUpdates.size() + deletionInfo().rangeCount() + (deletionInfo().getTopLevelDeletion().isLive() ? 0 : 1);
+        return rowCount()
+             + deletionInfo().rangeCount()
+             + (deletionInfo().getTopLevelDeletion().isLive() ? 0 : 1);
     }
 
     public int dataSize()
@@ -122,48 +109,26 @@ public class PartitionUpdate implements Iterable<RowUpdate>
         throw new UnsupportedOperationException();
     }
 
-    public RowUpdate staticRowUpdate()
+    public Iterator<Row> iterator()
     {
-        if (!isSorted)
-            sort();
-
-        return hasStatic ? rowUpdates.get(0) : null;
-    }
-
-    public Iterator<RowUpdate> iterator()
-    {
-        if (!isSorted)
-            sort();
-
-        Iterator<RowUpdate> iter = rowUpdates.iterator();
-        if (hasStatic)
-            iter.next();
-
-        return iter;
-    }
-
-    public int rowCount()
-    {
-        if (!isSorted)
-            sort();
-
-        return rowUpdates.size() - (hasStatic ? 1 : 0);
+        maybeSort();
+        return rowIterator();
     }
 
     public PartitionUpdate addAll(PartitionUpdate update)
     {
-        assert !isSorted;
+        // TODO (but do we need IMutation.addAll(), which is the only place that needs it)
+        throw new UnsupportedOperationException();
+        //assert !isSorted;
 
-        deletionInfo.add(update.deletionInfo);
-        rowUpdates.addAll(update.rowUpdates);
-        return this;
+        //deletionInfo.add(update.deletionInfo);
+        //rowUpdates.addAll(update.rowUpdates);
+        //return this;
     }
 
-    public PartitionUpdate add(RowUpdate update)
+    public int rowCount()
     {
-        assert !isSorted;
-        rowUpdates.add(update);
-        return this;
+        return rows;
     }
 
     public void validate()
@@ -178,131 +143,151 @@ public class PartitionUpdate implements Iterable<RowUpdate>
         throw new UnsupportedOperationException();
     }
 
-    private synchronized void sort()
+    private void maybeSort()
     {
-        if (isSorted || rowUpdates.isEmpty())
+        if (isSorted)
             return;
 
-        // Check for duplicate to reconcile. Note that we reconcile in place.
-        ClusteringComparator comparator = metadata.comparator;
+        sort();
+    }
 
-        // Sort the array - will still potentially contain duplicate (non-reconciled) rows
-        Collections.sort(rowUpdates, comparator);
+    private synchronized void sort()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+        //if (isSorted || rowUpdates.isEmpty())
+        //    return;
 
-        int previous = 0; // The last element that was set
-        for (int current = 1; current < rowUpdates.size(); current++)
-        {
-            // There is really only 2 possible comparison: < 0 or == 0 since we've sorted already
-            RowUpdate prev = rowUpdates.get(previous);
-            RowUpdate curr = rowUpdates.get(current);
-            if (comparator.compare(prev, curr) == 0)
-            {
-                rowUpdates.set(previous, prev.mergeTo(curr, SecondaryIndexManager.nullUpdater));
-            }
-            else
-            {
-                // current != previous, so simply move current just after previous if needs be
-                ++previous;
-                if (previous != current)
-                    rowUpdates.set(previous, curr);
-            }
-        }
+        //// Check for duplicate to reconcile. Note that we reconcile in place.
+        //ClusteringComparator comparator = metadata.comparator;
 
-        // previous is on the last value to keep
-        for (int i = rowUpdates.size() - 1; i > previous; i++)
-            rowUpdates.remove(i);
+        //// Sort the array - will still potentially contain duplicate (non-reconciled) rows
+        //Collections.sort(rowUpdates, comparator);
 
-        isSorted = true;
-        hasStatic = rowUpdates.get(0).clustering() == EmptyClusteringPrefix.STATIC_PREFIX;
+        //int previous = 0; // The last element that was set
+        //for (int current = 1; current < rowUpdates.size(); current++)
+        //{
+        //    // There is really only 2 possible comparison: < 0 or == 0 since we've sorted already
+        //    RowUpdate prev = rowUpdates.get(previous);
+        //    RowUpdate curr = rowUpdates.get(current);
+        //    if (comparator.compare(prev, curr) == 0)
+        //    {
+        //        rowUpdates.set(previous, prev.mergeTo(curr, SecondaryIndexManager.nullUpdater));
+        //    }
+        //    else
+        //    {
+        //        // current != previous, so simply move current just after previous if needs be
+        //        ++previous;
+        //        if (previous != current)
+        //            rowUpdates.set(previous, curr);
+        //    }
+        //}
+
+        //// previous is on the last value to keep
+        //for (int i = rowUpdates.size() - 1; i > previous; i++)
+        //    rowUpdates.remove(i);
+
+        //isSorted = true;
+        //hasStatic = rowUpdates.get(0).clustering() == EmptyClusteringPrefix.STATIC_PREFIX;
+    }
+
+    public Rows.Writer writer(boolean isStatic)
+    {
+        if (isStatic)
+            throw new UnsupportedOperationException();
+
+        return writer;
     }
 
     public static class PartitionUpdateSerializer implements IVersionedSerializer<PartitionUpdate>
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
         {
-            if (version < MessagingService.VERSION_30)
-            {
-                // TODO
-                throw new UnsupportedOperationException();
+            throw new UnsupportedOperationException();
+            //if (version < MessagingService.VERSION_30)
+            //{
+            //    // TODO
+            //    throw new UnsupportedOperationException();
 
-                // if (cf == null)
-                // {
-                //     out.writeBoolean(false);
-                //     return;
-                // }
+            //    // if (cf == null)
+            //    // {
+            //    //     out.writeBoolean(false);
+            //    //     return;
+            //    // }
 
-                // out.writeBoolean(true);
-                // serializeCfId(cf.id(), out, version);
-                // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
-                // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-                // int count = cf.getColumnCount();
-                // out.writeInt(count);
-                // int written = 0;
-                // for (Cell cell : cf)
-                // {
-                //     columnSerializer.serialize(cell, out);
-                //     written++;
-                // }
-                // assert count == written: "Table had " + count + " columns, but " + written + " written";
-            }
+            //    // out.writeBoolean(true);
+            //    // serializeCfId(cf.id(), out, version);
+            //    // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
+            //    // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+            //    // int count = cf.getColumnCount();
+            //    // out.writeInt(count);
+            //    // int written = 0;
+            //    // for (Cell cell : cf)
+            //    // {
+            //    //     columnSerializer.serialize(cell, out);
+            //    //     written++;
+            //    // }
+            //    // assert count == written: "Table had " + count + " columns, but " + written + " written";
+            //}
 
-            CFMetaData metadata = update.metadata;
+            //CFMetaData metadata = update.metadata;
 
-            serializeCfId(metadata.cfId, out, version);
+            //serializeCfId(metadata.cfId, out, version);
 
-            // TODO: we could consider writing the token (provided this is done by the partitioner,
-            // LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
-            // partition would be a single long)
-            ByteBufferUtil.writeWithShortLength(update.partitionKey().getKey(), out);
+            //// TODO: we could consider writing the token (provided this is done by the partitioner,
+            //// LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
+            //// partition would be a single long)
+            //ByteBufferUtil.writeWithShortLength(update.partitionKey().getKey(), out);
 
-            metadata.layout().deletionInfoSerializer().serialize(update.deletionInfo(), out, version);
-            out.writeInt(update.rowUpdates.size());
-            for (RowUpdate row : update.rowUpdates)
-                metadata.layout().rowsSerializer().serialize(row, out);
+            //metadata.layout().deletionInfoSerializer().serialize(update.deletionInfo(), out, version);
+            //out.writeInt(update.rowUpdates.size());
+            //for (RowUpdate row : update.rowUpdates)
+            //    metadata.layout().rowsSerializer().serialize(row, out);
         }
 
         public PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
         {
-            CFMetaData metadata;
-            DeletionInfo delInfo;
-            List<RowUpdate> updates;
-            if (version < MessagingService.VERSION_30)
-            {
-                // TODO
-                throw new UnsupportedOperationException();
-                //if (!in.readBoolean())
-                //    return null;
+            throw new UnsupportedOperationException();
+            //CFMetaData metadata;
+            //DeletionInfo delInfo;
+            //List<RowUpdate> updates;
+            //if (version < MessagingService.VERSION_30)
+            //{
+            //    // TODO
+            //    throw new UnsupportedOperationException();
+            //    //if (!in.readBoolean())
+            //    //    return null;
 
-                //ColumnFamily cf = factory.create(Schema.instance.getCFMetaData(deserializeCfId(in, version)));
+            //    //ColumnFamily cf = factory.create(Schema.instance.getCFMetaData(deserializeCfId(in, version)));
 
-                //if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
-                //{
-                //    SuperColumns.deserializerSuperColumnFamily(in, cf, flag, version);
-                //}
-                //else
-                //{
-                //    cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
+            //    //if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
+            //    //{
+            //    //    SuperColumns.deserializerSuperColumnFamily(in, cf, flag, version);
+            //    //}
+            //    //else
+            //    //{
+            //    //    cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
 
-                //    ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-                //    int size = in.readInt();
-                //    for (int i = 0; i < size; ++i)
-                //        cf.addColumn(columnSerializer.deserialize(in, flag));
-                //}
-                //return cf;
-            }
-            else
-            {
-                metadata = Schema.instance.getCFMetaData(deserializeCfId(in, version));
-                key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
-                delInfo = metadata.layout().deletionInfoSerializer().deserialize(in, version);
-                int size = in.readInt();
-                updates = new ArrayList<>(size);
-                throw new UnsupportedOperationException();
-                //for (int i = 0; i < size; i++)
-                //{
-                //    metadata.layout().rowsSerializer().deserialize(in, version, flag, writer, metadata);
-                //}
-            }
+            //    //    ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+            //    //    int size = in.readInt();
+            //    //    for (int i = 0; i < size; ++i)
+            //    //        cf.addColumn(columnSerializer.deserialize(in, flag));
+            //    //}
+            //    //return cf;
+            //}
+            //else
+            //{
+            //    metadata = Schema.instance.getCFMetaData(deserializeCfId(in, version));
+            //    key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+            //    delInfo = metadata.layout().deletionInfoSerializer().deserialize(in, version);
+            //    int size = in.readInt();
+            //    updates = new ArrayList<>(size);
+            //    throw new UnsupportedOperationException();
+            //    //for (int i = 0; i < size; i++)
+            //    //{
+            //    //    metadata.layout().rowsSerializer().deserialize(in, version, flag, writer, metadata);
+            //    //}
+            //}
         }
 
         public PartitionUpdate deserialize(DataInput in, int version) throws IOException
@@ -317,30 +302,31 @@ public class PartitionUpdate implements Iterable<RowUpdate>
 
         public long serializedSize(PartitionUpdate update, TypeSizes sizes, int version)
         {
-            if (version < MessagingService.VERSION_30)
-            {
-                // TODO
-                throw new UnsupportedOperationException();
-                //if (cf == null)
-                //{
-                //    return typeSizes.sizeof(false);
-                //}
-                //else
-                //{
-                //    return typeSizes.sizeof(true)  /* nullness bool */
-                //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
-                //        + contentSerializedSize(cf, typeSizes, version);
-                //}
-            }
+            throw new UnsupportedOperationException();
+            //if (version < MessagingService.VERSION_30)
+            //{
+            //    // TODO
+            //    throw new UnsupportedOperationException();
+            //    //if (cf == null)
+            //    //{
+            //    //    return typeSizes.sizeof(false);
+            //    //}
+            //    //else
+            //    //{
+            //    //    return typeSizes.sizeof(true)  /* nullness bool */
+            //    //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
+            //    //        + contentSerializedSize(cf, typeSizes, version);
+            //    //}
+            //}
 
-            int size = cfIdSerializedSize(update.metadata().cfId,  sizes, version);
-            size += ByteBufferUtil.serializedSizeWithShortLength(update.partitionKey().getKey(), sizes);
-            size += update.metadata().layout().deletionInfoSerializer().serializedSize(update.deletionInfo(), version);
+            //int size = cfIdSerializedSize(update.metadata().cfId,  sizes, version);
+            //size += ByteBufferUtil.serializedSizeWithShortLength(update.partitionKey().getKey(), sizes);
+            //size += update.metadata().layout().deletionInfoSerializer().serializedSize(update.deletionInfo(), version);
 
-            size += sizes.sizeof(update.rowUpdates.size());
-            for (RowUpdate row : update.rowUpdates)
-                size += update.metadata().layout().rowsSerializer().serializedSize(row, sizes);
-            return size;
+            //size += sizes.sizeof(update.rowUpdates.size());
+            //for (RowUpdate row : update.rowUpdates)
+            //    size += update.metadata().layout().rowsSerializer().serializedSize(row, sizes);
+            //return size;
         }
 
         public void serializeCfId(UUID cfId, DataOutputPlus out, int version) throws IOException

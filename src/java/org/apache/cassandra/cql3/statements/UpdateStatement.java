@@ -24,8 +24,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.atoms.RowUpdate;
-import org.apache.cassandra.db.atoms.RowUpdates;
+import org.apache.cassandra.db.atoms.Rows;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -52,12 +51,12 @@ public class UpdateStatement extends ModificationStatement
     public void addUpdateForKey(PartitionUpdate update, ClusteringPrefix clustering, UpdateParameters params)
     throws InvalidRequestException
     {
-        RowUpdate row = RowUpdates.create(clustering, updatedColumns());
-        update.add(row);
+        Rows.Writer writer = update.writer(clustering == EmptyClusteringPrefix.STATIC_PREFIX);
+        writer.setClustering(clustering);
 
         // We update the row timestamp (ex-row marker) only on INSERT (#6782)
         if (type == StatementType.INSERT)
-            row.updateRowTimestamp(params.timestamp);
+            writer.setTimestamp(params.timestamp);
 
         List<Operation> updates = getOperations();
 
@@ -72,7 +71,7 @@ public class UpdateStatement extends ModificationStatement
             {
                 // There is no column outside the PK. So no operation could have passed through validation
                 assert updates.isEmpty();
-                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(update.partitionKey().getKey(), row, params);
+                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(update.partitionKey().getKey(), writer, params);
             }
             else
             {
@@ -81,14 +80,16 @@ public class UpdateStatement extends ModificationStatement
                     throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfm.compactValueColumn().name));
 
                 for (Operation op : updates)
-                    op.execute(update.partitionKey().getKey(), row, params);
+                    op.execute(update.partitionKey().getKey(), writer, params);
             }
         }
         else
         {
             for (Operation op : updates)
-                op.execute(update.partitionKey().getKey(), row, params);
+                op.execute(update.partitionKey().getKey(), writer, params);
         }
+
+        writer.endOfRow();
     }
 
     public static class ParsedInsert extends ModificationStatement.Parsed

@@ -98,8 +98,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private boolean selectsStaticColumns;
     private boolean selectsOnlyStaticColumns;
 
-    private final Columns selectedColumns;
-    private final Columns selectedStaticColumns;
+    private final PartitionColumns selectedColumns;
 
 
     // Used by forSelection below
@@ -116,24 +115,22 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         this.limit = limit;
 
         // Now gather a few info on whether we should bother with static columns or not for this statement
-        Columns.Builder builder = initColumnsInfo();
-        this.selectedColumns = builder.regularColumns();
-        this.selectedStaticColumns = builder.staticColumns();
+        this.selectedColumns = initColumnsInfo();
     }
 
-    private Columns.Builder initColumnsInfo()
+    private PartitionColumns initColumnsInfo()
     {
         // If it's a wildcard, we do select static but not only them
         if (selection.isWildcard())
         {
             selectsStaticColumns = true;
-            return Columns.builder().addAll(cfm.regularAndStaticColumns());
+            return PartitionColumns.builder().addAll(cfm.regularAndStaticColumns()).build();
         }
 
         // Otherwise, check the selected columns
         selectsStaticColumns = false;
         selectsOnlyStaticColumns = true;
-        Columns.Builder builder = Columns.builder();
+        PartitionColumns.Builder builder = PartitionColumns.builder();
         for (ColumnDefinition def : selection.getColumns())
         {
             switch (def.kind)
@@ -152,7 +149,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     break;
             }
         }
-        return builder;
+        return builder.build();
     }
 
     // Creates a simple select based on the given selection.
@@ -451,7 +448,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             if (slices == Slices.NONE && !selectsStaticColumns)
                 return null;
 
-            return new SlicePartitionFilter(selectedColumns, selectedStaticColumns, slices, isReversed);
+            return new SlicePartitionFilter(selectedColumns, slices, isReversed);
         }
         else
         {
@@ -1033,7 +1030,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 keyComponents = new ByteBuffer[]{ key };
             }
 
-            Row staticRow = partition.staticRow();
+            Row staticRow = partition.staticRow().takeAlias();
             // If there is no atoms, then provided the select was a full partition selection
             // (i.e. not a 2ndary index search and there was no condition on clustering columns),
             // we want to include static columns and we're done.
@@ -1096,22 +1093,20 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     private static void addValue(Selection.ResultSetBuilder result, ColumnDefinition def, Row row, QueryOptions options)
     {
-        ColumnData cd = row.data(def);
-        if (cd == null || cd.size() == 0)
+        if (def.isComplex())
         {
-            result.add((ByteBuffer)null);
-            return;
-        }
-
-        if (def.type.isCollection())
-        {
-            result.add(((CollectionType)def.type).serializeForNativeProtocol(cd, options.getProtocolVersion()));
+            // Collections are the only complex types we have so far
+            assert def.type.isCollection();
+            Iterator<Cell> cells = row.getCells(def);
+            if (cells == null)
+                result.add((ByteBuffer)null);
+            else
+                result.add(((CollectionType)def.type).serializeForNativeProtocol(cells, options.getProtocolVersion()));
         }
         else
         {
-            result.add(cd.cell(0));
+            result.add(row.getCell(def));
         }
-
     }
 
     private boolean hasNoClusteringColumnsRestriction()

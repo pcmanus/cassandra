@@ -144,10 +144,12 @@ public class ReadResponse
 
             protected AtomIterator computeNext()
             {
+                if (i >= data.size())
+                    return endOfData();
+
+                Partition p = data.get(i++);
                 // TODO: we should actually remember if it's a reversed order or not!
-                return i < data.size()
-                     ? data.get(i++).atomIterator(Slices.ALL, false)
-                     : endOfData();
+                return p.atomIterator(p.columns(), Slices.ALL, false);
             }
 
             public void close()

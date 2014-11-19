@@ -19,6 +19,7 @@ package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.Aliasable;
 
 /**
@@ -26,8 +27,10 @@ import org.apache.cassandra.db.Aliasable;
  *
  * A composite collection (collection or non-frozen UDTs) are comprised of multiple cells.
  */
-public interface Cell extends Aliasable<Cell>
+public interface Cell
 {
+    public ColumnDefinition column();
+
     public boolean isCounterCell();
 
     public ByteBuffer value();

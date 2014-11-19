@@ -37,7 +37,7 @@ public abstract class PerColumnSecondaryIndex extends SecondaryIndex
      * @param rowKey the underlying row key which is indexed
      * @param col all the column info
      */
-    public abstract void delete(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup);
+    public abstract void delete(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell, OpOrder.Group opGroup);
 
     /**
      * insert a column to the index
@@ -45,7 +45,7 @@ public abstract class PerColumnSecondaryIndex extends SecondaryIndex
      * @param rowKey the underlying row key which is indexed
      * @param col all the column info
      */
-    public abstract void insert(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup);
+    public abstract void insert(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell, OpOrder.Group opGroup);
 
     /**
      * update a column from the index
@@ -54,7 +54,7 @@ public abstract class PerColumnSecondaryIndex extends SecondaryIndex
      * @param oldCol the previous column info
      * @param col all the column info
      */
-    public abstract void update(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell, OpOrder.Group opGroup);
+    public abstract void update(ByteBuffer rowKey, ClusteringPrefix clustering, Cell oldCell, Cell cell, OpOrder.Group opGroup);
 
     public String getNameForSystemKeyspace(ByteBuffer column)
     {

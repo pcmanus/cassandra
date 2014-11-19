@@ -439,8 +439,10 @@ public final class CFMetaData
     private volatile Map<ByteBuffer, ColumnDefinition> columnMetadata = new HashMap<>();
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringColumns;    // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
+    // TODO: we could use a PartitionColumns object instead?
     private volatile Columns regularColumns;
     private volatile Columns staticColumns;
+    // TODO: we should probably remove this
     private volatile ColumnDefinition compactValueColumn;
 
     public volatile Class<? extends AbstractCompactionStrategy> compactionStrategyClass = DEFAULT_COMPACTION_STRATEGY_CLASS;
@@ -1960,7 +1962,7 @@ public final class CFMetaData
     {
         List<ColumnDefinition> pkCols = nullInitializedList(keyValidator.componentsCount());
         List<ColumnDefinition> ckCols = nullInitializedList(comparator.size());
-        Columns.Builder cols = Columns.builder();
+        PartitionColumns.Builder builder = PartitionColumns.builder();
         ColumnDefinition compactCol = null;
 
         for (ColumnDefinition def : allColumns())
@@ -1977,7 +1979,7 @@ public final class CFMetaData
                     break;
                 case REGULAR:
                 case STATIC:
-                    cols.add(def);
+                    builder.add(def);
                     break;
                 case COMPACT_VALUE:
                     assert compactCol == null : "There shouldn't be more than one compact value defined: got " + compactCol + " and " + def;
@@ -1989,8 +1991,10 @@ public final class CFMetaData
         // Now actually assign the correct value. This is not atomic, but then again, updating CFMetaData is never atomic anyway.
         partitionKeyColumns = addDefaultKeyAliases(pkCols);
         clusteringColumns = addDefaultColumnAliases(ckCols);
-        regularColumns = cols.regularColumns();
-        staticColumns = cols.staticColumns();
+
+        PartitionColumns pcols = builder.build();
+        regularColumns = pcols.regulars;
+        staticColumns = pcols.statics;
         compactValueColumn = addDefaultValueAlias(compactCol);
         return this;
     }

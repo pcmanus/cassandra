@@ -76,7 +76,15 @@ public class DataResolver extends AbstractResolver
 
         public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, AtomIterator[] versions)
         {
-            return new MergeListener(partitionKey);
+            return new MergeListener(partitionKey, columns(versions));
+        }
+
+        private PartitionColumns columns(AtomIterator[] versions)
+        {
+            for (int i = 0; i < versions.length; i++)
+                if (versions[i] != null)
+                    return versions[i].columns();
+            throw new AssertionError();
         }
 
         public void close()
@@ -101,18 +109,20 @@ public class DataResolver extends AbstractResolver
         private class MergeListener implements AtomIterators.MergeListener
         {
             private final DecoratedKey partitionKey;
+            private final PartitionColumns columns;
             private final PartitionUpdate[] repairs = new PartitionUpdate[sources.length];
 
-            private final RowUpdate[] currentRows = new RowUpdate[sources.length];
+            private final Rows.Writer[] currentRows = new Rows.Writer[sources.length];
             private ClusteringPrefix currentClustering;
             private ColumnDefinition currentColumn;
 
             private final ClusteringPrefix[] markerOpen = new ClusteringPrefix[sources.length];
             private final DeletionTime[] markerTime = new DeletionTime[sources.length];
 
-            public MergeListener(DecoratedKey partitionKey)
+            public MergeListener(DecoratedKey partitionKey, PartitionColumns columns)
             {
                 this.partitionKey = partitionKey;
+                this.columns = columns;
             }
 
             private PartitionUpdate update(int i)
@@ -120,21 +130,22 @@ public class DataResolver extends AbstractResolver
                 PartitionUpdate upd = repairs[i];
                 if (upd == null)
                 {
-                    upd = new PartitionUpdate(metadata, partitionKey);
+                    upd = new PartitionUpdate(metadata, partitionKey, columns, 1);
                     repairs[i] = upd;
                 }
                 return upd;
             }
 
-            private RowUpdate currentRow(int i)
+            private Rows.Writer currentRow(int i)
             {
-                RowUpdate upd = currentRows[i];
-                if (upd == null)
+                Rows.Writer row = currentRows[i];
+                if (row == null)
                 {
-                    upd = RowUpdates.create(metadata, currentClustering);
-                    currentRows[i] = upd;
+                    row = update(i).writer(currentClustering == EmptyClusteringPrefix.STATIC_PREFIX);
+                    row.setClustering(currentClustering);
+                    currentRows[i] = row;
                 }
-                return upd;
+                return row;
             }
 
             public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
@@ -144,7 +155,7 @@ public class DataResolver extends AbstractResolver
                 {
                     long timestamp = versions[i].timestamp();
                     if (mergedTimestamp > timestamp)
-                        currentRow(i).updateRowTimestamp(mergedTimestamp);
+                        currentRow(i).setTimestamp(mergedTimestamp);
                 }
             }
 
@@ -154,7 +165,7 @@ public class DataResolver extends AbstractResolver
                 for (int i = 0; i < versions.size(); i++)
                 {
                     if (versions.supersedes(i, mergedCompositeDeletion))
-                        currentRow(i).updateComplexDeletion(c, mergedCompositeDeletion);
+                        currentRow(i).setComplexDeletion(c, mergedCompositeDeletion);
                 }
             }
 
@@ -165,7 +176,7 @@ public class DataResolver extends AbstractResolver
                     Cell version = versions[i];
                     Cell toAdd = version == null ? mergedCell : Cells.diff(mergedCell, version);
                     if (toAdd != null)
-                        currentRow(i).addCell(currentColumn, toAdd);
+                        Rows.writeCell(toAdd, currentRow(i));
                 }
             }
 
@@ -174,7 +185,7 @@ public class DataResolver extends AbstractResolver
                 for (int i = 0; i < currentRows.length; i++)
                 {
                     if (currentRows[i] != null)
-                        update(i).add(currentRows[i]);
+                        currentRows[i].endOfRow();
                 }
                 Arrays.fill(currentRows, null);
             }

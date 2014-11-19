@@ -52,10 +52,10 @@ public class CompactionIterable extends AbstractCompactionIterable
     public CompactionIterable(OperationType type, List<ICompactionScanner> scanners, CompactionController controller, CompactionMetrics metrics)
     {
         super(controller, type, scanners);
-        this.mergedIterator = new PurgingPartitionIterator(PartitionIterators.merge(scanners, 
+        this.mergedIterator = PurgingPartitionIterator.create(PartitionIterators.merge(scanners, 
                                                                                     (int)(System.currentTimeMillis() / 1000),
                                                                                     listener()),
-                                                           controller);
+                                                              controller);
 
         this.metrics = metrics;
 
@@ -105,7 +105,7 @@ public class CompactionIterable extends AbstractCompactionIterable
                         {
                             Cell version = versions[i];
                             if (version != null && (mergedCell == null || !mergedCell.equals(version)))
-                                indexer.remove(clustering, column, version);
+                                indexer.remove(clustering, version);
                         }
                     }
 
@@ -178,48 +178,83 @@ public class CompactionIterable extends AbstractCompactionIterable
 
     private static class PurgingPartitionIterator extends AbstractFilteringIterator
     {
-        private final CompactionController controller;
-        private long maxPurgeableTimestamp;
+        private final PurgingRow purgingRow;
 
-        private PurgingPartitionIterator(PartitionIterator toPurge, CompactionController controller)
+        private PurgingPartitionIterator(PartitionIterator toPurge, PurgingRow row)
         {
-            super(toPurge);
-            this.controller = controller;
+            super(toPurge, row);
+            this.purgingRow = row; // Saving this in a instance variable to avoid type casting to PurgingRow everytime
+        }
+
+        private static PurgingPartitionIterator create(PartitionIterator toPurge, CompactionController controller)
+        {
+            PurgingRow row = new PurgingRow(CompactionController controller);
+            return new PurgingPartitionIterator(toPurge, row);
         }
 
         protected boolean shouldFilter(AtomIterator atoms)
         {
-            // tombstones with a localDeletionTime before this can be purged.  This is the minimum timestamp for any sstable
-            // containing `key` outside of the set of sstables involved in this compaction.
-            maxPurgeableTimestamp = controller.maxPurgeableTimestamp(atoms.partitionKey());
+            purgingRow.update(atoms.partitionKey());
 
             // TODO: we could be able to skip filtering if AtomIterator was giving us some stats
             // (like the smallest local deletion time).
             return true;
         }
 
-        protected boolean shouldFilterPartitionDeletion(DeletionTime dt)
+        protected boolean includePartitionDeletion(DeletionTime dt)
         {
-            return dt.markedForDeleteAt() < maxPurgeableTimestamp
-                && dt.localDeletionTime() < controller.gcBefore;
+            return purgingRow.include(dt);
         }
 
         protected boolean shouldFilterRangeTombstoneMarker(RangeTombstoneMarker marker)
         {
-            return marker.delTime().markedForDeleteAt() < maxPurgeableTimestamp
-                && marker.delTime().localDeletionTime() < controller.gcBefore;
+            return purgingRow.include(markers.delTime());
         }
 
-        protected boolean shouldFilterComplexDeletionTime(ColumnDefinition c, DeletionTime dt)
+        private static class PurgingRow extends FilteringRow
         {
-            return dt.markedForDeleteAt() < maxPurgeableTimestamp
-                && dt.localDeletionTime() < controller.gcBefore;
-        }
+            private final CompactionController controller;
+            private long maxPurgeableTimestamp;
 
-        protected boolean shouldFilterCell(ColumnDefinition c, Cell cell)
-        {
-            return cell.timestamp() < maxPurgeableTimestamp
-                && cell.localDeletionTime() < controller.gcBefore;
+            public PurgingRow(CompactionController controller)
+            {
+                this.controller = controller;
+            }
+
+            public void update(DecoratedKey key)
+            {
+                // tombstones with a localDeletionTime before this can be purged.  This is the minimum timestamp for any sstable
+                // containing `key` outside of the set of sstables involved in this compaction.
+                this.maxPurgeableTimestamp = controller.maxPurgeableTimestamp(atoms.partitionKey());
+            }
+
+            public boolean include(DeletionTime dt)
+            {
+                return dt.markedForDeleteAt() >= maxPurgeableTimestamp
+                    || dt.localDeletionTime() >= controller.gcBefore;
+            }
+
+            protected boolean includeTimestamp(long timestamp)
+            {
+                return true;
+            }
+
+            protected boolean include(ColumnDefinition column)
+            {
+                return true;
+            }
+
+            protected boolean includeCell(Cell cell)
+            {
+                return cell.timestamp() >= maxPurgeableTimestamp
+                    || cell.localDeletionTime() >= controller.gcBefore;
+            }
+
+            protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
+            {
+                return dt.markedForDeleteAt() >= maxPurgeableTimestamp
+                    || dt.localDeletionTime() >= controller.gcBefore;
+            }
         }
     }
 }

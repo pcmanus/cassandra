@@ -19,7 +19,7 @@ package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
 
-public class EmptyClusteringPrefix implements ClusteringPrefix
+public class EmptyClusteringPrefix extends AbstractClusteringPrefix
 {
     public static final EmptyClusteringPrefix STATIC_PREFIX = new EmptyClusteringPrefix(EOC.NONE);
 
@@ -45,11 +45,6 @@ public class EmptyClusteringPrefix implements ClusteringPrefix
         throw new AssertionError();
     }
 
-    public ClusteringPrefix clustering()
-    {
-        return this;
-    }
-
     public int size()
     {
         return 0;
@@ -60,6 +55,7 @@ public class EmptyClusteringPrefix implements ClusteringPrefix
         return null;
     }
 
+    @Override
     public ClusteringPrefix.EOC eoc()
     {
         return eoc;
@@ -70,6 +66,7 @@ public class EmptyClusteringPrefix implements ClusteringPrefix
         return this;
     }
 
+    @Override
     public ClusteringPrefix withEOC(EOC eoc)
     {
         if (this.eoc == eoc)
@@ -82,11 +79,6 @@ public class EmptyClusteringPrefix implements ClusteringPrefix
             case END:   return TOP;
         }
         throw new AssertionError();
-    }
-
-    public int dataSize()
-    {
-        return 0;
     }
 
     public long unsharedHeapSize()

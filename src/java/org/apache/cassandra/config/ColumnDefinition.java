@@ -500,6 +500,14 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public int compareTo(ColumnDefinition other)
     {
+        if (this == other)
+            return 0;
+
+        if (isStatic() != other.isStatic())
+            return isStatic() ? -1 : 1;
+        if (isComplex() != other.isComplex())
+            return isComplex() ? 1 : -1;
+
         return ByteBufferUtil.compareUnsigned(name.bytes, other.name.bytes);
     }
 

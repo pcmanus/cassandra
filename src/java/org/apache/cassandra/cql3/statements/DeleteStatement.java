@@ -24,8 +24,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.atoms.RowUpdate;
-import org.apache.cassandra.db.atoms.RowUpdates;
+import org.apache.cassandra.db.atoms.Rows;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.Pair;
@@ -71,7 +70,10 @@ public class DeleteStatement extends ModificationStatement
             }
             else if (cfm.layout().isDense() && clustering.size() == cfm.clusteringColumns().size())
             {
-                update.add(RowUpdates.create(clustering, Columns.of(cfm.compactValueColumn())).addCell(cfm.compactValueColumn(), params.makeTombstone()));
+                Rows.Writer writer = update.writer();
+                writer.setClustering(clustering);
+                params.addTombstone(cfm.compactValueColumn());
+                writer.endOfRow();
             }
             else
             {
@@ -80,10 +82,11 @@ public class DeleteStatement extends ModificationStatement
         }
         else
         {
-            RowUpdate row = RowUpdates.create(clustering, updatedColumns());
+            Rows.Writer writer = update.writer();
+            writer.setClustering(clustering);
             for (Operation op : deletions)
-                op.execute(update.partitionKey().getKey(), row, params);
-            update.add(row);
+                op.execute(update.partitionKey().getKey(), writer, params);
+            writer.endOfRow();
         }
     }
 

@@ -19,12 +19,13 @@ package org.apache.cassandra.db.marshal;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Iterator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cql3.CQL3Type;
-import org.apache.cassandra.db.atoms.ColumnData;
+import org.apache.cassandra.db.atoms.Cell;
 import org.apache.cassandra.serializers.CollectionSerializer;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -58,7 +59,7 @@ public abstract class CollectionType<T> extends AbstractType<T>
 
     protected abstract void appendToStringBuilder(StringBuilder sb);
 
-    public abstract List<ByteBuffer> serializedValues(ColumnData data, int size);
+    protected abstract List<ByteBuffer> serializedValues(Iterator<Cell> cells);
 
     @Override
     public abstract CollectionSerializer<T> getSerializer();
@@ -115,20 +116,20 @@ public abstract class CollectionType<T> extends AbstractType<T>
         return true;
     }
 
-    protected int enforceLimit(ColumnData data, int version)
+    protected int enforceLimit(List<ByteBuffer> values, int version)
     {
-        if (version >= 3 || data.size() <= MAX_ELEMENTS)
-            return data.size();
+        if (version >= 3 || values.size() <= MAX_ELEMENTS)
+            return values.size();
 
         logger.error("Detected collection with {} elements, more than the {} limit. Only the first {} elements will be returned to the client. "
-                   + "Please see http://cassandra.apache.org/doc/cql3/CQL.html#collections for more details.", data.size(), MAX_ELEMENTS, MAX_ELEMENTS);
+                   + "Please see http://cassandra.apache.org/doc/cql3/CQL.html#collections for more details.", values.size(), MAX_ELEMENTS, MAX_ELEMENTS);
         return MAX_ELEMENTS;
     }
 
-    public ByteBuffer serializeForNativeProtocol(ColumnData data, int version)
+    public ByteBuffer serializeForNativeProtocol(Iterator<Cell> cells, int version)
     {
-        int size = enforceLimit(data, version);
-        List<ByteBuffer> values = serializedValues(data, size);
+        List<ByteBuffer> values = serializedValues(cells);
+        int size = enforceLimit(values, version);
         return CollectionSerializer.pack(values, size, version);
     }
 

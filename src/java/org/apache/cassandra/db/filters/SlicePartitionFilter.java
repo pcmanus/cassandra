@@ -33,27 +33,20 @@ import org.apache.cassandra.io.util.FileDataInput;
  */
 public class SlicePartitionFilter implements PartitionFilter
 {
-    private final Columns selectedColumns;
-    private final Columns selectedStaticColumns;
+    private final PartitionColumns selectedColumns;
     private final Slices slices;
     private final boolean reversed;
 
-    public SlicePartitionFilter(Columns columns, Columns staticColumns, Slices slices, boolean reversed)
+    public SlicePartitionFilter(PartitionColumns columns, Slices slices, boolean reversed)
     {
         this.selectedColumns = columns;
-        this.selectedStaticColumns = staticColumns;
         this.slices = slices;
         this.reversed = reversed;
     }
 
-    public Columns selectedColumns()
+    public PartitionColumns selectedColumns()
     {
         return selectedColumns;
-    }
-
-    public Columns selectedStaticColumns()
-    {
-        return selectedStaticColumns;
     }
 
     public boolean isReversed()
@@ -71,7 +64,7 @@ public class SlicePartitionFilter implements PartitionFilter
         Slices newSlices = slices.withUpdatedStart(comparator, newStart);
         return slices == newSlices
              ? this
-             : new SlicePartitionFilter(selectedColumns, selectedStaticColumns, newSlices, reversed);
+             : new SlicePartitionFilter(selectedColumns, newSlices, reversed);
     }
 
     public SlicePartitionFilter withUpdatedEnd(ClusteringComparator comparator, ClusteringPrefix newEnd)
@@ -79,7 +72,7 @@ public class SlicePartitionFilter implements PartitionFilter
         Slices newSlices = slices.withUpdatedEnd(comparator, newEnd);
         return slices == newSlices
              ? this
-             : new SlicePartitionFilter(selectedColumns, selectedStaticColumns, newSlices, reversed);
+             : new SlicePartitionFilter(selectedColumns, newSlices, reversed);
     }
 
     public boolean isFullyCoveredBy(CachedPartition partition, DataLimits limits, int nowInSec)
@@ -104,12 +97,6 @@ public class SlicePartitionFilter implements PartitionFilter
     public boolean isHeadFilter()
     {
         return !reversed && slices.size() == 1 && !slices.hasLowerBound();
-    }
-
-    public AtomIterator filter(Partition partition)
-    {
-        // TODO (same as below, we need to filter out non-selected columns)
-        throw new UnsupportedOperationException();
     }
 
     // Given another iterator, only return the atoms that match this filter
@@ -148,7 +135,7 @@ public class SlicePartitionFilter implements PartitionFilter
             // TODO
             throw new UnsupportedOperationException();
 
-        return slices.makeSliceIterator(new SSTableIterator(sstable, key, selectedColumns, selectedStaticColumns));
+        return slices.makeSliceIterator(new SSTableIterator(sstable, key, selectedColumns));
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
@@ -157,12 +144,12 @@ public class SlicePartitionFilter implements PartitionFilter
             // TODO
             throw new UnsupportedOperationException();
 
-        return slices.makeSliceIterator(new SSTableIterator(sstable, file, key, selectedColumns, selectedStaticColumns, indexEntry));
+        return slices.makeSliceIterator(new SSTableIterator(sstable, file, key, selectedColumns, indexEntry));
     }
 
     public AtomIterator getAtomIterator(Partition partition)
     {
-        return AtomIterators.filterColumns(partition.atomIterator(slices, reversed), selectedColumns, selectedStaticColumns);
+        return partition.atomIterator(selectedColumns, slices, reversed);
     }
 
     public boolean shouldInclude(SSTableReader sstable)

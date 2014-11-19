@@ -204,15 +204,10 @@ public class StreamReader
             return metadata;
         }
 
-        public Columns columns()
+        public PartitionColumns columns()
         {
             // We don't know which columns we'll get so assume it can be all of them
-            return metadata.regularColumns();
-        }
-
-        public Columns staticColumns()
-        {
-            return metadata.staticColumns();
+            return PartitionColumns.builder().addAll(metadata.regularColumns()).addAll(metadata.staticColumns()).build();
         }
 
         public boolean isReverseOrder()

@@ -285,12 +285,18 @@ public class LegacyLayout
 
     public static class DeserializedCell implements Cell
     {
+        private ColumnDefinition column;
         private boolean isCounter;
         private ByteBuffer value;
         private long timestamp;
         private int localDeletionTime;
         private int ttl;
         private CellPath path;
+
+        public ColumnDefinition column()
+        {
+            return column;
+        }
 
         public boolean isCounterCell()
         {

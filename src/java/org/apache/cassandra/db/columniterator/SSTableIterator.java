@@ -38,28 +38,25 @@ public class SSTableIterator implements SeekableAtomIterator
     private final SSTableReader sstable;
     private final DecoratedKey key;
     private final DeletionTime partitionLevelDeletion;
-    private final Columns columns;
-    private final Columns staticColumns;
+    private final PartitionColumns columns;
 
     private final Row staticRow;
     private final Reader reader;
 
-    public SSTableIterator(SSTableReader sstable, DecoratedKey key, Columns columns, Columns staticColumns)
+    public SSTableIterator(SSTableReader sstable, DecoratedKey key, PartitionColumns columns)
     {
-        this(sstable, null, key, columns, staticColumns, sstable.getPosition(key, SSTableReader.Operator.EQ));
+        this(sstable, null, key, columns, sstable.getPosition(key, SSTableReader.Operator.EQ));
     }
 
     public SSTableIterator(SSTableReader sstable,
                            FileDataInput file,
                            DecoratedKey key,
-                           Columns columns,
-                           Columns staticColumns,
+                           PartitionColumns columns,
                            RowIndexEntry indexEntry)
     {
         this.sstable = sstable;
         this.key = key;
         this.columns = columns;
-        this.staticColumns = staticColumns;
 
         if (indexEntry == null)
         {
@@ -117,14 +114,9 @@ public class SSTableIterator implements SeekableAtomIterator
         return sstable.metadata;
     }
 
-    public Columns columns()
+    public PartitionColumns columns()
     {
         return columns;
-    }
-
-    public Columns staticColumns()
-    {
-        return staticColumns;
     }
 
     public DecoratedKey partitionKey()

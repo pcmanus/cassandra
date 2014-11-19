@@ -17,24 +17,16 @@
  */
 package org.apache.cassandra.db.atoms;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.db.*;
+import java.util.Iterator;
 
-public abstract class RowUpdates
+import com.google.common.collect.AbstractIterator;
+
+abstract class ReusableCellIterator extends AbstractIterator<Cell> implements Iterator<Cell>
 {
-    private RowUpdates() {}
+    protected Iterator<Cell> wrapped;
 
-    public static RowUpdate create(CFMetaData metadata, ClusteringPrefix clustering)
+    ReusableCellIterator setTo(Iterator<Cell> wrapped)
     {
-        return create(clustering, clustering == EmptyClusteringPrefix.STATIC_PREFIX ? metadata.staticColumns() : metadata.regularColumns());
-    }
-
-    public static RowUpdate create(ClusteringPrefix clustering, Columns columns)
-    {
-        RowUpdate upd = columns.hasComplex()
-                      ? new RowUpdateWithComplexColumns(columns)
-                      : new RowUpdateWithSimpleColumns(columns);
-        upd.setClustering(clustering);
-        return upd;
+        this.wrapped = wrapped;
     }
 }

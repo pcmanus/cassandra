@@ -20,7 +20,7 @@ package org.apache.cassandra.db.marshal;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.db.atoms.ColumnData;
+import org.apache.cassandra.db.atoms.Cell;
 import org.apache.cassandra.db.atoms.CollectionPath;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
@@ -92,11 +92,11 @@ public class SetType<T> extends CollectionType<Set<T>>
         sb.append(getClass().getName()).append(TypeParser.stringifyTypeParameters(Collections.<AbstractType<?>>singletonList(elements)));
     }
 
-    public List<ByteBuffer> serializedValues(ColumnData data, int size)
+    public List<ByteBuffer> serializedValues(Iterator<Cell> cells)
     {
-        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>(size);
-        for (int i = 0; i < size; i++)
-            bbs.add(((CollectionPath)data.cell(i).path()).element());
+        List<ByteBuffer> bbs = new ArrayList<ByteBuffer>();
+        while (cells.hasNext())
+            bbs.add(((CollectionPath)cells.next().path()).element());
         return bbs;
     }
 }

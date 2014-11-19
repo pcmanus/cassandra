@@ -30,8 +30,7 @@ import org.apache.cassandra.io.util.FileDataInput;
  */
 public interface PartitionFilter
 {
-    public Columns selectedColumns();
-    public Columns selectedStaticColumns();
+    public PartitionColumns selectedColumns();
 
     public PartitionFilter withUpdatedStart(ClusteringComparator comparator, ClusteringPrefix newStart);
     public PartitionFilter withUpdatedEnd(ClusteringComparator comparator, ClusteringPrefix newEnd);

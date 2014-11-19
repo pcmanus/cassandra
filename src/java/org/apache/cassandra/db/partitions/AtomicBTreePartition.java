@@ -35,6 +35,7 @@ import org.apache.cassandra.utils.btree.BTree;
 import org.apache.cassandra.utils.btree.BTreeSearchIterator;
 import org.apache.cassandra.utils.btree.UpdateFunction;
 import org.apache.cassandra.utils.ObjectSizes;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SearchIterator;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.Locks;
@@ -76,7 +77,7 @@ public class AtomicBTreePartition implements Partition
     private static final DeletionInfo LIVE = DeletionInfo.live();
     // This is a small optimization: DeletionInfo is mutable, but we know that we will always copy it in that class,
     // so we can safely alias one DeletionInfo.live() reference and avoid some allocations.
-    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, null);
+    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, Rows.EMPTY_STATIC_ROW);
 
     private final CFMetaData metadata;
     private final DecoratedKey partitionKey;
@@ -111,6 +112,12 @@ public class AtomicBTreePartition implements Partition
         return ref.deletionInfo.getTopLevelDeletion();
     }
 
+    public PartitionColumns columns()
+    {
+        // We don't really know which columns will be part of the update, so assume it's all of them
+        return PartitionColumns.builder().addAll(metadata.regularColumns()).addAll(metadata.staticColumns()).build();
+    }
+
     public boolean hasRows()
     {
         return !BTree.isEmpty(ref.tree);
@@ -122,14 +129,14 @@ public class AtomicBTreePartition implements Partition
         return new BTreeSearchIterator<>(ref.tree, metadata.comparator);
     }
 
-    public AtomIterator atomIterator(Slices slices, boolean reversed)
+    public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
     {
         if (slices.size() == 0)
             return AtomIterators.emptyIterator(metadata, partitionKey, reversed);
 
         return slices.size() == 1
-             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, slices.lowerBound(), slices.upperBound(), !reversed)
-             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, slices, !reversed);
+             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices.lowerBound(), slices.upperBound(), !reversed)
+             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices, !reversed);
     }
 
     private static class SingleSliceIterator extends AbstractIterator<Atom> implements AtomIterator
@@ -137,11 +144,14 @@ public class AtomicBTreePartition implements Partition
         private final CFMetaData metadata;
         private final DecoratedKey partitionKey;
         private final DeletionTime partitionLevelDeletion;
+        private final PartitionColumns columns;
         private final Row staticRow;
         private final boolean forwards;
 
         private final Iterator<RangeTombstone> tombstoneIter;
-        private final Iterator<RowUpdate> rowIter;
+        private final Iterator<Row> rowIter;
+
+        private final FilteringRow filter;
 
         private RangeTombstone nextTombstone;
         private boolean inTombstone;
@@ -151,8 +161,9 @@ public class AtomicBTreePartition implements Partition
 
         private SingleSliceIterator(CFMetaData metadata,
                                     DecoratedKey key,
-                                    DeletionTime partitionLevelDeletion,
+                                    final DeletionTime partitionLevelDeletion,
                                     Holder holder,
+                                    PartitionColumns columns,
                                     ClusteringPrefix start,
                                     ClusteringPrefix end,
                                     boolean forwards)
@@ -160,7 +171,8 @@ public class AtomicBTreePartition implements Partition
             this.metadata = metadata;
             this.partitionKey = key;
             this.partitionLevelDeletion = partitionLevelDeletion;
-            this.staticRow = holder.staticRow;
+            this.columns = columns;
+            this.staticRow = columns.statics.isEmpty() ? null : holder.staticRow;
             this.forwards = forwards;
             this.rowIter = BTree.slice(holder.tree,
                                        metadata.comparator,
@@ -170,6 +182,41 @@ public class AtomicBTreePartition implements Partition
                                        true,
                                        forwards);
             this.tombstoneIter = holder.deletionInfo.rangeIterator(start, end);
+
+            this.filter = new FilteringRow()
+            {
+                private long deletionTimestamp;
+
+                @Override
+                protected FilteringRow setTo(Row row)
+                {
+                    long rangeDeletion = SingleSliceIterator.this.inTombstone
+                                       ? SingleSliceIterator.this.nextTombstone.data.markedForDeleteAt()
+                                       : Long.MIN_VALUE;
+                    this.deletionTimestamp = Math.max(partitionLevelDeletion.markedForDeleteAt(), rangeDeletion);
+                    super.setTo(row);
+                }
+
+                protected boolean includeTimestamp(long timestamp)
+                {
+                    return timestamp > deletionTimestamp;
+                }
+
+                protected boolean include(ColumnDefinition column)
+                {
+                    return columns().contains(column);
+                }
+
+                protected boolean includeCell(Cell cell)
+                {
+                    return cell.timestamp() > deletionTimestamp;
+                }
+
+                protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
+                {
+                    return dt.markedForDeleteAt() > deletionTimestamp;
+                }
+            };
         }
 
         public CFMetaData metadata()
@@ -189,17 +236,12 @@ public class AtomicBTreePartition implements Partition
 
         public Row staticRow()
         {
-            return staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
+            return staticRow == null ? Rows.EMPTY_STATIC_ROW : filter.setTo(staticRow);
         }
 
-        public Columns columns()
+        public PartitionColumns columns()
         {
-            return metadata.regularColumns();
-        }
-
-        public Columns staticColumns()
-        {
-            return metadata.staticColumns();
+            return columns;
         }
 
         public boolean isReverseOrder()
@@ -220,90 +262,57 @@ public class AtomicBTreePartition implements Partition
 
         private void prepareNextRow()
         {
-            if (nextRow == null && rowIter.hasNext())
-                nextRow = rowIter.next();
-        }
-
-        private Row filterShadowed(Row row)
-        {
-            if (partitionLevelDeletion.isLive() && !inTombstone)
-                return row;
-
-            long deletionTimestamp = Math.max(partitionLevelDeletion.markedForDeleteAt(),
-                                              inTombstone ? nextTombstone.data.markedForDeleteAt() : Long.MIN_VALUE);
-
-            return Rows.withoutShadowed(row, deletionTimestamp);
+            while (nextRow == null && rowIter.hasNext())
+            {
+                nextRow = filter.setTo(rowIter.next());
+                if (nextRow.isEmpty())
+                    nextRow = null;
+            }
         }
 
         protected Atom computeNext()
         {
-            while (true)
+            prepareNextTombstone();
+            prepareNextRow();
+
+            if (nextTombstone == null)
+                return nextRow == null ? endOfData() : nextRow;
+
+            if (nextRow == null)
             {
-                prepareNextTombstone();
-                prepareNextRow();
-
-                if (nextTombstone == null)
-                {
-                    if (nextRow == null)
-                        return endOfData();
-
-                    Row row = filterShadowed(nextRow);
-                    nextRow = null;
-
-                    if (row != null)
-                        return row;
-                    else
-                        continue;
-                }
-
-                if (nextRow == null)
-                {
-                    if (inTombstone)
-                    {
-                        RangeTombstone rt = nextTombstone;
-                        nextTombstone = null;
-                        return marker.setTo(rt.max, false, rt.data);
-                    }
-
-                    inTombstone = true;
-                    return marker.setTo(nextTombstone.min, true, nextTombstone.data);
-                }
-
                 if (inTombstone)
                 {
-                    if (metadata.comparator.compare(nextTombstone.max, nextRow) < 0)
-                    {
-                        RangeTombstone rt = nextTombstone;
-                        nextTombstone = null;
-                        return marker.setTo(rt.max, false, rt.data);
-                    }
-                    else
-                    {
-                        Row row = filterShadowed(nextRow);
-                        nextRow = null;
-
-                        if (row != null)
-                            return row;
-                        else
-                            continue;
-                    }
+                    RangeTombstone rt = nextTombstone;
+                    nextTombstone = null;
+                    return marker.setTo(rt.max, false, rt.data);
                 }
 
-                if (metadata.comparator.compare(nextTombstone.min, nextRow) < 0)
+                inTombstone = true;
+                return marker.setTo(nextTombstone.min, true, nextTombstone.data);
+            }
+
+            if (inTombstone)
+            {
+                if (metadata.comparator.compare(nextTombstone.max, nextRow) < 0)
                 {
-                    inTombstone = true;
-                    return marker.setTo(nextTombstone.min, true, nextTombstone.data);
+                    RangeTombstone rt = nextTombstone;
+                    nextTombstone = null;
+                    return marker.setTo(rt.max, false, rt.data);
                 }
                 else
                 {
-                    Row row = filterShadowed(nextRow);
-                    nextRow = null;
-
-                    if (row != null)
-                        return row;
-                    else
-                        continue;
+                    return nextRow;
                 }
+            }
+
+            if (metadata.comparator.compare(nextTombstone.min, nextRow) < 0)
+            {
+                inTombstone = true;
+                return marker.setTo(nextTombstone.min, true, nextTombstone.data);
+            }
+            else
+            {
+                return nextRow;
             }
         }
 
@@ -317,6 +326,7 @@ public class AtomicBTreePartition implements Partition
         private final CFMetaData metadata;
         private final DecoratedKey partitionKey;
         private final DeletionTime partitionLevelDeletion;
+        private final PartitionColumns columns;
         private final Holder holder;
         private final Slices slices;
         private final boolean forwards;
@@ -328,6 +338,7 @@ public class AtomicBTreePartition implements Partition
                                DecoratedKey key,
                                DeletionTime partitionLevelDeletion,
                                Holder holder,
+                               PartitionColumns columns,
                                Slices slices,
                                boolean forwards)
         {
@@ -335,6 +346,7 @@ public class AtomicBTreePartition implements Partition
             this.partitionKey = key;
             this.partitionLevelDeletion = partitionLevelDeletion;
             this.holder = holder;
+            this.columns = columns;
             this.slices = slices;
             this.forwards = forwards;
         }
@@ -356,17 +368,39 @@ public class AtomicBTreePartition implements Partition
 
         public Row staticRow()
         {
-            return holder.staticRow == null ? Rows.EMPTY_STATIC_ROW : holder.staticRow;
+            if (columns.statics.isEmpty() || holder.staticRow == null)
+                return Rows.EMPTY_STATIC_ROW;
+
+            final long deletionTimestamp = partitionLevelDeletion.markedForDeleteAt();
+
+            return new FilteringRow()
+            {
+                protected boolean includeTimestamp(long timestamp)
+                {
+                    return timestamp > deletionTimestamp;
+                }
+
+                protected boolean include(ColumnDefinition def)
+                {
+                    return columns.statics.contains(def);
+                }
+
+                protected boolean includeCell(Cell cell)
+                {
+                    return cell.timestamp() > deletionTimestamp;
+                }
+
+                protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
+                {
+                    return dt.markedForDeleteAt() > deletionTimestamp;
+                }
+
+            }.setTo(holder.staticRow);
         }
 
-        public Columns columns()
+        public PartitionColumns columns()
         {
-            return metadata.regularColumns();
-        }
-
-        public Columns staticColumns()
-        {
-            return metadata.staticColumns();
+            return columns;
         }
 
         public boolean isReverseOrder()
@@ -386,6 +420,7 @@ public class AtomicBTreePartition implements Partition
                                                        partitionKey,
                                                        partitionLevelDeletion,
                                                        holder,
+                                                       columns,
                                                        slices.getStart(sliceIdx),
                                                        slices.getEnd(sliceIdx),
                                                        forwards);
@@ -441,11 +476,11 @@ public class AtomicBTreePartition implements Partition
                     deletionInfo = current.deletionInfo;
                 }
 
-                RowUpdate newStatic = update.staticRowUpdate();
-                RowUpdate staticRow = newStatic == null
-                                    ? current.staticRow
-                                    : (current.staticRow == null ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
-                Object[] tree = BTree.update(current.tree, update.metadata().comparator.rowUpdateComparator, update, update.rowCount(), true, updater);
+                Row newStatic = update.staticRow();
+                Row staticRow = newStatic == Rows.EMPTY_STATIC_ROW
+                              ? current.staticRow
+                              : (current.staticRow == Rows.EMPTY_STATIC_ROW ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
+                Object[] tree = BTree.update(current.tree, update.metadata().comparator.rowComparator, update, update.rowCount(), true, updater);
 
                 if (tree != null && refUpdater.compareAndSet(this, current, new Holder(tree, deletionInfo, staticRow)))
                 {
@@ -527,9 +562,9 @@ public class AtomicBTreePartition implements Partition
         final DeletionInfo deletionInfo;
         // the btree of rows
         final Object[] tree;
-        final RowUpdate staticRow;
+        final Row staticRow;
 
-        Holder(Object[] tree, DeletionInfo deletionInfo, RowUpdate staticRow)
+        Holder(Object[] tree, DeletionInfo deletionInfo, Row staticRow)
         {
             this.tree = tree;
             this.deletionInfo = deletionInfo;
@@ -543,66 +578,75 @@ public class AtomicBTreePartition implements Partition
     }
 
     // the function we provide to the btree utilities to perform any column replacements
-    private static final class RowUpdater implements UpdateFunction<RowUpdate>
+    private static final class RowUpdater implements UpdateFunction<Row>
     {
         final AtomicBTreePartition updating;
-        final CFMetaData metadata;
         final MemtableAllocator allocator;
         final OpOrder.Group writeOp;
         final Updater indexer;
+        final int nowInSec;
         Holder ref;
         long dataSize;
         long heapSize;
         final MemtableAllocator.DataReclaimer reclaimer;
-        List<RowUpdate> inserted; // TODO: replace with walk of aborted BTree
+        final MemtableAllocator.RowAllocator rowAllocator;
+        List<MemtableRow> inserted; // TODO: replace with walk of aborted BTree
 
         private RowUpdater(AtomicBTreePartition updating, CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group writeOp, Updater indexer)
         {
+
             this.updating = updating;
             this.allocator = allocator;
             this.writeOp = writeOp;
             this.indexer = indexer;
-            this.metadata = metadata;
+            this.nowInSec = FBUtilities.nowInSeconds();
             this.reclaimer = allocator.reclaimer();
+            this.rowAllocator = allocator.newRowAllocator(metadata, writeOp);
         }
 
-        public RowUpdate apply(RowUpdate insert)
+        public Row apply(Row insert)
         {
-            insertIntoIndexes(insert);
-            insert = insert.localCopy(metadata, allocator, writeOp);
-            this.dataSize += insert.dataSize();
-            this.heapSize += insert.unsharedHeapSizeExcludingData();
+            rowAllocator.allocateNewRow(insert.columns());
+            Rows.copy(insert, rowAllocator);
+            MemtableRow row = rowAllocator.allocatedRow();
+
+            insertIntoIndexes(row);
+
+            this.dataSize += row.dataSize();
+            this.heapSize += row.unsharedHeapSizeExcludingData();
             if (inserted == null)
                 inserted = new ArrayList<>();
-            inserted.add(insert);
-            return insert;
+            inserted.add(row);
+            return row;
         }
 
-        public RowUpdate apply(RowUpdate existing, RowUpdate update)
+        public Row apply(Row existing, Row update)
         {
-            RowUpdate reconciled = existing.mergeTo(update, indexer);
-            if (existing != reconciled)
-            {
-                reconciled = reconciled.localCopy(metadata, allocator, writeOp);
-                dataSize += reconciled.dataSize() - existing.dataSize();
-                heapSize += reconciled.unsharedHeapSizeExcludingData() - existing.unsharedHeapSizeExcludingData();
-                if (inserted == null)
-                    inserted = new ArrayList<>();
-                inserted.add(reconciled);
-                discard(existing);
-            }
+            Columns mergedColumns = existing.columns().mergeTo(update.columns());
+            rowAllocator.allocateNewRow(mergedColumns);
+
+            Rows.merge(existing, update, rowAllocator, nowInSec, indexer);
+
+            MemtableRow reconciled = rowAllocator.allocatedRow();
+
+            assert existing instanceof MemtableRow;
+            MemtableRow replaced = (MemtableRow)existing;
+
+            dataSize += reconciled.dataSize() - replaced.dataSize();
+            heapSize += reconciled.unsharedHeapSizeExcludingData() - replaced.unsharedHeapSizeExcludingData();
+            if (inserted == null)
+                inserted = new ArrayList<>();
+            inserted.add(reconciled);
+            discard(replaced);
+
             return reconciled;
         }
 
         private void insertIntoIndexes(Row row)
         {
             ClusteringPrefix clustering = row.clustering();
-            for (ColumnData data : row)
-            {
-                ColumnDefinition c = data.column();
-                for (int i = 0; i < data.size(); i++)
-                    indexer.insert(clustering, c, data.cell(i));
-            }
+            for (Cell cell : row)
+                indexer.insert(clustering, cell);
         }
 
         protected void reset()
@@ -611,19 +655,19 @@ public class AtomicBTreePartition implements Partition
             this.heapSize = 0;
             if (inserted != null)
             {
-                for (RowUpdate row : inserted)
+                for (MemtableRow row : inserted)
                     abort(row);
                 inserted.clear();
             }
             reclaimer.cancel();
         }
 
-        protected void abort(RowUpdate abort)
+        protected void abort(MemtableRow abort)
         {
             reclaimer.reclaimImmediately(abort);
         }
 
-        protected void discard(RowUpdate discard)
+        protected void discard(MemtableRow discard)
         {
             reclaimer.reclaim(discard);
         }

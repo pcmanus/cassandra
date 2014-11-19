@@ -44,14 +44,9 @@ public abstract class WrappingAtomIterator extends UnmodifiableIterator<Atom>  i
         return wrapped.metadata();
     }
 
-    public Columns columns()
+    public PartitionColumns columns()
     {
         return wrapped.columns();
-    }
-
-    public Columns staticColumns()
-    {
-        return wrapped.staticColumns();
     }
 
     public boolean isReverseOrder()

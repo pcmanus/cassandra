@@ -308,10 +308,13 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer value = t.bindAndGet(params.options);
-            update.addCell(column, value == null ? params.makeTombstone() : params.makeCell(value));
+            if (value == null)
+                params.addTombstone(column, writer);
+            else
+                params.addCell(column, writer, value);
         }
     }
 
@@ -322,13 +325,13 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
                 throw new InvalidRequestException("Invalid null value for counter increment");
             long increment = ByteBufferUtil.toLong(bytes);
-            update.addCell(column, params.makeCounter(increment));
+            params.addCounter(column, writer, increment);
         }
     }
 
@@ -339,7 +342,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -349,7 +352,7 @@ public abstract class Constants
             if (increment == Long.MIN_VALUE)
                 throw new InvalidRequestException("The negation of " + increment + " overflows supported counter precision (signed 8 bytes integer)");
 
-            update.addCell(column, params.makeCounter(-increment));
+            params.addCounter(column, writer, -increment);
         }
     }
 
@@ -362,12 +365,12 @@ public abstract class Constants
             super(column, null);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             if (column.type.isCollection())
-                update.updateComplexDeletion(column, params.complexDeletionTime());
+                params.setComplexDeletionTime(column, writer);
             else
-                update.addCell(column, params.makeTombstone());
+                params.addTombstone(column, writer);
         }
     };
 }

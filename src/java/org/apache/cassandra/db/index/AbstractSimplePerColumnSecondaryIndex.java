@@ -82,9 +82,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     protected abstract ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell);
 
-    public void delete(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup)
+    public void delete(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell, OpOrder.Group opGroup)
     {
-        assert columnDef.equals(column);
+        assert columnDef.equals(cell.column());
 
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
@@ -97,7 +97,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
             logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, upd);
     }
 
-    public void insert(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell cell, OpOrder.Group opGroup)
+    public void insert(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell, OpOrder.Group opGroup)
     {
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
 
@@ -113,13 +113,13 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
     }
 
-    public void update(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition column, Cell oldCell, Cell cell, OpOrder.Group opGroup)
+    public void update(ByteBuffer rowKey, ClusteringPrefix clustering, Cell oldCell, Cell cell, OpOrder.Group opGroup)
     {
         // insert the new value before removing the old one, so we never have a period
         // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540                    
-        insert(rowKey, clustering, column, cell, opGroup);
+        insert(rowKey, clustering, cell, opGroup);
         if (SecondaryIndexManager.shouldCleanupOldValue(oldCell, cell))
-            delete(rowKey, clustering, column, oldCell, opGroup);
+            delete(rowKey, clustering, oldCell, opGroup);
     }
 
     public void removeIndex(ByteBuffer columnName)

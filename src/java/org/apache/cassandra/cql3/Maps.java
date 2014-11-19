@@ -273,11 +273,11 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + put
-            update.updateComplexDeletion(column, params.complexDeletionTimeForOverwrite());
-            Putter.doPut(t, update, column, params);
+            params.setComplexDeletionTimeForOverwrite(column, writer);
+            Putter.doPut(t, writer, column, params);
         }
     }
 
@@ -298,7 +298,7 @@ public abstract class Maps
             k.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer key = k.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -309,7 +309,7 @@ public abstract class Maps
 
             if (value == null)
             {
-                update.addCell(column, params.makeTombstone(path));
+                params.addTomstone(column, writer, path);
             }
             else
             {
@@ -319,7 +319,7 @@ public abstract class Maps
                                                                     FBUtilities.MAX_UNSIGNED_SHORT,
                                                                     value.remaining()));
 
-                update.addCell(column, params.makeCell(path, value));
+                params.addCell(column, writer, path, value);
             }
         }
     }
@@ -331,12 +331,12 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
-            doPut(t, update, column, params);
+            doPut(t, writer, column, params);
         }
 
-        static void doPut(Term t, RowUpdate update, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doPut(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -345,7 +345,7 @@ public abstract class Maps
 
             Map<ByteBuffer, ByteBuffer> toAdd = ((Maps.Value)value).map;
             for (Map.Entry<ByteBuffer, ByteBuffer> entry : toAdd.entrySet())
-                update.addCell(column, params.makeCell(new CollectionPath(entry.getKey()), entry.getValue()));
+                params.addCell(column, writer, new CollectionPath(entry.getKey()), entry.getValue());
         }
     }
 
@@ -356,14 +356,14 @@ public abstract class Maps
             super(column, k);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal key = t.bind(params.options);
             if (key == null)
                 throw new InvalidRequestException("Invalid null map key");
             assert key instanceof Constants.Value;
 
-            update.addCell(column, params.makeTombstone(new CollectionPath(((Constants.Value)key).bytes)));
+            params.addTombstone(column, writer, new CollectionPath(((Constants.Value)key).bytes));
         }
     }
 }

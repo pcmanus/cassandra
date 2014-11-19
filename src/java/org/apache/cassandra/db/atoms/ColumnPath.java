@@ -17,46 +17,38 @@
  */
 package org.apache.cassandra.db.atoms;
 
-import java.nio.ByteBuffer;
-
-import com.google.common.collect.Iterators;
+import java.util.Objects;
 
 import org.apache.cassandra.db.*;
 
-public abstract class AbstractRowUpdate implements RowUpdate
+public class ColumnPath
 {
-    protected ClusteringPrefix clustering;
-    protected long rowTimestamp = Long.MIN_VALUE;
+    public final DecoratedKey key;
+    public final ClusteringPrefix clustering;
+    public final ColumnDefinition column;
 
-    public RowUpdate setClustering(ClusteringPrefix clustering)
+    public ColumnPath(DecoratedKey key, ClusteringPrefix clustering, ColumnDefinition column)
     {
+        this.key = key;
         this.clustering = clustering.takeAlias();
-        return this;
+        this.column = column;
     }
 
-    public Row takeAlias()
+    @Override
+    public final int hashCode()
     {
-        return this;
+        return Objects.hash(key, clustering, column);
     }
 
-    public Atom.Kind kind()
+    @Override
+    public final boolean equals(Object o)
     {
-        return Atom.Kind.ROW;
-    }
+        if(!(o instanceof ColumnPath))
+            return false;
 
-    public ClusteringPrefix clustering()
-    {
-        return clustering;
-    }
-
-    public long timestamp()
-    {
-        return rowTimestamp;
-    }
-
-    public RowUpdate updateRowTimestamp(long timestamp)
-    {
-        rowTimestamp = timestamp;
-        return this;
+        ColumnPath that = (ColumnPath)o;
+        return Objects.equal(this.key, that.key)
+            && Objects.equal(this.clustering, that.clustering)
+            && Objects.equal(this.column, that.column);
     }
 }

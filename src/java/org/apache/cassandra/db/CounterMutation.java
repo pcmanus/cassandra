@@ -231,7 +231,7 @@ public class CounterMutation implements IMutation
     }
 
     // Attempt to load the current values from cache. If that fails, read the rest from the cfs.
-    private void updateWithCurrentValues(Map<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> counterUpdates, ColumnFamilyStore cfs)
+    private void updateWithCurrentValues(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
     {
         if (CacheService.instance.counterCache.getCapacity() != 0)
         {
@@ -254,7 +254,7 @@ public class CounterMutation implements IMutation
     }
 
     // Returns the count of cache misses.
-    private void updateWithCurrentValuesFromCache(Map<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> counterUpdates, ColumnFamilyStore cfs)
+    private void updateWithCurrentValuesFromCache(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
     {
         Iterator<Map.Entry<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>>> iter = counterUpdates.entrySet().iterator();
         while (iter.hasNext())
@@ -280,7 +280,7 @@ public class CounterMutation implements IMutation
     }
 
     // Reads the missing current values from the CFS.
-    private void updateWithCurrentValuesFromCFS(Map<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> counterUpdates, ColumnFamilyStore cfs)
+    private void updateWithCurrentValuesFromCFS(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
     {
         Columns.Builder builder = Columns.builder();
         SortedSet<ClusteringPrefix> names = new TreeSet<>(cfs.metadata.comparator);

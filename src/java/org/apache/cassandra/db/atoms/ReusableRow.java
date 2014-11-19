@@ -19,19 +19,22 @@ package org.apache.cassandra.db.atoms;
 
 import org.apache.cassandra.db.*;
 
-public class ReusableRow extends ColumnDataContainer.Reader
+public class ReusableRow extends AbstractReusableRow
 {
     private ClusteringPrefix clustering;
-    private long rowTimestamp = Long.MIN_VALUE;
+    private long timestamp = Long.MIN_VALUE;
 
-    public ReusableRow(Columns columns, int cellsCapacity)
-    {
-        super(new ColumnDataContainer(columns, 1, cellsCapacity));
-    }
+    private Writer writer = new Writer();
 
     public ReusableRow(Columns columns)
     {
-        this(columns, 16);
+        super(new RowDataBlock(columns, 1));
+    }
+
+    public ClusteringPrefix clustering()
+    {
+        assert clustering != null;
+        return clustering;
     }
 
     public long timestamp()
@@ -39,52 +42,26 @@ public class ReusableRow extends ColumnDataContainer.Reader
         return rowTimestamp;
     }
 
-    public ClusteringPrefix clustering()
+    public Rows.Writer writer()
     {
-        return clustering;
+        return writer.reset();
     }
 
-    protected int rowOffset()
+    private class Writer extends RowDataBlock.Writer
     {
-        return 0;
-    }
-
-    public Writer newWriter()
-    {
-        return new Writer();
-    }
-
-    public Row takeAlias()
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public class Writer extends ColumnDataContainer.Writer
-    {
-        private Writer()
+        public Writer()
         {
-            super(data());
-        }
-
-        protected int startPosition()
-        {
-            return 0;
-        }
-
-        protected int rowOffset()
-        {
-            return 0;
+            super(data);
         }
 
         public void setClustering(ClusteringPrefix clustering)
         {
-            ReusableRow.this.clustering = clustering;
+            ReusableRow.this.clustering = clustering.takeAlias();
         }
 
-        public void setTimestamp(long rowTimestamp)
+        public void setTimestamp(long timestamp)
         {
-            ReusableRow.this.rowTimestamp = rowTimestamp;
+            ReusableRow.this.timestamp = timestamp;
         }
     }
 }

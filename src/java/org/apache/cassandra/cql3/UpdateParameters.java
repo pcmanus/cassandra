@@ -22,6 +22,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.collect.ListMultimap;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
@@ -41,9 +43,9 @@ public class UpdateParameters
     public final int localDeletionTime;
 
     // For lists operation that require a read-before-write. Will be null otherwise.
-    private final Map<ByteBuffer, Map<ClusteringPrefix, Row>> prefetchedLists;
+    private final ListMultimap<ColumnPath, Cell> prefetchedLists;
 
-    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, Map<ByteBuffer, Map<ClusteringPrefix, Row>> prefetchedLists)
+    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, ListMultimap<ColumnPath, Cell> prefetchedLists)
     {
         this.metadata = metadata;
         this.options = options;
@@ -98,16 +100,8 @@ public class UpdateParameters
         return new RangeTombstone(prefix.withEOC(ClusteringPrefix.EOC.START), prefix.withEOC(ClusteringPrefix.EOC.END), deletionTime());
     }
 
-    public ColumnData getPrefetchedList(ByteBuffer rowKey, ClusteringPrefix clustering, ColumnDefinition c)
+    public List<Cell> getPrefetchedList(DecoratedKey key, ClusteringPrefix clustering, ColumnDefinition c)
     {
-        if (prefetchedLists == null)
-            return null;
-
-        Map<ClusteringPrefix, Row> m = prefetchedLists.get(rowKey);
-        if (m == null)
-            return null;
-
-        Row row = m.get(clustering);
-        return row == null ?  null : row.data(c);
+        return prefetchedLists == null ? null : prefetchedLists.get(new ColumnPath(key, clustering, c));
     }
 }

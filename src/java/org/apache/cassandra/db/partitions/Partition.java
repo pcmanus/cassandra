@@ -37,6 +37,8 @@ public interface Partition
     public DecoratedKey partitionKey();
     public DeletionTime partitionLevelDeletion();
 
+    public PartitionColumns columns();
+
     /**
      * Whether the partition object has no informations at all, including any deletion informations.
      */
@@ -51,5 +53,5 @@ public interface Partition
      * Returns an AtomIterator over the atoms contained by this partition
      * selected by the provided slices.
      */
-    public AtomIterator atomIterator(Slices slices, boolean reversed);
+    public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed);
 }

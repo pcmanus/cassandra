@@ -48,7 +48,6 @@ public class AtomDeserializer
 
     private final ReusableRangeTombstoneMarker marker;
     private final ReusableRow row;
-    private final ReusableRow.Writer writer;
 
     private LegacyLayout.DeserializedCell cell;
     private ColumnDefinition currentColumn;
@@ -140,6 +139,7 @@ public class AtomDeserializer
             currentColumn = getDefinition(nameDeserializer.getNextColumnName());
             if (columns.contains(currentColumn))
             {
+                cell.column = currentColumn;
                 metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
                 writer.newCell(cell);
             }
@@ -183,6 +183,7 @@ public class AtomDeserializer
                     writer.newColumn(def, DeletionTime.LIVE);
                     currentColumn = def;
                 }
+                cell.column = currentColumn;
                 metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
                 writer.newCell(cell);
             }

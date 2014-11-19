@@ -86,7 +86,7 @@ public class CBuilder
 
         return size == 0
              ? EmptyClusteringPrefix.forEOC(eoc)
-             : new SimpleClusteringPrefix(values, size, eoc);
+             : new SimpleClusteringPrefix(values, eoc);
     }
 
     public ClusteringPrefix buildWith(ByteBuffer value)
@@ -96,9 +96,9 @@ public class CBuilder
 
     public ClusteringPrefix buildWith(ByteBuffer value, ClusteringPrefix.EOC eoc)
     {
-        ByteBuffer[] newValues = Arrays.copyOf(values, size+1);
+        ByteBuffer[] newValues = Arrays.copyOf(values, values.length);
         newValues[size] = value;
-        return new SimpleClusteringPrefix(newValues, size+1, eoc);
+        return new SimpleClusteringPrefix(newValues, eoc);
     }
 
     public ClusteringPrefix buildWith(List<ByteBuffer> newValues, ClusteringPrefix.EOC eoc)
@@ -107,6 +107,6 @@ public class CBuilder
         int newSize = size;
         for (ByteBuffer value : newValues)
             buffers[newSize++] = value;
-        return new SimpleClusteringPrefix(buffers, newSize, eoc);
+        return new SimpleClusteringPrefix(buffers, eoc);
     }
 }

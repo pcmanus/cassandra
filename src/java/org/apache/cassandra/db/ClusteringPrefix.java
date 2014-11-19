@@ -47,6 +47,7 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     public ByteBuffer get(int i);
     public EOC eoc();
 
+    // Used to verify if batches goes over a given size
     public int dataSize();
 
     public ClusteringPrefix withEOC(EOC eoc);

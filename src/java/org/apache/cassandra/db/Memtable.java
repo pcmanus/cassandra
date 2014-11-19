@@ -348,7 +348,7 @@ public class Memtable
                         continue;
 
                     if (!partition.isEmpty())
-                        writer.append(partition.atomIterator(Slices.ALL, false));
+                        writer.append(partition.atomIterator(partition.columns(), Slices.ALL, false));
                 }
 
                 if (writer.getFilePointer() > 0)

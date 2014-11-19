@@ -24,29 +24,41 @@ import com.google.common.collect.Iterators;
 import org.apache.cassandra.config.ColumnDefinition;
 
 /**
- * An immutable sorted list of Column.
+ * An immutable and sorted list of (non-PK) columns for a given table.
  */
+// TODO: we should possiblly intern the columns object created.
 public class Columns implements Iterable<ColumnDefinition>
 {
-    public static Columns NONE = new Columns(new ColumnDefinition[0]);
+    public static Columns NONE = new Columns(new ColumnDefinition[0], 0);
 
     private final ColumnDefinition[] columns;
+    private final int complexIdx; // Index of the first complex column
 
-    private Columns(ColumnDefinition[] columns)
+    private Columns(ColumnDefinition[] columns, int complexIdx)
     {
         this.columns = columns;
+        this.complexIdx = complexIdx;
     }
 
     public static Columns of(ColumnDefinition c)
     {
-        return new Columns(new ColumnDefinition[]{ c });
+        ColumnDefinition[] columns = new ColumnDefinition[]{ c };
+        return new Columns(columns, c.isComplex() ? 0 : 1);
     }
 
     public static Columns from(Set<ColumnDefinition> s)
     {
         ColumnDefinition[] columns = s.toArray(new ColumnDefinition[s.size()]);
         Arrays.sort(columns);
-        return new Columns(columns);
+        return new Columns(columns, findFirstComplexIdx(columns));
+    }
+
+    private static int findFirstComplexIdx(ColumnDefinition[] columns)
+    {
+        for (int i = 0; i < columns.length; i++)
+            if (columns[i].isComplex())
+                return i;
+        return columns.length;
     }
 
     public boolean isEmpty()
@@ -54,27 +66,47 @@ public class Columns implements Iterable<ColumnDefinition>
         return columns.length == 0;
     }
 
-    public int size()
+    public int simpleColumnCount()
     {
-        return columns.length;
+        return complexIdx;
+    }
+
+    public int complexColumnCount()
+    {
+        return columns.length - complexIdx;
+    }
+
+    public boolean hasSimple()
+    {
+        return complexIdx > 0;
     }
 
     public boolean hasComplex()
     {
-        for (int i = 0; i < columns.length; i++)
-            if (columns[i].isComplex())
-                return true;
-        return false;
+        return complexIdx < columns.length;
     }
 
-    public ColumnDefinition get(int i)
+    public ColumnDefinition getSimple(int i)
     {
         return columns[i];
     }
 
-    public int indexOf(ColumnDefinition c)
+    public ColumnDefinition getComplex(int i)
     {
-        for (int i = 0; i < columns.length; i++)
+        return columns[complexIdx + i];
+    }
+
+    public int simpleIdx(ColumnDefinition c)
+    {
+        for (int i = 0; i < complexIdx; i++)
+            if (columns[i].name.equals(c.name))
+                return i;
+        return -1;
+    }
+
+    public int complexIdx(ColumnDefinition c)
+    {
+        for (int i = complexIdx; i < columns.length; i++)
             if (columns[i].name.equals(c.name))
                 return i;
         return -1;
@@ -82,42 +114,7 @@ public class Columns implements Iterable<ColumnDefinition>
 
     public boolean contains(ColumnDefinition c)
     {
-        return indexOf(c) >= 0;
-    }
-
-    public int indexOfComplex(ColumnDefinition c)
-    {
-        int idx = 0;
-        for (int i = 0; i < columns.length; i++)
-        {
-            if (!columns[i].isComplex())
-                continue;
-
-            if (columns[i].name.equals(c.name))
-                return idx;
-
-            ++idx;
-        }
-        return -1;
-    }
-
-    public boolean includesAll(Columns other)
-    {
-        if (columns.length < other.columns.length)
-            return false;
-
-        int i = 0;
-        for (int j = 0; j < other.columns.length; j++)
-        {
-            int cmp = 0;
-            while (i < columns.length && (cmp = columns[i].compareTo(other.columns[j])) < 0)
-                i++;
-            if (i >= columns.length || cmp != 0)
-                return false;
-            else
-                i++;
-        }
-        return true;
+        return c.isComplex() ? complexIdx(c) >= 0 : simpleIdx(c) >= 0;
     }
 
     public Columns mergeTo(Columns other)
@@ -176,62 +173,11 @@ public class Columns implements Iterable<ColumnDefinition>
                 result[k] = other.columns[j++];
             }
         }
-        return new Columns(result);
+        return new Columns(result, findFirstComplexIdx(result));
     }
 
     public Iterator<ColumnDefinition> iterator()
     {
         return Iterators.forArray(columns);
-    }
-
-    public static Builder builder()
-    {
-        return new Builder();
-    }
-
-    public static class Builder
-    {
-        Set<ColumnDefinition> columns;
-        Set<ColumnDefinition> staticColumns;
-
-        public Builder add(ColumnDefinition c)
-        {
-            if (c.isStatic())
-            {
-                if (staticColumns == null)
-                    staticColumns = new TreeSet<>();
-                staticColumns.add(c);
-            }
-            else
-            {
-                if (columns == null)
-                    columns = new TreeSet<>();
-                columns.add(c);
-            }
-            return this;
-        }
-
-        public Builder addAll(Iterable<ColumnDefinition> columns)
-        {
-            for (ColumnDefinition c : columns)
-                add(c);
-            return this;
-        }
-
-        public Columns regularColumns()
-        {
-            if (columns == null)
-                return Columns.NONE;
-
-            return new Columns(columns.toArray(new ColumnDefinition[columns.size()]));
-        }
-
-        public Columns staticColumns()
-        {
-            if (staticColumns == null)
-                return Columns.NONE;
-
-            return new Columns(staticColumns.toArray(new ColumnDefinition[staticColumns.size()]));
-        }
     }
 }

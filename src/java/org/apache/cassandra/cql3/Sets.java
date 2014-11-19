@@ -248,11 +248,11 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + add
-            update.updateComplexDeletion(column, params.complexDeletionTimeForOverwrite());
-            Adder.doAdd(t, update, column, params);
+            params.setComplexDeletionTimeForOverwrite(column, writer);
+            Adder.doAdd(t, writer, column, params);
         }
     }
 
@@ -263,12 +263,12 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
-            doAdd(t, update, column, params);
+            doAdd(t, writer, column, params);
         }
 
-        static void doAdd(Term t, RowUpdate update, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doAdd(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -278,7 +278,7 @@ public abstract class Sets
 
             Set<ByteBuffer> toAdd = ((Sets.Value)value).elements;
             for (ByteBuffer bb : toAdd)
-                update.addCell(column, params.makeCell(new CollectionPath(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER));
+                params.addCell(column, writer, new CollectionPath(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER);
         }
     }
 
@@ -290,7 +290,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, RowUpdate update, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -302,7 +302,7 @@ public abstract class Sets
                                       : ((Sets.Value)value).elements;
 
             for (ByteBuffer bb : toDiscard)
-                update.addCell(column, params.makeTombstone(new CollectionPath(bb)));
+                params.addCell(column, writer, new CollectionPath(bb));
         }
     }
 }

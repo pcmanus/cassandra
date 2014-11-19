@@ -26,6 +26,7 @@ public abstract class Cells
 {
     public static final int MAX_TTL_SEC = 20 * 365 * 24 * 60 * 60; // 20 years in seconds
 
+    public static final int NO_TIMESTAMP = Long.MIN_VALUE;
     public static final int NO_TTL = 0;
     public static final int NO_DELETION_TIME = Integer.MAX_VALUE;
 

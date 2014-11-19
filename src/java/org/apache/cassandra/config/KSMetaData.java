@@ -239,12 +239,12 @@ public final class KSMetaData
     {
         Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(name));
 
-        mutation.delete(SystemKeyspace.SCHEMA_KEYSPACES_CF, timestamp);
-        mutation.delete(SystemKeyspace.SCHEMA_COLUMNFAMILIES_CF, timestamp);
-        mutation.delete(SystemKeyspace.SCHEMA_COLUMNS_CF, timestamp);
-        mutation.delete(SystemKeyspace.SCHEMA_TRIGGERS_CF, timestamp);
-        mutation.delete(SystemKeyspace.SCHEMA_USER_TYPES_CF, timestamp);
-        mutation.delete(SystemKeyspace.INDEX_CF, timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaKeyspacesCf, mutation.key(), timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnFamiliesCf, mutation.key(), timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnsCf, mutation.key(), timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaTriggersCf, mutation.key(), mutatitimestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaUserTypesCf, mutation.key(), timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.IndexCf, mutation.key(), timestamp);
 
         return mutation;
     }

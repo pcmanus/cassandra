@@ -54,6 +54,7 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
     private final int boundTerms;
     public final Type type;
     private final List<ModificationStatement> statements;
+    private final ColumnPartitions updatedColumns;
     private final Attributes attrs;
     private final boolean hasConditions;
     private static final Logger logger = LoggerFactory.getLogger(BatchStatement.class);
@@ -75,8 +76,20 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
         this.boundTerms = boundTerms;
         this.type = type;
         this.statements = statements;
+        this.updatedColumns = mergeColumns(statements)
         this.attrs = attrs;
         this.hasConditions = hasConditions;
+    }
+
+    private static PartitionColumns mergeColumns(List<ModificationStatement> statements)
+    {
+        if (statements.size() == 1)
+            return statements.get(0).udpatedColumns();
+
+        PartitionColumns.Builder builder = PartitionColumns.builder();
+        for (Statement stmt : statements)
+            builder.addAll(stmt.updatedColumns);
+        return builder.build();
     }
 
     public long measureForPreparedCache(MemoryMeter meter)
@@ -195,6 +208,18 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
         return ms;
     }
 
+    private PartitionColumns updatedColumns()
+    {
+        return updatedColumns();
+    }
+
+    private int updatedRows()
+    {
+        // Note: it's possible for 2 statements to actually apply to the same row, but that's just an estimation
+        // for sizing our PartitionUpdate backing array, so it's good enough.
+        return statements.size();
+    }
+
     private void addStatementMutations(ModificationStatement statement,
                                        QueryOptions options,
                                        boolean local,
@@ -233,7 +258,14 @@ public class BatchStatement implements CQLStatement, MeasurableForPreparedCache
                 mut = statement.cfm.isCounter() ? ((CounterMutation)mutation).getMutation() : (Mutation)mutation;
             }
 
-            statement.addUpdateForKey(mut.addOrGet(statement.cfm), clusteringPrefix, params);
+            PartitionUpdate upd = mut.get(statement.cfm);
+            if (upd == null)
+            {
+                upd = new PartitionUpdate(statement.cfm, dk, updatedColumns(), updatedRows());
+                mut.add(upd);
+            }
+
+            statement.addUpdateForKey(upd, clusteringPrefix, params);
         }
     }
 
