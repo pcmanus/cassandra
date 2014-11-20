@@ -173,7 +173,7 @@ public class Memtable
         if (previous == null)
         {
             final DecoratedKey cloneKey = allocator.clone(update.partitionKey(), opGroup);
-            AtomicBTreePartition empty = new AtomicBTreePartition(cfs.metadata, cloneKey);
+            AtomicBTreePartition empty = new AtomicBTreePartition(cfs.metadata, cloneKey, allocator);
             // We'll add the columns later. This avoids wasting works if we get beaten in the putIfAbsent
             previous = partitions.putIfAbsent(cloneKey, empty);
             if (previous == null)
@@ -190,7 +190,7 @@ public class Memtable
             }
         }
 
-        liveDataSize.addAndGet(previous.addAllWithSizeDelta(update, allocator, opGroup, indexer));
+        liveDataSize.addAndGet(previous.addAllWithSizeDelta(update, opGroup, indexer));
         currentOperations.addAndGet(update.operationCount());
     }
 

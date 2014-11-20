@@ -28,8 +28,8 @@ import org.apache.cassandra.db.*;
 // TODO: need to abstract have have a subclass for counters too
 public class RowDataBlock
 {
-    private final SimpleRowDataBlock simpleData;
-    private final ComplexRowDataBlock complexData;
+    final SimpleRowDataBlock simpleData;
+    final ComplexRowDataBlock complexData;
 
     public RowDataBlock(Columns columns, int rows)
     {
@@ -46,22 +46,7 @@ public class RowDataBlock
         return Columns.NONE;
     }
 
-    public CellData.ReusableCell reusableSimpleCell()
-    {
-        return simpleData == null ? null : simpleData.reusableCell();
-    }
-
-    public ComplexRowDataBlock.ReusableIterator reusableComplexCells()
-    {
-        return complexData == null ? null : complexData.reusableComplexCells();
-    }
-
-    public DeletionTimeArray.Cursor complexDeletionCursor()
-    {
-        return complexData == null ? null : complexData.complexDeletionCursor();
-    }
-
-    public ReusableIterator reusableIterator()
+    public static ReusableIterator reusableIterator()
     {
         return new ReusableIterator();
     }
@@ -134,38 +119,32 @@ public class RowDataBlock
         }
     }
 
-    class ReusableIterator extends UnmodifiableIterator<Cell> implements Iterator<Cell>
+    static class ReusableIterator extends UnmodifiableIterator<Cell> implements Iterator<Cell>
     {
         private SimpleRowDataBlock.ReusableIterator simpleIterator;
         private ComplexRowDataBlock.ReusableIterator complexIterator;
 
         public ReusableIterator()
         {
-            this.simpleIterator = simpleData == null ? null : simpleData.reusableIterator();
-            this.complexIterator = complexData == null ? null : complexData.reusableIterator();
+            this.simpleIterator = SimpleRowDataBlock.reusableIterator();
+            this.complexIterator = ComplexRowDataBlock.reusableIterator();
         }
 
-        public ReusableIterator setTo(int row)
+        public ReusableIterator setTo(RowDataBlock dataBlock, int row)
         {
-            if (simpleIterator != null)
-                simpleIterator.setTo(row);
-            if (complexIterator != null)
-                complexIterator.setTo(row);
-
+            simpleIterator.setTo(dataBlock.simpleData, row);
+            complexIterator.setTo(dataBlock.complexData, row);
             return this;
         }
 
         public boolean hasNext()
         {
-            return (simpleIterator != null && simpleIterator.hasNext())
-                || (complexIterator != null && complexIterator.hasNext());
+            return simpleIterator.hasNext() || complexIterator.hasNext();
         }
 
         public Cell next()
         {
-            return simpleIterator != null && simpleIterator.hasNext()
-                 ? simpleIterator.next()
-                 : complexIterator.next();
+            return simpleIterator.hasNext() ? simpleIterator.next() : complexIterator.next();
         }
     }
 }

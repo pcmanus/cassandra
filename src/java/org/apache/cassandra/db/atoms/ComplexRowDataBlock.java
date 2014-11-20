@@ -43,14 +43,14 @@ public class ComplexRowDataBlock
      *    [cellIdx[(n * c) + x], cellIdx[(n * c) + x + 1])
      */
     private int[] cellIdx;
-    private final CellData data;
+    final CellData data;
 
     // Complex cells has also a path. Those are indexed like the cells in
     // data, through cellIdx.
     private CellPath[] complexPaths;
 
     // For each complex column, it's deletion time (if any).
-    private DeletionTimeArray complexDelTimes;
+    DeletionTimeArray complexDelTimes;
 
     public ComplexRowDataBlock(Columns columns, int rows)
     {
@@ -68,22 +68,22 @@ public class ComplexRowDataBlock
         return columns;
     }
 
-    public ReusableIterator reusableComplexCells()
-    {
-        return new ReusableIterator();
-    }
-
-    public DeletionTimeArray.Cursor complexDeletionCursor()
-    {
-        return complexDelTimes.newCursor();
-    }
-
     public CellWriter cellWriter()
     {
         return new CellWriter();
     }
 
-    public ReusableIterator reusableIterator()
+    public static ReusableIterator reusableComplexCells()
+    {
+        return new ReusableIterator();
+    }
+
+    public static DeletionTimeArray.Cursor complexDeletionCursor()
+    {
+        return new DeletionTimeArray.Cursor();
+    }
+
+    public static ReusableIterator reusableIterator()
     {
         return new ReusableIterator();
     }
@@ -98,51 +98,63 @@ public class ComplexRowDataBlock
         complexPaths = Arrays.copyOf(complexPaths, newCapacity);
     }
 
-    private class ReusableCell extends CellData.ReusableCell
+    private static class ReusableCell extends CellData.ReusableCell
     {
-        private ReusableCell()
+        private ComplexRowDataBlock dataBlock;
+
+        ReusableCell setTo(ComplexRowDataBlock dataBlock, ColumnDefinition column, int idx)
         {
-            super(ComplexRowDataBlock.this.data);
+            this.dataBlock = dataBlock;
+            super.setTo(dataBlock.data, column, idx);
+            return this;
         }
 
         @Override
         public CellPath path()
         {
-            return complexPaths[idx];
+            return dataBlock.complexPaths[idx];
         }
     }
 
-    class ReusableIterator extends UnmodifiableIterator<Cell>
+    static class ReusableIterator extends UnmodifiableIterator<Cell>
     {
+        private ComplexRowDataBlock dataBlock;
         private final ReusableCell cell = new ReusableCell();
-        private final int columnCount;
         private int idx;
         private int endIdx;
 
-        public ReusableIterator()
+        private ReusableIterator()
         {
-            this.columnCount = columns.complexColumnCount();
         }
 
-        public ReusableIterator setTo(int row, ColumnDefinition column)
+        public ReusableIterator setTo(ComplexRowDataBlock dataBlock, int row, ColumnDefinition column)
         {
-            int columnIdx = 2 * ((row * columnCount) + columns.complexIdx(column));
-            idx = cellIdx[columnIdx];
-            endIdx = cellIdx[columnIdx + 1];
+            this.dataBlock = dataBlock;
+            if (dataBlock == null)
+                return null;
+
+            int columnIdx = 2 * ((row * dataBlock.columns.complexColumnCount()) + dataBlock.columns.complexIdx(column));
+            idx = dataBlock.cellIdx[columnIdx];
+            endIdx = dataBlock.cellIdx[columnIdx + 1];
 
             return endIdx <= idx ? null : this;
         }
 
-        public ReusableIterator setTo(int row)
+        public ReusableIterator setTo(ComplexRowDataBlock dataBlock, int row)
         {
+            this.dataBlock = dataBlock;
+            if (dataBlock == null)
+                return null;
+
+            int columnCount = dataBlock.columns.complexColumnCount();
             int columnIdx = 2 * row * columnCount;
 
             // find the index of the first cell of the row
             for (int i = columnIdx; i < columnIdx + (2 * columnCount); i += 2)
             {
-                if (cellIdx[i + 1] > cellIdx[i])
+                if (dataBlock.cellIdx[i + 1] > dataBlock.cellIdx[i])
                 {
-                    idx = cellIdx[i];
+                    idx = dataBlock.cellIdx[i];
                     break;
                 }
             }
@@ -150,9 +162,9 @@ public class ComplexRowDataBlock
             // find the index of the last cell of the row
             for (int i = columnIdx + (2 * columnCount) - 1; i >= columnIdx; i -= 2)
             {
-                if (cellIdx[i + 1] > cellIdx[i])
+                if (dataBlock.cellIdx[i + 1] > dataBlock.cellIdx[i])
                 {
-                    endIdx = cellIdx[i + 1];
+                    endIdx = dataBlock.cellIdx[i + 1];
                     break;
                 }
             }
@@ -167,7 +179,7 @@ public class ComplexRowDataBlock
 
         public Cell next()
         {
-            cell.setToPosition(columns.getComplex(idx), idx);
+            cell.setTo(dataBlock, dataBlock.columns.getComplex(idx), idx);
             ++idx;
             return cell;
         }

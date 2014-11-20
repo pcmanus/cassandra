@@ -31,8 +31,8 @@ import org.apache.cassandra.db.*;
  */
 public class SimpleRowDataBlock
 {
-    private final Columns columns;
-    private final CellData data;
+    final Columns columns;
+    final CellData data;
 
     public SimpleRowDataBlock(Columns columns, int rows)
     {
@@ -45,44 +45,48 @@ public class SimpleRowDataBlock
         return columns;
     }
 
-    public CellData.ReusableCell reusableCell()
-    {
-        return new CellData.ReusableCell(data);
-    }
-
     public CellWriter cellWriter()
     {
         return new CellWriter();
     }
 
-    public ReusableIterator reusableIterator()
+    public static CellData.ReusableCell reusableCell()
+    {
+        return new CellData.ReusableCell();
+    }
+
+    public static ReusableIterator reusableIterator()
     {
         return new ReusableIterator();
     }
 
-    class ReusableIterator extends UnmodifiableIterator<Cell>
+    static class ReusableIterator extends UnmodifiableIterator<Cell>
     {
-        private final int columnCount;
-        private final CellData.ReusableCell cell = new CellData.ReusableCell(data);
+        private SimpleRowDataBlock dataBlock;
+        private final CellData.ReusableCell cell = new CellData.ReusableCell();
 
         private int base;
         private int column;
 
-        public ReusableIterator()
+        private ReusableIterator()
         {
-            this.columnCount = columns.simpleColumnCount();
         }
 
-        public ReusableIterator setTo(int row)
+        public ReusableIterator setTo(SimpleRowDataBlock dataBlock, int row)
         {
-            this.base = row * columnCount;
+            this.dataBlock = dataBlock;
+            this.base = dataBlock == null ? -1 : row * dataBlock.columns.simpleColumnCount();
             this.column = 0;
             return this;
         }
 
         public boolean hasNext()
         {
-            while (column < columnCount && !data.hasCell(base + column))
+            if (dataBlock == null)
+                return false;
+
+            int columnCount = dataBlock.columns.simpleColumnCount();
+            while (column < columnCount && !dataBlock.data.hasCell(base + column))
                 ++column;
 
             return column < columnCount;
@@ -90,7 +94,7 @@ public class SimpleRowDataBlock
 
         public Cell next()
         {
-            return cell.setToPosition(columns.getSimple(column), base + column);
+            return cell.setTo(dataBlock.data, dataBlock.columns.getSimple(column), base + column);
         }
     }
 

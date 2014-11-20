@@ -25,34 +25,37 @@ import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
- * Rows stored inside a memtable.
+ * Row data stored inside a memtable.
  *
  * This has methods like dataSize and unsharedHeapSizeExcludingData that are
  * specific to memtables.
  */
-public interface MemtableRow extends Row
+public interface MemtableRowData extends Clusterable
 {
+    public Columns columns();
+
     public int dataSize();
 
     // returns the size of the Row and all references on the heap, excluding any costs associated with byte arrays
     // that would be allocated by a clone operation, as these will be accounted for by the allocator
     public long unsharedHeapSizeExcludingData();
 
-    public class BufferRow extends AbstractReusableRow implements MemtableRow
+    public interface ReusableRow extends Row
+    {
+        public ReusableRow setTo(MemtableRowData rowData);
+    }
+
+    public class BufferRowData implements MemtableRowData
     {
         private final BufferClusteringPrefix clustering;
         private final long timestamp;
+        private final RowDataBlock dataBlock;
 
-        public BufferRow(BufferClusteringPrefix clustering, long timestamp, RowDataBlock data)
+        public BufferRowData(BufferClusteringPrefix clustering, long timestamp, RowDataBlock dataBlock)
         {
-            super(data);
             this.clustering = clustering;
             this.timestamp = timestamp;
-        }
-
-        protected int row()
-        {
-            return 0;
+            this.dataBlock = dataBlock;
         }
 
         public ClusteringPrefix clustering()
@@ -60,15 +63,9 @@ public interface MemtableRow extends Row
             return clustering;
         }
 
-        public long timestamp()
+        public Columns columns()
         {
-            return timestamp;
-        }
-
-        @Override
-        public Row takeAlias()
-        {
-            return this;
+            return dataBlock.columns();
         }
 
         public int dataSize()
@@ -79,6 +76,43 @@ public interface MemtableRow extends Row
         public long unsharedHeapSizeExcludingData()
         {
             throw new UnsupportedOperationException();
+        }
+
+        public static ReusableRow createReusableRow()
+        {
+            return new BufferRow();
+        }
+
+        private static class BufferRow extends AbstractReusableRow implements ReusableRow
+        {
+            private BufferRowData rowData;
+
+            public ReusableRow setTo(MemtableRowData rowData)
+            {
+                assert rowData instanceof BufferRowData;
+                this.rowData = (BufferRowData)rowData;
+                return this;
+            }
+
+            protected RowDataBlock data()
+            {
+                return rowData.dataBlock;
+            }
+
+            protected int row()
+            {
+                return 0;
+            }
+
+            public ClusteringPrefix clustering()
+            {
+                return rowData.clustering;
+            }
+
+            public long timestamp()
+            {
+                return rowData.timestamp;
+            }
         }
     }
 

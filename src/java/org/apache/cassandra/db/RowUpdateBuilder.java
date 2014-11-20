@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.cql3.ColumnIdentifier;
+import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.atoms.*;
@@ -29,59 +30,115 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
- * Convenience object to create row updates.
+ * Convenience object to create updates.
  *
  * This is meant for system table update, when performance is not of the utmost importance.
  */
 public class RowUpdateBuilder
 {
-    private final CFMetaData metadata;
+    private final PartitionUpdate update;
     private final long timestamp;
     private final int ldt;
+    private final Mutation mutation;
 
-    private ClusteringPrefix clustering;
-    private boolean isRowDeletion;
+    private final Rows.Writer writer;
 
     private final SortedMap<ColumnDefinition, Set<Cell>> cells = new TreeMap<>();
     private final Set<ColumnDefinition> collectionsToReset = new HashSet<>();
 
-    public RowUpdateBuilder(CFMetaData metadata, long timestamp)
+    private RowUpdateBuilder(PartitionUpdate update, long timestamp, Mutation mutation, Object[] clusteringValues)
     {
-        this.metadata = metadata;
+        this.update = update;
         this.timestamp = timestamp;
         this.ldt = FBUtilities.nowInSeconds();
+        // note that the created mutation may get further update later on, so we don't use the ctor that create a singletonMap
+        // underneath (this class if for convenience, not performance)
+        this.mutation = mutation == null ? new Mutation(update.metadata().ksName, update.partitionKey()).add(update) : mutation;
+        this.writer = update.writer(false);
+
+        // If a CQL3 table, add the row marker
+        if (update.metadata().isCQL3Table())
+            writer.setTimestamp(timestamp);
+
+        writer.setClustering(update.metadata().comparator.make(clusteringValues));
     }
 
-    public RowUpdateBuilder clustering(Object... values)
+    public RowUpdateBuilder(CFMetaData metadata, long timestamp, Object partitionKey, Object... clusteringValues)
     {
-        clustering = metadata.comparator.make(values);
-        return this;
+        this(new PartitionUpdate(metadata, makeKey(metadata, partitionKey), metadata.partitionColumns(), 1), timestamp, null, clusteringValues);
     }
 
-    public RowUpdateBuilder deleteRow()
+    public RowUpdateBuilder(CFMetaData metadata, long timestamp, Mutation mutation, Object... clusteringValues)
     {
-        this.isRowDeletion = true;
-        return this;
+        this(getOrAdd(metadata, mutation), timestamp, mutation, clusteringValues);
+    }
+
+    public Mutation build()
+    {
+        writer.endOfRow();
+        return mutation;
+    }
+
+    private static void deleteRow(PartitionUpdate update, long timestamp, Object...clusteringValues)
+    {
+        ClusteringPrefix clustering = update.metadata().comparator.make(clusteringValues);
+        RangeTombstone rt = new RangeTombstone(clustering.withEOC(ClusteringPrefix.EOC.START),
+                                               clustering.withEOC(ClusteringPrefix.EOC.END),
+                                               timestamp,
+                                               FBUtilities.nowInSeconds());
+        update.deletionInfo().add(rt, update.metadata().comparator);
+    }
+
+    public static Mutation deleteRow(CFMetaData metadata, long timestamp, Mutation mutation, Object... clusteringValues)
+    {
+        deleteRow(getOrAdd(metadata, mutation), timestamp, clusteringValues);
+        return mutation;
+    }
+
+    public static Mutation deleteRow(CFMetaData metadata, long timestamp, Object key, Object... clusteringValues)
+    {
+        PartitionUpdate update = new PartitionUpdate(metadata, makeKey(metadata, key), metadata.partitionColumns(), 0);
+        deleteRow(update, timestamp, clusteringValues);
+        return new Mutation(update);
+    }
+
+    private static DecoratedKey makeKey(CFMetaData metadata, Object... partitionKey)
+    {
+        ByteBuffer key = SelectStatement.serializePartitionKey(metadata.getKeyValidatorAsClusteringComparator().make(partitionKey));
+        return StorageService.getPartitioner().decorateKey(key);
+    }
+
+    private static PartitionUpdate getOrAdd(CFMetaData metadata, Mutation mutation)
+    {
+        PartitionUpdate upd = mutation.get(metadata);
+        if (upd == null)
+        {
+            upd = new PartitionUpdate(metadata, mutation.key(), metadata.partitionColumns(), 1);
+            mutation.add(upd);
+        }
+        return upd;
     }
 
     public RowUpdateBuilder resetCollection(String columnName)
     {
-        collectionsToReset.add(getDefinition(columnName));
+        writer.setComplexDeletion(getDefinition(columnName), new SimpleDeletionTime(timestamp - 1, ldt));
         return this;
     }
 
     public RowUpdateBuilder add(String columnName, Object value)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //return addCell(columnName, value == null
-        //                           ? Cells.createTombsone(ldt, timestamp)
-        //                           : Cells.create(bb(value, getDefinition(columnName).type), timestamp, 0, metadata));
+        ColumnDefinition c = getDefinition(columnName);
+        if (value == null)
+            Cells.writeCell(c, bb(value, c.type), timestamp, 0, update.metadata(), writer);
+        else
+            Cells.writeTombstone(c, timestamp, writer);
+        return this;
     }
 
     private ByteBuffer bb(Object value, AbstractType<?> type)
@@ -91,86 +148,24 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder addMapEntry(String columnName, Object key, Object value)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //ColumnDefinition def = getDefinition(columnName);
-        //assert def.type instanceof MapType;
-        //MapType mt = (MapType)def.type;
-        //return addCell(columnName, Cells.create(new CollectionPath(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, metadata));
+        ColumnDefinition c = getDefinition(columnName);
+        assert c.type instanceof MapType;
+        MapType mt = (MapType)c.type;
+        Cells.writeCell(c, new CollectionPath(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, update.metadata(), writer);
+        return this;
     }
 
     public RowUpdateBuilder addListEntry(String columnName, Object value)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //ColumnDefinition def = getDefinition(columnName);
-        //assert def.type instanceof ListType;
-        //ListType lt = (ListType)def.type;
-        //return addCell(columnName, Cells.create(new CollectionPath(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, metadata));
-    }
-
-    private RowUpdateBuilder addCell(String name, Cell cell)
-    {
-        ColumnDefinition c = getDefinition(name);
-        Set<Cell> existing = cells.get(c);
-        if (existing != null)
-        {
-            existing.add(cell);
-            return this;
-        }
-
-        if (c.isComplex())
-        {
-            existing = new HashSet<>();
-            existing.add(cell);
-            cells.put(c, existing);
-        }
-        else
-        {
-            cells.put(c, Collections.singleton(cell));
-        }
+        ColumnDefinition c = getDefinition(columnName);
+        assert c.type instanceof ListType;
+        ListType lt = (ListType)c.type;
+        Cells.writeCell(c, new CollectionPath(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, update.metadata(), writer);
         return this;
     }
 
     private ColumnDefinition getDefinition(String name)
     {
-        return metadata.getColumnDefinition(new ColumnIdentifier(name, false));
-    }
-
-    public Mutation buildAndAddTo(Mutation mutation)
-    {
-        // TODO
-        // We should probably always use all columns for the table, but it's wasted when we do a
-        // deletion. So we might want to separate deletions from this object. But we might also
-        // want to check when this is used and pass the builder directly instead of the Mutation?
-
-        throw new UnsupportedOperationException();
-        //PartitionUpdate update = mutation.addOrGet(metadata, isRowDeletion ? Columns.NONE : Columns.from(cells.keySet()));
-
-        //if (isRowDeletion)
-        //{
-        //    update.deletionInfo().add(new RangeTombstone(clustering.withEOC(ClusteringPrefix.EOC.START),
-        //                                                 clustering.withEOC(ClusteringPrefix.EOC.END),
-        //                                                 timestamp, ldt), metadata.comparator);
-        //    return mutation;
-        //}
-
-        //Rows.Writer writer = update.writer();
-        //writer.setClustering(clustering);
-
-        //// If a CQL3 table, add the row marker
-        //if (metadata.isCQL3Table())
-        //    writer.setTimestamp(timestamp);
-
-        //DeletionTime dt = new SimpleDeletionTime(timestamp - 1, ldt);
-        //for (ColumnDefinition c : collectionsToReset)
-        //    writer.setComplexDeletion(c, dt);
-
-        //for (Map.Entry<ColumnDefinition, Set<Cell>> entry : cells.entrySet())
-        //    for (Cell cell : entry.getValue())
-        //        writer.addCell(cell);
-
-        //writer.endOfRow();
-        //return mutation;
+        return update.metadata().getColumnDefinition(new ColumnIdentifier(name, false));
     }
 }

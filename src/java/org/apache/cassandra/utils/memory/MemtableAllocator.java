@@ -59,6 +59,7 @@ public abstract class MemtableAllocator
         this.offHeap = offHeap;
     }
 
+    public abstract MemtableRowData.ReusableRow newReusableRow();
     public abstract RowAllocator newRowAllocator(CFMetaData cfm, OpOrder.Group writeOp);
     public abstract DecoratedKey clone(DecoratedKey key, OpOrder.Group opGroup);
     public abstract DataReclaimer reclaimer();
@@ -105,13 +106,13 @@ public abstract class MemtableAllocator
     public static interface RowAllocator extends Rows.Writer
     {
         public void allocateNewRow(Columns columns);
-        public MemtableRow allocatedRow();
+        public MemtableRowData allocatedRowData();
     }
 
     public static interface DataReclaimer
     {
-        public DataReclaimer reclaim(MemtableRow row);
-        public DataReclaimer reclaimImmediately(MemtableRow row);
+        public DataReclaimer reclaim(MemtableRowData row);
+        public DataReclaimer reclaimImmediately(MemtableRowData row);
         public DataReclaimer reclaimImmediately(DecoratedKey key);
         public void cancel();
         public void commit();
@@ -119,12 +120,12 @@ public abstract class MemtableAllocator
 
     public static final DataReclaimer NO_OP = new DataReclaimer()
     {
-        public DataReclaimer reclaim(MemtableRow update)
+        public DataReclaimer reclaim(MemtableRowData update)
         {
             return this;
         }
 
-        public DataReclaimer reclaimImmediately(MemtableRow update)
+        public DataReclaimer reclaimImmediately(MemtableRowData update)
         {
             return this;
         }

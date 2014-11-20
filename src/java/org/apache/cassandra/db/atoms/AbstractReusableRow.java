@@ -24,43 +24,43 @@ import org.apache.cassandra.db.*;
 
 public abstract class AbstractReusableRow implements Row
 {
-    protected final RowDataBlock data;
-
     private CellData.ReusableCell simpleCell;
     private ComplexRowDataBlock.ReusableIterator complexCells;
     private DeletionTimeArray.Cursor complexDeletionCursor;
     private RowDataBlock.ReusableIterator iterator;
 
-    public AbstractReusableRow(RowDataBlock data)
+    public AbstractReusableRow()
     {
-        this.data = data;
     }
+
+    protected abstract int row();
+    protected abstract RowDataBlock data();
 
     private CellData.ReusableCell simpleCell()
     {
         if (simpleCell == null)
-            simpleCell = data.reusableSimpleCell();
+            simpleCell = SimpleRowDataBlock.reusableCell();
         return simpleCell;
     }
 
     private ComplexRowDataBlock.ReusableIterator complexCells()
     {
         if (complexCells == null)
-            complexCells = data.reusableComplexCells();
+            complexCells = ComplexRowDataBlock.reusableComplexCells();
         return complexCells;
     }
 
     private DeletionTimeArray.Cursor complexDeletionCursor()
     {
         if (complexDeletionCursor == null)
-            complexDeletionCursor = data.complexDeletionCursor();
+            complexDeletionCursor = ComplexRowDataBlock.complexDeletionCursor();
         return complexDeletionCursor;
     }
 
     private RowDataBlock.ReusableIterator reusableIterator()
     {
         if (iterator == null)
-            iterator = data.reusableIterator();
+            iterator = RowDataBlock.reusableIterator();
         return iterator;
     }
 
@@ -69,11 +69,9 @@ public abstract class AbstractReusableRow implements Row
         return Atom.Kind.ROW;
     }
 
-    protected abstract int row();
-
     public Columns columns()
     {
-        return data.columns();
+        return data().columns();
     }
 
     public boolean isEmpty()
@@ -85,26 +83,27 @@ public abstract class AbstractReusableRow implements Row
     public Cell getCell(ColumnDefinition c)
     {
         assert !c.isComplex();
-        return simpleCell() == null ? null : simpleCell().setToPosition(c, (row() * data.columns().simpleColumnCount()) + data.columns().simpleIdx(c));
+        return data().simpleData == null ? null : simpleCell().setTo(data().simpleData.data, c, (row() * columns().simpleColumnCount()) + columns().simpleIdx(c));
     }
 
     public Iterator<Cell> getCells(ColumnDefinition c)
     {
         assert c.isComplex();
-        return complexCells() == null ? null : complexCells().setTo(row(), c);
+        return complexCells().setTo(data().complexData, row(), c);
     }
 
     public DeletionTime getDeletion(ColumnDefinition c)
     {
         assert c.isComplex();
-        return complexDeletionCursor() == null
+        return data().complexData == null
              ? DeletionTime.LIVE
-             : complexDeletionCursor().setTo((row() * data.columns().complexColumnCount()) + data.columns().complexIdx(c));
+             : complexDeletionCursor().setTo(data().complexData.complexDelTimes,
+                                             (row() * columns().complexColumnCount()) + columns().complexIdx(c));
     }
 
     public Iterator<Cell> iterator()
     {
-        return reusableIterator().setTo(row());
+        return reusableIterator().setTo(data(), row());
     }
 
     public Row takeAlias()
@@ -112,11 +111,19 @@ public abstract class AbstractReusableRow implements Row
         final ClusteringPrefix clustering = clustering().takeAlias();
         final long timestamp = timestamp();
 
-        return new AbstractReusableRow(data)
+        return new AbstractReusableRow()
         {
+            private final RowDataBlock data = data();
+            private final int row = row();
+
+            protected RowDataBlock data()
+            {
+                return data;
+            }
+
             protected int row()
             {
-                return row();
+                return row;
             }
 
             public ClusteringPrefix clustering()

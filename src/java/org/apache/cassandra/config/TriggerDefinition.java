@@ -80,10 +80,9 @@ public class TriggerDefinition
      */
     public void toSchema(Mutation mutation, String cfName, long timestamp)
     {
-        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaTriggersCf, timestamp);
-        builder.clustering(cfName, name)
-               .addMapEntry(TRIGGER_OPTIONS, CLASS, classOption)
-               .buildAndAddTo(mutation);
+        new RowUpdateBuilder(CFMetaData.SchemaTriggersCf, timestamp, mutation, cfName, name)
+            .addMapEntry(TRIGGER_OPTIONS, CLASS, classOption)
+            .build();
     }
 
     /**
@@ -95,10 +94,7 @@ public class TriggerDefinition
      */
     public void deleteFromSchema(Mutation mutation, String cfName, long timestamp)
     {
-        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaTriggersCf, timestamp);
-        builder.clustering(cfName, name)
-               .deleteRow()
-               .buildAndAddTo(mutation);
+        RowUpdateBuilder.deleteRow(CFMetaData.SchemaTriggersCf, timestamp, mutation, cfName, name);
     }
 
     public static TriggerDefinition fromThrift(TriggerDef thriftDef)

@@ -95,7 +95,7 @@ class CellData
         if (idxToSet < capacity)
             return;
 
-        int newCapacity = (capacity * 3) / 2 + 1;
+        int newCapacity = capacity == 0 ? 4 : (capacity * 3) / 2 + 1;
 
         values = Arrays.copyOf(values, newCapacity);
         timestamps = Arrays.copyOf(timestamps, newCapacity);
@@ -106,21 +106,17 @@ class CellData
 
     static class ReusableCell implements Cell
     {
-        protected final CellData data;
+        CellData data;
 
         private ColumnDefinition column;
         protected int idx;
 
-        ReusableCell(CellData data)
-        {
-            this.data = data;
-        }
-
-        ReusableCell setToPosition(ColumnDefinition column, int idx)
+        ReusableCell setTo(CellData data, ColumnDefinition column, int idx)
         {
             if (!data.hasCell(idx))
                 return null;
 
+            this.data = data;
             this.column = column;
             this.idx = idx;
             return this;

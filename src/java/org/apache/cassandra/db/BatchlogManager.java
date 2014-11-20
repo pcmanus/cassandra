@@ -128,13 +128,11 @@ public class BatchlogManager implements BatchlogManagerMBean
     @VisibleForTesting
     static Mutation getBatchlogMutationFor(Collection<Mutation> mutations, UUID uuid, int version, long now)
     {
-        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.BatchlogCf, now)
-                                 .clustering()
-                                 .add("data", serializeMutations(mutations, version))
-                                 .add("written_at", new Date(now / 1000))
-                                 .add("version", version);
-
-        return adder.buildAndAddTo(new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(uuid))));
+        return new RowUpdateBuilder(CFMetaData.BatchlogCf, now, uuid)
+                   .add("data", serializeMutations(mutations, version))
+                   .add("written_at", new Date(now / 1000))
+                   .add("version", version)
+                   .build();
     }
 
     private static ByteBuffer serializeMutations(Collection<Mutation> mutations, int version)

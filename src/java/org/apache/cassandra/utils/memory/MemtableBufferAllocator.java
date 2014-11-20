@@ -33,6 +33,11 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         super(onHeap, offHeap);
     }
 
+    public MemtableRowData.ReusableRow newReusableRow()
+    {
+        return MemtableRowData.BufferRowData.createReusableRow();
+    }
+
     public RowAllocator newRowAllocator(CFMetaData cfm, OpOrder.Group writeOp)
     {
         if (cfm.isCounter())
@@ -57,7 +62,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
     {
         private final AbstractAllocator allocator;
 
-        private MemtableRow.BufferClusteringPrefix clustering;
+        private MemtableRowData.BufferClusteringPrefix clustering;
         private long rowTimestamp;
         private RowDataBlock data;
 
@@ -72,9 +77,9 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
             updateWriter(data);
         }
 
-        public MemtableRow allocatedRow()
+        public MemtableRowData allocatedRowData()
         {
-            MemtableRow row = new MemtableRow.BufferRow(clustering, rowTimestamp, data);
+            MemtableRowData row = new MemtableRowData.BufferRowData(clustering, rowTimestamp, data);
 
             clustering = null;
             rowTimestamp = Rows.NO_TIMESTAMP;
@@ -85,7 +90,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
 
         public void setClustering(ClusteringPrefix clustering)
         {
-            clustering = MemtableRow.BufferClusteringPrefix.clone(clustering, allocator);
+            clustering = MemtableRowData.BufferClusteringPrefix.clone(clustering, allocator);
         }
 
         public void setTimestamp(long timestamp)
@@ -98,7 +103,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         {
             ByteBuffer v = allocator.clone(value);
             if (column.isComplex())
-                complexWriter.addCell(column, v, timestamp, localDeletionTime, ttl, MemtableRow.BufferCellPath.clone(path, allocator));
+                complexWriter.addCell(column, v, timestamp, localDeletionTime, ttl, MemtableRowData.BufferCellPath.clone(path, allocator));
             else
                 simpleWriter.addCell(column, v, timestamp, localDeletionTime, ttl);
         }

@@ -337,16 +337,12 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
     public void deleteFromSchema(Mutation mutation, long timestamp)
     {
         // Note: we do want to use name.toString(), not name.bytes directly for backward compatibility (For CQL3, this won't make a difference).
-        new RowUpdateBuilder(CFMetaData.SchemaColumnsCf, timestamp).clustering(cfName, name.toString())
-                                                                   .deleteRow()
-                                                                   .buildAndAddTo(mutation);
+        RowUpdateBuilder.deleteRow(CFMetaData.SchemaColumnsCf, timestamp, mutation, cfName, name.toString());
     }
 
     public void toSchema(Mutation mutation, long timestamp)
     {
-        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaColumnsCf, timestamp);
-
-        adder.clustering(cfName, name.toString());
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaColumnsCf, timestamp, mutation, cfName, name.toString());
 
         adder.add(TYPE, type.toString());
         adder.add(INDEX_TYPE, indexType == null ? null : indexType.toString());
@@ -355,7 +351,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         adder.add(COMPONENT_INDEX, componentIndex);
         adder.add(KIND, kind.serialize());
 
-        adder.buildAndAddTo(mutation);
+        adder.build();
     }
 
     public ColumnDefinition apply(ColumnDefinition def)  throws ConfigurationException

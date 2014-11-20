@@ -161,40 +161,32 @@ public abstract class UDFunction extends AbstractFunction implements ScalarFunct
 
     public Mutation toSchemaDrop(long timestamp)
     {
-        Mutation mutation = makeSchemaMutation(name);
-
-        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaFunctionsCf, timestamp);
-        builder.clustering(computeSignature(argTypes))
-               .deleteRow()
-               .buildAndAddTo(mutation);
-
-        return mutation;
+        // TODO: the following doesn't work until we rebase as currently the PK is composite
+        throw new UnsupportedOperationException();
+        //return RowUpdateBuilder.deleteRow(CFMetaData.SchemaFunctionsCf, timestamp, name.namespace, name.name, computeSignature(argTypes));
     }
 
     public Mutation toSchemaUpdate(long timestamp)
     {
-        Mutation mutation = makeSchemaMutation(name);
+        // TODO: the following doesn't work until we rebase as currently the PK is composite
+        throw new UnsupportedOperationException();
 
-        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaFunctionsCf, timestamp);
+        //RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaFunctionsCf, timestamp, name.namespace, name.name, computeSignature(argTypes));
 
-        adder.clustering(computeSignature(argTypes));
+        //adder.resetCollection("argument_names");
+        //adder.resetCollection("argument_types");
+        //adder.add("return_type", returnType.toString());
+        //adder.add("language", language);
+        //adder.add("body", body);
+        //adder.add("deterministic", deterministic);
 
-        adder.resetCollection("argument_names");
-        adder.resetCollection("argument_types");
-        adder.add("return_type", returnType.toString());
-        adder.add("language", language);
-        adder.add("body", body);
-        adder.add("deterministic", deterministic);
+        //for (int i = 0; i < argNames.size(); i++)
+        //{
+        //    adder.addListEntry("argument_names", argNames.get(i).bytes);
+        //    adder.addListEntry("argument_types", argTypes.get(i).toString());
+        //}
 
-        for (int i = 0; i < argNames.size(); i++)
-        {
-            adder.addListEntry("argument_names", argNames.get(i).bytes);
-            adder.addListEntry("argument_types", argTypes.get(i).toString());
-        }
-
-        adder.buildAndAddTo(mutation);
-
-        return mutation;
+        //return adder.build();
     }
 
     public static UDFunction fromSchema(UntypedResultSet.Row row)

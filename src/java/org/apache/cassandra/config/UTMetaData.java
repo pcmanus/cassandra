@@ -92,10 +92,10 @@ public final class UTMetaData
 
     public static Mutation toSchema(Mutation mutation, UserType newType, long timestamp)
     {
-        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaUserTypesCf, timestamp);
-        adder.clustering(newType.name)
-             .resetCollection("field_names")
-             .resetCollection("field_types");
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaUserTypesCf, timestamp, mutation, newType.name);
+
+        adder.resetCollection("field_names");
+        adder.resetCollection("field_types");
 
         for (int i = 0; i < newType.size(); i++)
         {
@@ -103,7 +103,7 @@ public final class UTMetaData
             adder.addListEntry("field_types", newType.fieldType(i).toString());
         }
 
-        return adder.buildAndAddTo(mutation);
+        return adder.build();
     }
 
     public Mutation toSchema(Mutation mutation, long timestamp)
@@ -115,12 +115,7 @@ public final class UTMetaData
 
     public static Mutation dropFromSchema(UserType droppedType, long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(droppedType.keyspace));
-
-        RowUpdateBuilder builder = new RowUpdateBuilder(CFMetaData.SchemaUserTypesCf, timestamp);
-        return builder.clustering(droppedType.name)
-                      .deleteRow()
-                      .buildAndAddTo(mutation);
+        return RowUpdateBuilder.deleteRow(CFMetaData.SchemaUserTypesCf, timestamp, droppedType.keyspace, droppedType.name);
     }
 
     public UserType getType(ByteBuffer typeName)

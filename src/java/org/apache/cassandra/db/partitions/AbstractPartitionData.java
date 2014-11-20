@@ -152,8 +152,13 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
                 }
             };
 
-            private final AbstractReusableRow reusableRow = new AbstractReusableRow(data)
+            private final AbstractReusableRow reusableRow = new AbstractReusableRow()
             {
+                protected RowDataBlock data()
+                {
+                    return data;
+                }
+
                 protected int row()
                 {
                     return row;
@@ -205,6 +210,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         public void setClustering(ClusteringPrefix clustering)
         {
             assert clustering.eoc() == ClusteringPrefix.EOC.NONE;
+            ensureCapacity(row);
             int base = row * metadata.clusteringColumns().size();
             for (int i = 0; i < clustering.size(); i++)
                 clusterings[base + i] = clustering.get(i);
@@ -212,7 +218,24 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         public void setTimestamp(long timestamp)
         {
+            ensureCapacity(row);
             timestamps[row] = timestamp;
+        }
+
+        private void ensureCapacity(int rowToSet)
+        {
+            int capacity = timestamps.length;
+            if (rowToSet < capacity)
+                return;
+
+            int newCapacity = capacity == 0 ? 4 : (capacity * 3) / 2 + 1;
+
+            int clusteringSize = metadata.clusteringColumns().size();
+
+            clusterings = Arrays.copyOf(clusterings, newCapacity * clusteringSize);
+            timestamps = Arrays.copyOf(timestamps, newCapacity);
+
+            Arrays.fill(timestamps, capacity, newCapacity, Cells.NO_TIMESTAMP);
         }
     }
 

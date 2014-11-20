@@ -253,13 +253,13 @@ public final class KSMetaData
 
     public Mutation toSchema(long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(name));
-        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaKeyspacesCf, timestamp).clustering();
+        RowUpdateBuilder adder = new RowUpdateBuilder(CFMetaData.SchemaKeyspacesCf, timestamp, name);
 
         adder.add("durable_writes", durableWrites);
         adder.add("strategy_class", strategyClass.getName());
         adder.add("strategy_options", json(strategyOptions));
-        adder.buildAndAddTo(mutation);
+
+        Mutation mutation = adder.build();
 
         for (CFMetaData cfm : cfMetaData.values())
             cfm.toSchema(mutation, timestamp);

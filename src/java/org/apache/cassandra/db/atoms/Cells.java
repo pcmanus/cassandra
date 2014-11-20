@@ -46,10 +46,15 @@ public abstract class Cells
 
     public static void writeCell(ColumnDefinition column, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Rows.Writer writer)
     {
+        writeCell(column, null, value, timestamp, ttl, metadata, writer);
+    }
+
+    public static void writeCell(ColumnDefinition column, CellPath path, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Rows.Writer writer)
+    {
         if (ttl <= 0)
             ttl = metadata.getDefaultTimeToLive();
 
-        writer.addCell(column, false, value, timestamp, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, ttl, null);
+        writer.addCell(column, false, value, timestamp, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, ttl, path);
     }
 
     public static void writeTombstone(ColumnDefinition column, long timestamp, Rows.Writer writer)

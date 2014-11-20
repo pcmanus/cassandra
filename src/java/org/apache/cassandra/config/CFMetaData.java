@@ -1624,9 +1624,7 @@ public final class CFMetaData
      */
     public Mutation dropFromSchema(long timestamp)
     {
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(ksName));
-
-        new RowUpdateBuilder(SchemaColumnFamiliesCf, timestamp).clustering(cfName).deleteRow().buildAndAddTo(mutation);
+        Mutation mutation = RowUpdateBuilder.deleteRow(SchemaColumnFamiliesCf, timestamp, ksName, cfName);
 
         for (ColumnDefinition cd : allColumns())
             cd.deleteFromSchema(mutation, timestamp);
@@ -1635,7 +1633,7 @@ public final class CFMetaData
             td.deleteFromSchema(mutation, cfName, timestamp);
 
         for (String indexName : Keyspace.open(this.ksName).getColumnFamilyStore(this.cfName).getBuiltIndexes())
-            new RowUpdateBuilder(IndexCf, timestamp).clustering(indexName).deleteRow().buildAndAddTo(mutation);
+            RowUpdateBuilder.deleteRow(IndexCf, timestamp, mutation, indexName);
 
         return mutation;
     }
@@ -1665,8 +1663,7 @@ public final class CFMetaData
     {
         // For property that can be null (and can be changed), we insert tombstones, to make sure
         // we don't keep a property the user has removed
-        RowUpdateBuilder adder = new RowUpdateBuilder(SchemaColumnsCf, timestamp);
-        adder.clustering(cfName);
+        RowUpdateBuilder adder = new RowUpdateBuilder(SchemaColumnsCf, timestamp, mutation, cfName);
 
         adder.add("cf_id", cfId);
         adder.add("type", cfType.toString());
@@ -1713,7 +1710,7 @@ public final class CFMetaData
         adder.add("column_aliases", aliasesToJson(clusteringColumns));
         adder.add("value_alias", compactValueColumn == null ? null : compactValueColumn.name.toString());
 
-        adder.buildAndAddTo(mutation);
+        adder.build();
     }
 
     // Package protected for use by tests

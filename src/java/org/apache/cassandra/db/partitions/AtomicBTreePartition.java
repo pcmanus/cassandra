@@ -47,7 +47,8 @@ import static org.apache.cassandra.db.index.SecondaryIndexManager.Updater;
 public class AtomicBTreePartition implements Partition
 {
     public static final long EMPTY_SIZE = ObjectSizes.measure(new AtomicBTreePartition(CFMetaData.IndexCf,
-                                                                                       StorageService.getPartitioner().decorateKey(ByteBuffer.allocate(1))));
+                                                                                       StorageService.getPartitioner().decorateKey(ByteBuffer.allocate(1)),
+                                                                                       null));
 
     // Reserved values for wasteTracker field. These values must not be consecutive (see avoidReservedValues)
     private static final int TRACKER_NEVER_WASTED = 0;
@@ -77,19 +78,21 @@ public class AtomicBTreePartition implements Partition
     private static final DeletionInfo LIVE = DeletionInfo.live();
     // This is a small optimization: DeletionInfo is mutable, but we know that we will always copy it in that class,
     // so we can safely alias one DeletionInfo.live() reference and avoid some allocations.
-    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, Rows.EMPTY_STATIC_ROW);
+    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, null);
 
     private final CFMetaData metadata;
     private final DecoratedKey partitionKey;
+    private final MemtableAllocator allocator;
 
     private volatile Holder ref;
 
     private static final AtomicReferenceFieldUpdater<AtomicBTreePartition, Holder> refUpdater = AtomicReferenceFieldUpdater.newUpdater(AtomicBTreePartition.class, Holder.class, "ref");
 
-    public AtomicBTreePartition(CFMetaData metadata, DecoratedKey partitionKey)
+    public AtomicBTreePartition(CFMetaData metadata, DecoratedKey partitionKey, MemtableAllocator allocator)
     {
         this.metadata = metadata;
         this.partitionKey = partitionKey;
+        this.allocator = allocator;
     }
 
     public boolean isEmpty()
@@ -135,16 +138,72 @@ public class AtomicBTreePartition implements Partition
             return AtomIterators.emptyIterator(metadata, partitionKey, reversed);
 
         return slices.size() == 1
-             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices.lowerBound(), slices.upperBound(), reversed)
-             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices, reversed);
+             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices.lowerBound(), slices.upperBound(), reversed, allocator)
+             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices, reversed, allocator);
+    }
+
+    private static Row makeStatic(PartitionColumns columns, Holder holder, DeletionTime deletion, MemtableAllocator allocator)
+    {
+        if (columns.statics.isEmpty() || holder.staticRow == null)
+            return Rows.EMPTY_STATIC_ROW;
+
+        return new ReusableFilteringRow(columns.statics, allocator).setDeletionTimestamp(deletion.markedForDeleteAt())
+                                                                   .setTo(holder.staticRow);
+    }
+
+    private static class ReusableFilteringRow extends FilteringRow
+    {
+        private final Columns columns;
+        private final MemtableRowData.ReusableRow row;
+        private long deletionTimestamp;
+
+        public ReusableFilteringRow(Columns columns, MemtableAllocator allocator)
+        {
+            this.columns = columns;
+            this.row = allocator.newReusableRow();
+        }
+
+        public ReusableFilteringRow setDeletionTimestamp(long timestamp)
+        {
+            this.deletionTimestamp = timestamp;
+            return this;
+        }
+
+        public ReusableFilteringRow setTo(MemtableRowData rowData)
+        {
+            super.setTo(row.setTo(rowData));
+            return this;
+        }
+
+        @Override
+        protected boolean includeTimestamp(long timestamp)
+        {
+            return timestamp > deletionTimestamp;
+        }
+
+        @Override
+        protected boolean include(ColumnDefinition def)
+        {
+            return columns.contains(def);
+        }
+
+        protected boolean includeCell(Cell cell)
+        {
+            return cell.timestamp() > deletionTimestamp;
+        }
+
+        protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
+        {
+            return dt.markedForDeleteAt() > deletionTimestamp;
+        }
     }
 
     private static class SingleSliceIterator extends AbstractAtomIterator
     {
         private final Iterator<RangeTombstone> tombstoneIter;
-        private final Iterator<Row> rowIter;
+        private final Iterator<MemtableRowData> dataIter;
 
-        private final FilteringRow filter;
+        private final ReusableFilteringRow row;
 
         private RangeTombstone nextTombstone;
         private boolean inTombstone;
@@ -159,10 +218,17 @@ public class AtomicBTreePartition implements Partition
                                     PartitionColumns columns,
                                     ClusteringPrefix start,
                                     ClusteringPrefix end,
-                                    boolean isReversed)
+                                    boolean isReversed,
+                                    MemtableAllocator allocator)
         {
-            super(metadata, key, partitionLevelDeletion, columns, columns.statics.isEmpty() ? null : holder.staticRow, isReversed);
-            this.rowIter = BTree.slice(holder.tree,
+            super(metadata,
+                  key,
+                  partitionLevelDeletion,
+                  columns,
+                  makeStatic(columns, holder, partitionLevelDeletion, allocator),
+                  isReversed);
+
+            this.dataIter = BTree.slice(holder.tree,
                                        metadata.comparator,
                                        start == EmptyClusteringPrefix.BOTTOM ? null : start,
                                        true,
@@ -170,44 +236,7 @@ public class AtomicBTreePartition implements Partition
                                        true,
                                        !isReversed);
             this.tombstoneIter = holder.deletionInfo.rangeIterator(start, end);
-
-            this.filter = new FilteringRow()
-            {
-                private long deletionTimestamp;
-
-                @Override
-                public FilteringRow setTo(Row row)
-                {
-                    long rangeDeletion = SingleSliceIterator.this.inTombstone
-                                       ? SingleSliceIterator.this.nextTombstone.data.markedForDeleteAt()
-                                       : Long.MIN_VALUE;
-                    this.deletionTimestamp = Math.max(partitionLevelDeletion.markedForDeleteAt(), rangeDeletion);
-                    super.setTo(row);
-                    return this;
-                }
-
-                @Override
-                protected boolean includeTimestamp(long timestamp)
-                {
-                    return timestamp > deletionTimestamp;
-                }
-
-                @Override
-                protected boolean include(ColumnDefinition column)
-                {
-                    return columns().contains(column);
-                }
-
-                protected boolean includeCell(Cell cell)
-                {
-                    return cell.timestamp() > deletionTimestamp;
-                }
-
-                protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
-                {
-                    return dt.markedForDeleteAt() > deletionTimestamp;
-                }
-            };
+            this.row = new ReusableFilteringRow(columns.regulars, allocator);
         }
 
         private void prepareNextTombstone()
@@ -223,9 +252,12 @@ public class AtomicBTreePartition implements Partition
 
         private void prepareNextRow()
         {
-            while (nextRow == null && rowIter.hasNext())
+            long rangeDeletion = inTombstone ? nextTombstone.data.markedForDeleteAt() : Long.MIN_VALUE;
+            row.setDeletionTimestamp(Math.max(partitionLevelDeletion.markedForDeleteAt(), rangeDeletion));
+
+            while (nextRow == null && dataIter.hasNext())
             {
-                nextRow = filter.setTo(rowIter.next());
+                nextRow = row.setTo(dataIter.next());
                 if (nextRow.isEmpty())
                     nextRow = null;
             }
@@ -281,6 +313,7 @@ public class AtomicBTreePartition implements Partition
     public static class SlicesIterator extends AbstractAtomIterator
     {
         private final Holder holder;
+        private final MemtableAllocator allocator;
         private final Slices slices;
 
         private int idx;
@@ -292,45 +325,13 @@ public class AtomicBTreePartition implements Partition
                                Holder holder,
                                PartitionColumns columns,
                                Slices slices,
-                               boolean isReversed)
+                               boolean isReversed,
+                               MemtableAllocator allocator)
         {
-            super(metadata, key, partitionLevelDeletion, columns, makeStatic(columns, holder, partitionLevelDeletion), isReversed);
+            super(metadata, key, partitionLevelDeletion, columns, makeStatic(columns, holder, partitionLevelDeletion, allocator), isReversed);
             this.holder = holder;
+            this.allocator = allocator;
             this.slices = slices;
-        }
-
-        private static Row makeStatic(final PartitionColumns columns, Holder holder, DeletionTime deletion)
-        {
-            if (columns.statics.isEmpty() || holder.staticRow == null)
-                return Rows.EMPTY_STATIC_ROW;
-
-            final long deletionTimestamp = deletion.markedForDeleteAt();
-
-            return new FilteringRow()
-            {
-                @Override
-                protected boolean includeTimestamp(long timestamp)
-                {
-                    return timestamp > deletionTimestamp;
-                }
-
-                @Override
-                protected boolean include(ColumnDefinition def)
-                {
-                    return columns.statics.contains(def);
-                }
-
-                protected boolean includeCell(Cell cell)
-                {
-                    return cell.timestamp() > deletionTimestamp;
-                }
-
-                protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
-                {
-                    return dt.markedForDeleteAt() > deletionTimestamp;
-                }
-
-            }.setTo(holder.staticRow);
         }
 
         protected Atom computeNext()
@@ -348,7 +349,8 @@ public class AtomicBTreePartition implements Partition
                                                        columns,
                                                        slices.getStart(sliceIdx),
                                                        slices.getEnd(sliceIdx),
-                                                       isReverseOrder);
+                                                       isReverseOrder,
+                                                       allocator);
             }
 
             if (currentSlice.hasNext())
@@ -364,7 +366,7 @@ public class AtomicBTreePartition implements Partition
      *
      * @return the difference in size seen after merging the updates
      */
-    public long addAllWithSizeDelta(final PartitionUpdate update, MemtableAllocator allocator, OpOrder.Group writeOp, Updater indexer)
+    public long addAllWithSizeDelta(final PartitionUpdate update, OpOrder.Group writeOp, Updater indexer)
     {
         RowUpdater updater = new RowUpdater(this, update.metadata(), allocator, writeOp, indexer);
         DeletionInfo inputDeletionInfoCopy = null;
@@ -398,10 +400,10 @@ public class AtomicBTreePartition implements Partition
                 }
 
                 Row newStatic = update.staticRow();
-                Row staticRow = newStatic == Rows.EMPTY_STATIC_ROW
-                              ? current.staticRow
-                              : (current.staticRow == Rows.EMPTY_STATIC_ROW ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
-                Object[] tree = BTree.update(current.tree, update.metadata().comparator.rowComparator, update, update.rowCount(), true, updater);
+                MemtableRowData staticRow = newStatic == Rows.EMPTY_STATIC_ROW
+                                          ? current.staticRow
+                                          : (current.staticRow == null ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
+                Object[] tree = BTree.<Clusterable, Row, MemtableRowData>update(current.tree, update.metadata().comparator, update, update.rowCount(), updater);
 
                 if (tree != null && refUpdater.compareAndSet(this, current, new Holder(tree, deletionInfo, staticRow)))
                 {
@@ -484,9 +486,9 @@ public class AtomicBTreePartition implements Partition
         final DeletionInfo deletionInfo;
         // the btree of rows
         final Object[] tree;
-        final Row staticRow;
+        final MemtableRowData staticRow;
 
-        Holder(Object[] tree, DeletionInfo deletionInfo, Row staticRow)
+        Holder(Object[] tree, DeletionInfo deletionInfo, MemtableRowData staticRow)
         {
             this.tree = tree;
             this.deletionInfo = deletionInfo;
@@ -500,7 +502,7 @@ public class AtomicBTreePartition implements Partition
     }
 
     // the function we provide to the btree utilities to perform any column replacements
-    private static final class RowUpdater implements UpdateFunction<Row>
+    private static final class RowUpdater implements UpdateFunction<Row, MemtableRowData>
     {
         final AtomicBTreePartition updating;
         final MemtableAllocator allocator;
@@ -510,56 +512,54 @@ public class AtomicBTreePartition implements Partition
         Holder ref;
         long dataSize;
         long heapSize;
+        final MemtableRowData.ReusableRow row;
         final MemtableAllocator.DataReclaimer reclaimer;
         final MemtableAllocator.RowAllocator rowAllocator;
-        List<MemtableRow> inserted; // TODO: replace with walk of aborted BTree
+        List<MemtableRowData> inserted; // TODO: replace with walk of aborted BTree
 
         private RowUpdater(AtomicBTreePartition updating, CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group writeOp, Updater indexer)
         {
-
             this.updating = updating;
             this.allocator = allocator;
             this.writeOp = writeOp;
             this.indexer = indexer;
             this.nowInSec = FBUtilities.nowInSeconds();
+            this.row = allocator.newReusableRow();
             this.reclaimer = allocator.reclaimer();
             this.rowAllocator = allocator.newRowAllocator(metadata, writeOp);
         }
 
-        public Row apply(Row insert)
+        public MemtableRowData apply(Row insert)
         {
             rowAllocator.allocateNewRow(insert.columns());
             Rows.copy(insert, rowAllocator);
-            MemtableRow row = rowAllocator.allocatedRow();
+            MemtableRowData data = rowAllocator.allocatedRowData();
 
-            insertIntoIndexes(row);
+            insertIntoIndexes(row.setTo(data));
 
-            this.dataSize += row.dataSize();
-            this.heapSize += row.unsharedHeapSizeExcludingData();
+            this.dataSize += data.dataSize();
+            this.heapSize += data.unsharedHeapSizeExcludingData();
             if (inserted == null)
                 inserted = new ArrayList<>();
-            inserted.add(row);
-            return row;
+            inserted.add(data);
+            return data;
         }
 
-        public Row apply(Row existing, Row update)
+        public MemtableRowData apply(MemtableRowData existing, Row update)
         {
             Columns mergedColumns = existing.columns().mergeTo(update.columns());
             rowAllocator.allocateNewRow(mergedColumns);
 
-            Rows.merge(existing, update, rowAllocator, nowInSec, indexer);
+            Rows.merge(row.setTo(existing), update, rowAllocator, nowInSec, indexer);
 
-            MemtableRow reconciled = rowAllocator.allocatedRow();
+            MemtableRowData reconciled = rowAllocator.allocatedRowData();
 
-            assert existing instanceof MemtableRow;
-            MemtableRow replaced = (MemtableRow)existing;
-
-            dataSize += reconciled.dataSize() - replaced.dataSize();
-            heapSize += reconciled.unsharedHeapSizeExcludingData() - replaced.unsharedHeapSizeExcludingData();
+            dataSize += reconciled.dataSize() - existing.dataSize();
+            heapSize += reconciled.unsharedHeapSizeExcludingData() - existing.unsharedHeapSizeExcludingData();
             if (inserted == null)
                 inserted = new ArrayList<>();
             inserted.add(reconciled);
-            discard(replaced);
+            discard(existing);
 
             return reconciled;
         }
@@ -577,19 +577,19 @@ public class AtomicBTreePartition implements Partition
             this.heapSize = 0;
             if (inserted != null)
             {
-                for (MemtableRow row : inserted)
+                for (MemtableRowData row : inserted)
                     abort(row);
                 inserted.clear();
             }
             reclaimer.cancel();
         }
 
-        protected void abort(MemtableRow abort)
+        protected void abort(MemtableRowData abort)
         {
             reclaimer.reclaimImmediately(abort);
         }
 
-        protected void discard(MemtableRow discard)
+        protected void discard(MemtableRowData discard)
         {
             reclaimer.reclaim(discard);
         }

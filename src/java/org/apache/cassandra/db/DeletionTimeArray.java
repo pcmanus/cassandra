@@ -98,24 +98,26 @@ public class DeletionTimeArray
         }
     }
 
-    public class Cursor extends DeletionTime
+    public static class Cursor extends DeletionTime
     {
-        public int i;
+        private DeletionTimeArray array;
+        private int i;
 
-        public Cursor setTo(int i)
+        public Cursor setTo(DeletionTimeArray array, int i)
         {
+            this.array = array;
             this.i = i;
             return this;
         }
 
         public long markedForDeleteAt()
         {
-            return markedForDeleteAts[i];
+            return array.markedForDeleteAts[i];
         }
 
         public int localDeletionTime()
         {
-            return delTimes[i];
+            return array.delTimes[i];
         }
 
         public DeletionTime takeAlias()

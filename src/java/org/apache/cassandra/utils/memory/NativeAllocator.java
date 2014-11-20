@@ -26,6 +26,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.NativeDecoratedKey;
+import org.apache.cassandra.db.atoms.MemtableRowData;
 import org.apache.cassandra.io.util.IAllocator;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.slf4j.Logger;
@@ -51,6 +52,12 @@ public class NativeAllocator extends MemtableAllocator
     protected NativeAllocator(NativePool pool)
     {
         super(pool.onHeap.newAllocator(), pool.offHeap.newAllocator());
+    }
+
+    public MemtableRowData.ReusableRow newReusableRow()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
     public RowAllocator newRowAllocator(CFMetaData cfm, OpOrder.Group writeOp)

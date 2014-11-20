@@ -24,11 +24,17 @@ public class ReusableRow extends AbstractReusableRow
     private ClusteringPrefix clustering;
     private long timestamp = Long.MIN_VALUE;
 
-    private Writer writer = new Writer();
+    private final RowDataBlock data;
+    private final Writer writer = new Writer();
 
     public ReusableRow(Columns columns)
     {
-        super(new RowDataBlock(columns, 1));
+        this.data = new RowDataBlock(columns, 1);
+    }
+
+    protected RowDataBlock data()
+    {
+        return data;
     }
 
     protected int row()

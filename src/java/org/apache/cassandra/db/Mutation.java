@@ -103,13 +103,14 @@ public class Mutation implements IMutation
         return modifications.get(cfId);
     }
 
-    public void add(PartitionUpdate update)
+    public Mutation add(PartitionUpdate update)
     {
         assert update != null;
         PartitionUpdate prev = modifications.put(update.metadata().cfId, update);
         if (prev != null)
             // developer error
             throw new IllegalArgumentException("Table " + update.metadata().cfName + " already has modifications in this mutation: " + prev);
+        return this;
     }
 
     public PartitionUpdate get(CFMetaData cfm)
