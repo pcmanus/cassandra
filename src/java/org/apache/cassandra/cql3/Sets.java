@@ -31,6 +31,7 @@ import java.util.TreeSet;
 import com.google.common.base.Joiner;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.db.marshal.SetType;
@@ -248,7 +249,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + add
             params.setComplexDeletionTimeForOverwrite(column, writer);
@@ -263,7 +264,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doAdd(t, writer, column, params);
         }
@@ -290,7 +291,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -302,7 +303,7 @@ public abstract class Sets
                                       : ((Sets.Value)value).elements;
 
             for (ByteBuffer bb : toDiscard)
-                params.addCell(column, writer, new CollectionPath(bb));
+                params.addTombstone(column, writer, new CollectionPath(bb));
         }
     }
 }

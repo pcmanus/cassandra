@@ -115,7 +115,7 @@ public class AtomicBTreePartition implements Partition
     public PartitionColumns columns()
     {
         // We don't really know which columns will be part of the update, so assume it's all of them
-        return PartitionColumns.builder().addAll(metadata.regularColumns()).addAll(metadata.staticColumns()).build();
+        return metadata.partitionColumns();
     }
 
     public boolean hasRows()
@@ -135,19 +135,12 @@ public class AtomicBTreePartition implements Partition
             return AtomIterators.emptyIterator(metadata, partitionKey, reversed);
 
         return slices.size() == 1
-             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices.lowerBound(), slices.upperBound(), !reversed)
-             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices, !reversed);
+             ? new SingleSliceIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices.lowerBound(), slices.upperBound(), reversed)
+             : new SlicesIterator(metadata, partitionKey, partitionLevelDeletion(), ref, columns, slices, reversed);
     }
 
-    private static class SingleSliceIterator extends AbstractIterator<Atom> implements AtomIterator
+    private static class SingleSliceIterator extends AbstractAtomIterator
     {
-        private final CFMetaData metadata;
-        private final DecoratedKey partitionKey;
-        private final DeletionTime partitionLevelDeletion;
-        private final PartitionColumns columns;
-        private final Row staticRow;
-        private final boolean forwards;
-
         private final Iterator<RangeTombstone> tombstoneIter;
         private final Iterator<Row> rowIter;
 
@@ -166,21 +159,16 @@ public class AtomicBTreePartition implements Partition
                                     PartitionColumns columns,
                                     ClusteringPrefix start,
                                     ClusteringPrefix end,
-                                    boolean forwards)
+                                    boolean isReversed)
         {
-            this.metadata = metadata;
-            this.partitionKey = key;
-            this.partitionLevelDeletion = partitionLevelDeletion;
-            this.columns = columns;
-            this.staticRow = columns.statics.isEmpty() ? null : holder.staticRow;
-            this.forwards = forwards;
+            super(metadata, key, partitionLevelDeletion, columns, columns.statics.isEmpty() ? null : holder.staticRow, isReversed);
             this.rowIter = BTree.slice(holder.tree,
                                        metadata.comparator,
                                        start == EmptyClusteringPrefix.BOTTOM ? null : start,
                                        true,
                                        end == EmptyClusteringPrefix.TOP  ? null : end,
                                        true,
-                                       forwards);
+                                       !isReversed);
             this.tombstoneIter = holder.deletionInfo.rangeIterator(start, end);
 
             this.filter = new FilteringRow()
@@ -188,20 +176,23 @@ public class AtomicBTreePartition implements Partition
                 private long deletionTimestamp;
 
                 @Override
-                protected FilteringRow setTo(Row row)
+                public FilteringRow setTo(Row row)
                 {
                     long rangeDeletion = SingleSliceIterator.this.inTombstone
                                        ? SingleSliceIterator.this.nextTombstone.data.markedForDeleteAt()
                                        : Long.MIN_VALUE;
                     this.deletionTimestamp = Math.max(partitionLevelDeletion.markedForDeleteAt(), rangeDeletion);
                     super.setTo(row);
+                    return this;
                 }
 
+                @Override
                 protected boolean includeTimestamp(long timestamp)
                 {
                     return timestamp > deletionTimestamp;
                 }
 
+                @Override
                 protected boolean include(ColumnDefinition column)
                 {
                     return columns().contains(column);
@@ -217,36 +208,6 @@ public class AtomicBTreePartition implements Partition
                     return dt.markedForDeleteAt() > deletionTimestamp;
                 }
             };
-        }
-
-        public CFMetaData metadata()
-        {
-            return metadata;
-        }
-
-        public DecoratedKey partitionKey()
-        {
-            return partitionKey;
-        }
-
-        public DeletionTime partitionLevelDeletion()
-        {
-            return partitionLevelDeletion;
-        }
-
-        public Row staticRow()
-        {
-            return staticRow == null ? Rows.EMPTY_STATIC_ROW : filter.setTo(staticRow);
-        }
-
-        public PartitionColumns columns()
-        {
-            return columns;
-        }
-
-        public boolean isReverseOrder()
-        {
-            return !forwards;
         }
 
         private void prepareNextTombstone()
@@ -315,21 +276,12 @@ public class AtomicBTreePartition implements Partition
                 return nextRow;
             }
         }
-
-        public void close()
-        {
-        }
     }
 
-    public static class SlicesIterator extends AbstractIterator<Atom> implements AtomIterator
+    public static class SlicesIterator extends AbstractAtomIterator
     {
-        private final CFMetaData metadata;
-        private final DecoratedKey partitionKey;
-        private final DeletionTime partitionLevelDeletion;
-        private final PartitionColumns columns;
         private final Holder holder;
         private final Slices slices;
-        private final boolean forwards;
 
         private int idx;
         private AtomIterator currentSlice;
@@ -340,46 +292,29 @@ public class AtomicBTreePartition implements Partition
                                Holder holder,
                                PartitionColumns columns,
                                Slices slices,
-                               boolean forwards)
+                               boolean isReversed)
         {
-            this.metadata = metadata;
-            this.partitionKey = key;
-            this.partitionLevelDeletion = partitionLevelDeletion;
+            super(metadata, key, partitionLevelDeletion, columns, makeStatic(columns, holder, partitionLevelDeletion), isReversed);
             this.holder = holder;
-            this.columns = columns;
             this.slices = slices;
-            this.forwards = forwards;
         }
 
-        public CFMetaData metadata()
-        {
-            return metadata;
-        }
-
-        public DecoratedKey partitionKey()
-        {
-            return partitionKey;
-        }
-
-        public DeletionTime partitionLevelDeletion()
-        {
-            return partitionLevelDeletion;
-        }
-
-        public Row staticRow()
+        private static Row makeStatic(final PartitionColumns columns, Holder holder, DeletionTime deletion)
         {
             if (columns.statics.isEmpty() || holder.staticRow == null)
                 return Rows.EMPTY_STATIC_ROW;
 
-            final long deletionTimestamp = partitionLevelDeletion.markedForDeleteAt();
+            final long deletionTimestamp = deletion.markedForDeleteAt();
 
             return new FilteringRow()
             {
+                @Override
                 protected boolean includeTimestamp(long timestamp)
                 {
                     return timestamp > deletionTimestamp;
                 }
 
+                @Override
                 protected boolean include(ColumnDefinition def)
                 {
                     return columns.statics.contains(def);
@@ -398,16 +333,6 @@ public class AtomicBTreePartition implements Partition
             }.setTo(holder.staticRow);
         }
 
-        public PartitionColumns columns()
-        {
-            return columns;
-        }
-
-        public boolean isReverseOrder()
-        {
-            return !forwards;
-        }
-
         protected Atom computeNext()
         {
             if (currentSlice == null)
@@ -415,7 +340,7 @@ public class AtomicBTreePartition implements Partition
                 if (idx >= slices.size())
                     return endOfData();
 
-                int sliceIdx = forwards ? idx : slices.size() - idx - 1;
+                int sliceIdx = isReverseOrder ? slices.size() - idx - 1 : idx;
                 currentSlice = new SingleSliceIterator(metadata,
                                                        partitionKey,
                                                        partitionLevelDeletion,
@@ -423,7 +348,7 @@ public class AtomicBTreePartition implements Partition
                                                        columns,
                                                        slices.getStart(sliceIdx),
                                                        slices.getEnd(sliceIdx),
-                                                       forwards);
+                                                       isReverseOrder);
             }
 
             if (currentSlice.hasNext())
@@ -431,10 +356,6 @@ public class AtomicBTreePartition implements Partition
 
             currentSlice = null;
             return computeNext();
-        }
-
-        public void close()
-        {
         }
     }
 
@@ -522,7 +443,8 @@ public class AtomicBTreePartition implements Partition
      * @param wastedBytes the number of bytes wasted by this thread
      * @return true if the caller should now proceed with pessimistic locking because the waste limit has been reached
      */
-    private boolean updateWastedAllocationTracker(long wastedBytes) {
+    private boolean updateWastedAllocationTracker(long wastedBytes)
+    {
         // Early check for huge allocation that exceeds the limit
         if (wastedBytes < EXCESS_WASTE_BYTES)
         {

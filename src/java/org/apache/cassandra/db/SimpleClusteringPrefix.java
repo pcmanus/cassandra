@@ -41,7 +41,7 @@ public class SimpleClusteringPrefix extends AbstractClusteringPrefix
 
     public int size()
     {
-        return values.size();
+        return values.length;
     }
 
     public ByteBuffer get(int i)
@@ -69,6 +69,7 @@ public class SimpleClusteringPrefix extends AbstractClusteringPrefix
         return new SimpleClusteringPrefix(values, eoc);
     }
 
+    @Override
     public ClusteringPrefix takeAlias()
     {
         return this;

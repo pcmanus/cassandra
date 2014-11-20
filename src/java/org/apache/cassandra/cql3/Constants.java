@@ -308,7 +308,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer value = t.bindAndGet(params.options);
             if (value == null)
@@ -325,7 +325,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -342,7 +342,7 @@ public abstract class Constants
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer bytes = t.bindAndGet(params.options);
             if (bytes == null)
@@ -365,7 +365,7 @@ public abstract class Constants
             super(column, null);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             if (column.type.isCollection())
                 params.setComplexDeletionTime(column, writer);

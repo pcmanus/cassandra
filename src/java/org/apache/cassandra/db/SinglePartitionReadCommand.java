@@ -145,7 +145,7 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
             {
                 cfs.metric.rowCacheHit.inc();
                 Tracing.trace("Row cache hit");
-                return partitionFilter().filter(cachedPartition);
+                return partitionFilter().getAtomIterator(cachedPartition);
             }
 
             cfs.metric.rowCacheHitOutOfRange.inc();
@@ -177,7 +177,7 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                 AtomIterator iter = ReadCommands.fullPartitionRead(metadata(), partitionKey(), nowInSec()).queryMemtableAndDisk(cfs);
 
                 // We want to cache only rowsToCache rows
-                CachedPartition toCache = ArrayBackedPartition.accumulate(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
+                CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
                 if (sentinelSuccess && !toCache.isEmpty())
                 {
                     Tracing.trace("Caching {} rows", toCache.rowCount());
@@ -189,7 +189,7 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                 // We then re-filter out what this query wants.
                 // Note that in the case where we don't cache full partitions, it's possible that the current query is interested in more
                 // than what we've cached, so we can't just use toCache.
-                AtomIterator cacheIterator = partitionFilter().filter(toCache);
+                AtomIterator cacheIterator = partitionFilter().getAtomIterator(toCache);
                 return cacheFullPartitions
                      ? cacheIterator
                      : AtomIterators.concat(cacheIterator, partitionFilter().filter(iter));

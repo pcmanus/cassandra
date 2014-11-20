@@ -49,6 +49,11 @@ public abstract class WrappingRowIterator extends UnmodifiableIterator<Row>  imp
         return wrapped.isReverseOrder();
     }
 
+    public PartitionColumns columns()
+    {
+        return wrapped.columns();
+    }
+
     public DecoratedKey partitionKey()
     {
         return wrapped.partitionKey();

@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.Aliasable;
 import org.apache.cassandra.db.Columns;
 import org.apache.cassandra.db.DeletionTime;
 
@@ -31,7 +32,7 @@ import org.apache.cassandra.db.DeletionTime;
  * has a row level timestamp and contains data regarding the columns it
  * contains.
  */
-public interface Row extends Atom, Iterable<Cell>
+public interface Row extends Atom, Iterable<Cell>, Aliasable<Row>
 {
     /**
      * The columns this row contains.
@@ -116,7 +117,4 @@ public interface Row extends Atom, Iterable<Cell>
      * @return an iterator over the cells of this row.
      */
     public Iterator<Cell> iterator();
-
-    @Override
-    public Row takeAlias();
 }

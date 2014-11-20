@@ -53,7 +53,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         return new ContextAllocator(writeOp, this);
     }
 
-    private static class RowBufferAllocator extends RowDataBlock.Writer
+    private static class RowBufferAllocator extends RowDataBlock.Writer implements RowAllocator
     {
         private final AbstractAllocator allocator;
 
@@ -72,9 +72,9 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
             updateWriter(data);
         }
 
-        public MemtableRow getRow()
+        public MemtableRow allocatedRow()
         {
-            MemtableRow row = new BufferRow(clustering, rowTimestamp, data);
+            MemtableRow row = new MemtableRow.BufferRow(clustering, rowTimestamp, data);
 
             clustering = null;
             rowTimestamp = Rows.NO_TIMESTAMP;
@@ -85,7 +85,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
 
         public void setClustering(ClusteringPrefix clustering)
         {
-            clustering = BufferClusteringPrefix.clone(clustering, allocator);
+            clustering = MemtableRow.BufferClusteringPrefix.clone(clustering, allocator);
         }
 
         public void setTimestamp(long timestamp)
@@ -94,12 +94,13 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         }
 
         @Override
-        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path);
+        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
+            ByteBuffer v = allocator.clone(value);
             if (column.isComplex())
-                complexWriter.addCell(column, isCounter, allocator.clone(value), timestamp, localDeletionTime, ttl, BufferCellPath.clone(path));
+                complexWriter.addCell(column, v, timestamp, localDeletionTime, ttl, MemtableRow.BufferCellPath.clone(path, allocator));
             else
-                simpleWriter.addCell(column, isCounter, allocator.clone(value), timestamp, localDeletionTime, ttl, BufferCellPath.clone(path));
+                simpleWriter.addCell(column, v, timestamp, localDeletionTime, ttl);
         }
     }
 }

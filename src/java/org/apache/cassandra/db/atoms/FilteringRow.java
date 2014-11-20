@@ -18,6 +18,9 @@
 package org.apache.cassandra.db.atoms;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
@@ -25,27 +28,16 @@ import org.apache.cassandra.db.*;
 public abstract class FilteringRow implements Row
 {
     private Row wrapped;
-    private final ReusableCellIterator cellIterator = new ReusableCellIterator()
-    {
-        protected Cell computeNext()
-        {
-            while (wrapped.hasNext())
-            {
-                Cell next = wrapped.next();
-                if (include(next.column()) && includeCell(next))
-                    return next;
-            }
-            return endOfData();
-        }
-    };
+    private final ReusableIterator cellIterator = new ReusableIterator();
 
     public FilteringRow setTo(Row row)
     {
         this.wrapped = row;
+        return this;
     }
 
-    protected abstract boolean includeTimestamp(long timestamp);
-    protected abstract boolean include(ColumnDefinition column);
+    protected boolean includeTimestamp(long timestamp) { return true; }
+    protected boolean include(ColumnDefinition column) { return true; }
 
     protected abstract boolean includeCell(Cell cell);
     protected abstract boolean includeDeletion(ColumnDefinition c, DeletionTime dt);
@@ -118,6 +110,43 @@ public abstract class FilteringRow implements Row
 
     public Row takeAlias()
     {
-        return Rows.copy(this);
+        ReusableRow copy = new ReusableRow(columns());
+        Rows.copy(this, copy.writer());
+        return copy;
     }
+
+    private class ReusableIterator extends UnmodifiableIterator<Cell>
+    {
+        private Iterator<Cell> iter;
+        private Cell next;
+
+        public ReusableIterator setTo(Iterator<Cell> iter)
+        {
+            this.iter = iter;
+            this.next = null;
+            return this;
+        }
+
+        public boolean hasNext()
+        {
+            while (next == null && iter.hasNext())
+            {
+                Cell cell = iter.next();
+                if (include(cell.column()) && includeCell(cell))
+                {
+                    next = cell;
+                    break;
+                }
+            }
+            return next == null;
+        }
+
+        public Cell next()
+        {
+            if (next == null && !hasNext())
+                throw new NoSuchElementException();
+
+            return next;
+        }
+    };
 }

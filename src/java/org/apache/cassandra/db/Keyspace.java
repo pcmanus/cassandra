@@ -50,6 +50,7 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.pager.QueryPagers;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.concurrent.OpOrder;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.metrics.KeyspaceMetrics;
 
 /**
@@ -405,7 +406,7 @@ public class Keyspace
         Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
         try (OpOrder.Group opGroup = cfs.keyspace.writeOrder.start())
         {
-            SinglePartitionReadCommand cmd = ReadCommands.fullPartitionRead(cfs.metadata, key, (int)(System.currentTimeMillis() / 1000));
+            SinglePartitionReadCommand cmd = ReadCommands.fullPartitionRead(cfs.metadata, key, FBUtilities.nowInSeconds());
             cfs.indexManager.indexPartition(cmd.queryMemtableAndDisk(cfs), opGroup, indexes);
         }
     }

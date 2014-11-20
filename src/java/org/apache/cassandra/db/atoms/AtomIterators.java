@@ -126,7 +126,7 @@ public abstract class AtomIterators
 
             public PartitionColumns columns()
             {
-                return Columns.NONE;
+                return PartitionColumns.NONE;
             }
 
             public DecoratedKey partitionKey()

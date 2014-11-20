@@ -35,10 +35,7 @@ public abstract class ReadCommands
 
     public static SinglePartitionReadCommand fullSlicesRead(CFMetaData metadata, DecoratedKey key, Slices slices, int nowInSec)
     {
-        SlicePartitionFilter filter = new SlicePartitionFilter(metadata.regularColumns(),
-                                                               metadata.staticColumns(),
-                                                               slices,
-                                                               false);
+        SlicePartitionFilter filter = new SlicePartitionFilter(metadata.partitionColumns(), slices, false);
         return new SinglePartitionSliceCommand(metadata, nowInSec, ColumnFilter.NONE, DataLimits.NONE, key, filter);
     }
 

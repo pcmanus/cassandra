@@ -55,7 +55,7 @@ public class Commit
 
     public static Commit newPrepare(DecoratedKey key, CFMetaData metadata, UUID ballot)
     {
-        return new Commit(ballot, new PartitionUpdate(metadata, key));
+        return new Commit(ballot, new PartitionUpdate(metadata, key, metadata.partitionColumns(), 1));
     }
 
     public static Commit newProposal(UUID ballot, PartitionUpdate update)
@@ -65,7 +65,8 @@ public class Commit
 
     public static Commit emptyCommit(DecoratedKey key, CFMetaData metadata)
     {
-        return new Commit(UUIDGen.minTimeUUID(0), new PartitionUpdate(metadata, key));
+        // TODO: coul
+        return new Commit(UUIDGen.minTimeUUID(0), new PartitionUpdate(metadata, key, PartitionColumns.NONE, 0));
     }
 
     public boolean isAfter(Commit other)

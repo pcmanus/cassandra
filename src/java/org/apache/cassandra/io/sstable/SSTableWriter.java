@@ -36,6 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
@@ -261,7 +262,6 @@ public class SSTableWriter extends SSTable
                         update(cell.timestamp(), cell.localDeletionTime());
                         if (cell.isCounterCell())
                             hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
-                        }
                     }
 
                     for (int i = 0; i < row.columns().complexColumnCount(); i++)

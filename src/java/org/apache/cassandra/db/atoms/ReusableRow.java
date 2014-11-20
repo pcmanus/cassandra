@@ -31,6 +31,11 @@ public class ReusableRow extends AbstractReusableRow
         super(new RowDataBlock(columns, 1));
     }
 
+    protected int row()
+    {
+        return 0;
+    }
+
     public ClusteringPrefix clustering()
     {
         assert clustering != null;
@@ -39,7 +44,7 @@ public class ReusableRow extends AbstractReusableRow
 
     public long timestamp()
     {
-        return rowTimestamp;
+        return timestamp;
     }
 
     public Rows.Writer writer()

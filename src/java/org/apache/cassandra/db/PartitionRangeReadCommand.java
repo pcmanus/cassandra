@@ -156,7 +156,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements Pageable
                 PartitionFilter filter = dataRange().partitionFilter(metadata().comparator, dk);
 
                 if (cached != null && cfs.isFilterFullyCoveredBy(filter, limits(), cached, nowInSec()))
-                    return filter.filter(cached);
+                    return filter.getAtomIterator(cached);
 
                 return next();
             }

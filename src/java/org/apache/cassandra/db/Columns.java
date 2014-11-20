@@ -76,6 +76,11 @@ public class Columns implements Iterable<ColumnDefinition>
         return columns.length - complexIdx;
     }
 
+    public int columnCount()
+    {
+        return columns.length;
+    }
+
     public boolean hasSimple()
     {
         return complexIdx > 0;

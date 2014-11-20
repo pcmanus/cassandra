@@ -40,8 +40,6 @@ public interface PartitionFilter
 
     public boolean selectsAllPartition();
 
-    public AtomIterator filter(Partition partition);
-
     // Given another iterator, only return the atom that match this filter
     public AtomIterator filter(AtomIterator iterator);
 

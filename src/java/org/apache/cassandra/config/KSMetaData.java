@@ -27,6 +27,8 @@ import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.RowIterator;
 import org.apache.cassandra.db.atoms.RowIterators;
+import org.apache.cassandra.db.atoms.RowIterators;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.*;
 import org.apache.cassandra.service.StorageService;
@@ -239,12 +241,12 @@ public final class KSMetaData
     {
         Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, SystemKeyspace.getSchemaKSDecoratedKey(name));
 
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaKeyspacesCf, mutation.key(), timestamp);
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnFamiliesCf, mutation.key(), timestamp);
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnsCf, mutation.key(), timestamp);
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaTriggersCf, mutation.key(), mutatitimestamp);
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaUserTypesCf, mutation.key(), timestamp);
-        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.IndexCf, mutation.key(), timestamp);
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaKeyspacesCf, mutation.key(), timestamp));
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnFamiliesCf, mutation.key(), timestamp));
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaColumnsCf, mutation.key(), timestamp));
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaTriggersCf, mutation.key(), timestamp));
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.SchemaUserTypesCf, mutation.key(), timestamp));
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.IndexCf, mutation.key(), timestamp));
 
         return mutation;
     }

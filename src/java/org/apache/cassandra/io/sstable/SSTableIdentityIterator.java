@@ -77,8 +77,7 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
 
     public PartitionColumns columns()
     {
-        // TODO: have metadata return us this directly.
-        return PartitionColumns.builder().addAll(metadata.regularColumns()).addAll(metadata.staticColumns());
+        return metadata.partitionColumns();
     }
 
     public boolean isReverseOrder()

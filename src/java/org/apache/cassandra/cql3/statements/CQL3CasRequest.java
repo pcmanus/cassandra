@@ -27,8 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.Row;
 import org.apache.cassandra.db.filters.*;
-import org.apache.cassandra.db.partitions.ReadPartition;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.service.CASRequest;
 import org.apache.cassandra.utils.Pair;
@@ -109,7 +108,7 @@ public class CQL3CasRequest implements CASRequest
             builder.add(prefix.withEOC(ClusteringPrefix.EOC.START), prefix.withEOC(ClusteringPrefix.EOC.END));
 
         // TODO: we should actually collect the columns on which we have conditions.
-        return new SlicePartitionFilter(cfm.regularColumns(), cfm.staticColumns(), builder.build(), false);
+        return new SlicePartitionFilter(cfm.partitionColumns(), builder.build(), false);
     }
 
     public boolean appliesTo(ReadPartition current) throws InvalidRequestException
@@ -122,9 +121,17 @@ public class CQL3CasRequest implements CASRequest
         return true;
     }
 
+    private PartitionColumns updatedColumns()
+    {
+        PartitionColumns.Builder builder = PartitionColumns.builder();
+        for (RowUpdate upd : updates)
+            builder.addAll(upd.stmt.updatedColumns());
+        return builder.build();
+    }
+
     public PartitionUpdate makeUpdates(ReadPartition current) throws InvalidRequestException
     {
-        PartitionUpdate update = new PartitionUpdate(cfm, key);
+        PartitionUpdate update = new PartitionUpdate(cfm, key, updatedColumns(), conditions.size());
         for (RowUpdate upd : updates)
             upd.applyUpdates(current, update);
 
@@ -157,14 +164,7 @@ public class CQL3CasRequest implements CASRequest
 
         public void applyUpdates(ReadPartition current, PartitionUpdate updates) throws InvalidRequestException
         {
-            Map<ByteBuffer, Map<ClusteringPrefix, Row>> map = null;
-            if (stmt.requiresRead())
-            {
-                Row row = current.getRow(rowPrefix);
-                if (row != null)
-                    map = Collections.singletonMap(key.getKey(), Collections.singletonMap(rowPrefix, row.takeAlias()));
-            }
-
+            Map<DecoratedKey, Partition> map = stmt.requiresRead() ? Collections.<DecoratedKey, Partition>singletonMap(key, current) : null;
             UpdateParameters params = new UpdateParameters(cfm, options, timestamp, stmt.getTimeToLive(options), map);
             stmt.addUpdateForKey(updates, rowPrefix, params);
         }

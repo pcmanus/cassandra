@@ -248,7 +248,7 @@ public class Scrubber implements Closeable
                 long repairedAt = badRows > 0 ? ActiveRepairService.UNREPAIRED_SSTABLE : sstable.getSSTableMetadata().repairedAt;
                 SSTableWriter inOrderWriter = CompactionManager.createWriter(cfs, destination, expectedBloomFilterSize, repairedAt, sstable);
                 for (Partition partition : outOfOrder)
-                    inOrderWriter.append(partition.atomIterator(Slices.ALL, false));
+                    inOrderWriter.append(partition.atomIterator(partition.columns(), Slices.ALL, false));
                 newInOrderSstable = inOrderWriter.closeAndOpenReader(sstable.maxDataAge);
                 if (!isOffline)
                     cfs.getDataTracker().addSSTables(Collections.singleton(newInOrderSstable));
@@ -289,7 +289,7 @@ public class Scrubber implements Closeable
     {
         // TODO bitch if the row is too large?  if it is there's not much we can do ...
         outputHandler.warn(String.format("Out of order row detected (%s found after %s)", key, prevKey));
-        outOfOrder.add(ArrayBackedPartition.accumulate(atoms));
+        outOfOrder.add(ArrayBackedPartition.create(atoms));
     }
 
     public SSTableReader getNewSSTable()

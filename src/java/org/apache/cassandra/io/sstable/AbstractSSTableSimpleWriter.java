@@ -140,7 +140,9 @@ public abstract class AbstractSSTableSimpleWriter implements Closeable
      */
     public void addColumn(ByteBuffer name, ByteBuffer value, long timestamp) throws IOException
     {
-        addColumn(name, Cells.create(value, timestamp, 0, null));
+        // TODO
+        throw new UnsupportedOperationException();
+        //addColumn(name, Cells.create(value, timestamp, 0, null));
     }
 
     /**
@@ -155,7 +157,9 @@ public abstract class AbstractSSTableSimpleWriter implements Closeable
      */
     public void addExpiringColumn(ByteBuffer name, ByteBuffer value, long timestamp, int ttl, long expirationTimestampMS) throws IOException
     {
-        addColumn(name, Cells.create(value, timestamp, ttl, (int)(expirationTimestampMS / 1000), null));
+        // TODO
+        throw new UnsupportedOperationException();
+        //addColumn(name, Cells.create(value, timestamp, ttl, (int)(expirationTimestampMS / 1000), null));
     }
 
     /**
@@ -165,7 +169,9 @@ public abstract class AbstractSSTableSimpleWriter implements Closeable
      */
     public void addCounterColumn(ByteBuffer name, long value) throws IOException
     {
-        addColumn(name, Cells.createCounter(CounterContext.instance().createGlobal(counterid, 1L, value), System.currentTimeMillis()));
+        // TODO
+        throw new UnsupportedOperationException();
+        //addColumn(name, Cells.createCounter(CounterContext.instance().createGlobal(counterid, 1L, value), System.currentTimeMillis()));
     }
 
     /**

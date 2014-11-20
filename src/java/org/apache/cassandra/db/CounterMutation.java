@@ -27,6 +27,8 @@ import java.util.concurrent.locks.Lock;
 import com.google.common.base.Function;
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.PeekingIterator;
 import com.google.common.util.concurrent.Striped;
 
 import org.apache.cassandra.config.ColumnDefinition;
@@ -161,15 +163,15 @@ public class CounterMutation implements IMutation
         {
             public Iterable<Object> apply(final PartitionUpdate update)
             {
-                return Iterables.concat(Iterables.transform(update, new Function<RowUpdate, Iterable<Object>>()
+                return Iterables.concat(Iterables.transform(update, new Function<Row, Iterable<Object>>()
                 {
-                    public Iterable<Object> apply(final RowUpdate row)
+                    public Iterable<Object> apply(final Row row)
                     {
-                        return Iterables.concat(Iterables.transform(row, new Function<ColumnData, Object>()
+                        return Iterables.concat(Iterables.transform(row, new Function<Cell, Object>()
                         {
-                            public Object apply(final ColumnData data)
+                            public Object apply(final Cell cell)
                             {
-                                return Objects.hashCode(update.metadata().cfId, key(), row.clustering(), data.column());
+                                return Objects.hashCode(update.metadata().cfId, key(), row.clustering(), cell.column());
                             }
                         }));
                     }
@@ -178,151 +180,119 @@ public class CounterMutation implements IMutation
         }));
     }
 
-    // Replaces all the CounterUpdateCell-s with updated regular CounterCell-s
     private PartitionUpdate processModifications(PartitionUpdate changes)
     {
         ColumnFamilyStore cfs = Keyspace.open(getKeyspaceName()).getColumnFamilyStore(changes.metadata().cfId);
 
-        PartitionUpdate resultUpdate = new PartitionUpdate(changes.metadata(), changes.partitionKey());
-        resultUpdate.deletionInfo().add(changes.deletionInfo());
+        List<PartitionUpdate.CounterMark> marks = changes.collectCounterMarks();
 
-        Map<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> counterUpdates = new HashMap<>();
-
-        for (RowUpdate upd : changes)
-        {
-            ClusteringPrefix clustering = upd.clustering();
-            RowUpdate newUpd = RowUpdates.create(clustering, upd.columns());
-            resultUpdate.add(newUpd);
-            newUpd.updateRowTimestamp(upd.timestamp());
-            for (ColumnData data : upd)
-            {
-                Cell cell = data.cell(0);
-                if (cell.isCounterCell())
-                {
-                    newUpd.addCell(data.column(), cell);
-                }
-                else
-                {
-                    CounterUpdate c = new CounterUpdate(cell.value(), cell.timestamp());
-                    newUpd.addCell(data.column(), c);
-
-                    Map<ColumnDefinition, CounterUpdate> m = counterUpdates.get(clustering);
-                    if (m == null)
-                    {
-                        m = new HashMap<>();
-                        counterUpdates.put(clustering, m);
-                    }
-                    m.put(data.column(), c);
-                }
-            }
-        }
-        updateWithCurrentValues(counterUpdates, cfs);
-        return resultUpdate;
-    }
-
-    private void updateWithCurrentValue(ClusteringPrefix clustering, ColumnDefinition column, CounterUpdate toUpdate, ClockAndCount currentValue, ColumnFamilyStore cfs)
-    {
-        long clock = currentValue.clock + 1L;
-        long count = currentValue.count + ByteBufferUtil.toLong(toUpdate.value());
-        toUpdate.setValue(CounterContext.instance().createGlobal(CounterId.getLocalId(), clock, count));
-
-        // Cache the newly updated value
-        cfs.putCachedCounter(key().getKey(), clustering, column, ClockAndCount.create(clock, count));
-    }
-
-    // Attempt to load the current values from cache. If that fails, read the rest from the cfs.
-    private void updateWithCurrentValues(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
-    {
         if (CacheService.instance.counterCache.getCapacity() != 0)
         {
-            Tracing.trace("Fetching {} counter values from cache", counterUpdates.size());
-            updateWithCurrentValuesFromCache(counterUpdates, cfs);
-            if (counterUpdates.isEmpty())
-                return;
+            Tracing.trace("Fetching {} counter values from cache", marks.size());
+            updateWithCurrentValuesFromCache(marks, cfs);
+            if (marks.isEmpty())
+                return changes;
         }
 
-        Tracing.trace("Reading {} counter values from the CF", counterUpdates.size());
-        updateWithCurrentValuesFromCFS(counterUpdates, cfs);
+        Tracing.trace("Reading {} counter values from the CF", marks.size());
+        updateWithCurrentValuesFromCFS(marks, cfs);
 
         // What's remain is new counters
-        for (Map.Entry<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> entry : counterUpdates.entrySet())
-        {
-            ClusteringPrefix clustering = entry.getKey();
-            for (Map.Entry<ColumnDefinition, CounterUpdate> subEntry : entry.getValue().entrySet())
-                updateWithCurrentValue(clustering, subEntry.getKey(), subEntry.getValue(), ClockAndCount.BLANK, cfs);
-        }
+        for (PartitionUpdate.CounterMark mark : marks)
+            updateWithCurrentValue(mark, ClockAndCount.BLANK, cfs);
+
+        return changes;
+    }
+
+    private void updateWithCurrentValue(PartitionUpdate.CounterMark mark, ClockAndCount currentValue, ColumnFamilyStore cfs)
+    {
+        long clock = currentValue.clock + 1L;
+        long count = currentValue.count + ByteBufferUtil.toLong(mark.value());
+
+        mark.setValue(CounterContext.instance().createGlobal(CounterId.getLocalId(), clock, count));
+
+        // Cache the newly updated value
+        cfs.putCachedCounter(key().getKey(), mark.clustering(), mark.column(), ClockAndCount.create(clock, count));
     }
 
     // Returns the count of cache misses.
-    private void updateWithCurrentValuesFromCache(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
+    private void updateWithCurrentValuesFromCache(List<PartitionUpdate.CounterMark> marks, ColumnFamilyStore cfs)
     {
-        Iterator<Map.Entry<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>>> iter = counterUpdates.entrySet().iterator();
+        Iterator<PartitionUpdate.CounterMark> iter = marks.iterator();
         while (iter.hasNext())
         {
-            Map.Entry<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> entry = iter.next();
-            ClusteringPrefix clustering = entry.getKey();
-            Iterator<Map.Entry<ColumnDefinition, CounterUpdate>> subIter = entry.getValue().entrySet().iterator();
-            while (subIter.hasNext())
+            PartitionUpdate.CounterMark mark = iter.next();
+            ClockAndCount cached = cfs.getCachedCounter(key().getKey(), mark.clustering(), mark.column());
+            if (cached != null)
             {
-                Map.Entry<ColumnDefinition, CounterUpdate> subEntry = subIter.next();
-                ColumnDefinition column = subEntry.getKey();
-                CounterUpdate upd = subEntry.getValue();
-                ClockAndCount cached = cfs.getCachedCounter(key().getKey(), clustering, column);
-                if (cached != null)
-                {
-                    updateWithCurrentValue(clustering, column, upd, cached, cfs);
-                    subIter.remove();
-                }
-            }
-            if (entry.getValue().isEmpty())
+                updateWithCurrentValue(mark, cached, cfs);
                 iter.remove();
+            }
         }
     }
 
     // Reads the missing current values from the CFS.
-    private void updateWithCurrentValuesFromCFS(Map<ColumnPath, CounterUpdate> counterUpdates, ColumnFamilyStore cfs)
+    private void updateWithCurrentValuesFromCFS(List<PartitionUpdate.CounterMark> marks, ColumnFamilyStore cfs)
     {
-        Columns.Builder builder = Columns.builder();
+        PartitionColumns.Builder builder = PartitionColumns.builder();
         SortedSet<ClusteringPrefix> names = new TreeSet<>(cfs.metadata.comparator);
-        for (Map.Entry<ClusteringPrefix, Map<ColumnDefinition, CounterUpdate>> entry : counterUpdates.entrySet())
+        for (PartitionUpdate.CounterMark mark : marks)
         {
-            names.add(entry.getKey());
-            for (ColumnDefinition column : entry.getValue().keySet())
-                builder.add(column);
+            names.add(mark.clustering().takeAlias());
+            builder.add(mark.column());
         }
 
         int nowInSec = FBUtilities.nowInSeconds();
-        NamesPartitionFilter filter = new NamesPartitionFilter(builder.regularColumns(), builder.staticColumns(), names);
+        NamesPartitionFilter filter = new NamesPartitionFilter(builder.build(), names);
         SinglePartitionReadCommand cmd = ReadCommands.create(cfs.metadata, key(), filter, DataLimits.NONE, nowInSec);
+        PeekingIterator<PartitionUpdate.CounterMark> markIter = Iterators.peekingIterator(marks.iterator());
         try (AtomIterator partition = cmd.queryMemtableAndDisk(cfs))
         {
             RowIterator rowIter = AtomIterators.asRowIterator(partition, nowInSec);
+
+            updateForRow(markIter, rowIter.staticRow(), cfs);
+
             while (rowIter.hasNext())
             {
-                Row row = rowIter.next();
-                ClusteringPrefix clustering = row.clustering();
-                Map<ColumnDefinition, CounterUpdate> m = counterUpdates.get(clustering);
-                if (m == null || m.isEmpty())
-                    continue;
+                if (!markIter.hasNext())
+                    return;
 
-                Iterator<Map.Entry<ColumnDefinition, CounterUpdate>> subIter = m.entrySet().iterator();
-                while (subIter.hasNext())
-                {
-                    Map.Entry<ColumnDefinition, CounterUpdate> entry = subIter.next();
-                    Cell existing = Rows.getCell(row, entry.getKey());
-                    if (existing != null)
-                    {
-                        updateWithCurrentValue(clustering, entry.getKey(), entry.getValue(), CounterContext.instance().getLocalClockAndCount(existing.value()), cfs);
-                        subIter.remove();
-                    }
-                }
-                if (m.isEmpty())
-                    counterUpdates.remove(row.clustering());
+                updateForRow(markIter, rowIter.next(), cfs);
             }
         }
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    private int compare(ClusteringPrefix c1, ClusteringPrefix c2, ColumnFamilyStore cfs)
+    {
+        if (c1 == EmptyClusteringPrefix.STATIC_PREFIX)
+            return c2 == EmptyClusteringPrefix.STATIC_PREFIX ? 0 : -1;
+        if (c2 == EmptyClusteringPrefix.STATIC_PREFIX)
+            return 1;
+
+        return cfs.getComparator().compare(c1, c2);
+    }
+
+    private void updateForRow(PeekingIterator<PartitionUpdate.CounterMark> markIter, Row row, ColumnFamilyStore cfs)
+    {
+        int cmp;
+        // If the mark is before the row, we have no value for this mark, just consume it
+        while ((cmp = compare(markIter.peek().clustering(), row.clustering(), cfs)) < 0)
+            markIter.next();
+
+        while (cmp == 0)
+        {
+            PartitionUpdate.CounterMark mark = markIter.next();
+            Cell cell = row.getCell(mark.column());
+            if (cell != null)
+            {
+                updateWithCurrentValue(mark, CounterContext.instance().getLocalClockAndCount(cell.value()), cfs);
+                markIter.remove();
+            }
+            cmp = compare(markIter.peek().clustering(), row.clustering(), cfs);
         }
     }
 
@@ -348,58 +318,6 @@ public class CounterMutation implements IMutation
     public String toString(boolean shallow)
     {
         return String.format("CounterMutation(%s, %s)", mutation.toString(shallow), consistency);
-    }
-
-    private static class CounterUpdate implements Cell
-    {
-        private ByteBuffer value;
-        private final long timestamp;
-
-        public CounterUpdate(ByteBuffer initialValue, long timestamp)
-        {
-            this.value = initialValue;
-            this.timestamp = timestamp;
-        }
-
-        public void setValue(ByteBuffer value)
-        {
-            this.value = value;
-        }
-
-        public boolean isCounterCell()
-        {
-            return true;
-        }
-
-        public ByteBuffer value()
-        {
-            return value;
-        }
-
-        public long timestamp()
-        {
-            return timestamp;
-        }
-
-        public int localDeletionTime()
-        {
-            return Integer.MAX_VALUE;
-        }
-
-        public int ttl()
-        {
-            return 0;
-        }
-
-        public CellPath path()
-        {
-            return null;
-        }
-
-        public Cell takeAlias()
-        {
-            return this;
-        }
     }
 
     public static class CounterMutationSerializer implements IVersionedSerializer<CounterMutation>

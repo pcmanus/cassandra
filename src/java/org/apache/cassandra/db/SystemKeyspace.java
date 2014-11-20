@@ -837,7 +837,7 @@ public class SystemKeyspace
             return new PaxosState(key, metadata);
         UntypedResultSet.Row row = results.one();
         Commit promised = row.has("in_progress_ballot")
-                        ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key))
+                        ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key, metadata.partitionColumns(), 1))
                         : Commit.emptyCommit(key, metadata);
         // either we have both a recently accepted ballot and update or we have neither
         Commit accepted = row.has("proposal")
@@ -858,7 +858,7 @@ public class SystemKeyspace
             return Commit.emptyCommit(key, metadata);
         UntypedResultSet.Row row = results.one();
         Commit promised = row.has("in_progress_ballot")
-                ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key))
+                ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key, metadata.partitionColumns(), 1))
                 : Commit.emptyCommit(key, metadata);
         return promised;
     }

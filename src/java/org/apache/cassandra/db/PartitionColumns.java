@@ -19,14 +19,18 @@ package org.apache.cassandra.db;
 
 import java.util.*;
 
+import com.google.common.collect.Iterators;
+
 import org.apache.cassandra.config.ColumnDefinition;
 
 /**
  * Columns (or a subset of the columns) that a partition contains.
  * This mainly groups both static and regular columns for convenience.
  */
-public class PartitionColumns
+public class PartitionColumns implements Iterable<ColumnDefinition>
 {
+    public static PartitionColumns NONE = new PartitionColumns(Columns.NONE, Columns.NONE);
+
     public final Columns regulars;
     public final Columns statics;
 
@@ -36,9 +40,20 @@ public class PartitionColumns
         this.statics = statics;
     }
 
+    public static PartitionColumns of(ColumnDefinition column)
+    {
+        return new PartitionColumns(column.isStatic() ? Columns.NONE : Columns.of(column),
+                                    column.isStatic() ? Columns.of(column) : Columns.NONE);
+    }
+
     public boolean contains(ColumnDefinition column)
     {
         return column.isStatic() ? statics.contains(column) : regulars.contains(column);
+    }
+
+    public Iterator<ColumnDefinition> iterator()
+    {
+        return Iterators.concat(statics.iterator(), regulars.iterator());
     }
 
     public static Builder builder()
@@ -83,13 +98,13 @@ public class PartitionColumns
 
         public Builder addAll(PartitionColumns columns)
         {
-            if (regularColumns == null && columns.regulars.size() > 0)
+            if (regularColumns == null && !columns.regulars.isEmpty())
                 regularColumns = new HashSet<>();
 
             for (ColumnDefinition c : columns.regulars)
                 regularColumns.add(c);
 
-            if (staticColumns == null && columns.statics.size() > 0)
+            if (staticColumns == null && !columns.statics.isEmpty())
                 staticColumns = new HashSet<>();
 
             for (ColumnDefinition c : columns.statics)

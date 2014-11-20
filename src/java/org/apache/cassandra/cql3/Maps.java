@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -273,7 +274,7 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + put
             params.setComplexDeletionTimeForOverwrite(column, writer);
@@ -298,7 +299,7 @@ public abstract class Maps
             k.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer key = k.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -309,7 +310,7 @@ public abstract class Maps
 
             if (value == null)
             {
-                params.addTomstone(column, writer, path);
+                params.addTombstone(column, writer, path);
             }
             else
             {
@@ -331,7 +332,7 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doPut(t, writer, column, params);
         }
@@ -356,7 +357,7 @@ public abstract class Maps
             super(column, k);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal key = t.bind(params.options);
             if (key == null)

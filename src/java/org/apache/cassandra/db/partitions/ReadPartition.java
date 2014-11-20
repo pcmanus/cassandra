@@ -27,73 +27,49 @@ import com.google.common.collect.Iterators;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.utils.SearchIterator;
 
 // TODO: find a better name
-public class ReadPartition implements Iterable<Row>
+public class ReadPartition extends ArrayBackedPartition
 {
-    private final CFMetaData metadata;
-    private final DecoratedKey key;
-
-    private final Row staticRow;
-    private final List<Row> rows = new ArrayList<>();
-
     private ReadPartition(CFMetaData metadata,
-                          DecoratedKey key,
-                          Row staticRow)
+                          DecoratedKey partitionKey,
+                          PartitionColumns columns,
+                          int initialRowCapacity)
     {
-        this.metadata = metadata;
-        this.key = key;
-        this.staticRow = staticRow;
-    }
-
-    public CFMetaData metadata()
-    {
-        return metadata;
-    }
-
-    public DecoratedKey partitionKey()
-    {
-        return key;
-    }
-
-    public Row staticRow()
-    {
-        return staticRow;
+        super(metadata, partitionKey, DeletionTime.LIVE, columns, initialRowCapacity);
     }
 
     public static ReadPartition create(RowIterator iterator)
     {
         assert !iterator.isReverseOrder();
 
+        ReadPartition partition = new ReadPartition(iterator.metadata(),
+                                                    iterator.partitionKey(),
+                                                    iterator.columns(),
+                                                    4);
+
+        partition.staticRow = iterator.staticRow().takeAlias();
+
+        Writer writer = partition.new Writer();
+
         try (RowIterator iter = iterator)
         {
-            ReadPartition p = new ReadPartition(iter.metadata(), iter.partitionKey(), iter.staticRow());
-            Iterators.addAll(p.rows, iter);
-            return p;
+            while (iter.hasNext())
+                Rows.copy(iter.next(), writer);
         }
         catch (IOException e)
         {
             throw new RuntimeException(e);
         }
-    }
-
-    public Row getRow(ClusteringPrefix clustering)
-    {
-        // TODO (binary search)
-        throw new UnsupportedOperationException();
-    }
-
-    public Iterator<Row> iterator()
-    {
-        return rows.iterator();
+        return partition;
     }
 
     public RowIterator rowIterator()
     {
+        final Iterator<Row> iter = iterator();
         return new RowIterator()
         {
-            private int idx;
-
             public CFMetaData metadata()
             {
                 return metadata;
@@ -104,6 +80,11 @@ public class ReadPartition implements Iterable<Row>
                 return false;
             }
 
+            public PartitionColumns columns()
+            {
+                return columns;
+            }
+
             public DecoratedKey partitionKey()
             {
                 return key;
@@ -111,17 +92,17 @@ public class ReadPartition implements Iterable<Row>
 
             public Row staticRow()
             {
-                return staticRow;
+                return staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
             }
 
             public boolean hasNext()
             {
-                return idx < rows.size();
+                return iter.hasNext();
             }
 
             public Row next()
             {
-                return rows.get(idx++);
+                return iter.next();
             }
 
             public void remove()
@@ -133,6 +114,12 @@ public class ReadPartition implements Iterable<Row>
             {
             }
         };
+
+    }
+
+    public Row getRow(ClusteringPrefix clustering)
+    {
+        return searchIterator().next(clustering);
     }
 
     @Override

@@ -20,13 +20,15 @@ package org.apache.cassandra.db.atoms;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 public abstract class Cells
 {
     public static final int MAX_TTL_SEC = 20 * 365 * 24 * 60 * 60; // 20 years in seconds
 
-    public static final int NO_TIMESTAMP = Long.MIN_VALUE;
+    public static final long NO_TIMESTAMP = Long.MIN_VALUE;
     public static final int NO_TTL = 0;
     public static final int NO_DELETION_TIME = Integer.MAX_VALUE;
 
@@ -37,55 +39,22 @@ public abstract class Cells
         return nowInSec < cell.localDeletionTime();
     }
 
-    public static Cell create(ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
+    public static void write(Cell cell, Rows.Writer writer)
     {
-        return create(value, timestamp, ttl, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, metadata);
+        writer.addCell(cell.column(), cell.isCounterCell(), cell.value(), cell.timestamp(), cell.localDeletionTime(), cell.ttl(), cell.path());
     }
 
-    public static Cell create(ByteBuffer value, long timestamp, int ttl, int localDelTime, CFMetaData metadata)
+    public static void writeCell(ColumnDefinition column, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Rows.Writer writer)
     {
-        return create(null, value, timestamp, ttl, localDelTime, metadata);
-    }
-
-    public static Cell create(CellPath path, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata)
-    {
-        return create(path, value, timestamp, ttl, ttl > 0 ? (int)(System.currentTimeMillis() / 1000) : Integer.MAX_VALUE, metadata);
-    }
-
-    public static Cell create(CellPath path, ByteBuffer value, long timestamp, int ttl, int localDelTime, CFMetaData metadata)
-    {
-        assert ttl <= 0 || localDelTime == Integer.MAX_VALUE;
         if (ttl <= 0)
             ttl = metadata.getDefaultTimeToLive();
 
-        return new SimpleCell(value, timestamp, localDelTime, ttl, path);
+        writer.addCell(column, false, value, timestamp, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, ttl, null);
     }
 
-    public static Cell createCounterUpdate(long delta, long timestamp)
+    public static void writeTombstone(ColumnDefinition column, long timestamp, Rows.Writer writer)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public static Cell createCounter(ByteBuffer value, long timestamp)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public static Cell createTombsone(long timestamp)
-    {
-        return createTombsone(FBUtilities.nowInSeconds(), timestamp);
-    }
-
-    public static Cell createTombsone(int localDeletionTime, long timestamp)
-    {
-        return createTombsone(null, localDeletionTime, timestamp);
-    }
-
-    public static Cell createTombsone(CellPath path, int localDeletionTime, long timestamp)
-    {
-        return new SimpleCell(null, timestamp, localDeletionTime, NO_TTL, path);
+        writer.addCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, FBUtilities.nowInSeconds(), NO_TTL, null);
     }
 
     public static Cell diff(Cell merged, Cell cell)
@@ -164,56 +133,56 @@ public abstract class Cells
     }
 
     // TODO: we could have more specialized version of cells...
-    private static class SimpleCell implements Cell
-    {
-        private final ByteBuffer value;
-        private final long timestamp;
-        private final int localDeletionTime;
-        private final int ttl;
-        private final CellPath path;
+    //private static class SimpleCell implements Cell
+    //{
+    //    private final ByteBuffer value;
+    //    private final long timestamp;
+    //    private final int localDeletionTime;
+    //    private final int ttl;
+    //    private final CellPath path;
 
-        private SimpleCell(ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
-        {
-            this.value = value;
-            this.timestamp = timestamp;
-            this.localDeletionTime = localDeletionTime;
-            this.ttl = ttl;
-            this.path = path;
-        }
+    //    private SimpleCell(ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
+    //    {
+    //        this.value = value;
+    //        this.timestamp = timestamp;
+    //        this.localDeletionTime = localDeletionTime;
+    //        this.ttl = ttl;
+    //        this.path = path;
+    //    }
 
-        public boolean isCounterCell()
-        {
-            return false;
-        }
+    //    public boolean isCounterCell()
+    //    {
+    //        return false;
+    //    }
 
-        public ByteBuffer value()
-        {
-            return value;
-        }
+    //    public ByteBuffer value()
+    //    {
+    //        return value;
+    //    }
 
-        public long timestamp()
-        {
-            return timestamp;
-        }
+    //    public long timestamp()
+    //    {
+    //        return timestamp;
+    //    }
 
-        public int localDeletionTime()
-        {
-            return localDeletionTime;
-        }
+    //    public int localDeletionTime()
+    //    {
+    //        return localDeletionTime;
+    //    }
 
-        public int ttl()
-        {
-            return ttl;
-        }
+    //    public int ttl()
+    //    {
+    //        return ttl;
+    //    }
 
-        public CellPath path()
-        {
-            return path;
-        }
+    //    public CellPath path()
+    //    {
+    //        return path;
+    //    }
 
-        public Cell takeAlias()
-        {
-            return this;
-        }
-    }
+    //    public Cell takeAlias()
+    //    {
+    //        return this;
+    //    }
+    //}
 }

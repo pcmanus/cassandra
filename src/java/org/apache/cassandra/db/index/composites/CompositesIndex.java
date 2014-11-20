@@ -126,10 +126,11 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
     public void delete(IndexedEntry entry, OpOrder.Group opGroup)
     {
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
-        RowUpdate row = RowUpdates.create(entry.indexClustering, Columns.of(idxColumn))
-                        .addCell(idxColumn, Cells.createTombsone(entry.timestamp));
-
-        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, entry.indexValue).add(row);
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, entry.indexValue, PartitionColumns.of(idxColumn), 1);
+        Rows.Writer writer = upd.writer(false);
+        writer.setClustering(entry.indexClustering);
+        Cells.writeTombstone(idxColumn, entry.timestamp, writer);
+        writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
 
         if (logger.isDebugEnabled())

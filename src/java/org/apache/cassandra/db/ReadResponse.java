@@ -121,14 +121,14 @@ public class ReadResponse
                 AtomIterator atoms = iter.next();
                 if (!iter.hasNext())
                 {
-                    data = Collections.<Partition>singletonList(ArrayBackedPartition.accumulate(atoms));
+                    data = Collections.<Partition>singletonList(ArrayBackedPartition.create(atoms));
                 }
                 else
                 {
                     data = new ArrayList<>();
-                    data.add(ArrayBackedPartition.accumulate(atoms));
+                    data.add(ArrayBackedPartition.create(atoms));
                     while (iter.hasNext())
-                        data.add(ArrayBackedPartition.accumulate(iter.next()));
+                        data.add(ArrayBackedPartition.create(iter.next()));
                 }
             }
         }

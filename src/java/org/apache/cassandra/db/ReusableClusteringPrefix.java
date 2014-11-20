@@ -23,27 +23,21 @@ import java.util.Arrays;
 
 import org.apache.cassandra.utils.ObjectSizes;
 
-public class ReusableClusteringPrefix implements ClusteringPrefix
+public class ReusableClusteringPrefix extends AbstractClusteringPrefix
 {
     private static final long EMPTY_SIZE = ObjectSizes.measure(new ReusableClusteringPrefix(0));
 
     private final ByteBuffer[] values;
-    private int size;
     private EOC eoc;
 
-    public ReusableClusteringPrefix(int maxSize)
+    public ReusableClusteringPrefix(int size)
     {
-        this.values = new ByteBuffer[maxSize];
-    }
-
-    public ClusteringPrefix clustering()
-    {
-        return this;
+        this.values = new ByteBuffer[size];
     }
 
     public int size()
     {
-        return size;
+        return values.length;
     }
 
     public ByteBuffer get(int i)
@@ -51,42 +45,18 @@ public class ReusableClusteringPrefix implements ClusteringPrefix
         return values[i];
     }
 
+    @Override
     public EOC eoc()
     {
         return eoc;
     }
 
-    public int dataSize()
+    public void copy(ClusteringPrefix clustering)
     {
-        int size = 0;
-        for (int i = 0; i < size(); i++)
-            size += get(i).remaining();
-        return size;
-    }
+        for (int i = 0; i < values.length; i++)
+            values[i] = clustering.get(i);
 
-    public ClusteringPrefix withEOC(EOC eoc)
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    public long unsharedHeapSize()
-    {
-        // As this is a reusable structure, only the object itself is "unshared"
-        return EMPTY_SIZE;
-    }
-
-    public void copy(ClusteringPrefix prefix)
-    {
-        for (int i = 0; i < prefix.size(); i++)
-            values[i] = prefix.get(i);
-
-        size = prefix.size();
-        eoc = prefix.eoc();
-    }
-
-    public ClusteringPrefix takeAlias()
-    {
-        return new SimpleClusteringPrefix(Arrays.copyOf(values, size), size, eoc);
+        eoc = clustering.eoc();
     }
 }
 

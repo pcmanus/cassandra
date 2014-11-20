@@ -207,7 +207,7 @@ public class StreamReader
         public PartitionColumns columns()
         {
             // We don't know which columns we'll get so assume it can be all of them
-            return PartitionColumns.builder().addAll(metadata.regularColumns()).addAll(metadata.staticColumns()).build();
+            return metadata.partitionColumns();
         }
 
         public boolean isReverseOrder()

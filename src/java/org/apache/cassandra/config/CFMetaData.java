@@ -439,9 +439,10 @@ public final class CFMetaData
     private volatile Map<ByteBuffer, ColumnDefinition> columnMetadata = new HashMap<>();
     private volatile List<ColumnDefinition> partitionKeyColumns;  // Always of size keyValidator.componentsCount, null padded if necessary
     private volatile List<ColumnDefinition> clusteringColumns;    // Of size comparator.componentsCount or comparator.componentsCount -1, null padded if necessary
-    // TODO: we could use a PartitionColumns object instead?
+    // TODO: we should probably remove the two first one in favor of the third
     private volatile Columns regularColumns;
     private volatile Columns staticColumns;
+    private volatile PartitionColumns partitionColumns;
     // TODO: we should probably remove this
     private volatile ColumnDefinition compactValueColumn;
 
@@ -812,6 +813,11 @@ public final class CFMetaData
     public Columns staticColumns()
     {
         return staticColumns;
+    }
+
+    public PartitionColumns partitionColumns()
+    {
+        return partitionColumns;
     }
 
     public Iterable<ColumnDefinition> regularAndStaticColumns()
@@ -1992,9 +1998,9 @@ public final class CFMetaData
         partitionKeyColumns = addDefaultKeyAliases(pkCols);
         clusteringColumns = addDefaultColumnAliases(ckCols);
 
-        PartitionColumns pcols = builder.build();
-        regularColumns = pcols.regulars;
-        staticColumns = pcols.statics;
+        partitionColumns = builder.build();
+        regularColumns = partitionColumns.regulars;
+        staticColumns = partitionColumns.statics;
         compactValueColumn = addDefaultValueAlias(compactCol);
         return this;
     }

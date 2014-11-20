@@ -285,7 +285,7 @@ public class LegacyLayout
 
     public static class DeserializedCell implements Cell
     {
-        private ColumnDefinition column;
+        public ColumnDefinition column;
         private boolean isCounter;
         private ByteBuffer value;
         private long timestamp;

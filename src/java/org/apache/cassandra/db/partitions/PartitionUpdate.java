@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
@@ -37,6 +38,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.SearchIterator;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
@@ -48,18 +50,16 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
     private boolean isSorted;
 
-    private final Columns staticColumns;
     private final Rows.Writer writer = new Writer();
 
     private PartitionUpdate(CFMetaData metadata,
                             DecoratedKey key,
                             DeletionInfo delInfo,
                             RowDataBlock data,
-                            Columns staticColumns,
+                            PartitionColumns columns,
                             int initialRowCapacity)
     {
-        super(metadata, key, delInfo, data, initialRowCapacity);
-        this.staticColumns = staticColumns;
+        super(metadata, key, delInfo, columns, data, initialRowCapacity);
     }
 
     public PartitionUpdate(CFMetaData metadata,
@@ -67,7 +67,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                            PartitionColumns columns,
                            int initialRowCapacity)
     {
-        this(metadata, key, DeletionInfo.live(), new RowDataBlock(columns.regulars, initialRowCapacity), columns.statics, initialRowCapacity);
+        this(metadata, key, DeletionInfo.live(), new RowDataBlock(columns.regulars, initialRowCapacity), columns, initialRowCapacity);
     }
 
     public static PartitionUpdate fromBytes(ByteBuffer bytes)
@@ -91,7 +91,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                                    key,
                                    new DeletionInfo(timestamp, FBUtilities.nowInSeconds()),
                                    new RowDataBlock(Columns.NONE, 0),
-                                   Columns.None,
+                                   PartitionColumns.NONE,
                                    0);
     }
 
@@ -109,10 +109,18 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public Iterator<Row> iterator()
     {
         maybeSort();
-        return rowIterator();
+        return super.iterator();
+    }
+
+    @Override
+    public SearchIterator<ClusteringPrefix, Row> searchIterator()
+    {
+        maybeSort();
+        return super.searchIterator();
     }
 
     public PartitionUpdate addAll(PartitionUpdate update)
@@ -126,11 +134,6 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         //return this;
     }
 
-    public int rowCount()
-    {
-        return rows;
-    }
-
     public void validate()
     {
         // TODO
@@ -138,6 +141,12 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
     }
 
     public long maxTimestamp()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
+    public List<CounterMark> collectCounterMarks()
     {
         // TODO
         throw new UnsupportedOperationException();
@@ -346,6 +355,33 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         public int cfIdSerializedSize(UUID cfId, TypeSizes typeSizes, int version)
         {
             return typeSizes.sizeof(cfId);
+        }
+    }
+
+    /**
+     * This is basically a pointer inside this PartitionUpdate that allows to set counter updates based on
+     * the existing value read during the read-before-write.
+     */
+    public static class CounterMark
+    {
+        public ClusteringPrefix clustering()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public ColumnDefinition column()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public ByteBuffer value()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public void setValue(ByteBuffer value)
+        {
+            throw new UnsupportedOperationException();
         }
     }
 }

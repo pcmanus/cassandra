@@ -26,7 +26,7 @@ import org.apache.cassandra.db.Clusterable;
  * rows and range tombstone markers. A given atom is identified by it's
  * clustering information.
  */
-public interface Atom extends Clusterable, Aliasable<Atom>
+public interface Atom extends Clusterable
 {
     public enum Kind { ROW, RANGE_TOMBSTONE_MARKER };
 
@@ -34,10 +34,4 @@ public interface Atom extends Clusterable, Aliasable<Atom>
      * The kind of the atom: either row or range tombstone marker.
      */
     public Kind kind();
-
-    /**
-     * Clone the atom if necessary so that holding an alias to the returned
-     * Atom is "safe".
-     */
-    public Atom takeAlias();
 }

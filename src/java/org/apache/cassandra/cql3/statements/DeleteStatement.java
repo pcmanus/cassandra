@@ -70,9 +70,9 @@ public class DeleteStatement extends ModificationStatement
             }
             else if (cfm.layout().isDense() && clustering.size() == cfm.clusteringColumns().size())
             {
-                Rows.Writer writer = update.writer();
+                Rows.Writer writer = update.writer(false);
                 writer.setClustering(clustering);
-                params.addTombstone(cfm.compactValueColumn());
+                params.addTombstone(cfm.compactValueColumn(), writer);
                 writer.endOfRow();
             }
             else
@@ -82,10 +82,10 @@ public class DeleteStatement extends ModificationStatement
         }
         else
         {
-            Rows.Writer writer = update.writer();
+            Rows.Writer writer = update.writer(clustering == EmptyClusteringPrefix.STATIC_PREFIX);
             writer.setClustering(clustering);
             for (Operation op : deletions)
-                op.execute(update.partitionKey().getKey(), writer, params);
+                op.execute(update.partitionKey().getKey(), clustering, writer, params);
             writer.endOfRow();
         }
     }

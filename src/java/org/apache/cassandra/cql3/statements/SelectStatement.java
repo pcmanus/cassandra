@@ -124,7 +124,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         if (selection.isWildcard())
         {
             selectsStaticColumns = true;
-            return PartitionColumns.builder().addAll(cfm.regularAndStaticColumns()).build();
+            return cfm.partitionColumns();
         }
 
         // Otherwise, check the selected columns
@@ -202,7 +202,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         cl.validateForRead(keyspace());
 
         int limit = getLimit(options);
-        int nowInSec = (int)(System.currentTimeMillis()/1000);
+        int nowInSec = FBUtilities.nowInSeconds();
         Pageable command = getPageableCommand(options, limit, nowInSec);
 
         int pageSize = options.getPageSize();
@@ -247,7 +247,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     public Pageable getPageableCommand(QueryOptions options) throws RequestValidationException
     {
-        return getPageableCommand(options, getLimit(options), (int)(System.currentTimeMillis() / 1000));
+        return getPageableCommand(options, getLimit(options), FBUtilities.nowInSeconds());
     }
 
     private ResultMessage.Rows execute(Pageable command, QueryOptions options, int limit, int nowInSec) throws RequestValidationException, RequestExecutionException
@@ -304,7 +304,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     public ResultMessage.Rows executeInternal(QueryState state, QueryOptions options) throws RequestExecutionException, RequestValidationException
     {
         int limit = getLimit(options);
-        int nowInSec = (int)(System.currentTimeMillis() / 1000);
+        int nowInSec = FBUtilities.nowInSeconds();
         Pageable command = getPageableCommand(options, limit, nowInSec);
         ColumnFamilyStore cfs = Keyspace.openAndGetStore(cfm);
         DataIterator data = command == null
@@ -319,7 +319,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     public ResultSet process(DataIterator partitions) throws InvalidRequestException
     {
         QueryOptions options = QueryOptions.DEFAULT;
-        return process(partitions, options, getLimit(options), (int)(System.currentTimeMillis() / 1000));
+        return process(partitions, options, getLimit(options), FBUtilities.nowInSeconds());
     }
 
     public String keyspace()

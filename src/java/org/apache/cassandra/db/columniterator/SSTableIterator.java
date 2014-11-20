@@ -73,7 +73,7 @@ public class SSTableIterator implements SeekableAtomIterator
                 //   - the partition is not indexed; we then have a single block to read anyway
                 //     and we need to read the partition deletion time.
                 //   - we're querying static columns.
-                if (indexEntry.isIndexed() && staticColumns.isEmpty())
+                if (indexEntry.isIndexed() && columns.statics.isEmpty())
                 {
                     this.partitionLevelDeletion = indexEntry.deletionTime();
                     this.staticRow = Rows.EMPTY_STATIC_ROW;
@@ -88,7 +88,7 @@ public class SSTableIterator implements SeekableAtomIterator
 
                     ByteBufferUtil.readWithShortLength(file); // Skip partition key
                     this.partitionLevelDeletion = DeletionTime.serializer.deserialize(file);
-                    this.staticRow = staticColumns.isEmpty() ? Rows.EMPTY_STATIC_ROW : readStaticRow(file);
+                    this.staticRow = columns.statics.isEmpty() ? Rows.EMPTY_STATIC_ROW : readStaticRow(file);
                 }
 
                 this.reader = indexEntry.isIndexed()
@@ -207,7 +207,7 @@ public class SSTableIterator implements SeekableAtomIterator
                                                 LegacyLayout.Flag.LOCAL,
                                                 Integer.MIN_VALUE,
                                                 sstable.descriptor.version,
-                                                columns);
+                                                columns.regulars);
         }
 
         public boolean hasNext() throws IOException

@@ -109,7 +109,31 @@ public abstract class AbstractReusableRow implements Row
 
     public Row takeAlias()
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        final ClusteringPrefix clustering = clustering().takeAlias();
+        final long timestamp = timestamp();
+
+        return new AbstractReusableRow(data)
+        {
+            protected int row()
+            {
+                return row();
+            }
+
+            public ClusteringPrefix clustering()
+            {
+                return clustering;
+            }
+
+            public long timestamp()
+            {
+                return timestamp;
+            }
+
+            @Override
+            public Row takeAlias()
+            {
+                return this;
+            }
+        };
     }
 }

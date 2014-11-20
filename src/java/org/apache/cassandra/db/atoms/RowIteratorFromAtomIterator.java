@@ -36,14 +36,14 @@ class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIt
         this.iter = iter;
         this.filter = new FilteringRow()
         {
-            public boolean isEmpty()
-            {
-                return !iterator.hasNext();
-            }
-
             protected boolean includeTimestamp(long timestamp)
             {
                 return false;
+            }
+
+            protected boolean include(ColumnDefinition column)
+            {
+                return true;
             }
 
             protected boolean includeCell(Cell cell)
@@ -68,6 +68,11 @@ class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIt
         return iter.isReverseOrder();
     }
 
+    public PartitionColumns columns()
+    {
+        return iter.columns();
+    }
+
     public DecoratedKey partitionKey()
     {
         return iter.partitionKey();
@@ -76,7 +81,7 @@ class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIt
     public Row staticRow()
     {
         Row row = iter.staticRow();
-        return row.isEmpty() ? row : filter.setTo(iter.staticRow(), true);
+        return row.isEmpty() ? row : filter.setTo(iter.staticRow());
     }
 
     protected Row computeNext()
@@ -87,7 +92,7 @@ class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIt
             if (next.kind() != Atom.Kind.ROW)
                 continue;
 
-            Row row = filter.setTo((Row)next, false);
+            Row row = filter.setTo((Row)next);
             if (!row.isEmpty())
                 return row;
         }

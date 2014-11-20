@@ -29,7 +29,7 @@ import org.apache.cassandra.db.*;
 /**
  * Contains simple cells data for one or more rows.
  */
-class SimpleRowDataBlock
+public class SimpleRowDataBlock
 {
     private final Columns columns;
     private final CellData data;
@@ -77,6 +77,7 @@ class SimpleRowDataBlock
         {
             this.base = row * columnCount;
             this.column = 0;
+            return this;
         }
 
         public boolean hasNext()
@@ -89,18 +90,18 @@ class SimpleRowDataBlock
 
         public Cell next()
         {
-            return cell.setToPosition(columns.get(column), base + column);
+            return cell.setToPosition(columns.getSimple(column), base + column);
         }
     }
 
-    class CellWriter
+    public class CellWriter
     {
         private int base;
 
         public void addCell(ColumnDefinition column, ByteBuffer value, long timestamp, int localDeletionTime, int ttl)
         {
             // TODO: we could slightly optimize the columns.idx() calls on the assumption that cells comes in columns order
-            int idx = base + columns.idx(column);
+            int idx = base + columns.simpleIdx(column);
             data.setCell(idx, value, timestamp, localDeletionTime, ttl);
         }
 

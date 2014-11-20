@@ -95,7 +95,7 @@ public class RowDataBlock
             this.complexWriter = data.complexData == null ? null : data.complexData.cellWriter();
         }
 
-        private Writer reset()
+        public Writer reset()
         {
             row = 0;
 
@@ -103,6 +103,8 @@ public class RowDataBlock
                 simpleWriter.reset();
             if (complexWriter != null)
                 complexWriter.reset();
+
+            return this;
         }
 
         public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
@@ -149,6 +151,8 @@ public class RowDataBlock
                 simpleIterator.setTo(row);
             if (complexIterator != null)
                 complexIterator.setTo(row);
+
+            return this;
         }
 
         public boolean hasNext()

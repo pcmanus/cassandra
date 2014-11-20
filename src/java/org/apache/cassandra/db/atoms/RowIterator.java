@@ -49,6 +49,12 @@ public interface RowIterator extends Iterator<Row>, Closeable
     public boolean isReverseOrder();
 
     /**
+     * A subset of the columns for the (static and regular) rows returned by this iterator.
+     * Every row returned by this iterator must guarantee that it has only those columns.
+     */
+    public PartitionColumns columns();
+
+    /**
      * The partition key of the partition this in an iterator over.
      */
     public DecoratedKey partitionKey();

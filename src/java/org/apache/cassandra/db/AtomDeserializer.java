@@ -50,7 +50,6 @@ public class AtomDeserializer
     private final ReusableRow row;
 
     private LegacyLayout.DeserializedCell cell;
-    private ColumnDefinition currentColumn;
 
     public AtomDeserializer(CFMetaData metadata,
                             DataInput in,
@@ -68,7 +67,6 @@ public class AtomDeserializer
         this.columns = columns;
         this.marker = new ReusableRangeTombstoneMarker();
         this.row = new ReusableRow(columns);
-        this.writer = row.newWriter();
     }
 
     /**
@@ -120,9 +118,7 @@ public class AtomDeserializer
             return marker.setTo(openTombstone.min, true, openTombstone.data);
         }
 
-        row.reset();
-        writer.reset();
-        currentColumn = null;
+        Rows.Writer writer = row.writer();
 
         writer.setClustering(prefix);
 
@@ -136,12 +132,12 @@ public class AtomDeserializer
         else
         {
             writer.setTimestamp(Long.MIN_VALUE);
-            currentColumn = getDefinition(nameDeserializer.getNextColumnName());
-            if (columns.contains(currentColumn))
+            ColumnDefinition column = getDefinition(nameDeserializer.getNextColumnName());
+            if (columns.contains(column))
             {
-                cell.column = currentColumn;
+                cell.column = column;
                 metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
-                writer.newCell(cell);
+                Cells.write(cell, writer);
             }
             else
             {
@@ -154,38 +150,32 @@ public class AtomDeserializer
         {
             nameDeserializer.readNextClustering();
             b = in.readUnsignedByte();
-            ColumnDefinition def = getDefinition(nameDeserializer.getNextColumnName());
+            ColumnDefinition column = getDefinition(nameDeserializer.getNextColumnName());
             if ((b & LegacyLayout.RANGE_TOMBSTONE_MASK) != 0)
             {
-                if (!columns.contains(def))
+                if (!columns.contains(column))
                 {
                     metadata.layout().rangeTombstoneSerializer().skipBody(in, version);
                     continue;
                 }
 
                 // This is a collection tombstone
-                currentColumn = def;
                 RangeTombstone rt = metadata.layout().rangeTombstoneSerializer().deserializeBody(in, prefix, version);
                 // TODO: we could assert that the min and max are what we think they are. Just in case
                 // someone thrift side has done something *really* nasty.
-                writer.newColumn(currentColumn, rt.data);
+                writer.setComplexDeletion(column, rt.data);
             }
             else
             {
-                if (!columns.contains(def))
+                if (!columns.contains(column))
                 {
                     metadata.layout().skipCellBody(in, b);
                     continue;
                 }
 
-                if (!def.equals(currentColumn))
-                {
-                    writer.newColumn(def, DeletionTime.LIVE);
-                    currentColumn = def;
-                }
-                cell.column = currentColumn;
+                cell.column = column;
                 metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
-                writer.newCell(cell);
+                Cells.write(cell, writer);
             }
         }
         return row;

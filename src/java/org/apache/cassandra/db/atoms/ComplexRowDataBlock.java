@@ -29,7 +29,7 @@ import org.apache.cassandra.db.*;
 /**
  * Contains complex cells data for one or more rows.
  */
-class ComplexRowDataBlock
+public class ComplexRowDataBlock
 {
     private final Columns columns;
 
@@ -60,7 +60,7 @@ class ComplexRowDataBlock
         // will grow if needed so this is just a somewhat random estimation.
         int cellCount = rows * columns.complexColumnCount() * 4;
         this.data = new CellData(cellCount);
-        this.complexPaths = new complexPaths[cellCount];
+        this.complexPaths = new CellPath[cellCount];
     }
 
     public Columns columns()
@@ -70,7 +70,7 @@ class ComplexRowDataBlock
 
     public ReusableIterator reusableComplexCells()
     {
-        return new ReusableCells();
+        return new ReusableIterator();
     }
 
     public DeletionTimeArray.Cursor complexDeletionCursor()
@@ -102,7 +102,7 @@ class ComplexRowDataBlock
     {
         private ReusableCell()
         {
-            super(data);
+            super(ComplexRowDataBlock.this.data);
         }
 
         @Override
@@ -115,6 +115,7 @@ class ComplexRowDataBlock
     class ReusableIterator extends UnmodifiableIterator<Cell>
     {
         private final ReusableCell cell = new ReusableCell();
+        private final int columnCount;
         private int idx;
         private int endIdx;
 
@@ -125,17 +126,15 @@ class ComplexRowDataBlock
 
         public ReusableIterator setTo(int row, ColumnDefinition column)
         {
-            int columnIdx = 2 * ((row * column.complexColumnCount()) + columns.complexIdx(column));
+            int columnIdx = 2 * ((row * columnCount) + columns.complexIdx(column));
             idx = cellIdx[columnIdx];
             endIdx = cellIdx[columnIdx + 1];
 
-            if (endIdx <= idx)
-                return null;
+            return endIdx <= idx ? null : this;
         }
 
         public ReusableIterator setTo(int row)
         {
-            int columnCount = column.complexColumnCount();
             int columnIdx = 2 * row * columnCount;
 
             // find the index of the first cell of the row
@@ -157,6 +156,8 @@ class ComplexRowDataBlock
                     break;
                 }
             }
+
+            return endIdx <= idx ? null : this;
         }
 
         public boolean hasNext()
@@ -166,13 +167,13 @@ class ComplexRowDataBlock
 
         public Cell next()
         {
-            cell.setTo(idx);
+            cell.setToPosition(columns.getComplex(idx), idx);
             ++idx;
             return cell;
         }
     }
 
-    class CellWriter
+    public class CellWriter
     {
         private int base;
 
@@ -181,7 +182,7 @@ class ComplexRowDataBlock
 
         public void addCell(ColumnDefinition column, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
-            int columnIdx = base + columns.idx(column);
+            int columnIdx = base + columns.complexIdx(column);
 
             int start = cellIdx[columnIdx];
             int end = cellIdx[columnIdx + 1];
@@ -202,9 +203,9 @@ class ComplexRowDataBlock
             ++idx;
         }
 
-        public void setComplexDeletion(ColumnDefinition, DeletionTime deletionTime)
+        public void setComplexDeletion(ColumnDefinition column, DeletionTime deletionTime)
         {
-            int columnIdx = base + columns.idx(column);
+            int columnIdx = base + columns.complexIdx(column);
             complexDelTimes.set(columnIdx, deletionTime);
         }
 

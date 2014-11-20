@@ -71,7 +71,7 @@ public class UpdateStatement extends ModificationStatement
             {
                 // There is no column outside the PK. So no operation could have passed through validation
                 assert updates.isEmpty();
-                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(update.partitionKey().getKey(), writer, params);
+                new Constants.Setter(cfm.compactValueColumn(), EMPTY).execute(update.partitionKey().getKey(), clustering, writer, params);
             }
             else
             {
@@ -80,13 +80,13 @@ public class UpdateStatement extends ModificationStatement
                     throw new InvalidRequestException(String.format("Column %s is mandatory for this COMPACT STORAGE table", cfm.compactValueColumn().name));
 
                 for (Operation op : updates)
-                    op.execute(update.partitionKey().getKey(), writer, params);
+                    op.execute(update.partitionKey().getKey(), clustering, writer, params);
             }
         }
         else
         {
             for (Operation op : updates)
-                op.execute(update.partitionKey().getKey(), writer, params);
+                op.execute(update.partitionKey().getKey(), clustering, writer, params);
         }
 
         writer.endOfRow();

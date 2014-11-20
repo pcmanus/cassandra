@@ -38,7 +38,6 @@ public class NamesPartitionFilter implements PartitionFilter
     public NamesPartitionFilter(PartitionColumns columns, SortedSet<ClusteringPrefix> prefixes)
     {
         this.selectedColumns = columns;
-        this.selectedStaticColumns = staticColumns;
         this.prefixes = prefixes;
     }
 
@@ -83,12 +82,6 @@ public class NamesPartitionFilter implements PartitionFilter
     public boolean isHeadFilter()
     {
         return false;
-    }
-
-    public AtomIterator filter(Partition partition)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
     }
 
     // Given another iterator, only return the atoms that match this filter
@@ -142,7 +135,7 @@ public class NamesPartitionFilter implements PartitionFilter
 
     public int maxQueried(boolean countCells)
     {
-        return countCells ? prefixes.size() * selectedColumns.regulars.size() : prefixes.size();
+        return countCells ? prefixes.size() * selectedColumns.regulars.columnCount() : prefixes.size();
     }
 
     // From NamesQueryFilter

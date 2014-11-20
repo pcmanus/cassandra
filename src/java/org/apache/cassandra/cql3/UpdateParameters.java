@@ -22,13 +22,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import com.google.common.collect.ListMultimap;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -43,41 +43,51 @@ public class UpdateParameters
     public final int localDeletionTime;
 
     // For lists operation that require a read-before-write. Will be null otherwise.
-    private final ListMultimap<ColumnPath, Cell> prefetchedLists;
+    private final Map<DecoratedKey, Partition> prefetchedRows;
 
-    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, ListMultimap<ColumnPath, Cell> prefetchedLists)
+    public UpdateParameters(CFMetaData metadata, QueryOptions options, long timestamp, int ttl, Map<DecoratedKey, Partition> prefetchedRows)
     {
         this.metadata = metadata;
         this.options = options;
         this.timestamp = timestamp;
-        this.ttl = ttl;
-        this.localDeletionTime = (int)(System.currentTimeMillis() / 1000);
-        this.prefetchedLists = prefetchedLists;
+        this.ttl = ttl > 0 ? ttl : metadata.getDefaultTimeToLive();
+        this.localDeletionTime = FBUtilities.nowInSeconds();
+        this.prefetchedRows = prefetchedRows;
     }
 
-    public Cell makeCell(ByteBuffer value) throws InvalidRequestException
+    public void addTombstone(ColumnDefinition column, Rows.Writer writer) throws InvalidRequestException
     {
-        return Cells.create(value, timestamp, ttl, localDeletionTime, metadata);
+        addTombstone(column, writer, null);
     }
 
-    public Cell makeCell(CellPath path, ByteBuffer value) throws InvalidRequestException
+    public void addTombstone(ColumnDefinition column, Rows.Writer writer, CellPath path) throws InvalidRequestException
     {
-        return Cells.create(path, value, timestamp, ttl, localDeletionTime, metadata);
+        writer.addCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, localDeletionTime, Cells.NO_TTL, path);
     }
 
-     public Cell makeCounter(long delta) throws InvalidRequestException
-     {
-         return Cells.createCounterUpdate(delta, FBUtilities.timestampMicros());
-     }
-
-    public Cell makeTombstone() throws InvalidRequestException
+    public void addCell(ColumnDefinition column, Rows.Writer writer, ByteBuffer value) throws InvalidRequestException
     {
-        return Cells.createTombsone(localDeletionTime, timestamp);
+        addCell(column, writer, null, value);
     }
 
-    public Cell makeTombstone(CellPath path) throws InvalidRequestException
+    public void addCell(ColumnDefinition column, Rows.Writer writer, CellPath path, ByteBuffer value) throws InvalidRequestException
     {
-        return Cells.createTombsone(path, localDeletionTime, timestamp);
+        writer.addCell(column, false, value, timestamp, localDeletionTime, ttl, null);
+    }
+
+    public void addCounter(ColumnDefinition column, Rows.Writer writer, long increment) throws InvalidRequestException
+    {
+        writer.addCell(column, true, ByteBufferUtil.bytes(increment), timestamp, localDeletionTime, Cells.NO_TTL, null);
+    }
+
+    public void setComplexDeletionTime(ColumnDefinition column, Rows.Writer writer)
+    {
+        writer.setComplexDeletion(column, deletionTime());
+    }
+
+    public void setComplexDeletionTimeForOverwrite(ColumnDefinition column, Rows.Writer writer)
+    {
+        writer.setComplexDeletion(column, new SimpleDeletionTime(timestamp - 1, localDeletionTime));
     }
 
     public DeletionTime deletionTime()
@@ -85,23 +95,17 @@ public class UpdateParameters
         return new SimpleDeletionTime(timestamp, localDeletionTime);
     }
 
-    public DeletionTime complexDeletionTime()
-    {
-        return new SimpleDeletionTime(timestamp, localDeletionTime);
-    }
-
-    public DeletionTime complexDeletionTimeForOverwrite()
-    {
-        return new SimpleDeletionTime(timestamp-1, localDeletionTime);
-    }
-
     public RangeTombstone makeRangeTombstone(ClusteringPrefix prefix)
     {
         return new RangeTombstone(prefix.withEOC(ClusteringPrefix.EOC.START), prefix.withEOC(ClusteringPrefix.EOC.END), deletionTime());
     }
 
-    public List<Cell> getPrefetchedList(DecoratedKey key, ClusteringPrefix clustering, ColumnDefinition c)
+    public Row getPrefetchedRow(ByteBuffer key, ClusteringPrefix clustering)
     {
-        return prefetchedLists == null ? null : prefetchedLists.get(new ColumnPath(key, clustering, c));
+        if (prefetchedRows == null)
+            return null;
+
+        Partition partition = prefetchedRows.get(key);
+        return partition == null ? null : partition.searchIterator().next(clustering);
     }
 }

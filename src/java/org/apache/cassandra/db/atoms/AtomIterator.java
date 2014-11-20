@@ -22,7 +22,6 @@ import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.utils.CloseableIterator;
 
 /**
  * An iterator over atoms belonging to a partition.

@@ -656,7 +656,7 @@ public class StorageProxy implements StorageProxyMBean
                                                                         null,
                                                                         WriteType.SIMPLE);
         Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(uuid)));
-        mutation.delete(SystemKeyspace.BATCHLOG_CF, FBUtilities.timestampMicros());
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.BatchlogCf, mutation.key(), FBUtilities.timestampMicros()));
         MessageOut<Mutation> message = mutation.createMessage();
         for (InetAddress target : endpoints)
         {

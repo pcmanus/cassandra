@@ -39,6 +39,7 @@ import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.dht.Token;
@@ -201,7 +202,7 @@ public class BatchlogManager implements BatchlogManagerMBean
     private void deleteBatch(UUID id)
     {
         Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(id)));
-        mutation.delete(SystemKeyspace.BATCHLOG_CF, FBUtilities.timestampMicros());
+        mutation.add(PartitionUpdate.fullPartitionDelete(CFMetaData.BatchlogCf, mutation.key(), FBUtilities.timestampMicros()));
         mutation.apply();
     }
 

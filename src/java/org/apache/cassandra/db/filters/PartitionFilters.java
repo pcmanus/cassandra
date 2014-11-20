@@ -28,12 +28,11 @@ public abstract class PartitionFilters
 
     public static SlicePartitionFilter fullPartitionFilter(CFMetaData metadata)
     {
-        return new SlicePartitionFilter(metadata.regularColumns(), metadata.staticColumns(), Slices.ALL, false);
+        return new SlicePartitionFilter(metadata.partitionColumns(), Slices.ALL, false);
     }
 
     public static NamesPartitionFilter singleCellRead(CFMetaData metadata, ClusteringPrefix clustering, ColumnDefinition column)
     {
-        Columns.Builder builder = Columns.builder().add(column);
-        return new NamesPartitionFilter(builder.regularColumns(), builder.staticColumns(), FBUtilities.<ClusteringPrefix>singleton(clustering, metadata.comparator));
+        return new NamesPartitionFilter(PartitionColumns.of(column), FBUtilities.<ClusteringPrefix>singleton(clustering, metadata.comparator));
     }
 }

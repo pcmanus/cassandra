@@ -25,13 +25,16 @@ import com.google.common.collect.UnmodifiableIterator;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.utils.SearchIterator;
 
-public abstract class AbstractPartitionData
+public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 {
-    private final CFMetaData metadata;
-    private final DecoratedKey key;
+    protected final CFMetaData metadata;
+    protected final DecoratedKey key;
 
     protected final DeletionInfo deletionInfo;
+    protected final PartitionColumns columns;
+
     protected Row staticRow;
 
     protected int rows;
@@ -48,6 +51,7 @@ public abstract class AbstractPartitionData
                                     DeletionInfo deletionInfo,
                                     ByteBuffer[] clusterings,
                                     long[] timestamps,
+                                    PartitionColumns columns,
                                     RowDataBlock data)
     {
         this.metadata = metadata;
@@ -55,12 +59,14 @@ public abstract class AbstractPartitionData
         this.deletionInfo = deletionInfo;
         this.clusterings = clusterings;
         this.timestamps = timestamps;
+        this.columns = columns;
         this.data = data;
     }
 
     protected AbstractPartitionData(CFMetaData metadata,
                                     DecoratedKey key,
                                     DeletionInfo deletionInfo,
+                                    PartitionColumns columns,
                                     RowDataBlock data,
                                     int initialRowCapacity)
     {
@@ -69,8 +75,24 @@ public abstract class AbstractPartitionData
              deletionInfo,
              new ByteBuffer[initialRowCapacity * metadata.clusteringColumns().size()],
              new long[initialRowCapacity],
+             columns,
              data);
     }
+
+    protected AbstractPartitionData(CFMetaData metadata,
+                                    DecoratedKey key,
+                                    DeletionTime partitionDeletion,
+                                    PartitionColumns columns,
+                                    int initialRowCapacity)
+    {
+        this(metadata,
+             key,
+             new DeletionInfo(partitionDeletion.takeAlias()),
+             columns,
+             new RowDataBlock(columns.regulars, initialRowCapacity),
+             initialRowCapacity);
+    }
+
 
     public CFMetaData metadata()
     {
@@ -80,6 +102,16 @@ public abstract class AbstractPartitionData
     public DecoratedKey partitionKey()
     {
         return key;
+    }
+
+    public DeletionTime partitionLevelDeletion()
+    {
+        return deletionInfo.getTopLevelDeletion();
+    }
+
+    public PartitionColumns columns()
+    {
+        return columns;
     }
 
     public DeletionInfo deletionInfo()
@@ -92,12 +124,17 @@ public abstract class AbstractPartitionData
         return staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
     }
 
+    public int rowCount()
+    {
+        return rows;
+    }
+
     public boolean isEmpty()
     {
         return deletionInfo.isLive() && rows == 0 && staticRow == null;
     }
 
-    protected Iterator<Row> rowIterator()
+    public Iterator<Row> iterator()
     {
         return new UnmodifiableIterator<Row>()
         {
@@ -148,9 +185,19 @@ public abstract class AbstractPartitionData
         };
     }
 
+    public SearchIterator<ClusteringPrefix, Row> searchIterator()
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
+    {
+        throw new UnsupportedOperationException();
+    }
+
     protected class Writer extends RowDataBlock.Writer
     {
-        protected Writer()
+        public Writer()
         {
             super(data);
         }
@@ -163,13 +210,37 @@ public abstract class AbstractPartitionData
                 clusterings[base + i] = clustering.get(i);
         }
 
-        public ClusteringPrefix getClustering()
-        {
-        }
-
         public void setTimestamp(long timestamp)
         {
             timestamps[row] = timestamp;
+        }
+    }
+
+    protected class RangeTombstoneCollector
+    {
+        private ClusteringPrefix open;
+        private DeletionTime data;
+
+        public void addMarker(RangeTombstoneMarker marker)
+        {
+            ClusteringPrefix clustering = marker.clustering().takeAlias();
+            if (marker.isOpenMarker())
+            {
+                if (open != null)
+                    addRangeTombstone(open, clustering, data);
+                open = clustering;
+                data = marker.delTime().takeAlias();
+            }
+            else
+            {
+                assert open != null;
+                addRangeTombstone(open, clustering, data);
+            }
+        }
+
+        private void addRangeTombstone(ClusteringPrefix min, ClusteringPrefix max, DeletionTime dt)
+        {
+            deletionInfo.add(new RangeTombstone(min, max, dt), metadata.comparator);
         }
     }
 }

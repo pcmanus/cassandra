@@ -84,8 +84,8 @@ class CellData
 
         for (int i = from; i < to; i++)
         {
-            DeletionTimeArray[i] = Cells.NO_DELETION_TIME;
-            DeletionTimeArray[i + 1] = Cells.NO_TTL;
+            delTimesAndTTLs[i] = Cells.NO_DELETION_TIME;
+            delTimesAndTTLs[i + 1] = Cells.NO_TTL;
         }
     }
 

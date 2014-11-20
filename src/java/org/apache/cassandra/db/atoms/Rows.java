@@ -106,11 +106,6 @@ public abstract class Rows
         public void endOfRow();
     }
 
-    public static void writeCell(Cell cell, Writer writer)
-    {
-        writer.addCell(cell.column(), cell.isCounterCell(), cell.value(), cell.timestamp(), cell.localDeletionTime(), cell.ttl(), cell.path());
-    }
-
     public interface SimpleMergeListener
     {
         public void onAdded(Cell newCell);
@@ -124,7 +119,7 @@ public abstract class Rows
         writer.setTimestamp(row.timestamp());
 
         for (Cell cell : row)
-            writer.addCell(cell);
+            Cells.write(cell, writer);
 
         for (int i = 0; i < row.columns().complexColumnCount(); i++)
         {

@@ -19,8 +19,11 @@ package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+
+import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
@@ -286,12 +289,30 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + append
             params.setComplexDeletionTimeForOverwrite(column, writer);
             Appender.doAppend(t, writer, column, params);
         }
+    }
+
+    private static int existingSize(Row row, ColumnDefinition column)
+    {
+        if (row == null)
+            return 0;
+
+        Iterator<Cell> cells = row.getCells(column);
+        return cells == null ? 0 : Iterators.size(cells);
+    }
+
+    private static Cell existingElement(Row row, ColumnDefinition column, int idx)
+    {
+        assert row != null;
+        Iterator<Cell> cells = row.getCells(column);
+        assert cells != null;
+
+        return Iterators.get(cells, idx);
     }
 
     public static class SetterByIndex extends Operation
@@ -317,7 +338,7 @@ public abstract class Lists
             idx.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer index = idx.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -325,15 +346,16 @@ public abstract class Lists
             if (index == null)
                 throw new InvalidRequestException("Invalid null value for list index");
 
-            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
+            Row existingRow = params.getPrefetchedRow(rowKey, clustering);
+            int existingSize = existingSize(existingRow, column);
             int idx = ByteBufferUtil.toInt(index);
-            if (idx < 0 || existingList == null || idx >= existingList.size())
-                throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, (existingList == null ? 0 : existingList.size())));
+            if (idx < 0 || idx >= existingSize)
+                throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, existingSize));
 
-            CellPath elementPath = existingList.get(idx).path();
+            CellPath elementPath = existingElement(existingRow, column, idx).path();
             if (value == null)
             {
-                params.addTombstone(column, writer, elementPath);
+                params.addTombstone(column, writer);
             }
             else
             {
@@ -355,7 +377,7 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doAppend(t, writer, column, params);
         }
@@ -385,7 +407,7 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -417,16 +439,14 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
-            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
             // We want to call bind before possibly returning to reject queries where the value provided is not a list.
             Term.Terminal value = t.bind(params.options);
 
-            if (existingList == null || existingList.size() == 0)
-                return;
-
-            if (value == null)
+            Row existingRow = params.getPrefetchedRow(rowKey, clustering);
+            Iterator<Cell> cells = existingRow.getCells(column);
+            if (value == null || cells == null)
                 return;
 
             assert value instanceof Lists.Value;
@@ -436,9 +456,9 @@ public abstract class Lists
             // the read-before-write this operation requires limits its usefulness on big lists, so in practice
             // toDiscard will be small and keeping a list will be more efficient.
             List<ByteBuffer> toDiscard = ((Lists.Value)value).elements;
-            for (int i = 0; i < existingList.size(); i++)
+            while (cells.hasNext())
             {
-                Cell cell = existingList.get(i);
+                Cell cell = cells.next();
                 if (toDiscard.contains(cell.value()))
                     params.addTombstone(column, writer, cell.path());
             }
@@ -458,7 +478,7 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal index = t.bind(params.options);
             if (index == null)
@@ -466,12 +486,13 @@ public abstract class Lists
 
             assert index instanceof Constants.Value;
 
-            List<Cell> existingList = params.getPrefetchedList(rowKey, writer.getClustering(), column);
+            Row existingRow = params.getPrefetchedRow(rowKey, clustering);
+            int existingSize = existingSize(existingRow, column);
             int idx = ByteBufferUtil.toInt(((Constants.Value)index).bytes);
-            if (idx < 0 || existingList == null || idx >= existingList.size())
-                throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, (existingList == null ? 0 : existingList.size())));
+            if (idx < 0 || idx >= existingSize)
+                throw new InvalidRequestException(String.format("List index %d out of bound, list has size %d", idx, existingSize));
 
-            params.addTombstone(column, writer, existingList.get(idx).path());
+            params.addTombstone(column, writer, existingElement(existingRow, column, idx).path());
         }
     }
 }

@@ -176,7 +176,7 @@ public class DataResolver extends AbstractResolver
                     Cell version = versions[i];
                     Cell toAdd = version == null ? mergedCell : Cells.diff(mergedCell, version);
                     if (toAdd != null)
-                        Rows.writeCell(toAdd, currentRow(i));
+                        Cells.write(toAdd, currentRow(i));
                 }
             }
 

@@ -88,10 +88,11 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
-        RowUpdate row = RowUpdates.create(makeIndexClustering(rowKey, clustering, cell), Columns.of(idxColumn))
-                        .addCell(idxColumn, Cells.createTombsone(cell.timestamp()));
-
-        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey).add(row);
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.of(idxColumn), 1);
+        Rows.Writer writer = upd.writer(false);
+        writer.setClustering(makeIndexClustering(rowKey, clustering, cell));
+        Cells.writeTombstone(idxColumn, cell.timestamp(), writer);
+        writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
         if (logger.isDebugEnabled())
             logger.debug("removed index entry for cleaned-up value {}:{}", valueKey, upd);
@@ -101,12 +102,12 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     {
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
 
-        Cell idxCell = Cells.create(ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp(), cell.ttl(), cell.localDeletionTime(), indexCfs.metadata);
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
-        RowUpdate row = RowUpdates.create(makeIndexClustering(rowKey, clustering, cell), Columns.of(idxColumn))
-                        .addCell(idxColumn, idxCell);
-
-        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey).add(row);
+        PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.of(idxColumn), 1);
+        Rows.Writer writer = upd.writer(false);
+        writer.setClustering(makeIndexClustering(rowKey, clustering, cell));
+        writer.addCell(idxColumn, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp(), cell.localDeletionTime(), cell.ttl(), null);
+        writer.endOfRow();
         if (logger.isDebugEnabled())
             logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.getKey()), upd);
 

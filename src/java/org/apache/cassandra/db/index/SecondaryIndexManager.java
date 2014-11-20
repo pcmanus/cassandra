@@ -740,7 +740,7 @@ public class SecondaryIndexManager
         {
             this.update = update;
             this.opGroup = opGroup;
-            this.nowInSec = (int)(System.currentTimeMillis() / 1000);
+            this.nowInSec = FBUtilities.nowInSeconds();
         }
 
         public void insert(ClusteringPrefix clustering, Cell cell)

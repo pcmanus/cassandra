@@ -116,7 +116,26 @@ public abstract class PartitionIterators
 
     public static PartitionIterator removeDroppedColumns(PartitionIterator iterator, final Map<ColumnIdentifier, Long> droppedColumns)
     {
-        return new AbstractFilteringIterator(iterator)
+        FilteringRow filter = new FilteringRow()
+        {
+            protected boolean includeCell(Cell cell)
+            {
+                return include(cell.column(), cell.timestamp());
+            }
+
+            protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt)
+            {
+                return include(c, dt.markedForDeleteAt());
+            }
+
+            private boolean include(ColumnDefinition column, long timestamp)
+            {
+                Long droppedAt = droppedColumns.get(column.name);
+                return droppedAt != null && timestamp <= droppedAt;
+            }
+        };
+
+        return new AbstractFilteringIterator(iterator, filter)
         {
             protected boolean shouldFilter(AtomIterator atoms)
             {
@@ -124,71 +143,14 @@ public abstract class PartitionIterators
                 // (which we can get from sstable stats), and ignore any dropping if that smallest
                 // timestamp is bigger that the biggest droppedColumns timestamp.
 
-                // If none of the dropped columns is part of the columns that the
-                // iterator actually returns, there is nothing to do;
+                // If none of the dropped columns is part of the columns that the iterator actually returns, there is nothing to do;
                 for (ColumnDefinition c : atoms.columns())
-                    if (droppedColumns.containsKey(c.name))
-                        return true;
-
-                // TODO: we could optimize AbstactFilteringIterator so that it can only filter static rows
-                for (ColumnDefinition c : atoms.staticColumns())
                     if (droppedColumns.containsKey(c.name))
                         return true;
 
                 return false;
             }
-
-            protected boolean shouldFilterComplexDeletionTime(ColumnDefinition c, DeletionTime dt)
-            {
-                Long droppedAt = droppedColumns.get(c.name);
-                return droppedAt != null && dt.markedForDeleteAt() <= droppedAt;
-            }
-
-            protected boolean shouldFilterCell(ColumnDefinition c, Cell cell)
-            {
-                Long droppedAt = droppedColumns.get(c.name);
-                return droppedAt != null && cell.timestamp() <= droppedAt;
-            }
         };
-    }
-
-    //public static PartitionIterator purge(PartitionIterator iterator, final long now, final int gcBefore)
-    //{
-    //    return new AbstractFilteringIterator(iterator)
-    //    {
-    //        protected boolean shouldFilter(AtomIterator atoms)
-    //        {
-    //            // TODO: As for removeDroppedColumn, if AtomIterator was giving us some stats, we could
-    //            // skip having to filter in some case.
-    //            return true;
-    //        }
-
-    //        protected boolean shouldFilterPartitionDeletion(DeletionTime dt)
-    //        {
-    //            return dt.localDeletionTime() < gcBefore;
-    //        }
-
-    //        protected boolean shouldFilterRangeTombstoneMarker(RangeTombstoneMarker marker)
-    //        {
-    //            return marker.delTime().localDeletionTime() < gcBefore;
-    //        }
-
-    //        protected boolean shouldFilterComplexDeletionTime(Column c, DeletionTime dt)
-    //        {
-    //            return dt.localDeletionTime() < gcBefore;
-    //        }
-
-    //        protected boolean shouldFilterCell(Column c, Cell cell)
-    //        {
-    //            return cell.localDeletionTime() < gcBefore;
-    //        }
-    //    };
-    //}
-
-    public static PartitionIterator consumeAll(PartitionIterator iterator)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
     }
 
     public static void digest(PartitionIterator iter, MessageDigest digest)

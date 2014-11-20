@@ -32,6 +32,7 @@ import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.metrics.CompactionMetrics;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MergeIterator;
 
 // TODO: this should be merged with AbstractCompactionIterable (it's not the only implementation) and
@@ -52,10 +53,7 @@ public class CompactionIterable extends AbstractCompactionIterable
     public CompactionIterable(OperationType type, List<ICompactionScanner> scanners, CompactionController controller, CompactionMetrics metrics)
     {
         super(controller, type, scanners);
-        this.mergedIterator = PurgingPartitionIterator.create(PartitionIterators.merge(scanners, 
-                                                                                    (int)(System.currentTimeMillis() / 1000),
-                                                                                    listener()),
-                                                              controller);
+        this.mergedIterator = PurgingPartitionIterator.create(PartitionIterators.merge(scanners, FBUtilities.nowInSeconds(), listener()), controller);
 
         this.metrics = metrics;
 
@@ -188,7 +186,7 @@ public class CompactionIterable extends AbstractCompactionIterable
 
         private static PurgingPartitionIterator create(PartitionIterator toPurge, CompactionController controller)
         {
-            PurgingRow row = new PurgingRow(CompactionController controller);
+            PurgingRow row = new PurgingRow(controller);
             return new PurgingPartitionIterator(toPurge, row);
         }
 
@@ -208,7 +206,7 @@ public class CompactionIterable extends AbstractCompactionIterable
 
         protected boolean shouldFilterRangeTombstoneMarker(RangeTombstoneMarker marker)
         {
-            return purgingRow.include(markers.delTime());
+            return purgingRow.include(marker.delTime());
         }
 
         private static class PurgingRow extends FilteringRow
@@ -225,23 +223,13 @@ public class CompactionIterable extends AbstractCompactionIterable
             {
                 // tombstones with a localDeletionTime before this can be purged.  This is the minimum timestamp for any sstable
                 // containing `key` outside of the set of sstables involved in this compaction.
-                this.maxPurgeableTimestamp = controller.maxPurgeableTimestamp(atoms.partitionKey());
+                this.maxPurgeableTimestamp = controller.maxPurgeableTimestamp(key);
             }
 
             public boolean include(DeletionTime dt)
             {
                 return dt.markedForDeleteAt() >= maxPurgeableTimestamp
                     || dt.localDeletionTime() >= controller.gcBefore;
-            }
-
-            protected boolean includeTimestamp(long timestamp)
-            {
-                return true;
-            }
-
-            protected boolean include(ColumnDefinition column)
-            {
-                return true;
             }
 
             protected boolean includeCell(Cell cell)

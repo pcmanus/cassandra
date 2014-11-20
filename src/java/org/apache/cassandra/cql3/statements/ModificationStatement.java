@@ -22,9 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Function;
-import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.ListMultimap;
 import org.github.jamm.MemoryMeter;
 
 import org.apache.cassandra.auth.Permission;
@@ -45,6 +43,7 @@ import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
 /*
@@ -428,7 +427,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         return false;
     }
 
-    protected ListMultimap<ColumnPath, Cell> readRequiredLists(Collection<ByteBuffer> partitionKeys, ClusteringPrefix clusteringPrefix, boolean local, ConsistencyLevel cl)
+    protected Map<DecoratedKey, Partition> readRequiredLists(Collection<ByteBuffer> partitionKeys, ClusteringPrefix clusteringPrefix, boolean local, ConsistencyLevel cl)
     throws RequestExecutionException, RequestValidationException
     {
         if (!requiresRead())
@@ -453,7 +452,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
         Slices slices = Slices.make(cfm.comparator, clusteringPrefix);
         List<SinglePartitionReadCommand> commands = new ArrayList<>(partitionKeys.size());
-        int nowInSec = (int)(System.currentTimeMillis() / 1000);
+        int nowInSec = FBUtilities.nowInSeconds();
         for (ByteBuffer key : partitionKeys)
             commands.add(new SinglePartitionSliceCommand(cfm,
                                                          nowInSec,
@@ -466,34 +465,14 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                                 ? SelectStatement.readLocally(commands, Keyspace.openAndGetStore(cfm), nowInSec)
                                 : StorageProxy.read(commands, cl);
 
-        ListMultimap<ColumnPath, Cell> map = ArrayListMultimap.create();
+        Map<DecoratedKey, Partition> map = new HashMap();
 
         try (DataIterator iter = partitions)
         {
             while (iter.hasNext())
             {
-                RowIterator partition = iter.next();
-                DecoratedKey key = partition.partitionKey();
-
-                Row staticRow = partition.staticRow();
-                if (!staticRow.isEmpty())
-                {
-                    m.put(new ColumnPath(key, staticRow.clustering(), );
-                }
-
-                while (partition.hasNext())
-                {
-                    Row row = partition.next();
-                    if (!row.isEmpty())
-                    {
-                        if (m == null)
-                            m = new HashMap<>();
-                        m.put(row.clustering().takeAlias(), row.takeAlias());
-                    }
-                }
-
-                if (m != null)
-                    map.put(partition.partitionKey().getKey(), m);
+                Partition p = ReadPartition.create(iter.next());
+                map.put(p.partitionKey(), p);
             }
         }
         catch (IOException e)
@@ -655,7 +634,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
             selection = Selection.forColumns(defs);
         }
 
-        int nowInSec = (int)(System.currentTimeMillis() / 1000);
+        int nowInSec = FBUtilities.nowInSeconds();
         Selection.ResultSetBuilder builder = selection.resultSetBuilder(nowInSec);
         SelectStatement.forSelection(cfm, selection).processPartition(partition, options, nowInSec, builder);
 
@@ -717,7 +696,7 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
     throws RequestExecutionException, RequestValidationException
     {
         // Some lists operation requires reading
-        ListMultimap<ColumnPath, Cell> lists = readRequiredLists(keys, prefix, local, options.getConsistency());
+        Map<DecoratedKey, Partition> lists = readRequiredLists(keys, prefix, local, options.getConsistency());
         return new UpdateParameters(cfm, options, getTimestamp(now, options), getTimeToLive(options), lists);
     }
 

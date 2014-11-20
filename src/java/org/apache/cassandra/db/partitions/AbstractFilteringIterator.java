@@ -47,12 +47,12 @@ public abstract class AbstractFilteringIterator extends WrappingPartitionIterato
 
     protected boolean includeRangeTombstoneMarker(RangeTombstoneMarker marker)
     {
-        return false;
+        return true;
     }
 
     protected boolean includePartitionDeletion(DeletionTime dt)
     {
-        return false;
+        return true;
     }
 
     public boolean hasNext()

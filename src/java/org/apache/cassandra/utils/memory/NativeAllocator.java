@@ -53,30 +53,11 @@ public class NativeAllocator extends MemtableAllocator
         super(pool.onHeap.newAllocator(), pool.offHeap.newAllocator());
     }
 
-    // TODO
-    //@Override
-    //public Cell clone(Cell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return new NativeCell(this, writeOp, cell);
-    //}
-
-    //@Override
-    //public CounterCell clone(CounterCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return new NativeCounterCell(this, writeOp, cell);
-    //}
-
-    //@Override
-    //public DeletedCell clone(DeletedCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return new NativeDeletedCell(this, writeOp, cell);
-    //}
-
-    //@Override
-    //public ExpiringCell clone(ExpiringCell cell, CFMetaData cfm, OpOrder.Group writeOp)
-    //{
-    //    return new NativeExpiringCell(this, writeOp, cell);
-    //}
+    public RowAllocator newRowAllocator(CFMetaData cfm, OpOrder.Group writeOp)
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
 
     public DecoratedKey clone(DecoratedKey key, OpOrder.Group writeOp)
     {

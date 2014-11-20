@@ -35,10 +35,10 @@ public interface MemtableRow extends Row
     public int dataSize();
 
     // returns the size of the Row and all references on the heap, excluding any costs associated with byte arrays
-    // that would be allocated by a localCopy, as these will be accounted for by the allocator
+    // that would be allocated by a clone operation, as these will be accounted for by the allocator
     public long unsharedHeapSizeExcludingData();
 
-    public class BufferRow extends AbstractReusableRow implements IMeasurableMemory
+    public class BufferRow extends AbstractReusableRow implements MemtableRow
     {
         private final BufferClusteringPrefix clustering;
         private final long timestamp;
@@ -50,6 +50,11 @@ public interface MemtableRow extends Row
             this.timestamp = timestamp;
         }
 
+        protected int row()
+        {
+            return 0;
+        }
+
         public ClusteringPrefix clustering()
         {
             return clustering;
@@ -57,7 +62,13 @@ public interface MemtableRow extends Row
 
         public long timestamp()
         {
-            return rowTimestamp;
+            return timestamp;
+        }
+
+        @Override
+        public Row takeAlias()
+        {
+            return this;
         }
 
         public int dataSize()
@@ -82,7 +93,7 @@ public interface MemtableRow extends Row
             this.values = values;
         }
 
-        public BufferClusteringPrefix clone(ClusteringPrefix clustering, AbstractAllocator allocator)
+        public static BufferClusteringPrefix clone(ClusteringPrefix clustering, AbstractAllocator allocator)
         {
             // We're currently only using this for rows, which don't have a EOC
             assert clustering.eoc() == EOC.NONE;
@@ -115,5 +126,10 @@ public interface MemtableRow extends Row
 
     public class BufferCellPath implements CellPath
     {
+        public static BufferCellPath clone(CellPath path, AbstractAllocator allocator)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
     }
 }

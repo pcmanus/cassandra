@@ -137,13 +137,18 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         UUID hintId = UUIDGen.getTimeUUID();
         // serialize the hint with id and version as a composite column name
 
-        PartitionUpdate upd = new PartitionUpdate(CFMetaData.HintsCf, StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(targetId)));
-        RowUpdate row = RowUpdates.create(CFMetaData.HintsCf.comparator.make(hintId, MessagingService.current_version), Columns.of(hintColumn));
+        PartitionUpdate upd = new PartitionUpdate(CFMetaData.HintsCf,
+                                                  StorageService.getPartitioner().decorateKey(UUIDType.instance.decompose(targetId)),
+                                                  PartitionColumns.of(hintColumn),
+                                                  1);
+
+        Rows.Writer writer = upd.writer(false);
+        writer.setClustering(CFMetaData.HintsCf.comparator.make(hintId, MessagingService.current_version));
 
         ByteBuffer value = ByteBuffer.wrap(FBUtilities.serialize(mutation, Mutation.serializer, MessagingService.current_version));
-        row.addCell(hintColumn, Cells.create(value, now, ttl, CFMetaData.HintsCf));
+        Cells.writeCell(hintColumn, value, now, ttl, CFMetaData.HintsCf, writer);
 
-        return new Mutation(upd.add(row));
+        return new Mutation(upd);
     }
 
     /*
@@ -158,7 +163,6 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
             ttl = Math.min(ttl, upd.metadata().getGcGraceSeconds());
         return ttl;
     }
-
 
     public void start()
     {
@@ -187,12 +191,14 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
     private static void deleteHint(ByteBuffer tokenBytes, ClusteringPrefix clustering, long timestamp)
     {
         DecoratedKey dk =  StorageService.getPartitioner().decorateKey(tokenBytes);
-        Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, dk);
-        RowUpdate upd = RowUpdates.create(CFMetaData.HintsCf, clustering)
-                        .addCell(hintColumn, Cells.createTombsone(timestamp));
 
-        mutation.addOrGet(SystemKeyspace.HINTS_CF).add(upd);
-        mutation.applyUnsafe(); // don't bother with commitlog since we're going to flush as soon as we're done with delivery
+        PartitionUpdate upd = new PartitionUpdate(CFMetaData.HintsCf, dk, PartitionColumns.of(hintColumn), 1);
+
+        Rows.Writer writer = upd.writer(false);
+        writer.setClustering(clustering);
+        Cells.writeTombstone(hintColumn, timestamp, writer);
+
+        new Mutation(upd).applyUnsafe(); // don't bother with commitlog since we're going to flush as soon as we're done with delivery
     }
 
     public void deleteHintsForEndpoint(final String ipOrHostname)
@@ -215,8 +221,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
             return;
         UUID hostId = StorageService.instance.getTokenMetadata().getHostId(endpoint);
         DecoratedKey dk =  StorageService.getPartitioner().decorateKey(ByteBuffer.wrap(UUIDGen.decompose(hostId)));
-        final Mutation mutation = new Mutation(Keyspace.SYSTEM_KS, dk);
-        mutation.delete(SystemKeyspace.HINTS_CF, System.currentTimeMillis());
+        final Mutation mutation = new Mutation(PartitionUpdate.fullPartitionDelete(CFMetaData.HintsCf, dk, System.currentTimeMillis()));
 
         // execute asynchronously to avoid blocking caller (which may be processing gossip)
         Runnable runnable = new Runnable()
@@ -554,7 +559,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
 
         // Extract the keys as strings to be reported.
         LinkedList<String> result = new LinkedList<String>();
-        ReadCommand cmd = ReadCommands.allDataRead(CFMetaData.HintsCf, (int)(System.currentTimeMillis() / 1000));
+        ReadCommand cmd = ReadCommands.allDataRead(CFMetaData.HintsCf, FBUtilities.nowInSeconds());
         try (PartitionIterator iter = cmd.executeLocally(hintStore))
         {
             while (iter.hasNext())

@@ -17,76 +17,65 @@
  */
 package org.apache.cassandra.db.partitions;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
-import org.apache.cassandra.utils.SearchIterator;
 
 public class ArrayBackedPartition extends AbstractPartitionData implements CachedPartition
 {
-    private ArrayBackedPartition(CFMetaData metadata,
-                                 DecoratedKey partitionKey,
-                                 DeletionTime partitionLevelDeletion,
-                                 RowDataBlock columnData,
-                                 int intialRowCapacity)
+    protected ArrayBackedPartition(CFMetaData metadata,
+                                   DecoratedKey partitionKey,
+                                   DeletionTime deletionTime,
+                                   PartitionColumns columns,
+                                   int initialRowCapacity)
     {
-        super(metadata, partitionKey, new DeletionInfo(partitionLevelDeletion), columnData, initialRowCapacity);
+        super(metadata, partitionKey, deletionTime, columns, initialRowCapacity);
     }
 
-    public static ArrayBackedPartition accumulate(AtomIterator iterator)
+    public static ArrayBackedPartition create(AtomIterator iterator)
     {
-        return accumulate(iterator, 16, 16, 16);
+        return create(iterator, 16);
     }
 
-    public static ArrayBackedPartition accumulate(AtomIterator iterator, int atomCapacity, int rowsCapacity, int cellsCapacity)
+    private static ArrayBackedPartition create(AtomIterator iterator, int initialRowCapacity)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //AtomContainer data = new AtomContainer(iterator.metadata(),
-        //                                       iterator.columns(),
-        //                                       iterator.staticColumns(),
-        //                                       atomCapacity,
-        //                                       rowsCapacity,
-        //                                       cellsCapacity);
+        // TODO: we need to fix this if we continue to use this in ReadResponse
+        assert !iterator.isReverseOrder();
 
-        //AtomContainer.WriteCursor writer = data.newWriteCursor();
+        ArrayBackedPartition partition = new ArrayBackedPartition(iterator.metadata(),
+                                                                  iterator.partitionKey(),
+                                                                  iterator.partitionLevelDeletion(),
+                                                                  iterator.columns(),
+                                                                  initialRowCapacity);
 
-        //// TODO: handle static row and partition level deletion
+        partition.staticRow = iterator.staticRow().takeAlias();
 
-        //while (iterator.hasNext())
-        //    Atoms.copy(iterator.next(), writer);
+        Writer writer = partition.new Writer();
+        RangeTombstoneCollector markerCollector = partition.new RangeTombstoneCollector();
 
-        //return new ArrayBackedPartition(data);
-    }
-
-    public DeletionTime partitionLevelDeletion()
-    {
-        return deletionInfo.getTopLevelDeletion();
-    }
-
-    public SearchIterator<ClusteringPrefix, Row> searchIterator()
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public AtomIterator atomIterator(Slices slices, boolean reversed)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-        //return slice.makeSliceIterator(data.newReadCursor());
+        try (AtomIterator iter = iterator)
+        {
+            while (iter.hasNext())
+            {
+                Atom atom = iter.next();
+                if (atom.kind() == Atom.Kind.ROW)
+                    Rows.copy((Row)atom, writer);
+                else
+                    markerCollector.addMarker((RangeTombstoneMarker)atom);
+            }
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return partition;
     }
 
     public Atom tail()
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public int rowCount()
     {
         // TODO
         throw new UnsupportedOperationException();

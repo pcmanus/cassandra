@@ -434,22 +434,22 @@ public class CacheService implements CacheServiceMBean
                     SinglePartitionReadCommand cmd = ReadCommands.create(cfs.metadata, key, filter, DataLimits.NONE, nowInSec);
                     try (RowIterator iter = AtomIterators.asRowIterator(cmd.queryMemtableAndDisk(cfs), nowInSec))
                     {
-                        ColumnData data;
+                        Cell cell;
                         if (column.isStatic())
                         {
-                            data = iter.staticRow().data(column);
+                            cell = iter.staticRow().getCell(column);
                         }
                         else
                         {
                             if (!iter.hasNext())
                                 return null;
-                            data = iter.next().data(column);
+                            cell = iter.next().getCell(column);
                         }
 
-                        if (data == null)
+                        if (cell == null)
                             return null;
 
-                        ClockAndCount clockAndCount = CounterContext.instance().getLocalClockAndCount(data.cell(0).value());
+                        ClockAndCount clockAndCount = CounterContext.instance().getLocalClockAndCount(cell.value());
                         return Pair.create(CounterCacheKey.create(cfs.metadata.cfId, partitionKey, clustering, column), clockAndCount);
                     }
                 }
@@ -474,8 +474,8 @@ public class CacheService implements CacheServiceMBean
                 public Pair<RowCacheKey, IRowCacheEntry> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
-                    AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, (int)(System.currentTimeMillis() / 1000)).queryMemtableAndDisk(cfs);
-                    CachedPartition toCache = ArrayBackedPartition.accumulate(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
+                    AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, FBUtilities.nowInSeconds()).queryMemtableAndDisk(cfs);
+                    CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
                     return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry)toCache);
                 }
             });

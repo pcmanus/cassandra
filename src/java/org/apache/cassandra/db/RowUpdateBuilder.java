@@ -30,6 +30,7 @@ import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
@@ -53,7 +54,7 @@ public class RowUpdateBuilder
     {
         this.metadata = metadata;
         this.timestamp = timestamp;
-        this.ldt = (int) (System.currentTimeMillis() / 1000);
+        this.ldt = FBUtilities.nowInSeconds();
     }
 
     public RowUpdateBuilder clustering(Object... values)
@@ -76,9 +77,11 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder add(String columnName, Object value)
     {
-        return addCell(columnName, value == null
-                                   ? Cells.createTombsone(ldt, timestamp)
-                                   : Cells.create(bb(value, getDefinition(columnName).type), timestamp, 0, metadata));
+        // TODO
+        throw new UnsupportedOperationException();
+        //return addCell(columnName, value == null
+        //                           ? Cells.createTombsone(ldt, timestamp)
+        //                           : Cells.create(bb(value, getDefinition(columnName).type), timestamp, 0, metadata));
     }
 
     private ByteBuffer bb(Object value, AbstractType<?> type)
@@ -88,18 +91,22 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder addMapEntry(String columnName, Object key, Object value)
     {
-        ColumnDefinition def = getDefinition(columnName);
-        assert def.type instanceof MapType;
-        MapType mt = (MapType)def.type;
-        return addCell(columnName, Cells.create(new CollectionPath(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, metadata));
+        // TODO
+        throw new UnsupportedOperationException();
+        //ColumnDefinition def = getDefinition(columnName);
+        //assert def.type instanceof MapType;
+        //MapType mt = (MapType)def.type;
+        //return addCell(columnName, Cells.create(new CollectionPath(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, metadata));
     }
 
     public RowUpdateBuilder addListEntry(String columnName, Object value)
     {
-        ColumnDefinition def = getDefinition(columnName);
-        assert def.type instanceof ListType;
-        ListType lt = (ListType)def.type;
-        return addCell(columnName, Cells.create(new CollectionPath(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, metadata));
+        // TODO
+        throw new UnsupportedOperationException();
+        //ColumnDefinition def = getDefinition(columnName);
+        //assert def.type instanceof ListType;
+        //ListType lt = (ListType)def.type;
+        //return addCell(columnName, Cells.create(new CollectionPath(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, metadata));
     }
 
     private RowUpdateBuilder addCell(String name, Cell cell)
