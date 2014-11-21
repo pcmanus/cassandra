@@ -118,20 +118,19 @@ public class AtomDeserializer
             return marker.setTo(openTombstone.min, true, openTombstone.data);
         }
 
-        Rows.Writer writer = row.writer();
-
-        writer.setClustering(prefix);
+        Row.Writer writer = row.writer();
+        writer.writeClustering(prefix);
 
         // If there is a row marker, it's the first cell
         ByteBuffer columnName = nameDeserializer.getNextColumnName();
         if (columnName != null && !columnName.hasRemaining())
         {
             metadata.layout().deserializeCellBody(in, cell, nameDeserializer.getNextCollectionElement(), b, flag, expireBefore);
-            writer.setTimestamp(cell.timestamp());
+            writer.writeTimestamp(cell.timestamp());
         }
         else
         {
-            writer.setTimestamp(Long.MIN_VALUE);
+            writer.writeTimestamp(Long.MIN_VALUE);
             ColumnDefinition column = getDefinition(nameDeserializer.getNextColumnName());
             if (columns.contains(column))
             {
@@ -163,7 +162,7 @@ public class AtomDeserializer
                 RangeTombstone rt = metadata.layout().rangeTombstoneSerializer().deserializeBody(in, prefix, version);
                 // TODO: we could assert that the min and max are what we think they are. Just in case
                 // someone thrift side has done something *really* nasty.
-                writer.setComplexDeletion(column, rt.data);
+                writer.writeComplexDeletion(column, rt.data);
             }
             else
             {

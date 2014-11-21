@@ -65,15 +65,15 @@ public abstract class FilteringRow implements Row
 
     public boolean isEmpty()
     {
-        if (timestamp() != Long.MIN_VALUE || iterator().hasNext())
-            return false;
+        return timestamp() == Rows.NO_TIMESTAMP && !iterator().hasNext() && !hasComplexDeletion();
+    }
 
-        // We also need to verify that none of the complex columns has any deletion info
+    public boolean hasComplexDeletion()
+    {
         for (int i = 0; i < columns().complexColumnCount(); i++)
             if (!getDeletion(columns().getComplex(i)).isLive())
-                return false;
-
-        return true;
+                return true;
+        return false;
     }
 
     public Cell getCell(ColumnDefinition c)

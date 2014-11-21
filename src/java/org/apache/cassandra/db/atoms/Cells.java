@@ -39,27 +39,27 @@ public abstract class Cells
         return nowInSec < cell.localDeletionTime();
     }
 
-    public static void write(Cell cell, Rows.Writer writer)
+    public static void write(Cell cell, Row.Writer writer)
     {
-        writer.addCell(cell.column(), cell.isCounterCell(), cell.value(), cell.timestamp(), cell.localDeletionTime(), cell.ttl(), cell.path());
+        writer.writeCell(cell.column(), cell.isCounterCell(), cell.value(), cell.timestamp(), cell.localDeletionTime(), cell.ttl(), cell.path());
     }
 
-    public static void writeCell(ColumnDefinition column, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Rows.Writer writer)
+    public static void writeCell(ColumnDefinition column, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Row.Writer writer)
     {
         writeCell(column, null, value, timestamp, ttl, metadata, writer);
     }
 
-    public static void writeCell(ColumnDefinition column, CellPath path, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Rows.Writer writer)
+    public static void writeCell(ColumnDefinition column, CellPath path, ByteBuffer value, long timestamp, int ttl, CFMetaData metadata, Row.Writer writer)
     {
         if (ttl <= 0)
             ttl = metadata.getDefaultTimeToLive();
 
-        writer.addCell(column, false, value, timestamp, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, ttl, path);
+        writer.writeCell(column, false, value, timestamp, ttl > 0 ? FBUtilities.nowInSeconds() : NO_DELETION_TIME, ttl, path);
     }
 
-    public static void writeTombstone(ColumnDefinition column, long timestamp, Rows.Writer writer)
+    public static void writeTombstone(ColumnDefinition column, long timestamp, Row.Writer writer)
     {
-        writer.addCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, FBUtilities.nowInSeconds(), NO_TTL, null);
+        writer.writeCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, FBUtilities.nowInSeconds(), NO_TTL, null);
     }
 
     public static Cell diff(Cell merged, Cell cell)

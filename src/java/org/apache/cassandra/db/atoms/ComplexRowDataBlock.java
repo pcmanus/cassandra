@@ -68,9 +68,41 @@ public class ComplexRowDataBlock
         return columns;
     }
 
+    // Swap row i and j
+    public void swap(int i, int j)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    // Merge row i into j
+    public void merge(int i, int j, int nowInSec)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    // Move row i into j
+    public void move(int i, int j)
+    {
+        throw new UnsupportedOperationException();
+    }
+
     public CellWriter cellWriter()
     {
         return new CellWriter();
+    }
+
+    public int complexDeletionIdx(int row, ColumnDefinition column)
+    {
+        return (row * columns.complexColumnCount()) + columns.complexIdx(column);
+    }
+
+    public boolean hasComplexDeletion(int row)
+    {
+        int base = row * columns.complexColumnCount();
+        for (int i = base; i < base + columns.complexColumnCount(); i++)
+            if (!complexDelTimes.isLive(i))
+                return true;
+        return false;
     }
 
     public static ReusableIterator reusableComplexCells()

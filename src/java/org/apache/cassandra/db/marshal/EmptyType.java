@@ -56,4 +56,10 @@ public class EmptyType extends AbstractType<Void>
     {
         return EmptySerializer.instance;
     }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 0;
+    }
 }

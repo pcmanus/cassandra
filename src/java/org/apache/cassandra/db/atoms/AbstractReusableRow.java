@@ -76,8 +76,7 @@ public abstract class AbstractReusableRow implements Row
 
     public boolean isEmpty()
     {
-        // TODO: can't we get rid of isEmpty?!
-        throw new UnsupportedOperationException();
+        return timestamp() == Rows.NO_TIMESTAMP && !iterator().hasNext() && !hasComplexDeletion();
     }
 
     public Cell getCell(ColumnDefinition c)
@@ -92,13 +91,18 @@ public abstract class AbstractReusableRow implements Row
         return complexCells().setTo(data().complexData, row(), c);
     }
 
+    public boolean hasComplexDeletion()
+    {
+        return data().hasComplexDeletion(row());
+    }
+
     public DeletionTime getDeletion(ColumnDefinition c)
     {
         assert c.isComplex();
         return data().complexData == null
              ? DeletionTime.LIVE
              : complexDeletionCursor().setTo(data().complexData.complexDelTimes,
-                                             (row() * columns().complexColumnCount()) + columns().complexIdx(c));
+                                             data().complexData.complexDeletionIdx(row(), c));
     }
 
     public Iterator<Cell> iterator()

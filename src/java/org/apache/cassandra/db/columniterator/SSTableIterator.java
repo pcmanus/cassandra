@@ -134,6 +134,12 @@ public class SSTableIterator implements SeekableAtomIterator
         return staticRow;
     }
 
+    public AtomStats stats()
+    {
+        // TODO: we should start collecting the minTimestamp and the minTTL
+        return new AtomStats(Math.max(0, sstable.sstableMetadata.minTimestamp), 0, 0);
+    }
+
     public boolean isReverseOrder()
     {
         return false;

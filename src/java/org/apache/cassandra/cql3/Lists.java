@@ -289,7 +289,7 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + append
             params.setComplexDeletionTimeForOverwrite(column, writer);
@@ -338,7 +338,7 @@ public abstract class Lists
             idx.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer index = idx.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -377,12 +377,12 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doAppend(t, writer, column, params);
         }
 
-        static void doAppend(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doAppend(Term t, Row.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             // If we append null, do nothing. Note that for Setter, we've
@@ -407,7 +407,7 @@ public abstract class Lists
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -439,7 +439,7 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // We want to call bind before possibly returning to reject queries where the value provided is not a list.
             Term.Terminal value = t.bind(params.options);
@@ -478,7 +478,7 @@ public abstract class Lists
             return true;
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal index = t.bind(params.options);
             if (index == null)

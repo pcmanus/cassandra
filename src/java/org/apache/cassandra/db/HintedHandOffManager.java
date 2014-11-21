@@ -142,8 +142,8 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                                                   PartitionColumns.of(hintColumn),
                                                   1);
 
-        Rows.Writer writer = upd.writer(false);
-        writer.setClustering(CFMetaData.HintsCf.comparator.make(hintId, MessagingService.current_version));
+        Row.Writer writer = upd.writer(false);
+        writer.writeClustering(CFMetaData.HintsCf.comparator.make(hintId, MessagingService.current_version));
 
         ByteBuffer value = ByteBuffer.wrap(FBUtilities.serialize(mutation, Mutation.serializer, MessagingService.current_version));
         Cells.writeCell(hintColumn, value, now, ttl, CFMetaData.HintsCf, writer);
@@ -194,8 +194,8 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
 
         PartitionUpdate upd = new PartitionUpdate(CFMetaData.HintsCf, dk, PartitionColumns.of(hintColumn), 1);
 
-        Rows.Writer writer = upd.writer(false);
-        writer.setClustering(clustering);
+        Row.Writer writer = upd.writer(false);
+        writer.writeClustering(clustering);
         Cells.writeTombstone(hintColumn, timestamp, writer);
 
         new Mutation(upd).applyUnsafe(); // don't bother with commitlog since we're going to flush as soon as we're done with delivery

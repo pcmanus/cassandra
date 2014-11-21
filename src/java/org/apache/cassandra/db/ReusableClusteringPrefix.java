@@ -30,6 +30,8 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
     private final ByteBuffer[] values;
     private EOC eoc;
 
+    private Writer writer;
+
     public ReusableClusteringPrefix(int size)
     {
         this.values = new ByteBuffer[size];
@@ -45,6 +47,13 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
         return values[i];
     }
 
+    public Writer writer()
+    {
+        if (writer == null)
+            writer = new ReusableWriter();
+        return writer;
+    }
+
     @Override
     public EOC eoc()
     {
@@ -57,6 +66,19 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
             values[i] = clustering.get(i);
 
         eoc = clustering.eoc();
+    }
+
+    private class ReusableWriter implements Writer
+    {
+        public void writeComponent(int i, ByteBuffer value)
+        {
+            values[i] = value;
+        }
+
+        public void writeEOC(EOC eoc)
+        {
+            ReusableClusteringPrefix.this.eoc = eoc;
+        }
     }
 }
 

@@ -47,7 +47,7 @@ public class RowUpdateBuilder
     private final int ldt;
     private final Mutation mutation;
 
-    private final Rows.Writer writer;
+    private final Row.Writer writer;
 
     private final SortedMap<ColumnDefinition, Set<Cell>> cells = new TreeMap<>();
     private final Set<ColumnDefinition> collectionsToReset = new HashSet<>();
@@ -64,9 +64,9 @@ public class RowUpdateBuilder
 
         // If a CQL3 table, add the row marker
         if (update.metadata().isCQL3Table())
-            writer.setTimestamp(timestamp);
+            writer.writeTimestamp(timestamp);
 
-        writer.setClustering(update.metadata().comparator.make(clusteringValues));
+        writer.writeClustering(update.metadata().comparator.make(clusteringValues));
     }
 
     public RowUpdateBuilder(CFMetaData metadata, long timestamp, Object partitionKey, Object... clusteringValues)
@@ -127,7 +127,7 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder resetCollection(String columnName)
     {
-        writer.setComplexDeletion(getDefinition(columnName), new SimpleDeletionTime(timestamp - 1, ldt));
+        writer.writeComplexDeletion(getDefinition(columnName), new SimpleDeletionTime(timestamp - 1, ldt));
         return this;
     }
 

@@ -65,6 +65,7 @@ public class CompositeType extends AbstractCompositeType
     public static final int STATIC_MARKER = 0xFFFF;
 
     public final List<AbstractType<?>> types;
+    private final int valueLengthIfFixed;
 
     // interning instances
     private static final Map<List<AbstractType<?>>, CompositeType> instances = new HashMap<List<AbstractType<?>>, CompositeType>();
@@ -113,6 +114,20 @@ public class CompositeType extends AbstractCompositeType
     protected CompositeType(List<AbstractType<?>> types)
     {
         this.types = ImmutableList.copyOf(types);
+        this.valueLengthIfFixed = computeValueLengthIfFixed(types);
+    }
+
+    private int computeValueLengthIfFixed(List<AbstractType<?>> types)
+    {
+        int length = 2;
+        for (AbstractType<?> type : types)
+        {
+            int l = type.valueLengthIfFixed();
+            if (l < 0)
+                return -1;
+            length += l;
+        }
+        return length;
     }
 
     protected AbstractType<?> getComparator(int i, ByteBuffer bb)
@@ -273,6 +288,12 @@ public class CompositeType extends AbstractCompositeType
                 return false;
         }
         return true;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return valueLengthIfFixed;
     }
 
     private static class StaticParsedComparator implements ParsedComparator

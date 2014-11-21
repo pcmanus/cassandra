@@ -73,4 +73,11 @@ public interface AtomIterator extends Iterator<Atom>, Closeable
      * row).
      */
     public Row staticRow();
+
+    /**
+     * Return "statistics" about what is returned by this iterator. Those are used for
+     * performance reasons (for delta-encoding for instance) and code should not
+     * expect those to be exact.
+     */
+    public AtomStats stats();
 }

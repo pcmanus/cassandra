@@ -89,8 +89,8 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cell));
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.of(idxColumn), 1);
-        Rows.Writer writer = upd.writer(false);
-        writer.setClustering(makeIndexClustering(rowKey, clustering, cell));
+        Row.Writer writer = upd.writer(false);
+        writer.writeClustering(makeIndexClustering(rowKey, clustering, cell));
         Cells.writeTombstone(idxColumn, cell.timestamp(), writer);
         writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
@@ -104,9 +104,9 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.of(idxColumn), 1);
-        Rows.Writer writer = upd.writer(false);
-        writer.setClustering(makeIndexClustering(rowKey, clustering, cell));
-        writer.addCell(idxColumn, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp(), cell.localDeletionTime(), cell.ttl(), null);
+        Row.Writer writer = upd.writer(false);
+        writer.writeClustering(makeIndexClustering(rowKey, clustering, cell));
+        writer.writeCell(idxColumn, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, cell.timestamp(), cell.localDeletionTime(), cell.ttl(), null);
         writer.endOfRow();
         if (logger.isDebugEnabled())
             logger.debug("applying index row {} in {}", indexCfs.metadata.getKeyValidator().getString(valueKey.getKey()), upd);

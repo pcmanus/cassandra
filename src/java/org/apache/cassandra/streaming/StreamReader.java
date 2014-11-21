@@ -230,6 +230,10 @@ public class StreamReader
             return staticRow;
         }
 
+        public AtomStats stats()
+        {
+        }
+
         protected Atom computeNext()
         {
             if (first != null)

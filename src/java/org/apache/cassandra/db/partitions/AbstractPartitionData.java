@@ -23,6 +23,7 @@ import java.util.*;
 import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.utils.SearchIterator;
@@ -38,6 +39,8 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
     protected Row staticRow;
 
     protected int rows;
+
+    private final AtomStats.Collector statsCollector = new AtomStats.Collector;
 
     // row 'i' clustering prefix is composed of the metadata.clusteringColumns.size() elements starting at 'clustering[rows * i]',
     // its timestamp is at 'timestamps[i]' and the row itself is at 'updates[i]'. The index 'i' in timestamps and updates
@@ -61,6 +64,11 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         this.timestamps = timestamps;
         this.columns = columns;
         this.data = data;
+
+        statsCollector.updateDeletionTime(deletionInfo.partitionLevelDeletion());
+        Iterator<RangeTombstone> iter = deletionInfo.rangeIterator();
+        while (iter.hasNext())
+            statsCollector.updateDeletionTime(iter.next().data);
     }
 
     protected AbstractPartitionData(CFMetaData metadata,
@@ -93,7 +101,6 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
              initialRowCapacity);
     }
 
-
     public CFMetaData metadata()
     {
         return metadata;
@@ -114,7 +121,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         return columns;
     }
 
-    public DeletionInfo deletionInfo()
+    private DeletionInfo deletionInfo()
     {
         return deletionInfo;
     }
@@ -122,6 +129,11 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
     public Row staticRow()
     {
         return staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
+    }
+
+    public AtomStats stats()
+    {
+        return statsCollector.get();
     }
 
     public int rowCount()
@@ -207,8 +219,9 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
             super(data);
         }
 
-        public void setClustering(ClusteringPrefix clustering)
+        public void writeClustering(ClusteringPrefix clustering)
         {
+            assert !closed;
             assert clustering.eoc() == ClusteringPrefix.EOC.NONE;
             ensureCapacity(row);
             int base = row * metadata.clusteringColumns().size();
@@ -216,10 +229,30 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
                 clusterings[base + i] = clustering.get(i);
         }
 
-        public void setTimestamp(long timestamp)
+        public void writeTimestamp(long timestamp)
         {
+            assert !closed;
             ensureCapacity(row);
             timestamps[row] = timestamp;
+            statsCollector.updateTimestamp(timestamp);
+        }
+
+        @Override
+        public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
+        {
+            statsCollector.updateTimestamp(timestamp);
+            statsCollector.updateLocalDeletionTime(localDelTime);
+            statsCollector.updateTTL(ttl);
+
+            super.writeCell(column, isCounter, value, timestamp, localDeletionTime, ttl, path);
+        }
+
+        @Override
+        public void writeComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion)
+        {
+            statsCollector.updateDeletionTime(complexDeletion);
+
+            super.writeComplexDeletion(c, complexDeletion);
         }
 
         private void ensureCapacity(int rowToSet)
@@ -263,6 +296,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         private void addRangeTombstone(ClusteringPrefix min, ClusteringPrefix max, DeletionTime dt)
         {
+            assert !closed;
             deletionInfo.add(new RangeTombstone(min, max, dt), metadata.comparator);
         }
     }

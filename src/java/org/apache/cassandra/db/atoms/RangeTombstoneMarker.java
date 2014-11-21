@@ -19,7 +19,7 @@ package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.db.DeletionTime;
+import org.apache.cassandra.db.*;
 
 /**
  * A marker for a range tombsone.
@@ -36,4 +36,9 @@ public interface RangeTombstoneMarker extends Atom
 {
     public boolean isOpenMarker();
     public DeletionTime delTime();
+
+    public interface Writer
+    {
+        public void writeMarker(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime);
+    }
 }

@@ -39,18 +39,23 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SearchIterator;
+import org.apache.cassandra.utils.Sorting;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
  * Stores updates on a partition.
  */
-public class PartitionUpdate extends AbstractPartitionData implements Iterable<Row>
+public class PartitionUpdate extends AbstractPartitionData implements Iterable<Row>, Sorting.Sortable
 {
     public static final PartitionUpdateSerializer serializer = new PartitionUpdateSerializer();
 
     private boolean isSorted;
 
-    private final Rows.Writer writer = new Writer();
+    private final Writer writer = new Writer();
+
+    // Used by compare for the sake of implementing the Sorting.Sortable interface
+    private final ReusableClusteringPrefix p1 = new ReusableClusteringPrefix();
+    private final ReusableClusteringPrefix p2 = new ReusableClusteringPrefix();
 
     private PartitionUpdate(CFMetaData metadata,
                             DecoratedKey key,
@@ -162,51 +167,96 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
     private synchronized void sort()
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //if (isSorted || rowUpdates.isEmpty())
-        //    return;
+        if (isSorted || rows == 0)
+            return;
 
-        //// Check for duplicate to reconcile. Note that we reconcile in place.
-        //ClusteringComparator comparator = metadata.comparator;
+        // Sort the rows - will still potentially contain duplicate (non-reconciled) rows
+        Sorting.sort(this);
 
-        //// Sort the array - will still potentially contain duplicate (non-reconciled) rows
-        //Collections.sort(rowUpdates, comparator);
+        int nowInSec = FBUtilities.nowInSeconds();
+        // Now find duplicates and merge them together
+        int previous = 0; // The last element that was set
+        for (int current = 1; current < rows; current++)
+        {
+            // There is really only 2 possible comparison: < 0 or == 0 since we've sorted already
+            int cmp = compare(previous, current);
+            if (cmp == 0)
+            {
+                // current and previous are the same row. Merge current into previous
+                // (and so previous + 1 will be "free").
+                data.merge(current, previous, nowInSec);
+            }
+            else
+            {
+                // data[current] != [previous], so move current just after previous if needs be
+                ++previous;
+                if (previous != current)
+                    data.move(current, previous);
+            }
+        }
 
-        //int previous = 0; // The last element that was set
-        //for (int current = 1; current < rowUpdates.size(); current++)
-        //{
-        //    // There is really only 2 possible comparison: < 0 or == 0 since we've sorted already
-        //    RowUpdate prev = rowUpdates.get(previous);
-        //    RowUpdate curr = rowUpdates.get(current);
-        //    if (comparator.compare(prev, curr) == 0)
-        //    {
-        //        rowUpdates.set(previous, prev.mergeTo(curr, SecondaryIndexManager.nullUpdater));
-        //    }
-        //    else
-        //    {
-        //        // current != previous, so simply move current just after previous if needs be
-        //        ++previous;
-        //        if (previous != current)
-        //            rowUpdates.set(previous, curr);
-        //    }
-        //}
+        // previous is on the last value to keep
+        rows = previous + 1;
 
-        //// previous is on the last value to keep
-        //for (int i = rowUpdates.size() - 1; i > previous; i++)
-        //    rowUpdates.remove(i);
-
-        //isSorted = true;
-        //hasStatic = rowUpdates.get(0).clustering() == EmptyClusteringPrefix.STATIC_PREFIX;
+        isSorted = true;
     }
 
-    public Rows.Writer writer(boolean isStatic)
+    public Row.Writer writer(boolean isStatic)
     {
         if (isStatic)
             throw new UnsupportedOperationException();
 
         return writer;
     }
+
+    public int size()
+    {
+        return rows;
+    }
+
+    public int compare(int i, int j)
+    {
+        return metadata.comparator.compare(p1.setTo(i), p2.setTo(j));
+    }
+
+    public void swap(int i, int j)
+    {
+        int cs = metadata.clusteringColumns().size();
+        for (int k = 0; k < cs; k++)
+        {
+            ByteBuffer tmp = clusterings[j * cs + k];
+            clusterings[j * cs + k] = clusterings[i * cs + k];
+            clusterings[i * cs + k] = tmp;
+        }
+
+        long tmp = timestamps[j];
+        timestamps[j] = timestamps[i];
+        timestamps[i] = tmp;
+
+        data.swap(i, j);
+    }
+
+    private class ReusableClusteringPrefix extends AbstractClusteringPrefix
+    {
+        private int row;
+
+        public ReusableClusteringPrefix setTo(int row)
+        {
+            this.row = row;
+            return this;
+        }
+
+        public int size()
+        {
+            return metadata.clusteringColumns().size();
+        }
+
+        public ByteBuffer get(int i)
+        {
+            int base = row * metadata.clusteringColumns().size();
+            return clusterings[base + i];
+        }
+    };
 
     public static class PartitionUpdateSerializer implements IVersionedSerializer<PartitionUpdate>
     {
@@ -336,25 +386,6 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
             //for (RowUpdate row : update.rowUpdates)
             //    size += update.metadata().layout().rowsSerializer().serializedSize(row, sizes);
             //return size;
-        }
-
-        public void serializeCfId(UUID cfId, DataOutputPlus out, int version) throws IOException
-        {
-            UUIDSerializer.serializer.serialize(cfId, out, version);
-        }
-
-        public UUID deserializeCfId(DataInput in, int version) throws IOException
-        {
-            UUID cfId = UUIDSerializer.serializer.deserialize(in, version);
-            if (Schema.instance.getCF(cfId) == null)
-                throw new UnknownColumnFamilyException("Couldn't find cfId=" + cfId, cfId);
-
-            return cfId;
-        }
-
-        public int cfIdSerializedSize(UUID cfId, TypeSizes typeSizes, int version)
-        {
-            return typeSizes.sizeof(cfId);
         }
     }
 

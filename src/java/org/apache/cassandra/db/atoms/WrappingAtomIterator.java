@@ -79,6 +79,11 @@ public abstract class WrappingAtomIterator extends UnmodifiableIterator<Atom>  i
         return wrapped.next();
     }
 
+    public AtomStats stats()
+    {
+        return wrapped.stats();
+    }
+
     public void close() throws IOException
     {
         wrapped.close();

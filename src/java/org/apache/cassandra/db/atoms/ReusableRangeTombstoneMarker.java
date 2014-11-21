@@ -27,6 +27,8 @@ public class ReusableRangeTombstoneMarker implements RangeTombstoneMarker
     private boolean isOpen;
     private DeletionTime delTime;
 
+    private Writer writer;
+
     public ReusableRangeTombstoneMarker()
     {
     }
@@ -62,5 +64,20 @@ public class ReusableRangeTombstoneMarker implements RangeTombstoneMarker
     public Atom takeAlias()
     {
         return new SimpleRangeTombstoneMarker(clustering.takeAlias(), isOpen, delTime.takeAlias());
+    }
+
+    public Writer writer()
+    {
+        if (writer == null)
+            writer = new ReusableWriter();
+        return writer;
+    }
+
+    private class ReusableWriter implements Writer
+    {
+        public void writeMarker(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime)
+        {
+            setTo(clustering, isOpenMarker, delTime);
+        }
     }
 }

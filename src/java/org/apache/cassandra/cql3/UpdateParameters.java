@@ -55,39 +55,39 @@ public class UpdateParameters
         this.prefetchedRows = prefetchedRows;
     }
 
-    public void addTombstone(ColumnDefinition column, Rows.Writer writer) throws InvalidRequestException
+    public void addTombstone(ColumnDefinition column, Row.Writer writer) throws InvalidRequestException
     {
         addTombstone(column, writer, null);
     }
 
-    public void addTombstone(ColumnDefinition column, Rows.Writer writer, CellPath path) throws InvalidRequestException
+    public void addTombstone(ColumnDefinition column, Row.Writer writer, CellPath path) throws InvalidRequestException
     {
-        writer.addCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, localDeletionTime, Cells.NO_TTL, path);
+        writer.writeCell(column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, timestamp, localDeletionTime, Cells.NO_TTL, path);
     }
 
-    public void addCell(ColumnDefinition column, Rows.Writer writer, ByteBuffer value) throws InvalidRequestException
+    public void addCell(ColumnDefinition column, Row.Writer writer, ByteBuffer value) throws InvalidRequestException
     {
         addCell(column, writer, null, value);
     }
 
-    public void addCell(ColumnDefinition column, Rows.Writer writer, CellPath path, ByteBuffer value) throws InvalidRequestException
+    public void addCell(ColumnDefinition column, Row.Writer writer, CellPath path, ByteBuffer value) throws InvalidRequestException
     {
-        writer.addCell(column, false, value, timestamp, localDeletionTime, ttl, null);
+        writer.writeCell(column, false, value, timestamp, localDeletionTime, ttl, null);
     }
 
-    public void addCounter(ColumnDefinition column, Rows.Writer writer, long increment) throws InvalidRequestException
+    public void addCounter(ColumnDefinition column, Row.Writer writer, long increment) throws InvalidRequestException
     {
-        writer.addCell(column, true, ByteBufferUtil.bytes(increment), timestamp, localDeletionTime, Cells.NO_TTL, null);
+        writer.writeCell(column, true, ByteBufferUtil.bytes(increment), timestamp, localDeletionTime, Cells.NO_TTL, null);
     }
 
-    public void setComplexDeletionTime(ColumnDefinition column, Rows.Writer writer)
+    public void setComplexDeletionTime(ColumnDefinition column, Row.Writer writer)
     {
-        writer.setComplexDeletion(column, deletionTime());
+        writer.writeComplexDeletion(column, deletionTime());
     }
 
-    public void setComplexDeletionTimeForOverwrite(ColumnDefinition column, Rows.Writer writer)
+    public void setComplexDeletionTimeForOverwrite(ColumnDefinition column, Row.Writer writer)
     {
-        writer.setComplexDeletion(column, new SimpleDeletionTime(timestamp - 1, localDeletionTime));
+        writer.writeComplexDeletion(column, new SimpleDeletionTime(timestamp - 1, localDeletionTime));
     }
 
     public DeletionTime deletionTime()

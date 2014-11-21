@@ -88,18 +88,18 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
             return row;
         }
 
-        public void setClustering(ClusteringPrefix clustering)
+        public void writeClustering(ClusteringPrefix clustering)
         {
             clustering = MemtableRowData.BufferClusteringPrefix.clone(clustering, allocator);
         }
 
-        public void setTimestamp(long timestamp)
+        public void writeTimestamp(long timestamp)
         {
             rowTimestamp = timestamp;
         }
 
         @Override
-        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
+        public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
             ByteBuffer v = allocator.clone(value);
             if (column.isComplex())

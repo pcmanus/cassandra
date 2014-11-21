@@ -53,7 +53,7 @@ public class ReusableRow extends AbstractReusableRow
         return timestamp;
     }
 
-    public Rows.Writer writer()
+    public Row.Writer writer()
     {
         return writer.reset();
     }
@@ -65,12 +65,12 @@ public class ReusableRow extends AbstractReusableRow
             super(data);
         }
 
-        public void setClustering(ClusteringPrefix clustering)
+        public void writeClustering(ClusteringPrefix clustering)
         {
             ReusableRow.this.clustering = clustering.takeAlias();
         }
 
-        public void setTimestamp(long timestamp)
+        public void writeTimestamp(long timestamp)
         {
             ReusableRow.this.timestamp = timestamp;
         }

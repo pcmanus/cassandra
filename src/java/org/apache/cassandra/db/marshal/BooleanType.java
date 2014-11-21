@@ -69,4 +69,10 @@ public class BooleanType extends AbstractType<Boolean>
     {
         return BooleanSerializer.instance;
     }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return 1;
+    }
 }

@@ -17,9 +17,30 @@
  */
 package org.apache.cassandra.db.atoms;
 
+import java.io.DataInput;
+import java.io.IOException;
+
+import org.apache.cassandra.io.util.DataOutputPlus;
+
 /**
  * A path for a cell belonging to a complex column type (non-frozen collection or UDT).
  */
 public interface CellPath
 {
+    public static final Serializer serializer = new Serializer();
+
+    public static class Serializer
+    {
+        public void serialize(CellPath path, DataOutputPlus out)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+
+        public CellPath deserialize(DataInput in)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+    }
 }

@@ -58,6 +58,11 @@ public abstract class Rows
             return true;
         }
 
+        public boolean hasComplexDeletion()
+        {
+            return false;
+        }
+
         public ClusteringPrefix clustering()
         {
             return EmptyClusteringPrefix.STATIC_PREFIX;
@@ -94,18 +99,6 @@ public abstract class Rows
         }
     };
 
-    public interface Writer
-    {
-        public void setClustering(ClusteringPrefix clustering);
-
-        public void setTimestamp(long timestamp);
-
-        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path);
-
-        public void setComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion);
-        public void endOfRow();
-    }
-
     public interface SimpleMergeListener
     {
         public void onAdded(Cell newCell);
@@ -113,10 +106,10 @@ public abstract class Rows
         public void onUpdated(Cell existingCell, Cell updatedCell);
     }
 
-    public static void copy(Row row, Rows.Writer writer)
+    public static void copy(Row row, Row.Writer writer)
     {
-        writer.setClustering(row.clustering());
-        writer.setTimestamp(row.timestamp());
+        writer.writeClustering(row.clustering());
+        writer.writeTimestamp(row.timestamp());
 
         for (Cell cell : row)
             Cells.write(cell, writer);
@@ -126,7 +119,7 @@ public abstract class Rows
             ColumnDefinition c = row.columns().getComplex(i);
             DeletionTime dt = row.getDeletion(c);
             if (!dt.isLive())
-                writer.setComplexDeletion(c, dt);
+                writer.writeComplexDeletion(c, dt);
         }
         writer.endOfRow();
     }
@@ -188,7 +181,7 @@ public abstract class Rows
     //    //listener.onRowDone();
     //}
 
-    public static void merge(ClusteringPrefix clustering, Row[] rows, int nowInSec, final Rows.Writer writer)
+    public static void merge(ClusteringPrefix clustering, Row[] rows, int nowInSec, final Row.Writer writer)
     {
         throw new UnsupportedOperationException();
         //merge(clustering, rows, new MergeHelper(nowInSec, rows.length), new AtomIterators.MergeListener()
@@ -227,7 +220,7 @@ public abstract class Rows
     // Merge rows in memtable
     public static void merge(Row existing,
                              Row update,
-                             Rows.Writer writer,
+                             Row.Writer writer,
                              int nowInSec,
                              SecondaryIndexManager.Updater indexUpdater)
     {
@@ -341,7 +334,7 @@ public abstract class Rows
             //out.writeShort(0);
         }
 
-        public void deserialize(DataInput in, LegacyLayout.Flag flag, Rows.Writer writer, CFMetaData metadata)
+        public void deserialize(DataInput in, LegacyLayout.Flag flag, Row.Writer writer, CFMetaData metadata)
         {
             throw new UnsupportedOperationException();
             //writer.setClustering(layout.clusteringSerializer().deserialize(in));

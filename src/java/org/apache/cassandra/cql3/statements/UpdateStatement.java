@@ -24,7 +24,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.atoms.Rows;
+import org.apache.cassandra.db.atoms.Row;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -51,12 +51,12 @@ public class UpdateStatement extends ModificationStatement
     public void addUpdateForKey(PartitionUpdate update, ClusteringPrefix clustering, UpdateParameters params)
     throws InvalidRequestException
     {
-        Rows.Writer writer = update.writer(clustering == EmptyClusteringPrefix.STATIC_PREFIX);
-        writer.setClustering(clustering);
+        Row.Writer writer = update.writer(clustering == EmptyClusteringPrefix.STATIC_PREFIX);
+        writer.writeClustering(clustering);
 
         // We update the row timestamp (ex-row marker) only on INSERT (#6782)
         if (type == StatementType.INSERT)
-            writer.setTimestamp(params.timestamp);
+            writer.writeTimestamp(params.timestamp);
 
         List<Operation> updates = getOperations();
 

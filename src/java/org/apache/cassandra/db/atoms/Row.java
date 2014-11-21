@@ -21,9 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.Aliasable;
-import org.apache.cassandra.db.Columns;
-import org.apache.cassandra.db.DeletionTime;
+import org.apache.cassandra.db.*;
 
 /**
  * Storage engine representation of a row.
@@ -64,6 +62,13 @@ public interface Row extends Atom, Iterable<Cell>, Aliasable<Row>
      * @return {@code true} if the row has no data whatsoever, {@code false} otherwise.
      */
     public boolean isEmpty();
+
+    /**
+     * Whether or not this row contains any deletion for a complex column. That is if
+     * there is at least one column for which {@code getDeletion} returns a non
+     * live deletion time.
+     */
+    public boolean hasComplexDeletion();
 
     /**
      * Returns the cell for simple column c.
@@ -117,4 +122,13 @@ public interface Row extends Atom, Iterable<Cell>, Aliasable<Row>
      * @return an iterator over the cells of this row.
      */
     public Iterator<Cell> iterator();
+
+    public interface Writer
+    {
+        public void writeClustering(ClusteringPrefix clustering);
+        public void writeTimestamp(long timestamp);
+        public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path);
+        public void writeComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion);
+        public void endOfRow();
+    }
 }

@@ -34,7 +34,7 @@ public class PartitionColumns implements Iterable<ColumnDefinition>
     public final Columns regulars;
     public final Columns statics;
 
-    private PartitionColumns(Columns regulars, Columns statics)
+    public PartitionColumns(Columns regulars, Columns statics)
     {
         this.regulars = regulars;
         this.statics = statics;

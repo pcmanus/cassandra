@@ -110,6 +110,12 @@ public class ReversedType<T> extends AbstractType<T>
     }
 
     @Override
+    protected int valueLengthIfFixed()
+    {
+        return baseType.valueLengthIfFixed();
+    }
+
+    @Override
     public String toString()
     {
         return getClass().getName() + "(" + baseType + ")";

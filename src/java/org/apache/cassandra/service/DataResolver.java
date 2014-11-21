@@ -112,7 +112,7 @@ public class DataResolver extends AbstractResolver
             private final PartitionColumns columns;
             private final PartitionUpdate[] repairs = new PartitionUpdate[sources.length];
 
-            private final Rows.Writer[] currentRows = new Rows.Writer[sources.length];
+            private final Row.Writer[] currentRows = new Row.Writer[sources.length];
             private ClusteringPrefix currentClustering;
             private ColumnDefinition currentColumn;
 
@@ -136,13 +136,13 @@ public class DataResolver extends AbstractResolver
                 return upd;
             }
 
-            private Rows.Writer currentRow(int i)
+            private Row.Writer currentRow(int i)
             {
-                Rows.Writer row = currentRows[i];
+                Row.Writer row = currentRows[i];
                 if (row == null)
                 {
                     row = update(i).writer(currentClustering == EmptyClusteringPrefix.STATIC_PREFIX);
-                    row.setClustering(currentClustering);
+                    row.writeClustering(currentClustering);
                     currentRows[i] = row;
                 }
                 return row;
@@ -155,7 +155,7 @@ public class DataResolver extends AbstractResolver
                 {
                     long timestamp = versions[i].timestamp();
                     if (mergedTimestamp > timestamp)
-                        currentRow(i).setTimestamp(mergedTimestamp);
+                        currentRow(i).writeTimestamp(mergedTimestamp);
                 }
             }
 
@@ -165,7 +165,7 @@ public class DataResolver extends AbstractResolver
                 for (int i = 0; i < versions.size(); i++)
                 {
                     if (versions.supersedes(i, mergedCompositeDeletion))
-                        currentRow(i).setComplexDeletion(c, mergedCompositeDeletion);
+                        currentRow(i).writeComplexDeletion(c, mergedCompositeDeletion);
                 }
             }
 

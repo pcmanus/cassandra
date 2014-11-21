@@ -36,10 +36,25 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class TupleType extends AbstractType<ByteBuffer>
 {
     protected final List<AbstractType<?>> types;
+    private final int valueLengthIfFixed;
 
     public TupleType(List<AbstractType<?>> types)
     {
         this.types = types;
+        this.valueLengthIfFixed = computeValueLengthIfFixed(types);
+    }
+
+    private int computeValueLengthIfFixed(List<AbstractType<?>> types)
+    {
+        int length = 2;
+        for (AbstractType<?> type : types)
+        {
+            int l = type.valueLengthIfFixed();
+            if (l < 0)
+                return -1;
+            length += l;
+        }
+        return length;
     }
 
     public static TupleType getInstance(TypeParser parser) throws ConfigurationException, SyntaxException
@@ -267,6 +282,12 @@ public class TupleType extends AbstractType<ByteBuffer>
                 return false;
         }
         return true;
+    }
+
+    @Override
+    protected int valueLengthIfFixed()
+    {
+        return valueLengthIfFixed;
     }
 
     @Override

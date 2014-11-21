@@ -40,6 +40,11 @@ public class Columns implements Iterable<ColumnDefinition>
         this.complexIdx = complexIdx;
     }
 
+    public Columns(ColumnDefinition[] columns)
+    {
+        this(columns, findFirstComplexIdx(columns));
+    }
+
     public static Columns of(ColumnDefinition c)
     {
         ColumnDefinition[] columns = new ColumnDefinition[]{ c };

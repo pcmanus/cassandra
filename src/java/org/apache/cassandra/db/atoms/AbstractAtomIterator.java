@@ -30,13 +30,15 @@ public abstract class AbstractAtomIterator extends AbstractIterator<Atom> implem
     protected final PartitionColumns columns;
     protected final Row staticRow;
     protected final boolean isReverseOrder;
+    protected final AtomStats stats;
 
     protected AbstractAtomIterator(CFMetaData metadata,
                                    DecoratedKey partitionKey,
                                    DeletionTime partitionLevelDeletion,
                                    PartitionColumns columns,
                                    Row staticRow,
-                                   boolean isReverseOrder)
+                                   boolean isReverseOrder,
+                                   AtomStats stats)
     {
         this.metadata = metadata;
         this.partitionKey = partitionKey;
@@ -44,6 +46,7 @@ public abstract class AbstractAtomIterator extends AbstractIterator<Atom> implem
         this.columns = columns;
         this.staticRow = staticRow;
         this.isReverseOrder = isReverseOrder;
+        this.stats = stats;
     }
 
     public CFMetaData metadata()
@@ -74,6 +77,11 @@ public abstract class AbstractAtomIterator extends AbstractIterator<Atom> implem
     public Row staticRow()
     {
         return staticRow;
+    }
+
+    public AtomStats stats()
+    {
+        return stats;
     }
 
     public void close()

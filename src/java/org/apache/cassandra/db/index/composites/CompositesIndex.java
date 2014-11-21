@@ -127,8 +127,8 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
     {
         ColumnDefinition idxColumn = indexCfs.metadata.compactValueColumn();
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, entry.indexValue, PartitionColumns.of(idxColumn), 1);
-        Rows.Writer writer = upd.writer(false);
-        writer.setClustering(entry.indexClustering);
+        Row.Writer writer = upd.writer(false);
+        writer.writeClustering(entry.indexClustering);
         Cells.writeTombstone(idxColumn, entry.timestamp, writer);
         writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);

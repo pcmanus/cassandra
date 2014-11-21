@@ -78,7 +78,7 @@ public class AtomicBTreePartition implements Partition
     private static final DeletionInfo LIVE = DeletionInfo.live();
     // This is a small optimization: DeletionInfo is mutable, but we know that we will always copy it in that class,
     // so we can safely alias one DeletionInfo.live() reference and avoid some allocations.
-    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, null);
+    private static final Holder EMPTY = new Holder(BTree.empty(), LIVE, null, AtomStats.NO_STATS);
 
     private final CFMetaData metadata;
     private final DecoratedKey partitionKey;
@@ -226,7 +226,8 @@ public class AtomicBTreePartition implements Partition
                   partitionLevelDeletion,
                   columns,
                   makeStatic(columns, holder, partitionLevelDeletion, allocator),
-                  isReversed);
+                  isReversed,
+                  holder.stats);
 
             this.dataIter = BTree.slice(holder.tree,
                                        metadata.comparator,
@@ -328,7 +329,7 @@ public class AtomicBTreePartition implements Partition
                                boolean isReversed,
                                MemtableAllocator allocator)
         {
-            super(metadata, key, partitionLevelDeletion, columns, makeStatic(columns, holder, partitionLevelDeletion, allocator), isReversed);
+            super(metadata, key, partitionLevelDeletion, columns, makeStatic(columns, holder, partitionLevelDeletion, allocator), isReversed, holder.stats);
             this.holder = holder;
             this.allocator = allocator;
             this.slices = slices;
@@ -404,8 +405,9 @@ public class AtomicBTreePartition implements Partition
                                           ? current.staticRow
                                           : (current.staticRow == null ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
                 Object[] tree = BTree.<Clusterable, Row, MemtableRowData>update(current.tree, update.metadata().comparator, update, update.rowCount(), updater);
+                AtomStats newStats = current.stats.mergeWith(update.stats());
 
-                if (tree != null && refUpdater.compareAndSet(this, current, new Holder(tree, deletionInfo, staticRow)))
+                if (tree != null && refUpdater.compareAndSet(this, current, new Holder(tree, deletionInfo, staticRow, newStats)))
                 {
                     indexer.updateRowLevelIndexes();
                     updater.finish();
@@ -487,17 +489,19 @@ public class AtomicBTreePartition implements Partition
         // the btree of rows
         final Object[] tree;
         final MemtableRowData staticRow;
+        final AtomStats stats;
 
-        Holder(Object[] tree, DeletionInfo deletionInfo, MemtableRowData staticRow)
+        Holder(Object[] tree, DeletionInfo deletionInfo, MemtableRowData staticRow, AtomStats stats)
         {
             this.tree = tree;
             this.deletionInfo = deletionInfo;
             this.staticRow = staticRow;
+            this.stats = stats;
         }
 
         Holder with(DeletionInfo info)
         {
-            return new Holder(this.tree, info, this.staticRow);
+            return new Holder(this.tree, info, this.staticRow, this.stats);
         }
     }
 

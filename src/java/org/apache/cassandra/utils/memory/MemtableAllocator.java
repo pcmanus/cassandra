@@ -103,7 +103,7 @@ public abstract class MemtableAllocator
         return state == LifeCycle.LIVE;
     }
 
-    public static interface RowAllocator extends Rows.Writer
+    public static interface RowAllocator extends Row.Writer
     {
         public void allocateNewRow(Columns columns);
         public MemtableRowData allocatedRowData();

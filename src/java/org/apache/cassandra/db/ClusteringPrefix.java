@@ -17,12 +17,18 @@
  */
 package org.apache.cassandra.db;
 
+import java.io.DataInput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
+import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataOutputPlus;
 
 public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasable<ClusteringPrefix>
 {
+    public static final Serializer serializer = new Serializer();
+
     public enum EOC
     {
         START(-1), NONE(-1), END(1);
@@ -53,4 +59,24 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     public ClusteringPrefix withEOC(EOC eoc);
 
     public ClusteringPrefix takeAlias();
+
+    public interface Writer
+    {
+        public void writeEOC(EOC eoc);
+        public void writeComponent(int i, ByteBuffer value);
+    }
+
+    public static class Serializer
+    {
+        public void serializeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version) throws IOException
+        {
+            // TODO: need to handle nulls (different from EMPTY)
+            throw new UnsupportedOperationException();
+        }
+
+        public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, ClusteringPrefix.Writer writer) throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+    }
 }

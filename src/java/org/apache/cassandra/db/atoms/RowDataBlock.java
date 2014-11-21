@@ -24,6 +24,7 @@ import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.Sorting;
 
 // TODO: need to abstract have have a subclass for counters too
 public class RowDataBlock
@@ -54,11 +55,36 @@ public class RowDataBlock
     // Swap row i and j
     public void swap(int i, int j)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        if (simpleData != null)
+            simpleData.swap(i, j);
+        if (complexData != null)
+            complexData.swap(i, j);
     }
 
-    public abstract static class Writer implements Rows.Writer
+    // Merge row i into j
+    public void merge(int i, int j, int nowInSec)
+    {
+        if (simpleData != null)
+            simpleData.merge(i, j, nowInSec);
+        if (complexData != null)
+            complexData.merge(i, j, nowInSec);
+    }
+
+    // Move row i into j
+    public void move(int i, int j)
+    {
+        if (simpleData != null)
+            simpleData.move(i, j);
+        if (complexData != null)
+            complexData.move(i, j);
+    }
+
+    public boolean hasComplexDeletion(int row)
+    {
+        return complexData != null && complexData.hasComplexDeletion(row);
+    }
+
+    public abstract static class Writer implements Row.Writer
     {
         protected int row;
 
@@ -92,7 +118,7 @@ public class RowDataBlock
             return this;
         }
 
-        public void addCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
+        public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
             assert !isCounter;
             if (column.isComplex())
@@ -101,7 +127,7 @@ public class RowDataBlock
                 simpleWriter.addCell(column, value, timestamp, localDeletionTime, ttl);
         }
 
-        public void setComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion)
+        public void writeComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion)
         {
             if (complexDeletion.isLive())
                 return;

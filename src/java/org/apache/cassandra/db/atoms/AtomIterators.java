@@ -144,6 +144,11 @@ public abstract class AtomIterators
                 return Rows.EMPTY_STATIC_ROW;
             }
 
+            public AtomStats stats()
+            {
+                return AtomStats.NO_STATS;
+            }
+
             public boolean hasNext()
             {
                 return false;

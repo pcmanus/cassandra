@@ -204,7 +204,7 @@ public class SSTableWriter extends SSTable
             RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
             afterAppend(key, startPosition, entry);
 
-            sstableMetadataCollector.update(dataFile.getFilePointer() - startPosition, withStats.getStats());
+            sstableMetadataCollector.update(dataFile.getFilePointer() - startPosition, withStats.getColumnStats());
             return entry;
         }
         catch (IOException e)
@@ -219,10 +219,7 @@ public class SSTableWriter extends SSTable
         // we are checking row/range tombstones and actual cells - there should always be data that overrides
         // these with actual values
         int cellCount;
-        ColumnStats.MinTracker<Long> minTimestampTracker = new ColumnStats.MinTracker<>(Long.MIN_VALUE);
-        ColumnStats.MaxTracker<Long> maxTimestampTracker = new ColumnStats.MaxTracker<>(Long.MAX_VALUE);
         StreamingHistogram tombstones = new StreamingHistogram(SSTable.TOMBSTONE_HISTOGRAM_BIN_SIZE);
-        ColumnStats.MaxTracker<Integer> maxDeletionTimeTracker = new ColumnStats.MaxTracker<>(Integer.MAX_VALUE);
         List<ByteBuffer> minColumnNamesSeen = Collections.emptyList();
         List<ByteBuffer> maxColumnNamesSeen = Collections.emptyList();
         boolean hasLegacyCounterShards = false;
@@ -230,15 +227,7 @@ public class SSTableWriter extends SSTable
         ColumnStatsCollector(AtomIterator iter)
         {
             super(iter);
-
-            DeletionTime dt = iter.partitionLevelDeletion();
-            if (!dt.isLive())
-            {
-                tombstones.update(dt.localDeletionTime());
-                maxDeletionTimeTracker.update(dt.localDeletionTime());
-                minTimestampTracker.update(dt.markedForDeleteAt());
-                maxTimestampTracker.update(dt.markedForDeleteAt());
-            }
+            update(iter.partitionLevelDeletion())
         }
 
         @Override
@@ -255,52 +244,33 @@ public class SSTableWriter extends SSTable
             {
                 case ROW:
                     Row row = (Row)atom;
-                    updateTimestamp(row.timestamp());
                     for (Cell cell : row)
                     {
                         ++cellCount;
-                        update(cell.timestamp(), cell.localDeletionTime());
                         if (cell.isCounterCell())
                             hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
                     }
-
-                    for (int i = 0; i < row.columns().complexColumnCount(); i++)
-                    {
-                        ColumnDefinition c = row.columns().getComplex(i);
-                        DeletionTime dt = row.getDeletion(c);
-                        if (!dt.isLive())
-                            update(dt.markedForDeleteAt(), dt.localDeletionTime());
-                    }
                     break;
                 case RANGE_TOMBSTONE_MARKER:
-                    DeletionTime dt = ((RangeTombstoneMarker)atom).delTime();
-                    update(dt.markedForDeleteAt(), dt.localDeletionTime());
+                    update(((RangeTombstoneMarker)atom).delTime());
                     break;
             }
             return atom;
         }
 
-        private void updateTimestamp(long timestamp)
+        private void update(DeletionTime dt)
         {
-            minTimestampTracker.update(timestamp);
-            maxTimestampTracker.update(timestamp);
+            if (!dt.isLive())
+                tombstones.update(dt.localDeletionTime());
         }
 
-        private void update(long timestamp, int localDelTime)
+        public ColumnStats getColumnStats()
         {
-            updateTimestamp(timestamp);
-            maxDeletionTimeTracker.update(localDelTime);
-
-            if (localDelTime < Integer.MAX_VALUE)
-                tombstones.update(localDelTime);
-        }
-
-        public ColumnStats getStats()
-        {
+            AtomStats stats = getStats();
             return new ColumnStats(cellCount,
-                                   minTimestampTracker.get(),
-                                   maxTimestampTracker.get(),
-                                   maxDeletionTimeTracker.get(),
+                                   stats.minTimestamp,
+                                   stats.maxTimestamp,,
+                                   stats.maxLocalDeletionTime,
                                    tombstones,
                                    minColumnNamesSeen,
                                    maxColumnNamesSeen,

@@ -249,7 +249,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + add
             params.setComplexDeletionTimeForOverwrite(column, writer);
@@ -264,12 +264,12 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doAdd(t, writer, column, params);
         }
 
-        static void doAdd(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doAdd(Term t, Row.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -291,7 +291,7 @@ public abstract class Sets
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)

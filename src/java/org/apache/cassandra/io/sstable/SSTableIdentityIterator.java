@@ -29,7 +29,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public class SSTableIdentityIterator extends SSTableAtomIterator implements Comparable<SSTableIdentityIterator>, AtomIterator
 {
-    private final CFMetaData metadata;
+    private final SSTableReader sstable;
     private final DecoratedKey key;
     private final DeletionTime partitionLevelDeletion;
     private final String filename;
@@ -42,20 +42,9 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
      */
     public SSTableIdentityIterator(SSTableReader sstable, RandomAccessReader file, DecoratedKey key)
     {
-        this(sstable.metadata, file, file.getPath(), key, sstable, LegacyLayout.Flag.LOCAL);
-    }
-
-    // sstable may be null, in which case we assume the data is in the current file format
-    private SSTableIdentityIterator(CFMetaData metadata,
-                                    DataInput in,
-                                    String filename,
-                                    DecoratedKey key,
-                                    SSTableReader sstable,
-                                    LegacyLayout.Flag flag)
-    {
-        super(in, flag, FBUtilities.nowInSeconds(), sstable == null ? Descriptor.Version.CURRENT : sstable.descriptor.version);
-        this.metadata = metadata;
-        this.filename = filename;
+        super(file, LegacyLayout.Flag.LOCAL, FBUtilities.nowInSeconds(), sstable.descriptor.version);
+        this.sstable = sstable;
+        this.filename = file.getPath();
         this.key = key;
 
         try
@@ -64,20 +53,19 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
         }
         catch (IOException e)
         {
-            if (sstable != null)
-                sstable.markSuspect();
+            sstable.markSuspect();
             throw new CorruptSSTableException(e, filename);
         }
     }
 
     public CFMetaData metadata()
     {
-        return metadata;
+        return sstable.metadata;
     }
 
     public PartitionColumns columns()
     {
-        return metadata.partitionColumns();
+        return metadata().partitionColumns();
     }
 
     public boolean isReverseOrder()
@@ -109,6 +97,12 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
     public String getPath()
     {
         return filename;
+    }
+
+    public AtomStats stats()
+    {
+        // TODO: we should start collecting the minTimestamp and the minTTL
+        return new AtomStats(Math.max(0, sstable.sstableMetadata.minTimestamp), 0, 0);
     }
 
     public int compareTo(SSTableIdentityIterator o)

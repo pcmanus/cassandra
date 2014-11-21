@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db.marshal;
 
+import java.io.DataInput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
@@ -28,6 +30,8 @@ import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.MarshalException;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Specifies a Comparator for a specific type of ByteBuffer.
@@ -233,6 +237,31 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public List<AbstractType<?>> getComponents()
     {
         return Collections.<AbstractType<?>>singletonList(this);
+    }
+
+    /**
+    * The length of values for this type if all values are of fixed length, -1 otherwise.
+     */
+    protected int valueLengthIfFixed()
+    {
+        return -1;
+    }
+
+    public void writeValue(ByteBuffer value, DataOutputPlus out) throws IOException
+    {
+        if (valueLengthIfFixed() >= 0)
+            out.write(value);
+        else
+            ByteBufferUtil.writeWithLength(value, out);
+    }
+
+    public ByteBuffer readValue(DataInput in) throws IOException
+    {
+        int length = valueLengthIfFixed();
+        if (length >= 0)
+            return ByteBufferUtil.read(in, length);
+        else
+            return ByteBufferUtil.readWithLength(in);
     }
 
     /**

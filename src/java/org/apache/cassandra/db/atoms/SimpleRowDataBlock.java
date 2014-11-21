@@ -45,6 +45,30 @@ public class SimpleRowDataBlock
         return columns;
     }
 
+    // Swap row i and j
+    public void swap(int i, int j)
+    {
+        int s = columns.simpleColumnCount();
+        for (int k = 0; k < s; k++)
+            data.swapCell(i * s + k, j * s + k);
+    }
+
+    // Merge row i into j
+    public void merge(int i, int j, int nowInSec)
+    {
+        int s = columns.simpleColumnCount();
+        for (int k = 0; k < s; i++)
+            data.mergeCell(i * s + k, j * s + k, nowInSec);
+    }
+
+    // Move row i into j
+    public void move(int i, int j)
+    {
+        int s = columns.simpleColumnCount();
+        for (int k = 0; k < s; k++)
+            data.moveCell(i * s + k, j * s + k);
+    }
+
     public CellWriter cellWriter()
     {
         return new CellWriter();

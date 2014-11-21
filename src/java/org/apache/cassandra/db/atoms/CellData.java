@@ -104,6 +104,54 @@ class CellData
         setDefaults(capacity, newCapacity);
     }
 
+    // Swap cell i and j
+    public void swapCell(int i, int j)
+    {
+        ByteBuffer value = values[j];
+        long tstamp = timestamps[j];
+        int delTime = delTimesAndTTLs[2 * j];
+        int ttl = delTimesAndTTLs[(2 * j) + 1];
+
+        moveCell(i, j);
+
+        values[i] = value;
+        timestamps[i] = tstamp;
+        delTimesAndTTLs[2 * i] = delTime;
+        delTimesAndTTLs[(2 * i) + 1] = ttl;
+    }
+
+    // Merge cell i into j
+    public void mergeCell(int i, int j, int nowInSec)
+    {
+        long tsi = timestamps[i], tsj = timestamps[j];
+        if (tsi != tsj)
+        {
+            if (tsi < tsj)
+                moveCell(j, i);
+            return;
+        }
+        boolean iLive = delTimesAndTTLs[i * 2] > nowInSec;
+        boolean jLive = delTimesAndTTLs[j * 2] > nowInSec;
+        if (iLive != jLive)
+        {
+            if (jLive)
+                moveCell(j, i);
+            return;
+        }
+
+        if (values[i].compareTo(values[j]) >= 0)
+            moveCell(j, i);
+    }
+
+    // Move cell i into j
+    public void moveCell(int i, int j)
+    {
+        values[j] = values[i];
+        timestamps[j] = timestamps[i];
+        delTimesAndTTLs[2 * j] = delTimesAndTTLs[2 * i];
+        delTimesAndTTLs[(2 * j) + 1] = delTimesAndTTLs[(2 * i) + 1];
+    }
+
     static class ReusableCell implements Cell
     {
         CellData data;
@@ -158,4 +206,3 @@ class CellData
         }
     }
 }
-

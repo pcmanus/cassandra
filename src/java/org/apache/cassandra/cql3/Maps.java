@@ -274,7 +274,7 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             // delete + put
             params.setComplexDeletionTimeForOverwrite(column, writer);
@@ -299,7 +299,7 @@ public abstract class Maps
             k.collectMarkerSpecification(boundNames);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             ByteBuffer key = k.bindAndGet(params.options);
             ByteBuffer value = t.bindAndGet(params.options);
@@ -332,12 +332,12 @@ public abstract class Maps
             super(column, t);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             doPut(t, writer, column, params);
         }
 
-        static void doPut(Term t, Rows.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
+        static void doPut(Term t, Row.Writer writer, ColumnDefinition column, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal value = t.bind(params.options);
             if (value == null)
@@ -357,7 +357,7 @@ public abstract class Maps
             super(column, k);
         }
 
-        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Rows.Writer writer, UpdateParameters params) throws InvalidRequestException
+        public void execute(ByteBuffer rowKey, ClusteringPrefix clustering, Row.Writer writer, UpdateParameters params) throws InvalidRequestException
         {
             Term.Terminal key = t.bind(params.options);
             if (key == null)

@@ -30,8 +30,4 @@ public abstract class RangeTombstoneMarkers
 {
     private RangeTombstoneMarkers() {}
 
-    public interface Writer
-    {
-        public void newRangeTombstoneMarker(boolean isOpenMarker, DeletionTime delTime, RangeTombstoneMarker[] versions);
-    }
 }
