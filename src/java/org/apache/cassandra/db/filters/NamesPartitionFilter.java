@@ -22,7 +22,6 @@ import java.util.*;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
-import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -113,12 +112,14 @@ public class NamesPartitionFilter implements PartitionFilter
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, DecoratedKey key)
     {
-        return new SSTableNamesIterator(sstable, key, selectedColumns, prefixes);
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
     {
-        return new SSTableNamesIterator(sstable, file, key, selectedColumns, prefixes, indexEntry);
+        // TODO
+        throw new UnsupportedOperationException();
     }
 
     public AtomIterator getAtomIterator(Partition partition)

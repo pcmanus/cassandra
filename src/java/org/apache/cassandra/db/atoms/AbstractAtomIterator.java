@@ -88,4 +88,3 @@ public abstract class AbstractAtomIterator extends AbstractIterator<Atom> implem
     {
     }
 }
-

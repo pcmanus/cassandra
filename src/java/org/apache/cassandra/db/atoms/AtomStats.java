@@ -17,6 +17,9 @@
  */
 package org.apache.cassandra.db.atoms;
 
+import org.apache.cassandra.db.DeletionTime;
+import org.apache.cassandra.io.sstable.ColumnStats;
+
 /**
  * General statistics on atoms.
  */
@@ -24,29 +27,19 @@ public class AtomStats
 {
     // We should use this sparingly obviously
     public static final AtomStats NO_STATS = new AtomStats(Cells.NO_TIMESTAMP,
-                                                           Cells.NO_TIMESTAMP,
-                                                           Cells.NO_DELETION_TIME,
                                                            Cells.NO_DELETION_TIME,
                                                            Cells.NO_TTL);
 
     public final long minTimestamp;
-    public final long maxTimestamp;
-
     public final int minLocalDeletionTime;
-    public final int maxLocalDeletionTime;
-
     public final int minTTL;
 
-    private AtomStats(long minTimestamp,
-                      long maxTimestam,
+    public AtomStats(long minTimestamp,
                       int minLocalDeletionTime,
-                      int maxLocalDeletionTime,
                       int minTTL)
     {
         this.minTimestamp = minTimestamp;
-        this.maxTimestamp = maxTimestamp;
         this.minLocalDeletionTime = minLocalDeletionTime;
-        this.maxLocalDeletionTime = maxLocalDeletionTime;
         this.minTTL = minTTL;
     }
 
@@ -55,55 +48,32 @@ public class AtomStats
         long minTimestamp = this.minTimestamp == Cells.NO_TIMESTAMP
                           ? that.minTimestamp
                           : (that.minTimestamp == Cells.NO_TIMESTAMP ? this.minTimestamp : Math.min(this.minTimestamp, that.minTimestamp));
-        long maxTimestamp = this.maxTimestamp == Cells.NO_TIMESTAMP
-                          ? that.maxTimestamp
-                          : (that.maxTimestamp == Cells.NO_TIMESTAMP ? this.maxTimestamp : Math.max(this.maxTimestamp, that.maxTimestamp));
 
-        long minDelTime = this.minLocalDeletionTime == Cells.NO_DELETION_TIME
-                         ? that.minLocalDeletionTime
-                         : (that.minLocalDeletionTime == Cells.NO_DELETION_TIME ? this.minLocalDeletionTime : Math.min(this.minLocalDeletionTime, that.minLocalDeletionTime));
-        long maxDelTime = this.maxLocalDeletionTime == Cells.NO_DELETION_TIME
-                         ? that.maxLocalDeletionTime
-                         : (that.maxLocalDeletionTime == Cells.NO_DELETION_TIME ? this.maxLocalDeletionTime : Math.max(this.maxLocalDeletionTime, that.maxLocalDeletionTime));
+        int minDelTime = this.minLocalDeletionTime == Cells.NO_DELETION_TIME
+                       ? that.minLocalDeletionTime
+                       : (that.minLocalDeletionTime == Cells.NO_DELETION_TIME ? this.minLocalDeletionTime : Math.min(this.minLocalDeletionTime, that.minLocalDeletionTime));
 
         int minTTL = this.minTTL == Cells.NO_TTL
                    ? that.minTTL
                    : (that.minTTL == Cells.NO_TTL ? this.minTTL : Math.min(this.minTTL, that.minTTL));
 
         return new AtomStats(minTimestamp,
-                             maxTimestamp,
                              minDelTime,
-                             maxDelTime,
                              minTTL);
     }
 
     public static class Collector
     {
-        private boolean timestampIsSet;
-        private long minTimestamp;
-        private long maxTimestamp;
-
-        private boolean delTimeIsSet;
-        private int minDeletionTime;
-        private int maxDeletionTime;
-
-        private int minTTL;
+        private ColumnStats.MinTracker<Long> minTimestamp = new ColumnStats.MinTracker<>(Cells.NO_TIMESTAMP);
+        private ColumnStats.MinTracker<Integer> minDeletionTime = new ColumnStats.MinTracker<>(Cells.NO_DELETION_TIME);
+        private ColumnStats.MinTracker<Integer> minTTL = new ColumnStats.MinTracker<>(0);
 
         public void updateTimestamp(long timestamp)
         {
             if (timestamp == Cells.NO_TIMESTAMP)
                 return;
 
-            if (timestampIsSet)
-            {
-                this.minTimestamp = Math.min(minTimestamp, timestamp);
-                this.minTimestamp = Math.min(maxTimestamp, timestamp);
-            }
-            else
-            {
-                this.minTimestamp = this.maxTimestamp = timestamp;
-                timestampIsSet = true;
-            }
+            minTimestamp.update(timestamp);
         }
 
         public void updateLocalDeletionTime(int deletionTime)
@@ -111,16 +81,7 @@ public class AtomStats
             if (deletionTime == Cells.NO_DELETION_TIME)
                 return;
 
-            if (delTimeIsSet)
-            {
-                this.minDelTime = Math.min(minDelTime, minDelTime);
-                this.minDelTime = Math.min(maxDelTime, minDelTime);
-            }
-            else
-            {
-                this.minDelTime = this.maxDelTime = deletionTime;
-                delTimeIsSet = true;
-            }
+            minDeletionTime.update(deletionTime);
         }
 
         public void updateDeletionTime(DeletionTime deletionTime)
@@ -130,20 +91,6 @@ public class AtomStats
 
             updateTimestamp(deletionTime.markedForDeleteAt());
             updateLocalDeletionTime(deletionTime.localDeletionTime());
-
-            if (deletionTime == Cells.NO_DELETION_TIME)
-                return;
-
-            if (delTimeIsSet)
-            {
-                this.minDelTime = Math.min(minDelTime, minDelTime);
-                this.minDelTime = Math.min(maxDelTime, minDelTime);
-            }
-            else
-            {
-                this.minDelTime = this.maxDelTime = deletionTime;
-                delTimeIsSet = true;
-            }
         }
 
         public void updateTTL(int ttl)
@@ -151,16 +98,14 @@ public class AtomStats
             if (ttl <= Cells.NO_TTL)
                 return;
 
-            minTTL = Math.min(minTTL, ttl);
+            minTTL.update(ttl);
         }
 
         public AtomStats get()
         {
-            return new AtomStats(timestampIsSet ? minTimestamp : Cells.NO_TIMESTAMP,
-                                 timestampIsSet ? maxTimestamp : Cells.NO_TIMESTAMP,
-                                 delTimeIsSet ? minDelTime : Cells.NO_DELETION_TIME,
-                                 delTimeIsSet ? maxDelTime : Cells.NO_DELETION_TIME,
-                                 minTTL);
+            return new AtomStats(minTimestamp.get(),
+                                 minDeletionTime.get(),
+                                 minTTL.get());
         }
     }
 }

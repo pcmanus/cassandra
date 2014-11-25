@@ -103,8 +103,15 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
     public int operationCount()
     {
         return rowCount()
-             + deletionInfo().rangeCount()
-             + (deletionInfo().getTopLevelDeletion().isLive() ? 0 : 1);
+             + deletionInfo.rangeCount()
+             + (deletionInfo.getTopLevelDeletion().isLive() ? 0 : 1);
+    }
+
+    // Note that one shouldn't use the return deletionInfo to add range tombstone to
+    // this object as this wouldn't update the stats properly (use addRangeTombstone instead)
+    public DeletionInfo deletionInfo()
+    {
+        return deletionInfo;
     }
 
     public int dataSize()
@@ -262,91 +269,75 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
         {
-            throw new UnsupportedOperationException();
-            //if (version < MessagingService.VERSION_30)
-            //{
-            //    // TODO
-            //    throw new UnsupportedOperationException();
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
 
-            //    // if (cf == null)
-            //    // {
-            //    //     out.writeBoolean(false);
-            //    //     return;
-            //    // }
+                // if (cf == null)
+                // {
+                //     out.writeBoolean(false);
+                //     return;
+                // }
 
-            //    // out.writeBoolean(true);
-            //    // serializeCfId(cf.id(), out, version);
-            //    // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
-            //    // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-            //    // int count = cf.getColumnCount();
-            //    // out.writeInt(count);
-            //    // int written = 0;
-            //    // for (Cell cell : cf)
-            //    // {
-            //    //     columnSerializer.serialize(cell, out);
-            //    //     written++;
-            //    // }
-            //    // assert count == written: "Table had " + count + " columns, but " + written + " written";
-            //}
+                // out.writeBoolean(true);
+                // serializeCfId(cf.id(), out, version);
+                // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
+                // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+                // int count = cf.getColumnCount();
+                // out.writeInt(count);
+                // int written = 0;
+                // for (Cell cell : cf)
+                // {
+                //     columnSerializer.serialize(cell, out);
+                //     written++;
+                // }
+                // assert count == written: "Table had " + count + " columns, but " + written + " written";
+            }
 
-            //CFMetaData metadata = update.metadata;
-
-            //serializeCfId(metadata.cfId, out, version);
-
-            //// TODO: we could consider writing the token (provided this is done by the partitioner,
-            //// LocalPartition and BytesPartitioner wouldn't have to write anything more, and random
-            //// partition would be a single long)
-            //ByteBufferUtil.writeWithShortLength(update.partitionKey().getKey(), out);
-
-            //metadata.layout().deletionInfoSerializer().serialize(update.deletionInfo(), out, version);
-            //out.writeInt(update.rowUpdates.size());
-            //for (RowUpdate row : update.rowUpdates)
-            //    metadata.layout().rowsSerializer().serialize(row, out);
+            AtomIteratorSerializer.serializer.serialize(update.seekableAtomIterator(update.columns(), false), out, version);
         }
 
         public PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
         {
-            throw new UnsupportedOperationException();
-            //CFMetaData metadata;
-            //DeletionInfo delInfo;
-            //List<RowUpdate> updates;
-            //if (version < MessagingService.VERSION_30)
-            //{
-            //    // TODO
-            //    throw new UnsupportedOperationException();
-            //    //if (!in.readBoolean())
-            //    //    return null;
+            // TODO Add back the support of the 'flag'
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
+                //if (!in.readBoolean())
+                //    return null;
 
-            //    //ColumnFamily cf = factory.create(Schema.instance.getCFMetaData(deserializeCfId(in, version)));
+                //ColumnFamily cf = factory.create(Schema.instance.getCFMetaData(deserializeCfId(in, version)));
 
-            //    //if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
-            //    //{
-            //    //    SuperColumns.deserializerSuperColumnFamily(in, cf, flag, version);
-            //    //}
-            //    //else
-            //    //{
-            //    //    cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
+                //if (cf.metadata().isSuper() && version < MessagingService.VERSION_20)
+                //{
+                //    SuperColumns.deserializerSuperColumnFamily(in, cf, flag, version);
+                //}
+                //else
+                //{
+                //    cf.delete(cf.getComparator().deletionInfoSerializer().deserialize(in, version));
 
-            //    //    ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-            //    //    int size = in.readInt();
-            //    //    for (int i = 0; i < size; ++i)
-            //    //        cf.addColumn(columnSerializer.deserialize(in, flag));
-            //    //}
-            //    //return cf;
-            //}
-            //else
-            //{
-            //    metadata = Schema.instance.getCFMetaData(deserializeCfId(in, version));
-            //    key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
-            //    delInfo = metadata.layout().deletionInfoSerializer().deserialize(in, version);
-            //    int size = in.readInt();
-            //    updates = new ArrayList<>(size);
-            //    throw new UnsupportedOperationException();
-            //    //for (int i = 0; i < size; i++)
-            //    //{
-            //    //    metadata.layout().rowsSerializer().deserialize(in, version, flag, writer, metadata);
-            //    //}
-            //}
+                //    ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
+                //    int size = in.readInt();
+                //    for (int i = 0; i < size; ++i)
+                //        cf.addColumn(columnSerializer.deserialize(in, flag));
+                //}
+                //return cf;
+            }
+
+            assert key == null;
+
+            AtomIteratorSerializer.FullHeader fh = AtomIteratorSerializer.serializer.deserializeHeader(in, version);
+            assert !fh.header.isReversed;
+            // TODO: get a better initial capacity
+            PartitionUpdate upd = new PartitionUpdate(fh.header.metadata, fh.header.key, fh.header.columns, 1);
+            update.addPartitionDeletion(fh.partitionDeletion);
+            update.staticRow = fh.staticRow;
+            update.sorted = true;
+
+            RangeTombstoneMarker.Writer markerWriter = update.new RangeTombstoneCollector();
+            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, update.writer(), markerWriter);
         }
 
         public PartitionUpdate deserialize(DataInput in, int version) throws IOException

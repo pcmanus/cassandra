@@ -40,7 +40,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
     protected int rows;
 
-    private final AtomStats.Collector statsCollector = new AtomStats.Collector;
+    private final AtomStats.Collector statsCollector = new AtomStats.Collector();
 
     // row 'i' clustering prefix is composed of the metadata.clusteringColumns.size() elements starting at 'clustering[rows * i]',
     // its timestamp is at 'timestamps[i]' and the row itself is at 'updates[i]'. The index 'i' in timestamps and updates
@@ -65,7 +65,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         this.columns = columns;
         this.data = data;
 
-        statsCollector.updateDeletionTime(deletionInfo.partitionLevelDeletion());
+        statsCollector.updateDeletionTime(deletionInfo.getTopLevelDeletion());
         Iterator<RangeTombstone> iter = deletionInfo.rangeIterator();
         while (iter.hasNext())
             statsCollector.updateDeletionTime(iter.next().data);
@@ -121,11 +121,6 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         return columns;
     }
 
-    private DeletionInfo deletionInfo()
-    {
-        return deletionInfo;
-    }
-
     public Row staticRow()
     {
         return staticRow == null ? Rows.EMPTY_STATIC_ROW : staticRow;
@@ -134,6 +129,23 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
     public AtomStats stats()
     {
         return statsCollector.get();
+    }
+
+    public void addPartitionDeletion(DeletionTime deletionTime)
+    {
+        statsCollector.updateDeletionTime(deletionTime);
+        deletionInfo.add(deletionTime);
+    }
+
+    public void addRangeTombstone(ClusteringPrefix from, ClusteringPrefix to, DeletionTime deletion)
+    {
+        addRangeTombstone(new RangeTombstone(from.takeAlias(), to.takeAlias(), deletion.takeAlias()));
+    }
+
+    public void addRangeTombstone(RangeTombstone range)
+    {
+        statsCollector.updateDeletionTime(range.data);
+        deletionInfo.add(range, metadata.comparator);
     }
 
     public int rowCount()
@@ -148,58 +160,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
     public Iterator<Row> iterator()
     {
-        return new UnmodifiableIterator<Row>()
-        {
-            private final ClusteringPrefix clustering = new AbstractClusteringPrefix()
-            {
-                public int size()
-                {
-                    return metadata.clusteringColumns().size();
-                }
-
-                public ByteBuffer get(int i)
-                {
-                    int base = row * metadata.clusteringColumns().size();
-                    return clusterings[base + i];
-                }
-            };
-
-            private final AbstractReusableRow reusableRow = new AbstractReusableRow()
-            {
-                protected RowDataBlock data()
-                {
-                    return data;
-                }
-
-                protected int row()
-                {
-                    return row;
-                }
-
-                public ClusteringPrefix clustering()
-                {
-                    return clustering;
-                }
-
-                public long timestamp()
-                {
-                    return timestamps[row];
-                }
-            };
-
-            private int row = -1;
-
-            public boolean hasNext()
-            {
-                return row + 1 < rows;
-            }
-
-            public Row next()
-            {
-                ++row;
-                return reusableRow;
-            }
-        };
+        return new RowIterator();
     }
 
     public SearchIterator<ClusteringPrefix, Row> searchIterator()
@@ -209,7 +170,87 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
     public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
     {
-        throw new UnsupportedOperationException();
+        return slices.makeIterator(seekableAtomIterator(columns, reversed));
+    }
+
+    protected SeekableAtomIterator seekableAtomIterator(PartitionColumns columns, boolean reversed)
+    {
+        return new AbstractSeekableIterator(this, columns, reversed)
+        {
+            private final RowIterator rowIterator = new RowIterator;
+            private RowAndTombstoneMergeIterator mergeIterator = new RowAndTombstoneMergeIterator();
+
+            protected Atom computeNext()
+            {
+                if (mergeIterator.rangeIter == null)
+                    mergeIterator.setTo(rowIterator, deletionInfo().rangeIterator());
+
+                return mergeIterator.hasNext() ? mergeIterator.next() : endOfData();
+            }
+
+            public boolean seekTo(ClusteringPrefix from, ClusteringPrefix to)
+            {
+                mergeIterator.setTo(, deletionInfo().rangeIterator(from, EmptyClusteringPrefix.TOP));
+            }
+        };
+    }
+
+    private class RowIterator extends AbstractIterator<Row>
+    {
+        private final AbstractReusableRow reusableRow = new AbstractReusableRow()
+        {
+            protected RowDataBlock data()
+            {
+                return data;
+            }
+
+            protected int row()
+            {
+                return row;
+            }
+
+            public ClusteringPrefix clustering()
+            {
+                return clustering;
+            }
+
+            public long timestamp()
+            {
+                return timestamps[row];
+            }
+        };
+
+        private final ClusteringPrefix clustering = new AbstractClusteringPrefix()
+        {
+            final int size = metadata.clusteringColumns().size();
+
+            public int size()
+            {
+                return size;
+            }
+
+            public ByteBuffer get(int i)
+            {
+                int base = row * size;
+                return clusterings[base + i];
+            }
+        };
+
+        private int row = -1;
+
+        public Row computeNext()
+        {
+            return ++row >= rows ? endOfData() : reusableRow;
+        }
+    }
+
+
+    private static AbstractSeekableIterator extends AbstractAtomIterator implements SeekableAtomIterator
+    {
+        private AbstractSeekableIterator(AbstractPartitionData data, PartitionColumns columns, boolean isReverseOrder)
+        {
+            super(data.metadata, data.key, data.partitionLevelDeletion(), columns, data.staticRow, isReverseOrder, data.stats());
+        }
     }
 
     protected class Writer extends RowDataBlock.Writer
@@ -221,7 +262,6 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         public void writeClustering(ClusteringPrefix clustering)
         {
-            assert !closed;
             assert clustering.eoc() == ClusteringPrefix.EOC.NONE;
             ensureCapacity(row);
             int base = row * metadata.clusteringColumns().size();
@@ -231,7 +271,6 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         public void writeTimestamp(long timestamp)
         {
-            assert !closed;
             ensureCapacity(row);
             timestamps[row] = timestamp;
             statsCollector.updateTimestamp(timestamp);
@@ -241,7 +280,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
             statsCollector.updateTimestamp(timestamp);
-            statsCollector.updateLocalDeletionTime(localDelTime);
+            statsCollector.updateLocalDeletionTime(localDeletionTime);
             statsCollector.updateTTL(ttl);
 
             super.writeCell(column, isCounter, value, timestamp, localDeletionTime, ttl, path);
@@ -272,20 +311,20 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         }
     }
 
-    protected class RangeTombstoneCollector
+    protected class RangeTombstoneCollector implements RangeTombstoneMarker.Writer
     {
         private ClusteringPrefix open;
         private DeletionTime data;
 
-        public void addMarker(RangeTombstoneMarker marker)
+        public void writeMarker(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime);
         {
-            ClusteringPrefix clustering = marker.clustering().takeAlias();
-            if (marker.isOpenMarker())
+            ClusteringPrefix clustering = clustering.takeAlias();
+            if (isOpenMarker)
             {
                 if (open != null)
                     addRangeTombstone(open, clustering, data);
                 open = clustering;
-                data = marker.delTime().takeAlias();
+                data = delTime.takeAlias();
             }
             else
             {
@@ -296,8 +335,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         private void addRangeTombstone(ClusteringPrefix min, ClusteringPrefix max, DeletionTime dt)
         {
-            assert !closed;
-            deletionInfo.add(new RangeTombstone(min, max, dt), metadata.comparator);
+            AbstractPartitionData.this.addRangeTombstone(min, max, dt);
         }
     }
 }

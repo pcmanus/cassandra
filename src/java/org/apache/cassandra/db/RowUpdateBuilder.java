@@ -92,7 +92,7 @@ public class RowUpdateBuilder
                                                clustering.withEOC(ClusteringPrefix.EOC.END),
                                                timestamp,
                                                FBUtilities.nowInSeconds());
-        update.deletionInfo().add(rt, update.metadata().comparator);
+        update.addRangeTombstone(rt);
     }
 
     public static Mutation deleteRow(CFMetaData metadata, long timestamp, Mutation mutation, Object... clusteringValues)

@@ -165,6 +165,7 @@ public class StreamReader
         private final CFMetaData metadata;
         private final DataInput in;
         private final Descriptor.Version version;
+        private final AtomStats.Collector collector = new AtomStats.Collector();
 
         private DecoratedKey key;
         private DeletionTime partitionLevelDeletion;
@@ -232,24 +233,29 @@ public class StreamReader
 
         public AtomStats stats()
         {
+            // TODO
+            throw new UnsupportedOperationException();
         }
 
         protected Atom computeNext()
         {
-            if (first != null)
-            {
-                Atom toReturn = first;
-                first = null;
-                return toReturn;
-            }
+            // TODO
+            throw new UnsupportedOperationException();
 
-            if (!atomIter.hasNext())
-                return endOfData();
+            //if (first != null)
+            //{
+            //    Atom toReturn = first;
+            //    first = null;
+            //    return toReturn;
+            //}
 
-            Atom atom = atomIter.next();
-            return metadata.isCounter() && atom.kind() == Atom.Kind.ROW
-                 ? maybeMarkLocalToBeCleared((Row)atom)
-                 : atom;
+            //if (!atomIter.hasNext())
+            //    return endOfData();
+
+            //Atom atom = atomIter.next();
+            //return metadata.isCounter() && atom.kind() == Atom.Kind.ROW
+            //     ? maybeMarkLocalToBeCleared((Row)atom)
+            //     : atom;
         }
 
         private static Row maybeMarkLocalToBeCleared(Row row)

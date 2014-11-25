@@ -205,7 +205,7 @@ public class DataResolver extends AbstractResolver
                     }
                     else if (markerOpen[i] != null)
                     {
-                        update(i).deletionInfo().add(new RangeTombstone(markerOpen[i], clustering.takeAlias(), markerTime[i]), metadata.comparator);
+                        update(i).addRangeTombstone(markerOpen[i], clustering.takeAlias(), markerTime[i]);
                         markerOpen[i] = null;
                     }
                 }

@@ -19,6 +19,7 @@ package org.apache.cassandra.db.atoms;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.io.IOError;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -26,6 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -69,14 +71,13 @@ public class AtomIteratorSerializer
 
     public static final AtomIteratorSerializer serializer = new AtomIteratorSerializer();
 
-    public void serialize(AtomIterator iterator, DataOutputPlus out, int version)
-    throws IOException
+    public void serialize(AtomIterator iterator, DataOutputPlus out, int version) throws IOException
     {
         Header header = new Header(iterator.metadata(),
                                    iterator.columns(),
                                    iterator.stats());
 
-        serializeCfId(iterator.metadata().cfId, version);
+        serializeCfId(iterator.metadata().cfId, out, version);
         iterator.metadata().getKeyValidator().writeValue(iterator.partitionKey().getKey(), out);
 
         int flags = 0;
@@ -106,24 +107,20 @@ public class AtomIteratorSerializer
         writeColumns(iterator.columns().regulars, out);
 
         if (!partitionDeletion.isLive())
-            writeDelTime(partitionDeletion, iterator.stats(), out);
-
-        Header header = new Header(iterator.metadata(),
-                                   iterator.columns(),
-                                   iterator.stats());
+            writeDelTime(partitionDeletion, header, out);
 
         if (hasStatic)
             AtomSerializer.serializer.serialize(staticRow, header, out, version);
 
-        try (AtomIterato iter = iterator)
+        try (AtomIterator iter = iterator)
         {
             while (iter.hasNext())
                 AtomSerializer.serializer.serialize(iter.next(), header, out, version);
-            AtomSerializer.writeEndOfPartition(out);
+            AtomSerializer.serializer.writeEndOfPartition(out);
         }
     }
 
-    public AtomIterator deserialize(DataInput in, final int version)
+    public FullHeader deserializeHeader(DataInput in, int version)
     {
         CFMetaData metadata = deserializeCfId(in, version);
         DecoratedKey key = StorageService.getPartitioner().decorateKey(metadata.getKeyValidator().readValue(in));
@@ -137,14 +134,13 @@ public class AtomIteratorSerializer
 
         AtomStats stats = readStats(in);
 
-        Columns statics = hasStatic ? readColumns(in) : Columns.NONE;
-        Columns regulars = readColumns(in);
+        Columns statics = hasStatic ? readColumns(in, metadata) : Columns.NONE;
+        Columns regulars = readColumns(in, metadata);
 
-        final Header header = new Header(metadata,
-                                         new PartitionColumns(statics, regulars),
-                                         stats);
+        Header header = new Header(metadata, key, new PartitionColumns(statics, regulars), stats);
 
-        DeletionTime partitionDeletion = hasPartitionDeletion ? readDelTime(in, stats) : DeletionTime.LIVE;
+        DeletionTime partitionDeletion = hasPartitionDeletion ? readDelTime(in, header) : DeletionTime.LIVE;
+
         Row staticRow = Rows.EMPTY_STATIC_ROW;
         if (hasStatic)
         {
@@ -153,46 +149,72 @@ public class AtomIteratorSerializer
             staticRow = row;
         }
 
-        return new AbstractAtomIterator(metadata, key, partitionDeletion, header.columns, staticRow, isReversed, header.stats)
+        return new FullHeader(header, partitionDeletion, staticRow);
+    }
+
+    public void deserializeAtoms(DataInput in, int version, Header header, Row.Writer rowWriter, RangeTombstoneMarker.Writer markerWriter) throws IOException
+    {
+        while (AtomSerializer.serializer.deserialize(in, header, version, rowWriter, markerWriter) != null);
+    }
+
+    public AtomIterator deserialize(final DataInput in, final int version) throws IOException
+    {
+        FullHeader fh = deserializeHeader(in, version);
+        final Header h = fh.header;
+
+        return new AbstractAtomIterator(h.headermetadata, h.key, fh.partitionDeletion, h.columns, fh.staticRow, h.isReversed, h.stats)
         {
             private final ReusableRow row = new ReusableRow(header.columns.regulars);
             private final ReusableRangeTombstoneMarker marker = new ReusableRangeTombstoneMarker();
 
             protected Atom computeNext()
             {
-                Atom.Kind kind = AtomSerializer.deserialize(in, header, version, row.writer(), marker.writer());
-                if (kind == null)
-                    return endOfData();
+                try
+                {
+                    Atom.Kind kind = AtomSerializer.serializer.deserialize(in, h, version, row.writer(), marker.writer());
+                    if (kind == null)
+                        return endOfData();
 
-                return kind == Atom.Kind.ROW ? row : marker;
+                    return kind == Atom.Kind.ROW ? row : marker;
+                }
+                catch (IOException e)
+                {
+                    throw new IOError(e);
+                }
             }
         };
     }
 
-    private void writeColumns(Columns columns, DataOutputPlus out)
+    private void writeColumns(Columns columns, DataOutputPlus out) throws IOException
     {
         out.writeShort(columns.columnCount());
         for (ColumnDefinition column : columns)
             ByteBufferUtil.writeWithShortLength(column.name.bytes, out);
     }
 
-    private Columns readColumns(DataInput in)
+    private Columns readColumns(DataInput in, CFMetaData metadata) throws IOException
     {
         int length = in.readUnsignedShort();
         ColumnDefinition[] columns = new ColumnDefinition[length];
         for (int i = 0; i < length; i++)
-            columns[i] = ByteBufferUtil.readWithShortLength(in);
+        {
+            ByteBuffer name = ByteBufferUtil.readWithShortLength(in);
+            ColumnDefinition column = metadata.getColumnDefinition(name);
+            if (column == null)
+                throw new RuntimeException("Unknown column " + UTF8Type.instance.getString(name) + " during deserialization");
+            columns[i] = column;
+        }
         return new Columns(columns);
     }
 
-    private void writeStats(AtomStats stats, DataOutputPlus out)
+    private void writeStats(AtomStats stats, DataOutputPlus out) throws IOException
     {
         out.writeLong(stats.minTimestamp);
         out.writeInt(stats.minLocalDeletionTime);
         out.writeInt(stats.minTTL);
     }
 
-    private AtomStats readStats(DataInput in)
+    private AtomStats readStats(DataInput in) throws IOException
     {
         long minTimestamp = in.readLong();
         int minLocalDeletionTime = in.readInt();
@@ -200,18 +222,16 @@ public class AtomIteratorSerializer
         return new AtomStats(minTimestamp, minLocalDeletionTime, minTTL);
     }
 
-    public static void writeDelTime(DeletionTime dt, AtomStats stats, DataOutputPlus out)
-    throws IOException
+    public static void writeDelTime(DeletionTime dt, Header header, DataOutputPlus out) throws IOException
     {
-        out.writeLong(dt.markedForDeleteAt() - stats.minTimestamp);
-        out.writeInt(dt.localDeletionTime() - stats.minLocalDeletionTime);
+        out.writeLong(header.encodeTimestamp(dt.markedForDeleteAt()));
+        out.writeInt(header.encodeDeletionTime(dt.localDeletionTime()));
     }
 
-    public static DeletionTime readDelTime(DataInput in, AtomStats stats)
-    throws IOException
+    public static DeletionTime readDelTime(DataInput in, Header header) throws IOException
     {
-        long markedAt = stats.minTimestamp + in.readLong();
-        int localDelTime = stats.minLocalDeletionTime + in.readInt();
+        long markedAt = header.decodeTimestamp(in.readLong());
+        int localDelTime = header.decodeDeletionTime(in.readInt());
         return new SimpleDeletionTime(markedAt, localDelTime);
     }
 
@@ -223,7 +243,7 @@ public class AtomIteratorSerializer
     public CFMetaData deserializeCfId(DataInput in, int version) throws IOException
     {
         UUID cfId = UUIDSerializer.serializer.deserialize(in, version);
-        CFMetaData metadata = Schema.instance.getCF(cfId);
+        CFMetaData metadata = Schema.instance.getCFMetaData(cfId);
         if (metadata == null)
             throw new UnknownColumnFamilyException("Couldn't find cfId=" + cfId, cfId);
 
@@ -237,17 +257,56 @@ public class AtomIteratorSerializer
 
     public static class Header
     {
+        private static final int DEFAULT_BASE_DELETION = computeDefaultBaseDeletion();
+
         public final CFMetaData metadata;
+        public final DecoratedKey key;
         public final PartitionColumns columns;
         public final AtomStats stats;
+        public final boolean isReversed;
+
+        private final long baseTimestamp;
+        private final int baseDeletionTime;
+        private final int baseTTL;
 
         private ReusableClusteringPrefix clustering;
 
-        private Header(CFMetaData metadata, PartitionColumns columns, AtomStats stats)
+        private Header(CFMetaData metadata,
+                       DecoratedKey key,
+                       PartitionColumns columns,
+                       AtomStats stats,
+                       boolean isReversed)
         {
             this.metadata = metadata;
+            this.key = key;
             this.columns = columns;
             this.stats = stats;
+            this.isReversed = isReversed;
+
+            // Not that if a given stats is unset, it means that either it's unused (there is
+            // no tombstone whatsoever for instance) or that we have no information on it. In
+            // that former case, it doesn't matter which base we use but in the former, we use
+            // bases that are more likely to provide small encoded values than the default
+            // "unset" value.
+            this.baseTimestamp = stats.minTimestamp == Cells.NO_TIMESTAMP ? 0 : stats.minTimestamp;
+            this.baseDeletionTime = stats.minLocalDeletionTime == Cells.NO_DELETION_TIME ? DEFAULT_BASE_DELETION : stats.minLocalDeletionTime;
+            this.baseTTL = stats.minTTL;
+        }
+
+        private static int computeDefaultBaseDeletion()
+        {
+            // We need a fixed default, but one that is likely to provide small values (close to 0) when
+            // substracted to deletion times. Since deletion times are 'the current time in seconds', we
+            // use as base Jan 1, 2015 (in seconds).
+            Calendar c = Calendar.getInstance(TimeZone.getTimeZone("GMT-0"), Locale.US);
+            c.set(Calendar.YEAR, 2015);
+            c.set(Calendar.MONTH, Calendar.JANUARY);
+            c.set(Calendar.DAY_OF_MONTH, 1);
+            c.set(Calendar.HOUR_OF_DAY, 0);
+            c.set(Calendar.MINUTE, 0);
+            c.set(Calendar.SECOND, 0);
+            c.set(Calendar.MILLISECOND, 0);
+            return (int)(c.getTimeInMillis() / 1000);
         }
 
         public ReusableClusteringPrefix reusableClustering()
@@ -255,6 +314,50 @@ public class AtomIteratorSerializer
             if (clustering == null)
                 clustering = new ReusableClusteringPrefix(metadata.clusteringColumns().size());
             return clustering;
+        }
+
+        public long encodeTimestamp(long timestamp)
+        {
+            return timestamp - baseTimestamp;
+        }
+
+        public long decodeTimestamp(long timestamp)
+        {
+            return baseTimestamp + timestamp;
+        }
+
+        public int encodeDeletionTime(int deletionTime)
+        {
+            return deletionTime - baseDeletionTime;
+        }
+
+        public int decodeDeletionTime(int deletionTime)
+        {
+            return baseDeletionTime + deletionTime;
+        }
+
+        public int encodeTTL(int ttl)
+        {
+            return ttl - baseTTL;
+        }
+
+        public int decodeTTL(int ttl)
+        {
+            return baseTTL + ttl;
+        }
+    }
+
+    public static class FullHeader
+    {
+        public final Header header;
+        public final DeletionTime partitionDeletion;
+        public final Row staticRow;
+
+        private FullHeader(Header header, DeletionTime partitionDeletion, Row staticRow)
+        {
+            this.header = header;
+            this.partitionDeletion = partitionDeletion;
+            this.staticRow = staticRow;
         }
     }
 }

@@ -49,7 +49,7 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
 
         try
         {
-            this.partitionLevelDeletion = DeletionTime.serializer.deserialize(in);
+            this.partitionLevelDeletion = DeletionTime.serializer.deserialize(file);
         }
         catch (IOException e)
         {
@@ -102,7 +102,7 @@ public class SSTableIdentityIterator extends SSTableAtomIterator implements Comp
     public AtomStats stats()
     {
         // TODO: we should start collecting the minTimestamp and the minTTL
-        return new AtomStats(Math.max(0, sstable.sstableMetadata.minTimestamp), 0, 0);
+        return new AtomStats(sstable.getMinTimestamp(), Cells.NO_DELETION_TIME, Cells.NO_TTL);
     }
 
     public int compareTo(SSTableIdentityIterator o)

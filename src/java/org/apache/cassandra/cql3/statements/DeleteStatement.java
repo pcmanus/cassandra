@@ -66,7 +66,7 @@ public class DeleteStatement extends ModificationStatement
             //   - It's a cell deletion (i.e it's a dense layout and the clustering is full)
             if (clustering.size() == 0)
             {
-                update.deletionInfo().add(params.deletionTime());
+                update.addPartitionDeletion(params.deletionTime());
             }
             else if (cfm.layout().isDense() && clustering.size() == cfm.clusteringColumns().size())
             {
@@ -77,7 +77,7 @@ public class DeleteStatement extends ModificationStatement
             }
             else
             {
-                update.deletionInfo().add(params.makeRangeTombstone(clustering), cfm.comparator);
+                update.addRangeTombstone(params.makeRangeTombstone(clustering));
             }
         }
         else
