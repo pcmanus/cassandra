@@ -119,8 +119,6 @@ public class ClusteringComparator implements Comparator<Clusterable>
         ClusteringPrefix c1 = cl1.clustering();
         ClusteringPrefix c2 = cl1.clustering();
 
-        if (c1 == EmptyClusteringPrefix)
-
         int s1 = c1.size();
         int s2 = c2.size();
         int minSize = Math.min(s1, s2);

@@ -74,8 +74,10 @@ public class AtomIteratorSerializer
     public void serialize(AtomIterator iterator, DataOutputPlus out, int version) throws IOException
     {
         Header header = new Header(iterator.metadata(),
+                                   iterator.partitionKey(),
                                    iterator.columns(),
-                                   iterator.stats());
+                                   iterator.stats(),
+                                   iterator.isReverseOrder());
 
         serializeCfId(iterator.metadata().cfId, out, version);
         iterator.metadata().getKeyValidator().writeValue(iterator.partitionKey().getKey(), out);
@@ -127,7 +129,7 @@ public class AtomIteratorSerializer
         int flags = in.readUnsignedByte();
         boolean isReversed = (flags & IS_REVERSED) != 0;
         if ((flags & IS_EMPTY) != 0)
-            return AtomIterators.emptyIterator(metadata, key, isReversed);
+            return new FullHeader(new Header(metadata, key, PartitionColumns.NONE), true, null, null);
 
         boolean hasPartitionDeletion = (flags & HAS_PARTITION_DELETION) != 0;
         boolean hasStatic = (flags & HAS_STATIC_ROW) != 0;
@@ -149,7 +151,7 @@ public class AtomIteratorSerializer
             staticRow = row;
         }
 
-        return new FullHeader(header, partitionDeletion, staticRow);
+        return new FullHeader(header, false, partitionDeletion, staticRow);
     }
 
     public void deserializeAtoms(DataInput in, int version, Header header, Row.Writer rowWriter, RangeTombstoneMarker.Writer markerWriter) throws IOException
@@ -162,7 +164,10 @@ public class AtomIteratorSerializer
         FullHeader fh = deserializeHeader(in, version);
         final Header h = fh.header;
 
-        return new AbstractAtomIterator(h.headermetadata, h.key, fh.partitionDeletion, h.columns, fh.staticRow, h.isReversed, h.stats)
+        if (fh.isEmpty())
+            return AtomIterators.emptyIterator(h.metadata, h.key, h.isReversed);
+
+        return new AbstractAtomIterator(h.metadata, h.key, fh.partitionDeletion, h.columns, fh.staticRow, h.isReversed, h.stats)
         {
             private final ReusableRow row = new ReusableRow(header.columns.regulars);
             private final ReusableRangeTombstoneMarker marker = new ReusableRangeTombstoneMarker();
@@ -350,12 +355,14 @@ public class AtomIteratorSerializer
     public static class FullHeader
     {
         public final Header header;
+        public final boolean isEmpty;
         public final DeletionTime partitionDeletion;
         public final Row staticRow;
 
-        private FullHeader(Header header, DeletionTime partitionDeletion, Row staticRow)
+        private FullHeader(Header header, boolean isEmpty, DeletionTime partitionDeletion, Row staticRow)
         {
             this.header = header;
+            this.isEmpty = isEmpty;
             this.partitionDeletion = partitionDeletion;
             this.staticRow = staticRow;
         }

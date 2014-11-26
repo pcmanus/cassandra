@@ -20,8 +20,10 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
@@ -68,13 +70,13 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
 
     public static class Serializer
     {
-        public void serializeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version) throws IOException
+        public void serializeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version, List<AbstractType<?>> types) throws IOException
         {
             // TODO: need to handle nulls (different from EMPTY)
             throw new UnsupportedOperationException();
         }
 
-        public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, ClusteringPrefix.Writer writer) throws IOException
+        public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
         {
             throw new UnsupportedOperationException();
         }

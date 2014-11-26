@@ -20,6 +20,7 @@ package org.apache.cassandra.db.partitions;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -170,27 +171,29 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
     public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
     {
-        return slices.makeIterator(seekableAtomIterator(columns, reversed));
+        return slices.makeSliceIterator(seekableAtomIterator(columns, reversed));
     }
 
     protected SeekableAtomIterator seekableAtomIterator(PartitionColumns columns, boolean reversed)
     {
         return new AbstractSeekableIterator(this, columns, reversed)
         {
-            private final RowIterator rowIterator = new RowIterator;
-            private RowAndTombstoneMergeIterator mergeIterator = new RowAndTombstoneMergeIterator();
+            private final RowIterator rowIterator = new RowIterator();
+            private RowAndTombstoneMergeIterator mergeIterator = new RowAndTombstoneMergeIterator(metadata.comparator);
 
             protected Atom computeNext()
             {
-                if (mergeIterator.rangeIter == null)
-                    mergeIterator.setTo(rowIterator, deletionInfo().rangeIterator());
+                if (!mergeIterator.isSet())
+                    mergeIterator.setTo(rowIterator, deletionInfo.rangeIterator());
 
                 return mergeIterator.hasNext() ? mergeIterator.next() : endOfData();
             }
 
             public boolean seekTo(ClusteringPrefix from, ClusteringPrefix to)
             {
-                mergeIterator.setTo(, deletionInfo().rangeIterator(from, EmptyClusteringPrefix.TOP));
+                rowIterator.seekTo(from);
+                mergeIterator.setTo(rowIterator, deletionInfo.rangeIterator(from, EmptyClusteringPrefix.TOP));
+                return mergeIterator.hasNext() && metadata.comparator.compare(mergeIterator.peek().clustering(), to) <= 0;
             }
         };
     }
@@ -242,10 +245,14 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         {
             return ++row >= rows ? endOfData() : reusableRow;
         }
+
+        public void seekTo(ClusteringPrefix from)
+        {
+            ...;
+        }
     }
 
-
-    private static AbstractSeekableIterator extends AbstractAtomIterator implements SeekableAtomIterator
+    private static abstract class AbstractSeekableIterator extends AbstractAtomIterator implements SeekableAtomIterator
     {
         private AbstractSeekableIterator(AbstractPartitionData data, PartitionColumns columns, boolean isReverseOrder)
         {
@@ -316,9 +323,9 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         private ClusteringPrefix open;
         private DeletionTime data;
 
-        public void writeMarker(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime);
+        public void writeMarker(ClusteringPrefix clustering, boolean isOpenMarker, DeletionTime delTime)
         {
-            ClusteringPrefix clustering = clustering.takeAlias();
+            clustering = clustering.takeAlias();
             if (isOpenMarker)
             {
                 if (open != null)

@@ -329,15 +329,15 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
             assert key == null;
 
             AtomIteratorSerializer.FullHeader fh = AtomIteratorSerializer.serializer.deserializeHeader(in, version);
-            assert !fh.header.isReversed;
+            assert !fh.header.isReversed && !fh.isEmpty;
             // TODO: get a better initial capacity
             PartitionUpdate upd = new PartitionUpdate(fh.header.metadata, fh.header.key, fh.header.columns, 1);
-            update.addPartitionDeletion(fh.partitionDeletion);
-            update.staticRow = fh.staticRow;
-            update.sorted = true;
+            upd.addPartitionDeletion(fh.partitionDeletion);
+            upd.staticRow = fh.staticRow;
+            upd.sorted = true;
 
-            RangeTombstoneMarker.Writer markerWriter = update.new RangeTombstoneCollector();
-            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, update.writer(), markerWriter);
+            RangeTombstoneMarker.Writer markerWriter = upd.new RangeTombstoneCollector();
+            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, upd.writer(), markerWriter);
         }
 
         public PartitionUpdate deserialize(DataInput in, int version) throws IOException
