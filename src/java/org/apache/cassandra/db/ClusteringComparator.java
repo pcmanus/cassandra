@@ -86,6 +86,11 @@ public class ClusteringComparator implements Comparator<Clusterable>
         return clusteringTypes.size();
     }
 
+    public List<AbstractType<?>> types()
+    {
+        return clusteringTypes;
+    }
+
     public AbstractType<?> subtype(int i)
     {
         return clusteringTypes.get(i);

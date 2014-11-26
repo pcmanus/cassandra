@@ -63,9 +63,14 @@ public class ArrayBackedPartition extends AbstractPartitionData implements Cache
             {
                 Atom atom = iter.next();
                 if (atom.kind() == Atom.Kind.ROW)
+                {
                     Rows.copy((Row)atom, writer);
+                }
                 else
-                    markerCollector.addMarker((RangeTombstoneMarker)atom);
+                {
+                    RangeTombstoneMarker marker = (RangeTombstoneMarker)atom;
+                    markerCollector.writeMarker(marker.clustering(), marker.isOpenMarker(), marker.delTime());
+                }
             }
         }
         catch (IOException e)

@@ -46,12 +46,12 @@ public class SimpleDeletionTime extends DeletionTime
 
     public long markedForDeleteAt()
     {
-        return markedForDeleteAt();
+        return markedForDeleteAt;
     }
 
     public int localDeletionTime()
     {
-        return localDeletionTime();
+        return localDeletionTime;
     }
 
     public DeletionTime takeAlias()

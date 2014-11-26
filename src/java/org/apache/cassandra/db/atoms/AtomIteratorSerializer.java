@@ -49,6 +49,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
  *         - is reversed: whether the atoms a serialized in reversed clustering order
  *         - has partition deletion: whether or not there is a <partition_deletion> following
  *         - has static row: whether or not there is a <static_row> following
+ *         - has row estimate: whether or not there is a <row_estimate> following
  *     <min_timestamp> is the base timestamp used for delta-encoding timestamps
  *     <min_localDelTime> is the base localDeletionTime used for delta-encoding local deletion times
  *     <min_ttl> is the base localDeletionTime used for delta-encoding ttls
@@ -57,10 +58,12 @@ import org.apache.cassandra.utils.UUIDSerializer;
  *     <columns> is the columns of the rows of the iterator. It's serialized as <static_columns>.
  *     <partition_deletion> is the deletion time for the partition (delta-encoded)
  *     <static_row> is the static row for this partition as serialized by AtomSerializer.
+ *     <row_estimate> is the (potentially estimated) number of rows serialized. This is only use for
+ *         the purpose of some sizing on the receiving end and should not be relied upon too strongly.
  *
  * !!! Please note that the serialized value depends on the schema and as such should not be used as is if
  *     it might be deserialized after the schema as changed !!!
- * TODO: we should add a flag to include the relevant metadata in the header.
+ * TODO: we should add a flag to include the relevant metadata in the header for commit log etc.....
  */
 public class AtomIteratorSerializer
 {
@@ -68,10 +71,16 @@ public class AtomIteratorSerializer
     private static final int IS_REVERSED            = 0x02;
     private static final int HAS_PARTITION_DELETION = 0x04;
     private static final int HAS_STATIC_ROW         = 0x08;
+    private static final int HAS_ROW_ESTIMATE       = 0x10;
 
     public static final AtomIteratorSerializer serializer = new AtomIteratorSerializer();
 
     public void serialize(AtomIterator iterator, DataOutputPlus out, int version) throws IOException
+    {
+        serialize(iterator, out, version, -1);
+    }
+
+    public void serialize(AtomIterator iterator, DataOutputPlus out, int version, int rowEstimate) throws IOException
     {
         Header header = new Header(iterator.metadata(),
                                    iterator.partitionKey(),
@@ -100,6 +109,9 @@ public class AtomIteratorSerializer
         if (hasStatic)
             flags |= HAS_STATIC_ROW;
 
+        if (rowEstimate >= 0)
+            flags |= HAS_ROW_ESTIMATE;
+
         out.writeByte((byte)flags);
 
         writeStats(iterator.stats(), out);
@@ -114,6 +126,9 @@ public class AtomIteratorSerializer
         if (hasStatic)
             AtomSerializer.serializer.serialize(staticRow, header, out, version);
 
+        if (rowEstimate >= 0)
+            out.writeInt(rowEstimate);
+
         try (AtomIterator iter = iterator)
         {
             while (iter.hasNext())
@@ -122,24 +137,81 @@ public class AtomIteratorSerializer
         }
     }
 
-    public FullHeader deserializeHeader(DataInput in, int version)
+    // Please not that this consume the iterator, and as such should not be called unless we have a simple way to
+    // recreate an iterator for both serialize and serializedSize, which is mostly only PartitionUpdate
+    public long serializedSize(AtomIterator iterator, int version, int rowEstimate)
+    {
+        assert rowEstimate >= 0;
+
+        Header header = new Header(iterator.metadata(),
+                                   iterator.partitionKey(),
+                                   iterator.columns(),
+                                   iterator.stats(),
+                                   iterator.isReverseOrder());
+
+        // TODO: we should use vint!
+        TypeSizes sizes = TypeSizes.NATIVE;
+
+        long size = cfIdSerializedSize(iterator.metadata().cfId, sizes, version)
+                  + iterator.metadata().getKeyValidator().writtenLength(iterator.partitionKey().getKey(), sizes)
+                  + 1; // flags
+
+        if (AtomIterators.isEmpty(iterator))
+            return size;
+
+        DeletionTime partitionDeletion = iterator.partitionLevelDeletion();
+        Row staticRow = iterator.staticRow();
+        boolean hasStatic = staticRow != Rows.EMPTY_STATIC_ROW;
+
+        size += statsSerializedSize(iterator.stats(), sizes);
+        if (hasStatic)
+            size += columnsSerializedSize(staticRow.columns(), sizes);
+
+        size += columnsSerializedSize(iterator.columns().regulars, sizes);
+
+        if (!partitionDeletion.isLive())
+            size += delTimeSerializedSize(partitionDeletion, header, sizes);
+
+        if (hasStatic)
+            size += AtomSerializer.serializer.serializedSize(staticRow, header, version, sizes);
+
+        size += sizes.sizeof(rowEstimate);
+
+        try (AtomIterator iter = iterator)
+        {
+            while (iter.hasNext())
+                size += AtomSerializer.serializer.serializedSize(iter.next(), header, version, sizes);
+            size += AtomSerializer.serializer.serializedSizeEndOfPartition(sizes);
+        }
+        catch (IOException e)
+        {
+            // Since this method is supposed to be only called for entirely in-memory data, we shouldn't
+            // get an IOException while closing.
+            throw new RuntimeException();
+        }
+
+        return size;
+    }
+
+    public FullHeader deserializeHeader(DataInput in, int version) throws IOException
     {
         CFMetaData metadata = deserializeCfId(in, version);
         DecoratedKey key = StorageService.getPartitioner().decorateKey(metadata.getKeyValidator().readValue(in));
         int flags = in.readUnsignedByte();
         boolean isReversed = (flags & IS_REVERSED) != 0;
         if ((flags & IS_EMPTY) != 0)
-            return new FullHeader(new Header(metadata, key, PartitionColumns.NONE), true, null, null);
+            return new FullHeader(new Header(metadata, key, PartitionColumns.NONE, AtomStats.NO_STATS, isReversed), true, null, null, 0);
 
         boolean hasPartitionDeletion = (flags & HAS_PARTITION_DELETION) != 0;
         boolean hasStatic = (flags & HAS_STATIC_ROW) != 0;
+        boolean hasRowEstimate = (flags & HAS_ROW_ESTIMATE) != 0;
 
         AtomStats stats = readStats(in);
 
         Columns statics = hasStatic ? readColumns(in, metadata) : Columns.NONE;
         Columns regulars = readColumns(in, metadata);
 
-        Header header = new Header(metadata, key, new PartitionColumns(statics, regulars), stats);
+        Header header = new Header(metadata, key, new PartitionColumns(statics, regulars), stats, isReversed);
 
         DeletionTime partitionDeletion = hasPartitionDeletion ? readDelTime(in, header) : DeletionTime.LIVE;
 
@@ -150,8 +222,8 @@ public class AtomIteratorSerializer
             AtomSerializer.serializer.deserialize(in, header, version, row.writer(), null);
             staticRow = row;
         }
-
-        return new FullHeader(header, false, partitionDeletion, staticRow);
+        int rowEstimate = hasRowEstimate ? in.readInt() : -1;
+        return new FullHeader(header, false, partitionDeletion, staticRow, rowEstimate);
     }
 
     public void deserializeAtoms(DataInput in, int version, Header header, Row.Writer rowWriter, RangeTombstoneMarker.Writer markerWriter) throws IOException
@@ -164,12 +236,12 @@ public class AtomIteratorSerializer
         FullHeader fh = deserializeHeader(in, version);
         final Header h = fh.header;
 
-        if (fh.isEmpty())
+        if (fh.isEmpty)
             return AtomIterators.emptyIterator(h.metadata, h.key, h.isReversed);
 
         return new AbstractAtomIterator(h.metadata, h.key, fh.partitionDeletion, h.columns, fh.staticRow, h.isReversed, h.stats)
         {
-            private final ReusableRow row = new ReusableRow(header.columns.regulars);
+            private final ReusableRow row = new ReusableRow(h.columns.regulars);
             private final ReusableRangeTombstoneMarker marker = new ReusableRangeTombstoneMarker();
 
             protected Atom computeNext()
@@ -197,6 +269,14 @@ public class AtomIteratorSerializer
             ByteBufferUtil.writeWithShortLength(column.name.bytes, out);
     }
 
+    private long columnsSerializedSize(Columns columns, TypeSizes sizes)
+    {
+        long size = sizes.sizeof((short)columns.columnCount());
+        for (ColumnDefinition column : columns)
+            size += sizes.sizeofWithShortLength(column.name.bytes);
+        return size;
+    }
+
     private Columns readColumns(DataInput in, CFMetaData metadata) throws IOException
     {
         int length = in.readUnsignedShort();
@@ -219,6 +299,13 @@ public class AtomIteratorSerializer
         out.writeInt(stats.minTTL);
     }
 
+    private long statsSerializedSize(AtomStats stats, TypeSizes sizes)
+    {
+        return sizes.sizeof(stats.minTimestamp)
+             + sizes.sizeof(stats.minLocalDeletionTime)
+             + sizes.sizeof(stats.minTTL);
+    }
+
     private AtomStats readStats(DataInput in) throws IOException
     {
         long minTimestamp = in.readLong();
@@ -231,6 +318,12 @@ public class AtomIteratorSerializer
     {
         out.writeLong(header.encodeTimestamp(dt.markedForDeleteAt()));
         out.writeInt(header.encodeDeletionTime(dt.localDeletionTime()));
+    }
+
+    public static long delTimeSerializedSize(DeletionTime dt, Header header, TypeSizes sizes)
+    {
+        return sizes.sizeof(header.encodeTimestamp(dt.markedForDeleteAt()))
+             + sizes.sizeof(header.encodeDeletionTime(dt.localDeletionTime()));
     }
 
     public static DeletionTime readDelTime(DataInput in, Header header) throws IOException
@@ -358,13 +451,15 @@ public class AtomIteratorSerializer
         public final boolean isEmpty;
         public final DeletionTime partitionDeletion;
         public final Row staticRow;
+        public final int rowEstimate; // -1 if no estimate
 
-        private FullHeader(Header header, boolean isEmpty, DeletionTime partitionDeletion, Row staticRow)
+        private FullHeader(Header header, boolean isEmpty, DeletionTime partitionDeletion, Row staticRow, int rowEstimate)
         {
             this.header = header;
             this.isEmpty = isEmpty;
             this.partitionDeletion = partitionDeletion;
             this.staticRow = staticRow;
+            this.rowEstimate = rowEstimate;
         }
     }
 }

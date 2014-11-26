@@ -435,7 +435,7 @@ public abstract class Slices
 
         public ClusteringPrefix lowerBound()
         {
-            throw new UnsupportedOperationException();
+            return EmptyClusteringPrefix.BOTTOM;
         }
 
         public boolean hasUpperBound()
@@ -445,7 +445,7 @@ public abstract class Slices
 
         public ClusteringPrefix upperBound()
         {
-            throw new UnsupportedOperationException();
+            return EmptyClusteringPrefix.TOP;
         }
 
         public ClusteringPrefix getStart(int i)

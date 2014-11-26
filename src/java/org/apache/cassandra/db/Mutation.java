@@ -194,7 +194,9 @@ public class Mutation implements IMutation
             buff.append(StringUtils.join(cfnames, ", "));
         }
         else
+        {
             buff.append(StringUtils.join(modifications.values(), ", "));
+        }
         return buff.append("])").toString();
     }
 
@@ -280,7 +282,7 @@ public class Mutation implements IMutation
 
             size += sizes.sizeof(mutation.modifications.size());
             for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
-                size += PartitionUpdate.serializer.serializedSize(entry.getValue(), TypeSizes.NATIVE, version);
+                size += PartitionUpdate.serializer.serializedSize(entry.getValue(), version);
 
             return size;
         }

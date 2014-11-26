@@ -76,6 +76,12 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             throw new UnsupportedOperationException();
         }
 
+        public long serializedSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
+        {
+            // TODO: need to handle nulls (different from EMPTY)
+            throw new UnsupportedOperationException();
+        }
+
         public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
         {
             throw new UnsupportedOperationException();

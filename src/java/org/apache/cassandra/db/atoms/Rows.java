@@ -151,6 +151,32 @@ public abstract class Rows
         throw new UnsupportedOperationException();
     }
 
+    public static String toString(CFMetaData metadata, Row row)
+    {
+        StringBuilder sb = new StringBuilder();
+        ClusteringPrefix clustering = row.clustering();
+        sb.append("Row");
+        if (row.timestamp() != NO_TIMESTAMP)
+            sb.append("@").append(row.timestamp());
+        sb.append(": ");
+        for (int i = 0; i < clustering.size(); i++)
+        {
+            if (i > 0)
+                sb.append(", ");
+            ColumnDefinition c = metadata.clusteringColumns().get(i);
+            sb.append(c.name).append("=").append(c.type.getString(clustering.get(i)));
+        }
+        sb.append(" | ");
+        boolean isFirst = true;
+        for (Cell cell : row)
+        {
+            if (isFirst) isFirst = false; else sb.append(", ");
+            ColumnDefinition c = cell.column();
+            sb.append(c.name).append("=").append(c.type.getString(cell.value()));
+        }
+        return sb.toString();
+    }
+
     // Merge multiple rows that are assumed to represent the same row (same clustering prefix).
     //public static void merge(ClusteringPrefix clustering, Row[] rows, MergeHelper helper, AtomIterators.MergeListener listener)
     //{

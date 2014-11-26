@@ -248,7 +248,33 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         public void seekTo(ClusteringPrefix from)
         {
-            ...;
+            binarySearch(row, rows, from);
+            // Since we'll actually increment row first thing in computeNext, decrement it now in preparation
+            --row;
+        }
+
+        /**
+         * Simple binary search.
+         * This sets row on either the search name if it's found, or on the "insertion point".
+         */
+        private void binarySearch(int fromIndex, int toIndex, ClusteringPrefix name)
+        {
+            int low = fromIndex;
+            row = toIndex;
+            int high = row - 1;
+            int result = -1;
+            while (low <= high)
+            {
+                row = (low + high) >> 1;
+                if ((result = metadata.comparator.compare(name, clustering)) > 0)
+                    low = row + 1;
+                else if (result == 0)
+                    return;
+                else
+                    high = row - 1;
+            }
+            if (result >= 0)
+                row += 1;
         }
     }
 
@@ -256,7 +282,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
     {
         private AbstractSeekableIterator(AbstractPartitionData data, PartitionColumns columns, boolean isReverseOrder)
         {
-            super(data.metadata, data.key, data.partitionLevelDeletion(), columns, data.staticRow, isReverseOrder, data.stats());
+            super(data.metadata, data.key, data.partitionLevelDeletion(), columns, data.staticRow(), isReverseOrder, data.stats());
         }
     }
 
@@ -299,6 +325,13 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
             statsCollector.updateDeletionTime(complexDeletion);
 
             super.writeComplexDeletion(c, complexDeletion);
+        }
+
+        @Override
+        public void endOfRow()
+        {
+            super.endOfRow();
+            ++rows;
         }
 
         private void ensureCapacity(int rowToSet)

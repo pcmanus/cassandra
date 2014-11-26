@@ -20,6 +20,7 @@ package org.apache.cassandra.db.atoms;
 import java.io.DataInput;
 import java.io.IOException;
 
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 /**
@@ -38,6 +39,12 @@ public interface CellPath
         }
 
         public CellPath deserialize(DataInput in)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+
+        public long serializedSize(CellPath path, TypeSizes sizes)
         {
             // TODO
             throw new UnsupportedOperationException();

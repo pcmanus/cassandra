@@ -70,7 +70,9 @@ public abstract class AtomIterators
      */
     public static boolean isEmpty(AtomIterator iterator)
     {
-        return iterator.partitionLevelDeletion().isLive() && !iterator.hasNext() && iterator.staticRow().isEmpty();
+        return iterator.partitionLevelDeletion().isLive()
+            && !iterator.hasNext()
+            && iterator.staticRow().isEmpty();
     }
 
     /**
@@ -90,8 +92,11 @@ public abstract class AtomIterators
      */
     public static AtomIterator merge(List<AtomIterator> iterators, int nowInSec)
     {
+        assert !iterators.isEmpty();
+        if (iterators.size() == 1)
+            return iterators.get(0);
+
         throw new UnsupportedOperationException();
-        //assert !iterators.isEmpty();
         //return iterators.size() == 1 ? iterators.get(0) : new AtomMergeIterator(iterators, nowInSec);
     }
 

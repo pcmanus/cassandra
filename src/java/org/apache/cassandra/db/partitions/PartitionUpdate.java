@@ -47,9 +47,9 @@ import org.apache.cassandra.utils.UUIDSerializer;
  */
 public class PartitionUpdate extends AbstractPartitionData implements Iterable<Row>, Sorting.Sortable
 {
-    public static final PartitionUpdateSerializer serializer = new PartitionUpdateSerializer();
-
     private boolean isSorted;
+
+    public static final PartitionUpdateSerializer serializer = new PartitionUpdateSerializer();
 
     private final Writer writer = new Writer();
 
@@ -135,6 +135,13 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         return super.searchIterator();
     }
 
+    @Override
+    public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
+    {
+        maybeSort();
+        return super.atomIterator(columns, slices, reversed);
+    }
+
     public PartitionUpdate addAll(PartitionUpdate update)
     {
         // TODO (but do we need IMutation.addAll(), which is the only place that needs it)
@@ -144,6 +151,28 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         //deletionInfo.add(update.deletionInfo);
         //rowUpdates.addAll(update.rowUpdates);
         //return this;
+    }
+
+    @Override
+    public String toString()
+    {
+        StringBuilder sb = new StringBuilder();
+        CFMetaData metadata = metadata();
+        sb.append(String.format("Update[%s.%s] key=%s columns=%s\n",
+                    metadata.ksName,
+                    metadata.cfName,
+                    metadata.getKeyValidator().getString(partitionKey().getKey()),
+                    columns()));
+
+        if (staticRow() != Rows.EMPTY_STATIC_ROW)
+            sb.append("-----\n").append(Rows.toString(metadata, staticRow()));
+
+        Iterator<Row> iterator = iterator();
+        while (iterator.hasNext())
+            sb.append("-----\n").append(Rows.toString(metadata, iterator.next()));
+
+        sb.append("-----\n");
+        return sb.toString();
     }
 
     public void validate()
@@ -174,8 +203,14 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
     private synchronized void sort()
     {
-        if (isSorted || rows == 0)
+        if (isSorted)
             return;
+
+        if (rows <= 1)
+        {
+            isSorted = true;
+            return;
+        }
 
         // Sort the rows - will still potentially contain duplicate (non-reconciled) rows
         Sorting.sort(this);
@@ -265,7 +300,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         }
     };
 
-    public static class PartitionUpdateSerializer implements IVersionedSerializer<PartitionUpdate>
+    public static class PartitionUpdateSerializer
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
         {
@@ -295,10 +330,10 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                 // assert count == written: "Table had " + count + " columns, but " + written + " written";
             }
 
-            AtomIteratorSerializer.serializer.serialize(update.seekableAtomIterator(update.columns(), false), out, version);
+            AtomIteratorSerializer.serializer.serialize(update.seekableAtomIterator(update.columns(), false), out, version, update.rows);
         }
 
-        public PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
+        public static PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
         {
             // TODO Add back the support of the 'flag'
             if (version < MessagingService.VERSION_30)
@@ -331,52 +366,37 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
             AtomIteratorSerializer.FullHeader fh = AtomIteratorSerializer.serializer.deserializeHeader(in, version);
             assert !fh.header.isReversed && !fh.isEmpty;
             // TODO: get a better initial capacity
-            PartitionUpdate upd = new PartitionUpdate(fh.header.metadata, fh.header.key, fh.header.columns, 1);
+            int rowCapacity = fh.rowEstimate > 0 ? fh.rowEstimate : 4;
+
+            PartitionUpdate upd = new PartitionUpdate(fh.header.metadata, fh.header.key, fh.header.columns, rowCapacity);
             upd.addPartitionDeletion(fh.partitionDeletion);
             upd.staticRow = fh.staticRow;
-            upd.sorted = true;
+            upd.isSorted = true;
 
             RangeTombstoneMarker.Writer markerWriter = upd.new RangeTombstoneCollector();
-            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, upd.writer(), markerWriter);
-        }
-
-        public PartitionUpdate deserialize(DataInput in, int version) throws IOException
-        {
-            throw new UnsupportedOperationException();
+            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, upd.writer(false), markerWriter);
+            return upd;
         }
 
         public long serializedSize(PartitionUpdate update, int version)
         {
-            return serializedSize(update, TypeSizes.NATIVE, version);
-        }
+            if (version < MessagingService.VERSION_30)
+            {
+                // TODO
+                throw new UnsupportedOperationException();
+                //if (cf == null)
+                //{
+                //    return typeSizes.sizeof(false);
+                //}
+                //else
+                //{
+                //    return typeSizes.sizeof(true)  /* nullness bool */
+                //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
+                //        + contentSerializedSize(cf, typeSizes, version);
+                //}
+            }
 
-        public long serializedSize(PartitionUpdate update, TypeSizes sizes, int version)
-        {
-            throw new UnsupportedOperationException();
-            //if (version < MessagingService.VERSION_30)
-            //{
-            //    // TODO
-            //    throw new UnsupportedOperationException();
-            //    //if (cf == null)
-            //    //{
-            //    //    return typeSizes.sizeof(false);
-            //    //}
-            //    //else
-            //    //{
-            //    //    return typeSizes.sizeof(true)  /* nullness bool */
-            //    //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
-            //    //        + contentSerializedSize(cf, typeSizes, version);
-            //    //}
-            //}
-
-            //int size = cfIdSerializedSize(update.metadata().cfId,  sizes, version);
-            //size += ByteBufferUtil.serializedSizeWithShortLength(update.partitionKey().getKey(), sizes);
-            //size += update.metadata().layout().deletionInfoSerializer().serializedSize(update.deletionInfo(), version);
-
-            //size += sizes.sizeof(update.rowUpdates.size());
-            //for (RowUpdate row : update.rowUpdates)
-            //    size += update.metadata().layout().rowsSerializer().serializedSize(row, sizes);
-            //return size;
+            return AtomIteratorSerializer.serializer.serializedSize(update.seekableAtomIterator(update.columns(), false), version, update.rows);
         }
     }
 

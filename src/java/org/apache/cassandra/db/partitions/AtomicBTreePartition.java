@@ -93,6 +93,7 @@ public class AtomicBTreePartition implements Partition
         this.metadata = metadata;
         this.partitionKey = partitionKey;
         this.allocator = allocator;
+        this.ref = EMPTY;
     }
 
     public boolean isEmpty()

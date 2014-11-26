@@ -135,9 +135,9 @@ public class RowUpdateBuilder
     {
         ColumnDefinition c = getDefinition(columnName);
         if (value == null)
-            Cells.writeCell(c, bb(value, c.type), timestamp, 0, update.metadata(), writer);
-        else
             Cells.writeTombstone(c, timestamp, writer);
+        else
+            Cells.writeCell(c, bb(value, c.type), timestamp, 0, update.metadata(), writer);
         return this;
     }
 

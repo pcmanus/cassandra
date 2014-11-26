@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.cql3.CQL3Type;
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.MarshalException;
@@ -255,6 +256,14 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
             out.write(value);
         else
             ByteBufferUtil.writeWithLength(value, out);
+    }
+
+    public long writtenLength(ByteBuffer value, TypeSizes sizes)
+    {
+        assert value.hasRemaining();
+        return valueLengthIfFixed() >= 0
+             ? value.remaining()
+             : sizes.sizeofWithLength(value);
     }
 
     public ByteBuffer readValue(DataInput in) throws IOException

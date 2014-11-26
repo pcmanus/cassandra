@@ -206,6 +206,9 @@ public class ComplexRowDataBlock
 
         public boolean hasNext()
         {
+            if (dataBlock == null)
+                return false;
+
             return idx < endIdx;
         }
 

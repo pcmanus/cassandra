@@ -118,7 +118,9 @@ public class SimpleRowDataBlock
 
         public Cell next()
         {
-            return cell.setTo(dataBlock.data, dataBlock.columns.getSimple(column), base + column);
+            cell.setTo(dataBlock.data, dataBlock.columns.getSimple(column), base + column);
+            ++column;
+            return cell;
         }
     }
 

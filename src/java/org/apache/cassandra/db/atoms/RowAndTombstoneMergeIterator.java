@@ -47,8 +47,11 @@ public class RowAndTombstoneMergeIterator extends UnmodifiableIterator<Atom> imp
     {
         this.rowIter = rowIter;
         this.tombstoneIter = tombstoneIter;
-        this.nextRow = this.nextTombstone = this.next = null;
+        this.nextRow = null;
+        this.nextTombstone = null;
+        this.next = null;
         this.inTombstone = false;
+        return this;
     }
 
     public boolean isSet()
