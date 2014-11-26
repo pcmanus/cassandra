@@ -30,6 +30,9 @@ public interface CellPath
 {
     public static final Serializer serializer = new Serializer();
 
+    // Note that only MemtableRowData.BufferCellPath needs to bother with this
+    public int dataSize();
+
     public static class Serializer
     {
         public void serialize(CellPath path, DataOutputPlus out)

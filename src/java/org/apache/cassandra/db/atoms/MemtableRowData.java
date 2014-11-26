@@ -47,6 +47,8 @@ public interface MemtableRowData extends Clusterable
 
     public class BufferRowData implements MemtableRowData
     {
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new BufferRowData(null, 0, null));
+
         private final BufferClusteringPrefix clustering;
         private final long timestamp;
         private final RowDataBlock dataBlock;
@@ -70,12 +72,14 @@ public interface MemtableRowData extends Clusterable
 
         public int dataSize()
         {
-            throw new UnsupportedOperationException();
+            return clustering.dataSize() + 8 + dataBlock.dataSize();
         }
 
         public long unsharedHeapSizeExcludingData()
         {
-            throw new UnsupportedOperationException();
+            return EMPTY_SIZE
+                 + clustering.unsharedHeapSizeExcludingData()
+                 + dataBlock.unsharedHeapSizeExcludingData();
         }
 
         public static ReusableRow createReusableRow()
@@ -129,7 +133,7 @@ public interface MemtableRowData extends Clusterable
 
         public static BufferClusteringPrefix clone(ClusteringPrefix clustering, AbstractAllocator allocator)
         {
-            // We're currently only using this for rows, which don't have a EOC
+            // We're only using this for rows, which don't have a EOC
             assert clustering.eoc() == EOC.NONE;
             ByteBuffer[] values = new ByteBuffer[clustering.size()];
             for (int i = 0; i < values.length; i++)
@@ -147,9 +151,17 @@ public interface MemtableRowData extends Clusterable
             return values[i];
         }
 
-        public long unsharedHeapSize()
+        public long unsharedHeapSizeExcludingData()
         {
             return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(values);
+        }
+
+        public int dataSize()
+        {
+            int size = 0;
+            for (int i = 0; i < size(); i++)
+                size += get(i).remaining();
+            return size;
         }
 
         public ClusteringPrefix takeAlias()
@@ -163,6 +175,11 @@ public interface MemtableRowData extends Clusterable
         public static BufferCellPath clone(CellPath path, AbstractAllocator allocator)
         {
             // TODO
+            throw new UnsupportedOperationException();
+        }
+
+        public int dataSize()
+        {
             throw new UnsupportedOperationException();
         }
     }

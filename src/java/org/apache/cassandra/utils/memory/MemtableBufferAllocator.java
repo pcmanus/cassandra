@@ -90,12 +90,12 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
 
         public void writeClustering(ClusteringPrefix clustering)
         {
-            clustering = MemtableRowData.BufferClusteringPrefix.clone(clustering, allocator);
+            this.clustering = MemtableRowData.BufferClusteringPrefix.clone(clustering, allocator);
         }
 
         public void writeTimestamp(long timestamp)
         {
-            rowTimestamp = timestamp;
+            this.rowTimestamp = timestamp;
         }
 
         @Override

@@ -138,7 +138,7 @@ public abstract class FilteringRow implements Row
                     break;
                 }
             }
-            return next == null;
+            return next != null;
         }
 
         public Cell next()
@@ -146,7 +146,9 @@ public abstract class FilteringRow implements Row
             if (next == null && !hasNext())
                 throw new NoSuchElementException();
 
-            return next;
+            Cell result = next;
+            next = null;
+            return result;
         }
     };
 }

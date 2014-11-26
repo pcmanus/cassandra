@@ -39,6 +39,19 @@ public abstract class Cells
         return nowInSec < cell.localDeletionTime();
     }
 
+    public static String toString(Cell cell)
+    {
+        if (cell.isCounterCell() || cell.path() != null)
+            throw new UnsupportedOperationException();
+
+        return String.format("[%s=%s ts=%d dt=%d ttl=%d]",
+                             cell.column().name,
+                             cell.column().type.getString(cell.value()),
+                             cell.timestamp(),
+                             cell.localDeletionTime(),
+                             cell.ttl());
+    }
+
     public static void write(Cell cell, Row.Writer writer)
     {
         writer.writeCell(cell.column(), cell.isCounterCell(), cell.value(), cell.timestamp(), cell.localDeletionTime(), cell.ttl(), cell.path());

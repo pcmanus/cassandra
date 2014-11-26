@@ -26,6 +26,7 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasable<ClusteringPrefix>
 {
@@ -72,19 +73,96 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     {
         public void serializeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version, List<AbstractType<?>> types) throws IOException
         {
-            // TODO: need to handle nulls (different from EMPTY)
-            throw new UnsupportedOperationException();
+            writeHeader(clustering, out);
+            for (int i = 0; i < clustering.size(); i++)
+            {
+                ByteBuffer v = clustering.get(i);
+                if (v == null || !v.hasRemaining())
+                    continue; // handled in the header
+
+                types.get(i).writeValue(v, out);
+            }
         }
 
         public long serializedSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
         {
-            // TODO: need to handle nulls (different from EMPTY)
-            throw new UnsupportedOperationException();
+            long size = headerBytesCount(clustering.size());
+            for (int i = 0; i < clustering.size(); i++)
+            {
+                ByteBuffer v = clustering.get(i);
+                if (v == null || !v.hasRemaining())
+                    continue; // handled in the header
+
+                size += types.get(i).writtenLength(v, sizes);
+            }
+            return size;
         }
 
         public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
         {
-            throw new UnsupportedOperationException();
+            int[] header = readHeader(clusteringSize, in);
+            for (int i = 0; i < clusteringSize; i++)
+            {
+                if (isNull(header, i))
+                    writer.writeComponent(i, null);
+                else if (isEmpty(header, i))
+                    writer.writeComponent(i, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                else
+                    writer.writeComponent(i, types.get(i).readValue(in));
+            }
+            writer.writeEOC(eoc);
+        }
+
+        private int headerBytesCount(int size)
+        {
+            // For each component, we store 2 bit to know if the component is empty or null (or neither).
+            // We thus handle 4 component per byte
+            return size / 4 + (size % 4 == 0 ? 0 : 1);
+        }
+
+        private void writeHeader(ClusteringPrefix clustering, DataOutputPlus out) throws IOException
+        {
+            int nbBytes = headerBytesCount(clustering.size());
+            for (int i = 0; i < nbBytes; i++)
+            {
+                int b = 0;
+                for (int j = 0; j < 4; i++)
+                {
+                    int c = i * 4 + j;
+                    if (c >= clustering.size())
+                        return;
+
+                    ByteBuffer v = clustering.get(c);
+                    if (v == null)
+                        b |= (1 << (j * 2) + 1);
+                    else if (!v.hasRemaining())
+                        b |= (1 << (j * 2));
+                }
+                out.writeByte((byte)b);
+            }
+        }
+
+        private int[] readHeader(int clusteringSize, DataInput in) throws IOException
+        {
+            int nbBytes = headerBytesCount(clusteringSize);
+            int[] header = new int[nbBytes];
+            for (int i = 0; i < nbBytes; i++)
+                header[i] = in.readUnsignedByte();
+            return header;
+        }
+
+        private boolean isNull(int[] header, int i)
+        {
+            int b = header[i / 4];
+            int mask = 1 << ((i % 4) * 2) + 1;
+            return (b & mask) != 0;
+        }
+
+        private boolean isEmpty(int[] header, int i)
+        {
+            int b = header[i / 4];
+            int mask = 1 << ((i % 4) * 2);
+            return (b & mask) != 0;
         }
     }
 }

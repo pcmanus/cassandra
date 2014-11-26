@@ -25,6 +25,7 @@ import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.ObjectSizes;
 
 /**
  * Contains (non-counter) cell data for one or more rows.
@@ -150,6 +151,22 @@ class CellData
         timestamps[j] = timestamps[i];
         delTimesAndTTLs[2 * j] = delTimesAndTTLs[2 * i];
         delTimesAndTTLs[(2 * j) + 1] = delTimesAndTTLs[(2 * i) + 1];
+    }
+
+    public int dataSize()
+    {
+        int size = 16 * values.length; // timestamp, ttl and deletion time
+        for (int i = 0; i < values.length; i++)
+            if (values[i] != null)
+                size += values[i].remaining();
+        return size;
+    }
+
+    public long unsharedHeapSizeExcludingData()
+    {
+        return ObjectSizes.sizeOnHeapExcludingData(values)
+             + ObjectSizes.sizeOfArray(timestamps)
+             + ObjectSizes.sizeOfArray(delTimesAndTTLs);
     }
 
     static class ReusableCell implements Cell

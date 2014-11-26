@@ -25,6 +25,7 @@ import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.ObjectSizes;
 
 /**
  * Contains complex cells data for one or more rows.
@@ -84,6 +85,27 @@ public class ComplexRowDataBlock
     public void move(int i, int j)
     {
         throw new UnsupportedOperationException();
+    }
+
+    public long unsharedHeapSizeExcludingData()
+    {
+        return ObjectSizes.sizeOfArray(cellIdx)
+             + data.unsharedHeapSizeExcludingData()
+             + ObjectSizes.sizeOfArray(complexPaths)
+             + complexDelTimes.unsharedHeapSize();
+    }
+
+    public int dataSize()
+    {
+        int size = data.dataSize()
+                 + cellIdx.length * 4
+                 + complexDelTimes.dataSize();
+
+        for (int i = 0; i < complexPaths.length; i++)
+            if (complexPaths[i] != null)
+                size += complexPaths[i].dataSize();
+
+        return size;
     }
 
     public CellWriter cellWriter()

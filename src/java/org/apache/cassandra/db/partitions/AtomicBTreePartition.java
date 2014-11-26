@@ -148,31 +148,24 @@ public class AtomicBTreePartition implements Partition
         if (columns.statics.isEmpty() || holder.staticRow == null)
             return Rows.EMPTY_STATIC_ROW;
 
-        return new ReusableFilteringRow(columns.statics, allocator).setDeletionTimestamp(deletion.markedForDeleteAt())
-                                                                   .setTo(holder.staticRow);
+        return new ReusableFilteringRow(columns.statics)
+               .setDeletionTimestamp(deletion.markedForDeleteAt())
+               .setTo(allocator.newReusableRow().setTo(holder.staticRow));
     }
 
     private static class ReusableFilteringRow extends FilteringRow
     {
         private final Columns columns;
-        private final MemtableRowData.ReusableRow row;
         private long deletionTimestamp;
 
-        public ReusableFilteringRow(Columns columns, MemtableAllocator allocator)
+        public ReusableFilteringRow(Columns columns)
         {
             this.columns = columns;
-            this.row = allocator.newReusableRow();
         }
 
         public ReusableFilteringRow setDeletionTimestamp(long timestamp)
         {
             this.deletionTimestamp = timestamp;
-            return this;
-        }
-
-        public ReusableFilteringRow setTo(MemtableRowData rowData)
-        {
-            super.setTo(row.setTo(rowData));
             return this;
         }
 
@@ -201,20 +194,12 @@ public class AtomicBTreePartition implements Partition
 
     private static class SingleSliceIterator extends AbstractAtomIterator
     {
-        private final Iterator<RangeTombstone> tombstoneIter;
-        private final Iterator<MemtableRowData> dataIter;
-
+        private final Iterator<Atom> atomIter;
         private final ReusableFilteringRow row;
-
-        private RangeTombstone nextTombstone;
-        private boolean inTombstone;
-        private Row nextRow;
-
-        private final ReusableRangeTombstoneMarker marker = new ReusableRangeTombstoneMarker();
 
         private SingleSliceIterator(CFMetaData metadata,
                                     DecoratedKey key,
-                                    final DeletionTime partitionLevelDeletion,
+                                    DeletionTime partitionLevelDeletion,
                                     Holder holder,
                                     PartitionColumns columns,
                                     ClusteringPrefix start,
@@ -230,85 +215,66 @@ public class AtomicBTreePartition implements Partition
                   isReversed,
                   holder.stats);
 
-            this.dataIter = BTree.slice(holder.tree,
-                                       metadata.comparator,
-                                       start == EmptyClusteringPrefix.BOTTOM ? null : start,
-                                       true,
-                                       end == EmptyClusteringPrefix.TOP  ? null : end,
-                                       true,
-                                       !isReversed);
-            this.tombstoneIter = holder.deletionInfo.rangeIterator(start, end);
-            this.row = new ReusableFilteringRow(columns.regulars, allocator);
+            Iterator<Row> rowIter = rowIter(metadata,
+                                            holder,
+                                            start == EmptyClusteringPrefix.BOTTOM ? null : start,
+                                            end == EmptyClusteringPrefix.TOP  ? null : end,
+                                            !isReversed,
+                                            allocator);
+
+            this.atomIter = new RowAndTombstoneMergeIterator(metadata.comparator)
+                            .setTo(rowIter, holder.deletionInfo.rangeIterator(start, end));
+
+            this.row = new ReusableFilteringRow(columns.regulars)
+                       .setDeletionTimestamp(partitionLevelDeletion.markedForDeleteAt());
         }
 
-        private void prepareNextTombstone()
+        private Iterator<Row> rowIter(CFMetaData metadata,
+                                      Holder holder,
+                                      ClusteringPrefix start,
+                                      ClusteringPrefix end,
+                                      boolean forwards,
+                                      final MemtableAllocator allocator)
         {
-            while (nextTombstone == null && tombstoneIter.hasNext())
+            final Iterator<MemtableRowData> dataIter = BTree.slice(holder.tree, metadata.comparator, start, true, end, true, forwards);
+            return new AbstractIterator<Row>()
             {
-                inTombstone = false;
-                nextTombstone = tombstoneIter.next();
-                if (partitionLevelDeletion.supersedes(nextTombstone.data))
-                    nextTombstone = null;
-            }
-        }
+                private final MemtableRowData.ReusableRow row = allocator.newReusableRow();
 
-        private void prepareNextRow()
-        {
-            long rangeDeletion = inTombstone ? nextTombstone.data.markedForDeleteAt() : Long.MIN_VALUE;
-            row.setDeletionTimestamp(Math.max(partitionLevelDeletion.markedForDeleteAt(), rangeDeletion));
-
-            while (nextRow == null && dataIter.hasNext())
-            {
-                nextRow = row.setTo(dataIter.next());
-                if (nextRow.isEmpty())
-                    nextRow = null;
-            }
+                protected Row computeNext()
+                {
+                    return dataIter.hasNext() ? row.setTo(dataIter.next()) : endOfData();
+                }
+            };
         }
 
         protected Atom computeNext()
         {
-            prepareNextTombstone();
-            prepareNextRow();
-
-            if (nextTombstone == null)
-                return nextRow == null ? endOfData() : nextRow;
-
-            if (nextRow == null)
+            while (atomIter.hasNext())
             {
-                if (inTombstone)
+                Atom next = atomIter.next();
+                if (next.kind() == Atom.Kind.ROW)
                 {
-                    RangeTombstone rt = nextTombstone;
-                    nextTombstone = null;
-                    return marker.setTo(rt.max, false, rt.data);
-                }
-
-                inTombstone = true;
-                return marker.setTo(nextTombstone.min, true, nextTombstone.data);
-            }
-
-            if (inTombstone)
-            {
-                if (metadata.comparator.compare(nextTombstone.max, nextRow) < 0)
-                {
-                    RangeTombstone rt = nextTombstone;
-                    nextTombstone = null;
-                    return marker.setTo(rt.max, false, rt.data);
+                    row.setTo((Row)next);
+                    if (!row.isEmpty())
+                        return row;
                 }
                 else
                 {
-                    return nextRow;
+                    RangeTombstoneMarker marker = (RangeTombstoneMarker)next;
+                    if (marker.isOpenMarker())
+                    {
+                        if (marker.delTime().markedForDeleteAt() > row.deletionTimestamp)
+                            row.setDeletionTimestamp(marker.delTime().markedForDeleteAt());
+                    }
+                    else
+                    {
+                        row.setDeletionTimestamp(partitionLevelDeletion().markedForDeleteAt());
+                    }
+                    return marker;
                 }
             }
-
-            if (metadata.comparator.compare(nextTombstone.min, nextRow) < 0)
-            {
-                inTombstone = true;
-                return marker.setTo(nextTombstone.min, true, nextTombstone.data);
-            }
-            else
-            {
-                return nextRow;
-            }
+            return endOfData();
         }
     }
 

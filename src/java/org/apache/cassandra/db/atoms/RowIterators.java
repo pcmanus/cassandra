@@ -44,6 +44,8 @@ public abstract class RowIterators
         return !iterator.hasNext() && iterator.staticRow().isEmpty();
     }
 
+    // Please note that this is a destructive operation, only useful for debugging!
+    // TODO: we should buffer stuffs to make it safer.
     public static String toString(RowIterator iterator)
     {
         StringBuilder sb = new StringBuilder();

@@ -19,6 +19,8 @@ package org.apache.cassandra.db;
 
 import java.util.Arrays;
 
+import org.apache.cassandra.utils.ObjectSizes;
+
 /**
  * Utility class to store an array of deletion times a bit efficiently.
  */
@@ -86,6 +88,17 @@ public class DeletionTimeArray
     {
         Arrays.fill(markedForDeleteAts, Long.MIN_VALUE);
         Arrays.fill(delTimes, Integer.MAX_VALUE);
+    }
+
+    public int dataSize()
+    {
+        return 12 * markedForDeleteAts.length;
+    }
+
+    public long unsharedHeapSize()
+    {
+        return ObjectSizes.sizeOfArray(markedForDeleteAts)
+             + ObjectSizes.sizeOfArray(delTimes);
     }
 
     public void copy(DeletionTimeArray other)

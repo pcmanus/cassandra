@@ -35,5 +35,10 @@ public class CollectionPath implements CellPath
     {
         return element;
     }
+
+    public int dataSize()
+    {
+        throw new UnsupportedOperationException();
+    }
 }
 

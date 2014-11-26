@@ -25,10 +25,13 @@ import com.google.common.collect.UnmodifiableIterator;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.utils.Sorting;
+import org.apache.cassandra.utils.ObjectSizes;
 
 // TODO: need to abstract have have a subclass for counters too
 public class RowDataBlock
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowDataBlock(Columns.NONE, 0));
+
     final SimpleRowDataBlock simpleData;
     final ComplexRowDataBlock complexData;
 
@@ -82,6 +85,19 @@ public class RowDataBlock
     public boolean hasComplexDeletion(int row)
     {
         return complexData != null && complexData.hasComplexDeletion(row);
+    }
+
+    public long unsharedHeapSizeExcludingData()
+    {
+        return EMPTY_SIZE
+             + (simpleData == null ? 0 : simpleData.unsharedHeapSizeExcludingData())
+             + (complexData == null ? 0 : complexData.unsharedHeapSizeExcludingData());
+    }
+
+    public int dataSize()
+    {
+        return (simpleData == null ? 0 : simpleData.dataSize())
+             + (complexData == null ? 0 : complexData.dataSize());
     }
 
     public abstract static class Writer implements Row.Writer

@@ -69,6 +69,16 @@ public class SimpleRowDataBlock
             data.moveCell(i * s + k, j * s + k);
     }
 
+    public long unsharedHeapSizeExcludingData()
+    {
+        return data.unsharedHeapSizeExcludingData();
+    }
+
+    public int dataSize()
+    {
+        return data.dataSize();
+    }
+
     public CellWriter cellWriter()
     {
         return new CellWriter();
