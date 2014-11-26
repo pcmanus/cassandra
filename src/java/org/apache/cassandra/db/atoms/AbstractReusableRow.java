@@ -99,10 +99,13 @@ public abstract class AbstractReusableRow implements Row
     public DeletionTime getDeletion(ColumnDefinition c)
     {
         assert c.isComplex();
-        return data().complexData == null
+        if (data().complexData == null)
+            return DeletionTime.LIVE;
+
+        int idx = data().complexData.complexDeletionIdx(row(), c);
+        return idx < 0
              ? DeletionTime.LIVE
-             : complexDeletionCursor().setTo(data().complexData.complexDelTimes,
-                                             data().complexData.complexDeletionIdx(row(), c));
+             : complexDeletionCursor().setTo(data().complexData.complexDelTimes, idx);
     }
 
     public Iterator<Cell> iterator()

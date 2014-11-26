@@ -134,6 +134,7 @@ public class RowUpdateBuilder
     public RowUpdateBuilder add(String columnName, Object value)
     {
         ColumnDefinition c = getDefinition(columnName);
+        assert c != null : "Cannot find column " + columnName;
         if (value == null)
             Cells.writeTombstone(c, timestamp, writer);
         else

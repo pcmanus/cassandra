@@ -250,9 +250,12 @@ public abstract class Rows
                              int nowInSec,
                              SecondaryIndexManager.Updater indexUpdater)
     {
+        writer.setClustering(existing.clustering());
+        writer.setTimestamp(Math.max(existing.timestamp(), existing.timestamp()));
+
+
+
         throw new UnsupportedOperationException();
-        //writer.setClustering(r1.clustering());
-        //writer.setTimestamp(Math.max(r1.timestamp(), r2.timestamp()));
 
         //Iterator<ColumnData> it1 = r1.iterator();
         //Iterator<ColumnData> it2 = r2.iterator();

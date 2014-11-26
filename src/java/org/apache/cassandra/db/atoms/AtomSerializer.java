@@ -130,8 +130,11 @@ public class AtomSerializer
                 AtomIteratorSerializer.writeDelTime(row.getDeletion(column), header, out);
 
             Iterator<Cell> iter = row.getCells(column);
-            while (iter.hasNext())
-                writeCell(iter.next(), header, out);
+            if (iter != null)
+            {
+                while (iter.hasNext())
+                    writeCell(iter.next(), header, out);
+            }
             writeCell(null, header, out);
         }
     }
@@ -183,8 +186,11 @@ public class AtomSerializer
                 size += AtomIteratorSerializer.delTimeSerializedSize(row.getDeletion(column), header, sizes);
 
             Iterator<Cell> iter = row.getCells(column);
-            while (iter.hasNext())
-                size += sizeOfCell(iter.next(), header, sizes);
+            if (iter != null)
+            {
+                while (iter.hasNext())
+                    size += sizeOfCell(iter.next(), header, sizes);
+            }
             size += sizeOfCell(null, header, sizes);
         }
 

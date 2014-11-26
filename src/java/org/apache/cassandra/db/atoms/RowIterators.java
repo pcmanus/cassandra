@@ -27,6 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.MergeIterator;
 
 /**
@@ -55,7 +56,8 @@ public abstract class RowIterators
         sb.append(String.format("[%s.%s] key=%s columns=%s reversed=%b\n",
                                 metadata.ksName,
                                 metadata.cfName,
-                                metadata.getKeyValidator().getString(iterator.partitionKey().getKey()),
+                                ByteBufferUtil.bytesToHex(iterator.partitionKey().getKey()),
+                                //metadata.getKeyValidator().getString(iterator.partitionKey().getKey()),
                                 columns,
                                 iterator.isReverseOrder()));
 
@@ -71,7 +73,20 @@ public abstract class RowIterators
 
     public static PartitionUpdate toUpdate(RowIterator iterator)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        PartitionUpdate update = new PartitionUpdate(iterator.metadata(), iterator.partitionKey(), iterator.columns(), 1);
+
+        if (iterator.staticRow() != Rows.EMPTY_STATIC_ROW)
+            Rows.copy(iterator.staticRow(), update.writer(true));
+
+        try (RowIterator iter = iterator)
+        {
+            while (iter.hasNext())
+                Rows.copy(iter.next(), update.writer(false));
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return update;
     }
 }

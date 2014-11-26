@@ -59,13 +59,8 @@ public class PartitionColumns implements Iterable<ColumnDefinition>
     public String toString()
     {
         StringBuilder sb = new StringBuilder();
-        sb.append("[");
-        for (ColumnDefinition def : statics)
-            sb.append(" ").append(def.name);
-        sb.append(" |");
-        for (ColumnDefinition def : regulars)
-            sb.append(" ").append(def.name);
-        return sb.append("]").toString();
+        sb.append("[").append(statics).append(" | ").append(regulars).append("]");
+        return sb.toString();
     }
 
     public static Builder builder()

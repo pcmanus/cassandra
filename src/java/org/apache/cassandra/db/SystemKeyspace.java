@@ -773,7 +773,8 @@ public class SystemKeyspace
         for (String keyspace : keyspaces)
         {
             RowIterator iter = readSchema(schemaCfName, keyspace);
-            schema.put(iter.partitionKey(), iter);
+            if (!RowIterators.isEmpty(iter))
+                schema.put(iter.partitionKey(), iter);
         }
 
         return schema;

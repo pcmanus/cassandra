@@ -118,7 +118,7 @@ public class Columns implements Iterable<ColumnDefinition>
     {
         for (int i = complexIdx; i < columns.length; i++)
             if (columns[i].name.equals(c.name))
-                return i;
+                return i - complexIdx;
         return -1;
     }
 
@@ -189,5 +189,18 @@ public class Columns implements Iterable<ColumnDefinition>
     public Iterator<ColumnDefinition> iterator()
     {
         return Iterators.forArray(columns);
+    }
+
+    @Override
+    public String toString()
+    {
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (ColumnDefinition def : this)
+        {
+            if (first) first = false; else sb.append(" ");
+            sb.append(def.name);
+        }
+        return sb.toString();
     }
 }

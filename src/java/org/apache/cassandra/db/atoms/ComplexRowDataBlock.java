@@ -51,15 +51,20 @@ public class ComplexRowDataBlock
     private CellPath[] complexPaths;
 
     // For each complex column, it's deletion time (if any).
-    DeletionTimeArray complexDelTimes;
+    final DeletionTimeArray complexDelTimes;
 
     public ComplexRowDataBlock(Columns columns, int rows)
     {
         this.columns = columns;
 
+        int columnCount = rows * columns.complexColumnCount();
+
+        this.cellIdx = new int[columnCount * 2];
+        this.complexDelTimes = new DeletionTimeArray(columnCount);
+
         // We start with an estimated 4 cells per complex column. The arrays
         // will grow if needed so this is just a somewhat random estimation.
-        int cellCount = rows * columns.complexColumnCount() * 4;
+        int cellCount =  columnCount * 4;
         this.data = new CellData(cellCount);
         this.complexPaths = new CellPath[cellCount];
     }
@@ -115,7 +120,8 @@ public class ComplexRowDataBlock
 
     public int complexDeletionIdx(int row, ColumnDefinition column)
     {
-        return (row * columns.complexColumnCount()) + columns.complexIdx(column);
+        int idx = (row * columns.complexColumnCount()) + columns.complexIdx(column);
+        return idx < complexDelTimes.size() ? idx : -1;
     }
 
     public boolean hasComplexDeletion(int row)
@@ -150,6 +156,26 @@ public class ComplexRowDataBlock
 
         int newCapacity = (capacity * 3) / 2 + 1;
         complexPaths = Arrays.copyOf(complexPaths, newCapacity);
+    }
+
+    private void ensureDelTimesCapacity(int rowToSet)
+    {
+        int capacity = complexDelTimes.size() / columns.complexColumnCount();
+        if (rowToSet < capacity)
+            return;
+
+        int newCapacity = (capacity * 3) / 2 + 1;
+        complexDelTimes.resize(newCapacity * columns.complexColumnCount());
+    }
+
+    private void ensureCellIdxCapacity(int rowToSet)
+    {
+        int capacity = complexDelTimes.size() / (2 * columns.complexColumnCount());
+        if (rowToSet < capacity)
+            return;
+
+        int newCapacity = (capacity * 3) / 2 + 1;
+        cellIdx = Arrays.copyOf(cellIdx, newCapacity * 2 * columns.complexColumnCount());
     }
 
     private static class ReusableCell extends CellData.ReusableCell
@@ -214,7 +240,7 @@ public class ComplexRowDataBlock
             }
 
             // find the index of the last cell of the row
-            for (int i = columnIdx + (2 * columnCount) - 1; i >= columnIdx; i -= 2)
+            for (int i = columnIdx + (2 * columnCount) - 2; i >= columnIdx; i -= 2)
             {
                 if (dataBlock.cellIdx[i + 1] > dataBlock.cellIdx[i])
                 {
@@ -245,13 +271,15 @@ public class ComplexRowDataBlock
     public class CellWriter
     {
         private int base;
+        private int row;
 
         // Index of the next free slot in data.
         private int idx;
 
         public void addCell(ColumnDefinition column, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
-            int columnIdx = base + columns.complexIdx(column);
+            ensureCellIdxCapacity(row);
+            int columnIdx = 2 * (base + columns.complexIdx(column));
 
             int start = cellIdx[columnIdx];
             int end = cellIdx[columnIdx + 1];
@@ -275,18 +303,21 @@ public class ComplexRowDataBlock
         public void setComplexDeletion(ColumnDefinition column, DeletionTime deletionTime)
         {
             int columnIdx = base + columns.complexIdx(column);
+            ensureDelTimesCapacity(row);
             complexDelTimes.set(columnIdx, deletionTime);
         }
 
         public void endOfRow()
         {
             base += columns.complexColumnCount();
+            ++row;
         }
 
         public void reset()
         {
             base = 0;
             idx = 0;
+            row = 0;
         }
     }
 }

@@ -1663,7 +1663,7 @@ public final class CFMetaData
     {
         // For property that can be null (and can be changed), we insert tombstones, to make sure
         // we don't keep a property the user has removed
-        RowUpdateBuilder adder = new RowUpdateBuilder(SchemaColumnsCf, timestamp, mutation, cfName);
+        RowUpdateBuilder adder = new RowUpdateBuilder(SchemaColumnFamiliesCf, timestamp, mutation, cfName);
 
         adder.add("cf_id", cfId);
         adder.add("type", cfType.toString());
