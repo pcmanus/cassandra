@@ -105,7 +105,9 @@ public class RowUpdateBuilder
     {
         PartitionUpdate update = new PartitionUpdate(metadata, makeKey(metadata, key), metadata.partitionColumns(), 0);
         deleteRow(update, timestamp, clusteringValues);
-        return new Mutation(update);
+        // note that the created mutation may get further update later on, so we don't use the ctor that create a singletonMap
+        // underneath (this class if for convenience, not performance)
+        return new Mutation(update.metadata().ksName, update.partitionKey()).add(update);
     }
 
     private static DecoratedKey makeKey(CFMetaData metadata, Object... partitionKey)

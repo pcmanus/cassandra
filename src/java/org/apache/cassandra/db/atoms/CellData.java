@@ -48,6 +48,7 @@ class CellData
     public void setCell(int idx, ByteBuffer value, long timestamp, int deletionTime, int ttl)
     {
         ensureCapacity(idx);
+        assert deletionTime == Cells.NO_DELETION_TIME || !value.hasRemaining() || ttl != Cells.NO_TTL : String.format("v=%s, dt=%d, ttl=%d", value, deletionTime, ttl);
         values[idx] = value;
         timestamps[idx] = timestamp;
         delTimesAndTTLs[2 * idx] = deletionTime;

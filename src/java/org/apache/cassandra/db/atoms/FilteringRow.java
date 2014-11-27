@@ -65,7 +65,9 @@ public abstract class FilteringRow implements Row
 
     public boolean isEmpty()
     {
-        return timestamp() == Rows.NO_TIMESTAMP && !iterator().hasNext() && !hasComplexDeletion();
+        return timestamp() == Rows.NO_TIMESTAMP
+            && !iterator().hasNext()
+            && !hasComplexDeletion();
     }
 
     public boolean hasComplexDeletion()

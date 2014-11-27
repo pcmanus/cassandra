@@ -228,6 +228,38 @@ public abstract class AtomIterators
         //}
     }
 
+    // Please note that this is a destructive operation, only useful for debugging or if
+    // you know what you'r doing!
+    public static String toString(AtomIterator iterator)
+    {
+        StringBuilder sb = new StringBuilder();
+        CFMetaData metadata = iterator.metadata();
+        PartitionColumns columns = iterator.columns();
+
+        sb.append(String.format("[%s.%s] key=%s columns=%s reversed=%b deletion=%d\n",
+                                metadata.ksName,
+                                metadata.cfName,
+                                metadata.getKeyValidator().getString(iterator.partitionKey().getKey()),
+                                columns,
+                                iterator.isReverseOrder(),
+                                iterator.partitionLevelDeletion().markedForDeleteAt()));
+
+        if (iterator.staticRow() != Rows.EMPTY_STATIC_ROW)
+            sb.append("-----\n").append(Rows.toString(metadata, iterator.staticRow()));
+
+        while (iterator.hasNext())
+        {
+            Atom atom = iterator.next();
+            if (atom.kind() == Atom.Kind.ROW)
+                sb.append("\n-----\n").append(Rows.toString(metadata, (Row)atom));
+            else
+                sb.append("\n-----\n").append(RangeTombstoneMarkers.toString(metadata, (RangeTombstoneMarker)atom));
+        }
+
+        sb.append("\n-----\n");
+        return sb.toString();
+    }
+
     /**
      * A wrapper over MergeIterator to implement the AtomIterator interface.
      *

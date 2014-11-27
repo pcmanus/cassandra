@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 
 /**
@@ -30,4 +31,21 @@ public abstract class RangeTombstoneMarkers
 {
     private RangeTombstoneMarkers() {}
 
+    public static String toString(CFMetaData metadata, RangeTombstoneMarker marker)
+    {
+        StringBuilder sb = new StringBuilder();
+        ClusteringPrefix clustering = marker.clustering();
+        sb.append("Marker");
+        sb.append(": ");
+        for (int i = 0; i < clustering.size(); i++)
+        {
+            if (i > 0)
+                sb.append(", ");
+            ColumnDefinition c = metadata.clusteringColumns().get(i);
+            sb.append(c.name).append("=").append(c.type.getString(clustering.get(i)));
+        }
+        sb.append(" - ").append(marker.isOpenMarker() ? "open" : "close");
+        sb.append("@").append(marker.delTime().markedForDeleteAt());
+        return sb.toString();
+    }
 }

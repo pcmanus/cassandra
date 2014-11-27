@@ -26,7 +26,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 
-class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIterator
+public class RowIteratorFromAtomIterator extends AbstractIterator<Row> implements RowIterator
 {
     private final AtomIterator iter;
     private final FilteringRow filter;

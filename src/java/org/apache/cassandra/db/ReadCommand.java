@@ -23,6 +23,7 @@ import java.io.IOException;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.db.filters.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;

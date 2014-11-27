@@ -47,10 +47,11 @@ public class CountingAtomIterator extends WrappingAtomIterator
     }
 
     @Override
-    public Row next()
+    public Atom next()
     {
-        Row row = super.next();
-        counter.newRow(row);
-        return row;
+        Atom atom = super.next();
+        if (atom.kind() == Atom.Kind.ROW)
+            counter.newRow((Row)atom);
+        return atom;
     }
 }

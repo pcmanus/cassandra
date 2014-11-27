@@ -51,6 +51,6 @@ public class CountingPartitionIterator extends WrappingPartitionIterator
     {
         AtomIterator iter = super.next();
         counter.newPartition(iter.partitionKey());
-        return new CountingAtomIterator(iter);
+        return new CountingAtomIterator(iter, counter);
     }
 }

@@ -67,22 +67,49 @@ public abstract class PartitionIterators
         public void close();
     }
 
-    public static DataIterator mergeAsDataIterator(List<PartitionIterator> iterators, int nowInSec)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
     public static DataIterator mergeAsDataIterator(List<PartitionIterator> iterators, int nowInSec, MergeListener listener)
     {
         // TODO
         throw new UnsupportedOperationException();
     }
 
-    public static DataIterator asDataIterator(PartitionIterator iterator, int nowInSec)
+    public static DataIterator asDataIterator(final PartitionIterator iterator, final int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new DataIterator()
+        {
+            private RowIterator next;
+
+            public boolean hasNext()
+            {
+                while (next == null && iterator.hasNext())
+                {
+                    next = new RowIteratorFromAtomIterator(iterator.next(), nowInSec);
+                    if (RowIterators.isEmpty(next))
+                        next = null;
+                }
+                return next != null;
+            }
+
+            public RowIterator next()
+            {
+                if (next == null && !hasNext())
+                    throw new NoSuchElementException();
+
+                RowIterator toReturn = next;
+                next = null;
+                return toReturn;
+            }
+
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            public void close() throws IOException
+            {
+                iterator.close();
+            }
+        };
     }
 
     public static PartitionIterator merge(List<? extends PartitionIterator> iterators, int nowInSec, MergeListener listener)
@@ -93,23 +120,9 @@ public abstract class PartitionIterators
 
     public static PartitionIterator merge(List<? extends PartitionIterator> iterators, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
+        if (iterators.size() == 1)
+            return iterators.get(0);
 
-    public static PartitionIterator of(List<AtomIterator> iterators)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    public static PartitionIterator concat(PartitionIterator... iterators)
-    {
-        return concat(Arrays.asList(iterators));
-    }
-
-    public static PartitionIterator concat(List<PartitionIterator> iterators)
-    {
         // TODO
         throw new UnsupportedOperationException();
     }

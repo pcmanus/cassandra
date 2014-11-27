@@ -94,6 +94,9 @@ public class ColumnFilter implements Iterable<ColumnFilter.Expression>
 
     public PartitionIterator filter(PartitionIterator iter)
     {
+        if (expressions.isEmpty())
+            return iter;
+
         // TODO
         throw new UnsupportedOperationException();
     }

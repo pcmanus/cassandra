@@ -35,7 +35,7 @@ public abstract class DataLimits
     public static final DataLimits NONE = new CQLLimits(Integer.MAX_VALUE)
     {
         @Override
-        public boolean hasEnoughData(CachedPartition cached, int nowInSec)
+        public boolean hasEnoughLiveData(CachedPartition cached, int nowInSec)
         {
             return false;
         }
@@ -214,7 +214,7 @@ public abstract class DataLimits
                 return rowCounted >= rowLimit;
             }
 
-            public void isDoneForPartition()
+            public boolean isDoneForPartition()
             {
                 return isDone() || rowInCurrentPartition >= perPartitionLimit;
             }
