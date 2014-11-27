@@ -1019,22 +1019,26 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return cqlRows;
     }
 
+    public static ByteBuffer[] getComponents(CFMetaData cfm, DecoratedKey dk)
+    {
+        ByteBuffer key = dk.getKey();
+        if (cfm.getKeyValidator() instanceof CompositeType)
+        {
+            return ((CompositeType)cfm.getKeyValidator()).split(key);
+        }
+        else
+        {
+            return new ByteBuffer[]{ key };
+        }
+    }
+
     // Used by ModificationStatement for CAS operations
     void processPartition(RowIterator partition, QueryOptions options, int nowInSec, Selection.ResultSetBuilder result)
     throws InvalidRequestException
     {
         try (RowIterator p = partition)
         {
-            ByteBuffer key = partition.partitionKey().getKey();
-            ByteBuffer[] keyComponents = null;
-            if (cfm.getKeyValidator() instanceof CompositeType)
-            {
-                keyComponents = ((CompositeType)cfm.getKeyValidator()).split(key);
-            }
-            else
-            {
-                keyComponents = new ByteBuffer[]{ key };
-            }
+            ByteBuffer[] keyComponents = getComponents(cfm, partition.partitionKey());
 
             Row staticRow = partition.staticRow().takeAlias();
             // If there is no atoms, then provided the select was a full partition selection

@@ -24,7 +24,11 @@ import java.util.*;
 
 import com.google.common.collect.AbstractIterator;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.statements.SelectStatement;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.pager.QueryPager;
@@ -213,10 +217,21 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
                 data.put(names.get(i).name.toString(), columns.get(i));
         }
 
-        public static Row fromInternalRow(org.apache.cassandra.db.atoms.Row row)
+        public static Row fromInternalRow(CFMetaData metadata, DecoratedKey key, org.apache.cassandra.db.atoms.Row row)
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            Map<String, ByteBuffer> data = new HashMap<>();
+
+            ByteBuffer[] keyComponents = SelectStatement.getComponents(metadata, key);
+            for (ColumnDefinition def : metadata.partitionKeyColumns())
+                data.put(def.name.toString(), keyComponents[def.position()]);
+
+            ClusteringPrefix clustering = row.clustering();
+            for (ColumnDefinition def : metadata.clusteringColumns())
+                data.put(def.name.toString(), clustering.get(def.position()));
+
+            for (Cell cell : row)
+                data.put(cell.column().name.toString(), cell.value());
+            return new Row(data);
         }
 
         public boolean has(String column)

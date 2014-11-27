@@ -316,8 +316,6 @@ public final class KSMetaData
         if (RowIterators.isEmpty(partition))
             return Collections.emptyMap();
 
-        ReadPartition p = ReadPartition.create(partition);
-        partition = p.rowIterator();
         Map<String, CFMetaData> cfms = new HashMap<>();
         UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", partition);
         for (UntypedResultSet.Row result : results)

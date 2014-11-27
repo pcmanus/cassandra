@@ -122,23 +122,23 @@ public interface MemtableRowData extends Clusterable
 
     public class BufferClusteringPrefix extends AbstractClusteringPrefix
     {
-        private static final long EMPTY_SIZE = ObjectSizes.measure(new BufferClusteringPrefix(new ByteBuffer[0]));
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new BufferClusteringPrefix(new ByteBuffer[0], EOC.NONE));
 
         private final ByteBuffer[] values;
+        private final EOC eoc;
 
-        private BufferClusteringPrefix(ByteBuffer[] values)
+        private BufferClusteringPrefix(ByteBuffer[] values, EOC eoc)
         {
             this.values = values;
+            this.eoc = eoc;
         }
 
         public static BufferClusteringPrefix clone(ClusteringPrefix clustering, AbstractAllocator allocator)
         {
-            // We're only using this for rows, which don't have a EOC
-            assert clustering.eoc() == EOC.NONE;
             ByteBuffer[] values = new ByteBuffer[clustering.size()];
             for (int i = 0; i < values.length; i++)
                 values[i] = allocator.clone(clustering.get(i));
-            return new BufferClusteringPrefix(values);
+            return new BufferClusteringPrefix(values, clustering.eoc());
         }
 
         public int size()

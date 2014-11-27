@@ -31,7 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
-import org.apache.cassandra.db.atoms.Cell;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
@@ -116,25 +116,21 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
 
     public RangeTombstoneList copy(AbstractAllocator allocator)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //RangeTombstoneList copy =  new RangeTombstoneList(comparator,
-        //                                                  new ClusteringPrefix[size],
-        //                                                  new ClusteringPrefix[size],
-        //                                                  Arrays.copyOf(markedAts, size),
-        //                                                  Arrays.copyOf(delTimes, size),
-        //                                                  boundaryHeapSize, size);
+        RangeTombstoneList copy =  new RangeTombstoneList(comparator,
+                                                          new ClusteringPrefix[size],
+                                                          new ClusteringPrefix[size],
+                                                          Arrays.copyOf(markedAts, size),
+                                                          Arrays.copyOf(delTimes, size),
+                                                          boundaryHeapSize, size);
 
 
-        //for (int i = 0; i < size; i++)
-        //{
-        //    assert !(starts[i] instanceof AbstractNativeCell || ends[i] instanceof AbstractNativeCell); //this should never happen
+        for (int i = 0; i < size; i++)
+        {
+            copy.starts[i] = MemtableRowData.BufferClusteringPrefix.clone(starts[i], allocator);
+            copy.ends[i] = MemtableRowData.BufferClusteringPrefix.clone(ends[i], allocator);
+        }
 
-        //    copy.starts[i] = starts[i].copy(null, allocator);
-        //    copy.ends[i] = ends[i].copy(null, allocator);
-        //}
-
-        //return copy;
+        return copy;
     }
 
     public void add(RangeTombstone tombstone)

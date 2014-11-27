@@ -137,116 +137,150 @@ public class DefsTables
 
     private static Set<DecoratedKey> mergeKeyspaces(Map<DecoratedKey, RowIterator> old, Map<DecoratedKey, RowIterator> updated)
     {
-        for (RowIterator newPartition : updated.values())
+        for (RowIterator upd : updated.values())
         {
-            RowIterator oldPartition = old.remove(newPartition.partitionKey());
-            if (oldPartition == null || RowIterators.isEmpty(oldPartition))
-                addKeyspace(KSMetaData.fromSchema(newPartition, Collections.<CFMetaData>emptyList(), new UTMetaData()));
-            else
-                updateKeyspace(KSMetaData.fromSchema(newPartition, Collections.<CFMetaData>emptyList(), new UTMetaData()));
+            try (RowIterator newPartition = upd; RowIterator oldPartition = old.remove(newPartition.partitionKey()))
+            {
+                if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+                    addKeyspace(KSMetaData.fromSchema(newPartition, Collections.<CFMetaData>emptyList(), new UTMetaData()));
+                else
+                    updateKeyspace(KSMetaData.fromSchema(newPartition, Collections.<CFMetaData>emptyList(), new UTMetaData()));
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
         }
 
         // What's remain in old is those keyspace that are not in updated, i.e. the dropped ones.
+        System.err.println(">>> " + old.keySet());
         return old.keySet();
     }
 
     private static void mergeColumnFamilies(Map<DecoratedKey, RowIterator> old, Map<DecoratedKey, RowIterator> updated)
     {
-        for (RowIterator newPartition : updated.values())
+        for (RowIterator upd : updated.values())
         {
-            RowIterator oldPartition = old.remove(newPartition.partitionKey());
-            if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+            try (RowIterator newPartition = upd; RowIterator oldPartition = old.remove(newPartition.partitionKey()))
             {
-                // Means a new keyspace was added. Add all of it's new tables
-                for (CFMetaData cfDef : KSMetaData.deserializeColumnFamilies(newPartition).values())
-                    addColumnFamily(cfDef);
-                continue;
+                if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+                {
+                    // Means a new keyspace was added. Add all of it's new tables
+                    for (CFMetaData cfDef : KSMetaData.deserializeColumnFamilies(newPartition).values())
+                        addColumnFamily(cfDef);
+                    continue;
+                }
+
+                final CFMetaData metadata = newPartition.metadata();
+                final DecoratedKey key = newPartition.partitionKey();
+
+                diffSchema(oldPartition, newPartition, new Differ()
+                {
+                    public void onDropped(Row oldRow)
+                    {
+                        CFMetaData dropped = CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, oldRow));
+                        dropColumnFamily(dropped.ksName, dropped.cfName);
+                    }
+
+                    public void onAdded(Row newRow)
+                    {
+                        addColumnFamily(CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+
+                    public void onUpdated(Row oldRow, Row newRow)
+                    {
+                        updateColumnFamily(CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+                });
             }
-
-            diffSchema(oldPartition, newPartition, new Differ()
+            catch (IOException e)
             {
-                public void onDropped(Row oldRow)
-                {
-                    CFMetaData dropped = CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(oldRow));
-                    dropColumnFamily(dropped.ksName, dropped.cfName);
-                }
-
-                public void onAdded(Row newRow)
-                {
-                    addColumnFamily(CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-
-                public void onUpdated(Row oldRow, Row newRow)
-                {
-                    updateColumnFamily(CFMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-            });
+                throw new RuntimeException(e);
+            }
         }
     }
 
     private static void mergeTypes(Map<DecoratedKey, RowIterator> old, Map<DecoratedKey, RowIterator> updated)
     {
-        for (RowIterator newPartition : updated.values())
+        for (RowIterator upd : updated.values())
         {
-            RowIterator oldPartition = old.remove(newPartition.partitionKey());
-            if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+            try (RowIterator newPartition = upd; RowIterator oldPartition = old.remove(newPartition.partitionKey()))
             {
-                // Means a new keyspace was added. Add all of it's new types
-                for (UserType ut : UTMetaData.fromSchema(newPartition).values())
-                    addType(ut);
-                continue;
+                if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+                {
+                    // Means a new keyspace was added. Add all of it's new types
+                    for (UserType ut : UTMetaData.fromSchema(newPartition).values())
+                        addType(ut);
+                    continue;
+                }
+
+                final CFMetaData metadata = newPartition.metadata();
+                final DecoratedKey key = newPartition.partitionKey();
+
+                diffSchema(oldPartition, newPartition, new Differ()
+                {
+                    public void onDropped(Row oldRow)
+                    {
+                        dropType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, oldRow)));
+                    }
+
+                    public void onAdded(Row newRow)
+                    {
+                        addType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+
+                    public void onUpdated(Row oldRow, Row newRow)
+                    {
+                        updateType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+                });
             }
-
-            diffSchema(oldPartition, newPartition, new Differ()
+            catch (IOException e)
             {
-                public void onDropped(Row oldRow)
-                {
-                    dropType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(oldRow)));
-                }
-
-                public void onAdded(Row newRow)
-                {
-                    addType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-
-                public void onUpdated(Row oldRow, Row newRow)
-                {
-                    updateType(UTMetaData.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-            });
+                throw new RuntimeException(e);
+            }
         }
     }
 
     private static void mergeFunctions(Map<DecoratedKey, RowIterator> old, Map<DecoratedKey, RowIterator> updated)
     {
-        for (RowIterator newPartition : updated.values())
+        for (RowIterator upd : updated.values())
         {
-            RowIterator oldPartition = old.remove(newPartition.partitionKey());
-            if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+            try (RowIterator newPartition = upd; RowIterator oldPartition = old.remove(newPartition.partitionKey()))
             {
-                // Means a new keyspace was added. Add all of it's new types
-                for (UDFunction udf : UDFunction.fromSchema(newPartition).values())
-                    addFunction(udf);
-                continue;
+                if (oldPartition == null || RowIterators.isEmpty(oldPartition))
+                {
+                    // Means a new keyspace was added. Add all of it's new types
+                    for (UDFunction udf : UDFunction.fromSchema(newPartition).values())
+                        addFunction(udf);
+                    continue;
+                }
+
+                final CFMetaData metadata = newPartition.metadata();
+                final DecoratedKey key = newPartition.partitionKey();
+
+                diffSchema(oldPartition, newPartition, new Differ()
+                {
+                    public void onDropped(Row oldRow)
+                    {
+                        dropFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, oldRow)));
+                    }
+
+                    public void onAdded(Row newRow)
+                    {
+                        addFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+
+                    public void onUpdated(Row oldRow, Row newRow)
+                    {
+                        updateFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
+                    }
+                });
             }
-
-            diffSchema(oldPartition, newPartition, new Differ()
+            catch (IOException e)
             {
-                public void onDropped(Row oldRow)
-                {
-                    dropFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(oldRow)));
-                }
-
-                public void onAdded(Row newRow)
-                {
-                    addFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-
-                public void onUpdated(Row oldRow, Row newRow)
-                {
-                    updateFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(newRow)));
-                }
-            });
+                throw new RuntimeException(e);
+            }
         }
     }
 

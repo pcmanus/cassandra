@@ -20,6 +20,8 @@ package org.apache.cassandra.db;
 import java.io.IOException;
 import java.util.UUID;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.cassandra.cache.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -205,24 +207,37 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
         return queryMemtableAndDisk(cfs);
     }
 
+    private static final AtomicInteger counter = new AtomicInteger();
+
     public AtomIterator queryMemtableAndDisk(ColumnFamilyStore cfs)
     {
         Tracing.trace("Executing single-partition query on {}", cfs.name);
 
         boolean copyOnHeap = Memtable.MEMORY_POOL.needToCopyOnHeap();
         final OpOrder.Group op = cfs.readOrdering.start();
+        final int c = counter.getAndIncrement();
+        System.err.println("Taken OP  " + c);
+        //Thread.dumpStack();
         return new WrappingAtomIterator(queryMemtableAndDiskInternal(cfs, copyOnHeap))
         {
+            private boolean closed;
+
             @Override
             public void close() throws IOException
             {
+                // Make sure we don't close twice as this would confuse OpOrder
+                if (closed)
+                    return;
+
                 try
                 {
                     super.close();
                 }
                 finally
                 {
+                    System.err.println("Release OP " + c);
                     op.close();
+                    closed = true;
                 }
             }
         };
