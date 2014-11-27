@@ -55,7 +55,7 @@ public class CompositesIndexOnPartitionKey extends CompositesIndex
         types.add(SecondaryIndex.keyComparator);
         for (int i = 0; i < ckCount; i++)
             types.add(baseMetadata.comparator.subtype(i));
-        return new ClusteringComparator(types);
+        return new ClusteringComparator(types, true, true);
     }
 
     protected ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)

@@ -348,15 +348,14 @@ public abstract class SecondaryIndex
      * Note: it would be cleaner to have this be a member method. However we need this when opening indexes
      * sstables, but by then the CFS won't be fully initiated, so the SecondaryIndex object won't be accessible.
      */
-    public static Pair<ClusteringComparator, LegacyLayout> getIndexComparatorAndLayout(CFMetaData baseMetadata, ColumnDefinition cdef)
+    public static ClusteringComparator getIndexComparator(CFMetaData baseMetadata, ColumnDefinition cdef)
     {
         switch (cdef.getIndexType())
         {
             case KEYS:
-                return Pair.create(new ClusteringComparator(Collections.<AbstractType<?>>singletonList(keyComparator)), new LegacyLayout(true, false, 1));
+                return new ClusteringComparator(Collections.<AbstractType<?>>singletonList(keyComparator), true, false);
             case COMPOSITES:
-                ClusteringComparator cmp = CompositesIndex.getIndexComparator(baseMetadata, cdef);
-                return Pair.create(cmp, new LegacyLayout(true, true, cmp.size()));
+                return CompositesIndex.getIndexComparator(baseMetadata, cdef);
             case CUSTOM:
                 return null;
         }

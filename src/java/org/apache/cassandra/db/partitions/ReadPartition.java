@@ -125,7 +125,6 @@ public class ReadPartition extends ArrayBackedPartition
     @Override
     public String toString()
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return RowIterators.toString(rowIterator());
     }
 }

@@ -336,7 +336,7 @@ public class AtomicBTreePartition implements Partition
      */
     public long addAllWithSizeDelta(final PartitionUpdate update, OpOrder.Group writeOp, Updater indexer)
     {
-        RowUpdater updater = new RowUpdater(this, update.metadata(), allocator, writeOp, indexer);
+        RowUpdater updater = new RowUpdater(this, allocator, writeOp, indexer);
         DeletionInfo inputDeletionInfoCopy = null;
 
         boolean monitorOwned = false;
@@ -488,7 +488,7 @@ public class AtomicBTreePartition implements Partition
         final MemtableAllocator.RowAllocator rowAllocator;
         List<MemtableRowData> inserted; // TODO: replace with walk of aborted BTree
 
-        private RowUpdater(AtomicBTreePartition updating, CFMetaData metadata, MemtableAllocator allocator, OpOrder.Group writeOp, Updater indexer)
+        private RowUpdater(AtomicBTreePartition updating, MemtableAllocator allocator, OpOrder.Group writeOp, Updater indexer)
         {
             this.updating = updating;
             this.allocator = allocator;
@@ -497,7 +497,7 @@ public class AtomicBTreePartition implements Partition
             this.nowInSec = FBUtilities.nowInSeconds();
             this.row = allocator.newReusableRow();
             this.reclaimer = allocator.reclaimer();
-            this.rowAllocator = allocator.newRowAllocator(metadata, writeOp);
+            this.rowAllocator = allocator.newRowAllocator(updating.metadata(), writeOp);
         }
 
         public MemtableRowData apply(Row insert)
@@ -521,7 +521,7 @@ public class AtomicBTreePartition implements Partition
             Columns mergedColumns = existing.columns().mergeTo(update.columns());
             rowAllocator.allocateNewRow(mergedColumns);
 
-            Rows.merge(row.setTo(existing), update, rowAllocator, nowInSec, indexer);
+            Rows.merge(row.setTo(existing), update, mergedColumns, rowAllocator, nowInSec, indexer);
 
             MemtableRowData reconciled = rowAllocator.allocatedRowData();
 

@@ -42,10 +42,15 @@ public class ClusteringComparator implements Comparator<Clusterable>
     private final List<AbstractType<?>> clusteringTypes;
     private final boolean isByteOrderComparable;
 
-    public ClusteringComparator(List<AbstractType<?>> clusteringTypes)
+    public final boolean isDense;
+    public final boolean isCompound;
+
+    public ClusteringComparator(List<AbstractType<?>> clusteringTypes, boolean isDense, boolean isCompound)
     {
         this.clusteringTypes = clusteringTypes;
         this.isByteOrderComparable = isByteOrderComparable(clusteringTypes);
+        this.isDense = isDense;
+        this.isCompound = isCompound;
 
         // Sort first by clustering prefix. For the same clustering prefix,
         // sorts row range tombstone markers before rows.
@@ -130,9 +135,22 @@ public class ClusteringComparator implements Comparator<Clusterable>
 
         for (int i = 0; i < minSize; i++)
         {
+            ByteBuffer v1 = c1.get(i);
+            ByteBuffer v2 = c2.get(i);
+
+            if (v1 == null)
+            {
+                if (v2 == null)
+                    continue;
+                else
+                    return -1;
+            }
+            if (v2 == null)
+                return 1;
+
             int cmp = isByteOrderComparable
-                    ? ByteBufferUtil.compareUnsigned(c1.get(i), c2.get(i))
-                    : clusteringTypes.get(i).compare(c1.get(i), c2.get(i));
+                    ? ByteBufferUtil.compareUnsigned(v1, v2)
+                    : clusteringTypes.get(i).compare(v1, v2);
 
             if (cmp != 0)
                 return cmp;

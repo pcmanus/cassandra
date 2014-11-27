@@ -362,6 +362,4 @@ public class AtomSerializer
         writer.writeCell(column, false, value, timestamp, localDelTime, ttl, path);
         return true;
     }
-
-
 }

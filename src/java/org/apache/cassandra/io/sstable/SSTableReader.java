@@ -265,8 +265,8 @@ public class SSTableReader extends SSTable
             String parentName = descriptor.cfname.substring(0, i);
             CFMetaData parent = Schema.instance.getCFMetaData(descriptor.ksname, parentName);
             ColumnDefinition def = parent.getColumnDefinitionForIndex(descriptor.cfname.substring(i + 1));
-            Pair<ClusteringComparator, LegacyLayout> p = SecondaryIndex.getIndexComparatorAndLayout(parent, def);
-            metadata = CFMetaData.newIndexMetadata(parent, def, p.left, p.right);
+            ClusteringComparator cc = SecondaryIndex.getIndexComparator(parent, def);
+            metadata = CFMetaData.newIndexMetadata(parent, def, cc);
         }
         else
         {

@@ -18,9 +18,13 @@
 package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
+import java.util.Comparator;
+import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -100,55 +104,134 @@ public abstract class Cells
         //return (rel == CounterContext.Relationship.GREATER_THAN || rel == CounterContext.Relationship.DISJOINT) ? cell : null;
     }
 
-    public static Cell reconcile(Cell c1, Cell c2, int nowInSec)
+    public static void reconcile(Cell existing,
+                                 Cell update,
+                                 Row.Writer writer,
+                                 int nowInSec)
     {
-        if (c1.isCounterCell())
+        reconcile(null, existing, update, writer, nowInSec, null);
+    }
+
+    public static void reconcile(ClusteringPrefix clustering,
+                                 Cell existing,
+                                 Cell update,
+                                 Row.Writer writer,
+                                 int nowInSec,
+                                 SecondaryIndexManager.Updater indexUpdater)
+    {
+        if (existing == null)
         {
-            assert c2.isCounterCell();
-            throw new UnsupportedOperationException();
+            if (update == null)
+                return;
+
+            if (indexUpdater != null)
+                indexUpdater.insert(clustering, update);
+
+            write(update, writer);
+            return;
         }
 
-        long ts1 = c1.timestamp(), ts2 = c2.timestamp();
-        if (ts1 != ts2)
-            return ts1 < ts2 ? c2 : c1;
-        boolean c1Live = isLive(c1, nowInSec);
-        if (c1Live != isLive(c2, nowInSec))
-            return c1Live ? c1 : c2;
-        return c1.value().compareTo(c2.value()) < 0 ? c1 : c2;
+        if (update == null)
+        {
+            write(existing, writer);
+            return;
+        }
 
+        if (existing.isCounterCell())
+        {
+            assert update.isCounterCell();
+            throw new UnsupportedOperationException();
+            // TODO
+            // For Counters
+            //assert this instanceof CounterCell : "Wrong class type: " + getClass();
 
-        // TODO
-        // For Counters
-        //assert this instanceof CounterCell : "Wrong class type: " + getClass();
+            //// No matter what the counter cell's timestamp is, a tombstone always takes precedence. See CASSANDRA-7346.
+            //if (cell instanceof DeletedCell)
+            //    return cell;
 
-        //// No matter what the counter cell's timestamp is, a tombstone always takes precedence. See CASSANDRA-7346.
-        //if (cell instanceof DeletedCell)
-        //    return cell;
+            //assert (cell instanceof CounterCell) : "Wrong class type: " + cell.getClass();
 
-        //assert (cell instanceof CounterCell) : "Wrong class type: " + cell.getClass();
+            //// live < live last delete
+            //if (timestamp() < ((CounterCell) cell).timestampOfLastDelete())
+            //    return cell;
 
-        //// live < live last delete
-        //if (timestamp() < ((CounterCell) cell).timestampOfLastDelete())
-        //    return cell;
+            //long timestampOfLastDelete = ((CounterCell) this).timestampOfLastDelete();
 
-        //long timestampOfLastDelete = ((CounterCell) this).timestampOfLastDelete();
+            //// live last delete > live
+            //if (timestampOfLastDelete > cell.timestamp())
+            //    return this;
 
-        //// live last delete > live
-        //if (timestampOfLastDelete > cell.timestamp())
-        //    return this;
+            //// live + live. return one of the cells if its context is a superset of the other's, or merge them otherwise
+            //ByteBuffer context = CounterCell.contextManager.merge(value(), cell.value());
+            //if (context == value() && timestamp() >= cell.timestamp() && timestampOfLastDelete >= ((CounterCell) cell).timestampOfLastDelete())
+            //    return this;
+            //else if (context == cell.value() && cell.timestamp() >= timestamp() && ((CounterCell) cell).timestampOfLastDelete() >= timestampOfLastDelete)
+            //    return cell;
+            //else // merge clocks and timestamps.
+            //    return new BufferCounterCell(name(),
+            //                                 context,
+            //                                 Math.max(timestamp(), cell.timestamp()),
+            //                                 Math.max(timestampOfLastDelete, ((CounterCell) cell).timestampOfLastDelete()));
+        }
 
-        //// live + live. return one of the cells if its context is a superset of the other's, or merge them otherwise
-        //ByteBuffer context = CounterCell.contextManager.merge(value(), cell.value());
-        //if (context == value() && timestamp() >= cell.timestamp() && timestampOfLastDelete >= ((CounterCell) cell).timestampOfLastDelete())
-        //    return this;
-        //else if (context == cell.value() && cell.timestamp() >= timestamp() && ((CounterCell) cell).timestampOfLastDelete() >= timestampOfLastDelete)
-        //    return cell;
-        //else // merge clocks and timestamps.
-        //    return new BufferCounterCell(name(),
-        //                                 context,
-        //                                 Math.max(timestamp(), cell.timestamp()),
-        //                                 Math.max(timestampOfLastDelete, ((CounterCell) cell).timestampOfLastDelete()));
+        Cell reconciled = reconcile(existing, update, nowInSec);
+        if (indexUpdater != null && reconciled == update)
+            indexUpdater.update(clustering, existing, update);
+
+        write(reconciled, writer);
     }
+
+    private static Cell reconcile(Cell existing, Cell update, int nowInSec)
+    {
+        long tsExisting = existing.timestamp(), tsUpdate = existing.timestamp();
+        if (tsExisting != tsUpdate)
+            return tsExisting < tsUpdate ? existing : update;
+        boolean existingLive = isLive(existing, nowInSec);
+        if (existingLive != isLive(update, nowInSec))
+            return existingLive ? existing : update;
+        return existing.value().compareTo(update.value()) < 0 ? existing : update;
+    }
+
+    public static void reconcileComplex(ClusteringPrefix clustering,
+                                        ColumnDefinition column,
+                                        Iterator<Cell> existing,
+                                        Iterator<Cell> update,
+                                        Row.Writer writer,
+                                        int nowInSec,
+                                        SecondaryIndexManager.Updater indexUpdater)
+    {
+        Comparator<CellPath> comparator = column.cellPathComparator();
+        Cell nextExisting = getNext(existing);
+        Cell nextUpdate = getNext(update);
+        while (nextExisting != null || nextUpdate != null)
+        {
+            int cmp = nextExisting == null ? 1
+                     : (nextUpdate == null ? -1
+                     : comparator.compare(nextExisting.path(), nextUpdate.path()));
+            if (cmp < 0)
+            {
+                reconcile(clustering, nextExisting, null, writer, nowInSec, indexUpdater);
+                nextExisting = getNext(existing);
+            }
+            else if (cmp > 0)
+            {
+                reconcile(clustering, null, nextUpdate, writer, nowInSec, indexUpdater);
+                nextUpdate = getNext(update);
+            }
+            else
+            {
+                reconcile(clustering, nextExisting, nextUpdate, writer, nowInSec, indexUpdater);
+                nextExisting = getNext(existing);
+                nextUpdate = getNext(update);
+            }
+        }
+    }
+
+    private static Cell getNext(Iterator<Cell> iterator)
+    {
+        return iterator.hasNext() ? iterator.next() : null;
+    }
+
 
     // TODO: we could have more specialized version of cells...
     //private static class SimpleCell implements Cell

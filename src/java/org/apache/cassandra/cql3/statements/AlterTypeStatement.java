@@ -170,7 +170,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
     private static ClusteringComparator updateWith(ClusteringComparator comparator, String keyspace, ByteBuffer toReplace, UserType updated)
     {
         List<AbstractType<?>> updatedTypes = updateTypes(comparator.subtypes(), keyspace, toReplace, updated);
-        return updatedTypes == null ? comparator : new ClusteringComparator(updatedTypes);
+        return updatedTypes == null ? comparator : new ClusteringComparator(updatedTypes, comparator.isDense, comparator.isCompound);
     }
 
     // Update the provided type were all instance of a given userType is replaced by a new version

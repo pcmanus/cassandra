@@ -131,12 +131,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
 
     public ClusteringComparator comparator()
     {
-        return new ClusteringComparator(clusteringTypes);
-    }
-
-    public LegacyLayout layout()
-    {
-        return new LegacyLayout(isDense, isCompound, clusteringTypes.size());
+        return new ClusteringComparator(clusteringTypes, isDense, isCompound);
     }
 
     /**
@@ -152,8 +147,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
         newCFMD = new CFMetaData(keyspace(),
                                  columnFamily(),
                                  ColumnFamilyType.Standard,
-                                 comparator(),
-                                 layout());
+                                 comparator());
         applyPropertiesTo(newCFMD);
         return newCFMD;
     }
@@ -256,9 +250,10 @@ public class CreateTableStatement extends SchemaAlteringStatement
             // Dense means that on the thrift side, no part of the "thrift column name" stores a "CQL/metadata column name".
             // This means COMPACT STORAGE with at least one clustering type (otherwise it's a thrift "static" CF).
             stmt.isDense = useCompactStorage && !stmt.clusteringTypes.isEmpty();
-            // Compound means that on the thrift side, the "thrift column name" is a composite one. This means COMPACT STORAGE
-            // with no clustering columns (thrift "static" CF) or only one of them (if more than one, it's a "dense composite").
-            stmt.isCompound = useCompactStorage && stmt.clusteringTypes.size() <= 1;
+            // Compound means that on the thrift side, the "thrift column name" is a composite one. It's the case unless
+            // we use compact storage COMPACT STORAGE and we have either no clustering columns (thrift "static" CF) or
+            // only one of them (if more than one, it's a "dense composite").
+            stmt.isCompound = !(useCompactStorage && stmt.clusteringTypes.size() <= 1);
 
             // For COMPACT STORAGE, we reject any "feature" that we wouldn't be able to translate back to thrift.
             if (useCompactStorage)

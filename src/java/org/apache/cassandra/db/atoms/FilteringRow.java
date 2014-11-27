@@ -82,7 +82,7 @@ public abstract class FilteringRow implements Row
             return null;
 
         Cell cell = wrapped.getCell(c);
-        return includeCell(cell) ? cell : null;
+        return cell != null && includeCell(cell) ? cell : null;
     }
 
     public Iterator<Cell> getCells(ColumnDefinition c)

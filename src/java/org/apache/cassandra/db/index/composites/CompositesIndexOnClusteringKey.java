@@ -58,7 +58,7 @@ public class CompositesIndexOnClusteringKey extends CompositesIndex
             types.add(baseMetadata.clusteringColumns().get(i).type);
         for (int i = columnDef.position() + 1; i < ckCount; i++)
             types.add(baseMetadata.clusteringColumns().get(i).type);
-        return new ClusteringComparator(types);
+        return new ClusteringComparator(types, true, true);
     }
 
     protected ByteBuffer getIndexedValue(ByteBuffer rowKey, ClusteringPrefix clustering, Cell cell)

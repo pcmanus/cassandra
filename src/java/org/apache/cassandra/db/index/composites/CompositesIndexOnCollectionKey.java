@@ -51,7 +51,7 @@ public class CompositesIndexOnCollectionKey extends CompositesIndex
         types.add(SecondaryIndex.keyComparator);
         for (int i = 0; i < count - 1; i++)
             types.add(baseMetadata.comparator.subtype(i));
-        return new ClusteringComparator(types);
+        return new ClusteringComparator(types, true, true);
     }
 
     @Override

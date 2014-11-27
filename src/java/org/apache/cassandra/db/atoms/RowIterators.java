@@ -45,8 +45,8 @@ public abstract class RowIterators
         return !iterator.hasNext() && iterator.staticRow().isEmpty();
     }
 
-    // Please note that this is a destructive operation, only useful for debugging!
-    // TODO: we should buffer stuffs to make it safer.
+    // Please note that this is a destructive operation, only useful for debugging or if
+    // you know what you'r doing!
     public static String toString(RowIterator iterator)
     {
         StringBuilder sb = new StringBuilder();
@@ -67,7 +67,7 @@ public abstract class RowIterators
         while (iterator.hasNext())
             sb.append("-----\n").append(Rows.toString(metadata, iterator.next()));
 
-        sb.append("-----\n");
+        sb.append("\n-----\n");
         return sb.toString();
     }
 

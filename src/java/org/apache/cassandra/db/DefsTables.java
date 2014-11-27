@@ -158,8 +158,9 @@ public class DefsTables
             if (oldPartition == null || RowIterators.isEmpty(oldPartition))
             {
                 // Means a new keyspace was added. Add all of it's new tables
-                for (CFMetaData cfDef : KSMetaData.deserializeColumnFamilies(oldPartition).values())
+                for (CFMetaData cfDef : KSMetaData.deserializeColumnFamilies(newPartition).values())
                     addColumnFamily(cfDef);
+                continue;
             }
 
             diffSchema(oldPartition, newPartition, new Differ()
@@ -191,8 +192,9 @@ public class DefsTables
             if (oldPartition == null || RowIterators.isEmpty(oldPartition))
             {
                 // Means a new keyspace was added. Add all of it's new types
-                for (UserType ut : UTMetaData.fromSchema(oldPartition).values())
+                for (UserType ut : UTMetaData.fromSchema(newPartition).values())
                     addType(ut);
+                continue;
             }
 
             diffSchema(oldPartition, newPartition, new Differ()
@@ -223,8 +225,9 @@ public class DefsTables
             if (oldPartition == null || RowIterators.isEmpty(oldPartition))
             {
                 // Means a new keyspace was added. Add all of it's new types
-                for (UDFunction udf : UDFunction.fromSchema(oldPartition).values())
+                for (UDFunction udf : UDFunction.fromSchema(newPartition).values())
                     addFunction(udf);
+                continue;
             }
 
             diffSchema(oldPartition, newPartition, new Differ()
@@ -462,7 +465,6 @@ public class DefsTables
         for (String cf : SystemKeyspace.allSchemaCfs)
             SystemKeyspace.forceBlockingFlush(cf);
     }
-
 
     public interface Differ
     {

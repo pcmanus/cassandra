@@ -129,17 +129,10 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
     }
 
     @Override
-    public SearchIterator<ClusteringPrefix, Row> searchIterator()
+    protected SeekableAtomIterator seekableAtomIterator(PartitionColumns columns, boolean reversed)
     {
         maybeSort();
-        return super.searchIterator();
-    }
-
-    @Override
-    public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
-    {
-        maybeSort();
-        return super.atomIterator(columns, slices, reversed);
+        return super.seekableAtomIterator(columns, reversed);
     }
 
     public PartitionUpdate addAll(PartitionUpdate update)
@@ -169,7 +162,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
         Iterator<Row> iterator = iterator();
         while (iterator.hasNext())
-            sb.append("-----\n").append(Rows.toString(metadata, iterator.next()));
+            sb.append("-----\n").append(Rows.toString(metadata, iterator.next(), true));
 
         sb.append("-----\n");
         return sb.toString();

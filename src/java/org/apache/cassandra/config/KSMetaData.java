@@ -25,10 +25,8 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.atoms.RowIterator;
-import org.apache.cassandra.db.atoms.RowIterators;
-import org.apache.cassandra.db.atoms.RowIterators;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.*;
 import org.apache.cassandra.service.StorageService;
@@ -318,6 +316,8 @@ public final class KSMetaData
         if (RowIterators.isEmpty(partition))
             return Collections.emptyMap();
 
+        ReadPartition p = ReadPartition.create(partition);
+        partition = p.rowIterator();
         Map<String, CFMetaData> cfms = new HashMap<>();
         UntypedResultSet results = QueryProcessor.resultify("SELECT * FROM system.schema_columnfamilies", partition);
         for (UntypedResultSet.Row result : results)

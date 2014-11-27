@@ -153,6 +153,11 @@ public abstract class Rows
 
     public static String toString(CFMetaData metadata, Row row)
     {
+        return toString(metadata, row, false);
+    }
+
+    public static String toString(CFMetaData metadata, Row row, boolean fullCellDetails)
+    {
         StringBuilder sb = new StringBuilder();
         ClusteringPrefix clustering = row.clustering();
         sb.append("Row");
@@ -171,8 +176,10 @@ public abstract class Rows
         for (Cell cell : row)
         {
             if (isFirst) isFirst = false; else sb.append(", ");
-            ColumnDefinition c = cell.column();
-            sb.append(c.name).append("=").append(c.type.getString(cell.value()));
+            if (fullCellDetails)
+                sb.append(Cells.toString(cell));
+            else
+                sb.append(cell.column().name).append("=").append(cell.column().type.getString(cell.value()));
         }
         return sb.toString();
     }
@@ -246,93 +253,37 @@ public abstract class Rows
     // Merge rows in memtable
     public static void merge(Row existing,
                              Row update,
+                             Columns mergedColumns,
                              Row.Writer writer,
                              int nowInSec,
                              SecondaryIndexManager.Updater indexUpdater)
     {
-        writer.setClustering(existing.clustering());
-        writer.setTimestamp(Math.max(existing.timestamp(), existing.timestamp()));
+        ClusteringPrefix clustering = existing.clustering();
+        writer.writeClustering(clustering);
+        writer.writeTimestamp(Math.max(existing.timestamp(), existing.timestamp()));
 
+        for (int i = 0; i < mergedColumns.simpleColumnCount(); i++)
+        {
+            ColumnDefinition c = mergedColumns.getSimple(i);
+            Cells.reconcile(clustering, existing.getCell(c), update.getCell(c), writer, nowInSec, indexUpdater);
+        }
 
+        for (int i = 0; i < mergedColumns.complexColumnCount(); i++)
+        {
+            ColumnDefinition c = mergedColumns.getComplex(i);
+            DeletionTime existingDt = existing.getDeletion(c);
+            DeletionTime updateDt = update.getDeletion(c);
+            if (existingDt.supersedes(updateDt))
+                writer.writeComplexDeletion(c, existingDt);
+            else
+                writer.writeComplexDeletion(c, updateDt);
 
-        throw new UnsupportedOperationException();
+            Iterator<Cell> existingCells = existing.getCells(c);
+            Iterator<Cell> updateCells = update.getCells(c);
+            Cells.reconcileComplex(clustering, c, existingCells, updateCells, writer, nowInSec, indexUpdater);
+        }
 
-        //Iterator<ColumnData> it1 = r1.iterator();
-        //Iterator<ColumnData> it2 = r2.iterator();
-
-        //ColumnData c1 = it1.hasNext() ? it1.next() : null;
-        //ColumnData c2 = it2.hasNext() ? it2.next() : null;
-
-        //while (c1 != null && c2 != null)
-        //{
-        //    int cmp = c1.column().compareTo(c2.column());
-        //    if (cmp < 0)
-        //    {
-        //        writer.newColumn(c1.column(), c1.complexDeletionTime());
-        //        for (int i = 0; i < c1.size(); i++)
-        //            writer.newCell(c1.cell(i));
-        //        c1 = it1.hasNext() ? it1.next() : null;
-        //    }
-        //    else if (cmp > 0)
-        //    {
-        //        writer.newColumn(c2.column(), c2.complexDeletionTime());
-        //        for (int i = 0; i < c2.size(); i++)
-        //        {
-        //            Cell cell = c2.cell(i);
-        //            indexUpdater.insert(clustering, c2.column(), cell);
-        //            writer.newCell(c2.cell(i));
-        //        }
-        //        c2 = it2.hasNext() ? it2.next() : null;
-        //    }
-        //    else
-        //    {
-        //        DeletionTime dt = c1.complexDeletionTime().supersedes(c2.complexDeletionTime())
-        //                        ? c1.complexDeletionTime()
-        //                        : c2.complexDeletionTime();
-        //        writer.newColumn(c1.column(), dt);
-        //        int i1 = 0;
-        //        int i2 = 0;
-        //        Comparator<CellPath> comparator = c1.column().cellPathComparator();
-        //        while (i1 < c1.size() && i2 < c2.size())
-        //        {
-        //            Cell cell1 = c1.cell(i1);
-        //            Cell cell2 = c2.cell(i1);
-        //            cmp = comparator.compare(cell1.path(), cell2.path());
-        //            if (cmp < 0)
-        //            {
-        //                writer.newCell(cell1);
-        //                i1++;
-        //            }
-        //            else if (cmp > 0)
-        //            {
-        //                indexUpdater.insert(clustering, c2.column(), cell1);
-        //                writer.newCell(cell2);
-        //                i2++;
-        //            }
-        //            else
-        //            {
-        //                Cell reconciled = Cells.reconcile(cell1, cell2, nowInSec);
-        //                indexUpdater.update(clustering, c1.column(), cell1, reconciled);
-        //                writer.newCell(reconciled);
-        //                i1++;
-        //                i2++;
-        //            }
-        //        }
-        //        for (; i1 < c1.size(); i1++)
-        //        {
-        //            writer.newCell(c1.cell(i1));
-        //            i1++;
-        //        }
-        //        for (; i2 < c2.size(); i2++)
-        //        {
-        //            Cell cell = c2.cell(i2);
-        //            indexUpdater.insert(clustering, c2.column(), cell);
-        //            writer.newCell(cell);
-        //            i1++;
-        //        }
-        //    }
-        //}
-        //writer.endOfRow();
+        writer.endOfRow();
     }
 
     public static class Serializer

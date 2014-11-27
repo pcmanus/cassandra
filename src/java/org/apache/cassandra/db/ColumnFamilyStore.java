@@ -520,10 +520,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             if (def.isIndexed())
             {
-                Pair<ClusteringComparator, LegacyLayout> p = SecondaryIndex.getIndexComparatorAndLayout(metadata, def);
-                if (p != null)
+                ClusteringComparator cc = SecondaryIndex.getIndexComparator(metadata, def);
+                if (cc != null)
                 {
-                    CFMetaData indexMetadata = CFMetaData.newIndexMetadata(metadata, def, p.left, p.right);
+                    CFMetaData indexMetadata = CFMetaData.newIndexMetadata(metadata, def, cc);
                     scrubDataDirectories(indexMetadata);
                 }
             }

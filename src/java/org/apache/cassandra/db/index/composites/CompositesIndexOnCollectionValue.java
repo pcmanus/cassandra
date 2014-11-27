@@ -49,7 +49,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
         for (int i = 0; i < prefixSize; i++)
             types.add(baseMetadata.comparator.subtype(i));
         types.add(((CollectionType)columnDef.type).nameComparator()); // collection key
-        return new ClusteringComparator(types);
+        return new ClusteringComparator(types, true, true);
     }
 
     @Override

@@ -20,11 +20,12 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Comparator;
+import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.atoms.*;
-import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.ISSTableSerializer;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -63,19 +64,15 @@ public class LegacyLayout
     public final static int COUNTER_UPDATE_MASK  = 0x08;
     public final static int RANGE_TOMBSTONE_MASK = 0x10;
 
-    private final boolean isDense;
-    private final boolean isCompound;
-    private final int clusteringSize;
+    private final CFMetaData metadata;
 
     private final RangeTombstone.Serializer rangeTombstoneSerializer;
     private final DeletionInfo.Serializer deletionInfoSerializer;
     private final Rows.Serializer rowsSerializer;
 
-    public LegacyLayout(boolean isDense, boolean isCompound, int clusteringSize)
+    public LegacyLayout(CFMetaData metadata)
     {
-        this.isDense = isDense;
-        this.isCompound = isCompound;
-        this.clusteringSize = clusteringSize;
+        this.metadata = metadata;
 
         this.rangeTombstoneSerializer = new RangeTombstone.Serializer(this);
         this.deletionInfoSerializer = new DeletionInfo.Serializer(this);
@@ -87,12 +84,12 @@ public class LegacyLayout
     // and CQL3 CF are *not* dense.
     public boolean isDense()
     {
-        return isDense;
+        return metadata.comparator.isDense;
     }
 
     public boolean isCompound()
     {
-        return isCompound;
+        return metadata.comparator.isCompound;
     }
 
     public boolean isCQL3Layout()
@@ -106,17 +103,72 @@ public class LegacyLayout
         throw new UnsupportedOperationException();
     }
 
-    public static ClusteringComparator clusteringComparatorFromAbstractType(AbstractType<?> type)
+    public static ClusteringComparator clusteringComparatorFromAbstractType(AbstractType<?> type, boolean isDense)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        boolean isCompound = type instanceof CompositeType;
+
+        if (!isCompound)
+        {
+            if (isDense)
+                return new ClusteringComparator(Collections.<AbstractType<?>>singletonList(type), true, false);
+            else
+                return new ClusteringComparator(Collections.<AbstractType<?>>emptyList(), false, false);
+        }
+
+        List<AbstractType<?>> types = ((CompositeType)type).types;
+        if (isDense)
+            return new ClusteringComparator(types, true, true);
+
+        boolean hasCollection = types.get(types.size() - 1) instanceof ColumnToCollectionType;
+        int clusteringSize = types.size() - (hasCollection ? 2 : 1);
+        List<AbstractType<?>> clusteringTypes = new ArrayList<>(clusteringSize);
+        clusteringTypes.addAll(types.subList(0, clusteringSize));
+        // Note that we're ignoring:
+        //   - The column name type: for !compound types, we handle it in CFMetadata outside of
+        //     this method (see affectations to columnNameComparator). For compound types, it's
+        //     a CQL3 table and we haven't allowed anything else than UTF8Type which is the default.
+        //   - The ColumnToCollectionType: its informations are redundant with the ColumnDefinition
+        //     of the table.
+        return new ClusteringComparator(clusteringTypes, false, true);
     }
 
     public AbstractType<?> abstractTypeFromClusteringComparator(ClusteringComparator comparator)
     {
-        // TODO: This actually doesn't work, we'll need the full CFMetaData since we must include
-        // the column name and collection stuffs
-        throw new UnsupportedOperationException();
+        if (!isCompound())
+        {
+            if (isDense())
+            {
+                assert comparator.size() == 1;
+                return comparator.subtype(0);
+            }
+            else
+            {
+                assert comparator.size() == 0;
+                return metadata.columnNameComparator;
+            }
+        }
+
+        boolean hasCollections = metadata.hasCollectionColumns();
+        List<AbstractType<?>> types = new ArrayList<>(comparator.size() + (isDense() ? 0 : 1) + (hasCollections ? 1 : 0));
+
+        types.addAll(comparator.types());
+
+        if (!isDense())
+        {
+            types.add(metadata.columnNameComparator);
+            if (hasCollections)
+            {
+                Map<ByteBuffer, CollectionType> defined = new HashMap<>();
+                for (ColumnDefinition def : metadata.regularAndStaticColumns())
+                {
+                    // Exclude non-multi-cell collections
+                    if (def.type instanceof CollectionType)
+                        defined.put(def.name.bytes, (CollectionType)def.type);
+                }
+                types.add(ColumnToCollectionType.getInstance(defined));
+            }
+        }
+        return CompositeType.getInstance(types);
     }
 
     public Deserializer newDeserializer(DataInput in, Descriptor.Version version)

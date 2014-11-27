@@ -50,8 +50,8 @@ class CellData
         ensureCapacity(idx);
         values[idx] = value;
         timestamps[idx] = timestamp;
-        delTimesAndTTLs[idx] = deletionTime;
-        delTimesAndTTLs[idx + 1] = ttl;
+        delTimesAndTTLs[2 * idx] = deletionTime;
+        delTimesAndTTLs[(2 * idx) + 1] = ttl;
     }
 
     public boolean hasCell(int idx)
@@ -71,12 +71,12 @@ class CellData
 
     public int deletionTime(int idx)
     {
-        return delTimesAndTTLs[idx];
+        return delTimesAndTTLs[2 * idx];
     }
 
     public int ttl(int idx)
     {
-        return delTimesAndTTLs[idx + 1];
+        return delTimesAndTTLs[(2 * idx) + 1];
     }
 
     private void setDefaults(int from, int to)
@@ -85,8 +85,8 @@ class CellData
 
         for (int i = from; i < to; i++)
         {
-            delTimesAndTTLs[i] = Cells.NO_DELETION_TIME;
-            delTimesAndTTLs[i + 1] = Cells.NO_TTL;
+            delTimesAndTTLs[2 * i] = Cells.NO_DELETION_TIME;
+            delTimesAndTTLs[(2 * i) + 1] = Cells.NO_TTL;
         }
     }
 
