@@ -129,8 +129,14 @@ public abstract class Rows
         if (row == null)
             return false;
 
-        // TODO
-        throw new UnsupportedOperationException();
+        if (row.timestamp() != NO_TIMESTAMP)
+            return true;
+
+        for (Cell cell : row)
+            if (Cells.isLive(cell, nowInSec))
+                return true;
+
+        return false;
     }
 
     public static Cell getCell(Row row, ColumnDefinition c)

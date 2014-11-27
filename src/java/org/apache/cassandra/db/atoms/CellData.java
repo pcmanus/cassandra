@@ -56,7 +56,7 @@ class CellData
 
     public boolean hasCell(int idx)
     {
-        return values[idx] != null;
+        return idx < values.length && values[idx] != null;
     }
 
     public ByteBuffer value(int idx)
@@ -92,22 +92,24 @@ class CellData
 
     private void ensureCapacity(int idxToSet)
     {
-        int capacity = values.length;
-        if (idxToSet < capacity)
+        int originalCapacity = values.length;
+        if (idxToSet < originalCapacity)
             return;
 
-        int newCapacity = capacity == 0 ? 4 : (capacity * 3) / 2 + 1;
+        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, idxToSet);
 
         values = Arrays.copyOf(values, newCapacity);
         timestamps = Arrays.copyOf(timestamps, newCapacity);
         delTimesAndTTLs = Arrays.copyOf(delTimesAndTTLs, newCapacity * 2);
 
-        setDefaults(capacity, newCapacity);
+        setDefaults(originalCapacity, newCapacity);
     }
 
     // Swap cell i and j
     public void swapCell(int i, int j)
     {
+        ensureCapacity(Math.max(i, j));
+
         ByteBuffer value = values[j];
         long tstamp = timestamps[j];
         int delTime = delTimesAndTTLs[2 * j];
@@ -124,6 +126,11 @@ class CellData
     // Merge cell i into j
     public void mergeCell(int i, int j, int nowInSec)
     {
+        assert j < i;
+
+        if (!hasCell(i))
+            return;
+
         long tsi = timestamps[i], tsj = timestamps[j];
         if (tsi != tsj)
         {
@@ -147,6 +154,8 @@ class CellData
     // Move cell i into j
     public void moveCell(int i, int j)
     {
+        ensureCapacity(Math.max(i, j));
+
         values[j] = values[i];
         timestamps[j] = timestamps[i];
         delTimesAndTTLs[2 * j] = delTimesAndTTLs[2 * i];

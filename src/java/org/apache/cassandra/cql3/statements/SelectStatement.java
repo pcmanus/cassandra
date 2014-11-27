@@ -201,7 +201,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         cl.validateForRead(keyspace());
 
-        int limit = getLimit(options);
+        DataLimits limit = getLimit(options);
         int nowInSec = FBUtilities.nowInSeconds();
         Pageable command = getPageableCommand(options, limit, nowInSec);
 
@@ -236,7 +236,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return msg;
     }
 
-    private Pageable getPageableCommand(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
+    private Pageable getPageableCommand(QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
     {
         if (isKeyRange || usesSecondaryIndexing)
             return getRangeCommand(options, limit, nowInSec);
@@ -250,7 +250,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return getPageableCommand(options, getLimit(options), FBUtilities.nowInSeconds());
     }
 
-    private ResultMessage.Rows execute(Pageable command, QueryOptions options, int limit, int nowInSec) throws RequestValidationException, RequestExecutionException
+    private ResultMessage.Rows execute(Pageable command, QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException, RequestExecutionException
     {
         DataIterator data;
         if (command == null)
@@ -287,7 +287,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return new ResultMessage.Rows(result.build());
     }
 
-    public ResultMessage.Rows processResults(DataIterator partitions, QueryOptions options, int limit, int nowInSec) throws RequestValidationException
+    public ResultMessage.Rows processResults(DataIterator partitions, QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
     {
         ResultSet rset = process(partitions, options, limit, nowInSec);
         return new ResultMessage.Rows(rset);
@@ -303,7 +303,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     public ResultMessage.Rows executeInternal(QueryState state, QueryOptions options) throws RequestExecutionException, RequestValidationException
     {
-        int limit = getLimit(options);
+        DataLimits limit = getLimit(options);
         int nowInSec = FBUtilities.nowInSeconds();
         Pageable command = getPageableCommand(options, limit, nowInSec);
         ColumnFamilyStore cfs = Keyspace.openAndGetStore(cfm);
@@ -332,13 +332,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return cfm.cfName;
     }
 
-    public DataLimits getLimits()
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
-    private List<SinglePartitionReadCommand> getSliceCommands(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
+    private List<SinglePartitionReadCommand> getSliceCommands(QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
     {
         Collection<ByteBuffer> keys = getKeys(options);
         if (keys.isEmpty()) // in case of IN () for (the last column of) the partition key.
@@ -355,13 +349,13 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         for (ByteBuffer key : keys)
         {
             QueryProcessor.validateKey(key);
-            commands.add(ReadCommands.create(cfm, ByteBufferUtil.clone(key), filter, getLimits(), nowInSec));
+            commands.add(ReadCommands.create(cfm, ByteBufferUtil.clone(key), filter, limit, nowInSec));
         }
 
         return commands;
     }
 
-    private PartitionRangeReadCommand getRangeCommand(QueryOptions options, int limit, int nowInSec) throws RequestValidationException
+    private PartitionRangeReadCommand getRangeCommand(QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
     {
         PartitionFilter partitionFilter = makeFilter(options);
         if (partitionFilter == null)
@@ -372,9 +366,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             return null;
 
         ColumnFilter columnFilter = getValidatedIndexExpressions(options);
-        DataLimits limits = DataLimits.cqlLimits(limit, parameters.isDistinct);
-
-        return new PartitionRangeReadCommand(cfm, nowInSec, columnFilter, limits, new DataRange(keyBounds, partitionFilter));
+        return new PartitionRangeReadCommand(cfm, nowInSec, columnFilter, limit, new DataRange(keyBounds, partitionFilter));
     }
 
     private AbstractBounds<RowPosition> getKeyBounds(QueryOptions options) throws InvalidRequestException
@@ -495,34 +487,36 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return builder.build();
     }
 
-    private int getLimit(QueryOptions options) throws InvalidRequestException
+    private DataLimits getLimit(QueryOptions options) throws InvalidRequestException
     {
-        int l = Integer.MAX_VALUE;
-        if (limit != null)
+        if (limit == null)
+            return DataLimits.NONE;
+
+        ByteBuffer b = limit.bindAndGet(options);
+        if (b == null)
+            throw new InvalidRequestException("Invalid null value of limit");
+
+        try
         {
-            ByteBuffer b = limit.bindAndGet(options);
-            if (b == null)
-                throw new InvalidRequestException("Invalid null value of limit");
+            Int32Type.instance.validate(b);
+            int l = Int32Type.instance.compose(b);
+            if (l <= 0)
+                throw new InvalidRequestException("LIMIT must be strictly positive");
 
-            try
-            {
-                Int32Type.instance.validate(b);
-                l = Int32Type.instance.compose(b);
-            }
-            catch (MarshalException e)
-            {
-                throw new InvalidRequestException("Invalid limit value");
-            }
+            return DataLimits.cqlLimits(l);
         }
-
-        if (l <= 0)
-            throw new InvalidRequestException("LIMIT must be strictly positive");
-
-        return l;
+        catch (MarshalException e)
+        {
+            throw new InvalidRequestException("Invalid limit value");
+        }
     }
 
     public static ByteBuffer serializePartitionKey(ClusteringPrefix keyAsClusteringPrefix)
     {
+        // TODO: we should stop using ClusteringPrefix for partition keys. Maybe we can add
+        // a few methods to DecoratedKey so we don't have to (note that while using a ClusteringPrefix
+        // allows to use buildBound(), it's actually used for partition keys only when every restriction
+        // is an equal, so we could easily create a specific method for keys for that.
         if (keyAsClusteringPrefix.size() == 1)
             return keyAsClusteringPrefix.get(0);
 
@@ -572,7 +566,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 return ByteBufferUtil.EMPTY_BYTE_BUFFER;
 
         // We deal with IN queries for keys in other places, so we know buildBound will return only one result
-        ClusteringPrefix prefix = buildBound(b, cfm.partitionKeyColumns(), keyRestrictions, cfm.getKeyValidatorAsClusteringComparator(), options).get(0);
+        ClusteringPrefix prefix = buildBound(b, cfm.partitionKeyColumns(), keyRestrictions, cfm.getKeyValidatorAsClusteringComparator(), options, true).get(0);
         return prefix == EmptyClusteringPrefix.BOTTOM || prefix == EmptyClusteringPrefix.TOP
              ? ByteBufferUtil.EMPTY_BYTE_BUFFER
              : serializePartitionKey(prefix);
@@ -723,8 +717,18 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                                                      List<ColumnDefinition> defs,
                                                      Restriction[] restrictions,
                                                      ClusteringComparator comparator,
-                                                     QueryOptions options) throws InvalidRequestException
+                                                     QueryOptions options,
+                                                     boolean isPartitionKey) throws InvalidRequestException
     {
+        // No defs means no clustering columns (you can't have no partition
+        // key) and so just select the whole partition (TODO: we should replace that by
+        // a names query of the single row of this partition)
+        if (defs.isEmpty())
+        {
+            assert !isPartitionKey;
+            return Collections.<ClusteringPrefix>singletonList(bound == Bound.START ? EmptyClusteringPrefix.BOTTOM : EmptyClusteringPrefix.TOP);
+        }
+
         CBuilder builder = new CBuilder(comparator);
 
         // check the first restriction to see if we're dealing with a multi-column restriction
@@ -749,6 +753,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             Bound b = isReversedType(def) ? Bound.reverse(bound) : bound;
             if (isNullRestriction(r, b))
             {
+                assert !isPartitionKey;
                 // There wasn't any non EQ relation on that key, we select all records having the preceding component as prefix.
                 // For composites, if there was preceding component and we're computing the end, we must change the last component
                 // End-Of-Component, otherwise we would be selecting only one record.
@@ -757,6 +762,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
             if (r.isSlice())
             {
+                assert !isPartitionKey; // Parition key slices are handled by getTokenBound
                 compositeBuilder.addElementToAll(getSliceValue(r, b, options));
                 Relation.Type relType = ((Restriction.Slice) r).getRelation(bound, b);
                 return compositeBuilder.build(eocForRelation(relType));
@@ -769,12 +775,10 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                         String.format("Invalid null clustering key part %s", def.name));
         }
         // Everything was an equal
-        // Note: if the builder is "full", there is no need to use the end-of-component bit. For columns selection,
-        // it would be harmless to do it. However, we use this method got the partition key too. And when a query
-        // with 2ndary index is done, and with the the partition provided with an EQ, we'll end up here, and in that
-        // case using the eoc would be bad, since for the random partitioner we have no guarantee that
-        // prefix.end() will sort after prefix (see #5240).
-        EOC eoc = compositeBuilder.hasRemaining() ? (bound == Bound.START ? EOC.START : EOC.END) : EOC.NONE;
+        // Note that for partition keys, we should never use an EOC, as they don't make sense for the
+        // partitioner (see #5240). But as partition key must always have all their components anyway,
+        // that's ok.
+        EOC eoc = isPartitionKey ? EOC.NONE : (bound == Bound.START ? EOC.START : EOC.END);
         return compositeBuilder.build(eoc);
     }
 
@@ -900,7 +904,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private List<ClusteringPrefix> getRequestedBound(Bound b, QueryOptions options) throws InvalidRequestException
     {
         assert isColumnRange();
-        return buildBound(b, cfm.clusteringColumns(), columnRestrictions, cfm.comparator, options);
+        return buildBound(b, cfm.clusteringColumns(), columnRestrictions, cfm.comparator, options, false);
     }
 
     public ColumnFilter getValidatedIndexExpressions(QueryOptions options) throws InvalidRequestException
@@ -986,7 +990,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return value;
     }
 
-    private ResultSet process(DataIterator partitions, QueryOptions options, int limit, int nowInSec) throws InvalidRequestException
+    private ResultSet process(DataIterator partitions, QueryOptions options, DataLimits limit, int nowInSec) throws InvalidRequestException
     {
         Selection.ResultSetBuilder result = selection.resultSetBuilder(nowInSec);
         try (DataIterator iter = partitions)
@@ -1009,7 +1013,9 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             cqlRows.reverse();
 
         // Trim result if needed to respect the user limit
-        cqlRows.trim(limit);
+        // TODO: I think we should remove that, we should never return more than asked anymore
+        // If that's the case, we don't need the limit argument to this function
+        //cqlRows.trim(limit.count());
         return cqlRows;
     }
 
@@ -1175,18 +1181,22 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private void validateDistinctSelection()
     throws InvalidRequestException
     {
-        Collection<ColumnDefinition> requestedColumns = selection.getColumns();
-        for (ColumnDefinition def : requestedColumns)
-            if (def.kind != ColumnDefinition.Kind.PARTITION_KEY && def.kind != ColumnDefinition.Kind.STATIC)
-                throw new InvalidRequestException(String.format("SELECT DISTINCT queries must only request partition key columns and/or static columns (not %s)", def.name));
+        // TODO: we need to hanle distinct. That possibly mean a special filter? Or a slice one with Slices.NONE (but the underlying
+        // code should handle it). Also, we need the returned iterator to not be empty; should probably always have a non-empty static row
+        // even if a fake one that is actualy empty but != Rows.EMPTY_STATIC_ROW
+        throw new UnsupportedOperationException();
+        //Collection<ColumnDefinition> requestedColumns = selection.getColumns();
+        //for (ColumnDefinition def : requestedColumns)
+        //    if (def.kind != ColumnDefinition.Kind.PARTITION_KEY && def.kind != ColumnDefinition.Kind.STATIC)
+        //        throw new InvalidRequestException(String.format("SELECT DISTINCT queries must only request partition key columns and/or static columns (not %s)", def.name));
 
-        // If it's a key range, we require that all partition key columns are selected so we don't have to bother with post-query grouping.
-        if (!isKeyRange)
-            return;
+        //// If it's a key range, we require that all partition key columns are selected so we don't have to bother with post-query grouping.
+        //if (!isKeyRange)
+        //    return;
 
-        for (ColumnDefinition def : cfm.partitionKeyColumns())
-            if (!requestedColumns.contains(def))
-                throw new InvalidRequestException(String.format("SELECT DISTINCT queries must request all the partition key columns (missing %s)", def.name));
+        //for (ColumnDefinition def : cfm.partitionKeyColumns())
+        //    if (!requestedColumns.contains(def))
+        //        throw new InvalidRequestException(String.format("SELECT DISTINCT queries must request all the partition key columns (missing %s)", def.name));
     }
 
     public static class RawStatement extends CFStatement

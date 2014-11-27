@@ -93,4 +93,12 @@ public class ArrayBackedPartition extends AbstractPartitionData implements Cache
         // TODO
         throw new UnsupportedOperationException();
     }
+
+    // The number of rows in this cached partition that have at least one
+    // no-expiring non-deleted cell.
+    public int rowsWithNonExpiringCells()
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
 }

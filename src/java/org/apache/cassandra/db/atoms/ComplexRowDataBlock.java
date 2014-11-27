@@ -150,31 +150,31 @@ public class ComplexRowDataBlock
 
     private void ensureComplexPathsCapacity(int idxToSet)
     {
-        int capacity = complexPaths.length;
-        if (idxToSet < capacity)
+        int originalCapacity = complexPaths.length;
+        if (idxToSet < originalCapacity)
             return;
 
-        int newCapacity = (capacity * 3) / 2 + 1;
+        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, idxToSet);
         complexPaths = Arrays.copyOf(complexPaths, newCapacity);
     }
 
     private void ensureDelTimesCapacity(int rowToSet)
     {
-        int capacity = complexDelTimes.size() / columns.complexColumnCount();
-        if (rowToSet < capacity)
+        int originalCapacity = complexDelTimes.size() / columns.complexColumnCount();
+        if (rowToSet < originalCapacity)
             return;
 
-        int newCapacity = (capacity * 3) / 2 + 1;
+        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
         complexDelTimes.resize(newCapacity * columns.complexColumnCount());
     }
 
     private void ensureCellIdxCapacity(int rowToSet)
     {
-        int capacity = complexDelTimes.size() / (2 * columns.complexColumnCount());
-        if (rowToSet < capacity)
+        int originalCapacity = complexDelTimes.size() / (2 * columns.complexColumnCount());
+        if (rowToSet < originalCapacity)
             return;
 
-        int newCapacity = (capacity * 3) / 2 + 1;
+        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
         cellIdx = Arrays.copyOf(cellIdx, newCapacity * 2 * columns.complexColumnCount());
     }
 

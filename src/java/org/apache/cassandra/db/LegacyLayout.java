@@ -99,8 +99,10 @@ public class LegacyLayout
 
     public static ByteBuffer serializeAsOldComposite(ClusteringPrefix prefix)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        ByteBuffer[] values = new ByteBuffer[prefix.size()];
+        for (int i = 0; i < prefix.size(); i++)
+            values[i] = prefix.get(i);
+        return CompositeType.build(values);
     }
 
     public static ClusteringComparator clusteringComparatorFromAbstractType(AbstractType<?> type, boolean isDense)

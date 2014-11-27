@@ -94,6 +94,14 @@ public class RowDataBlock
              + (complexData == null ? 0 : complexData.unsharedHeapSizeExcludingData());
     }
 
+    public static int computeNewCapacity(int currentCapacity, int idxToSet)
+    {
+        int newCapacity = currentCapacity == 0 ? 4 : currentCapacity;
+        while (idxToSet >= newCapacity)
+            newCapacity = 1 + (newCapacity * 3) / 2;
+        return newCapacity;
+    }
+
     public int dataSize()
     {
         return (simpleData == null ? 0 : simpleData.dataSize())

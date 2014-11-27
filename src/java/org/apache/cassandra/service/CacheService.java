@@ -474,8 +474,9 @@ public class CacheService implements CacheServiceMBean
                 public Pair<RowCacheKey, IRowCacheEntry> call() throws Exception
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
-                    AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, FBUtilities.nowInSeconds()).queryMemtableAndDisk(cfs);
-                    CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
+                    int nowInSec = FBUtilities.nowInSeconds();
+                    AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, nowInSec).queryMemtableAndDisk(cfs);
+                    CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec));
                     return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry)toCache);
                 }
             });

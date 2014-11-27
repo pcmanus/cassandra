@@ -62,8 +62,11 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     private final Map<ColumnIdentifier, Restriction> processedKeys = new HashMap<ColumnIdentifier, Restriction>();
 
-    // TODO
+    // TODO: If we had a builder for this statement, we could have updatedColumns final and only have updatedColumnsBuilder
+    // in the builder ...
     private PartitionColumns updatedColumns;
+    private PartitionColumns.Builder updatedColumnsBuilder = PartitionColumns.builder();
+
     private final List<Operation> columnOperations = new ArrayList();
 
     // Separating normal and static conditions makes things somewhat easier
@@ -164,6 +167,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     public void addOperation(Operation op)
     {
+        updatedColumnsBuilder.add(op.column);
+
         if (op.column.isStatic())
             setsStaticColumns = true;
         else
@@ -173,8 +178,12 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     public PartitionColumns updatedColumns()
     {
-        // TODO: we need to populate updatedColumns
-        throw new UnsupportedOperationException();
+        return updatedColumns;
+    }
+
+    private void finishPreparation()
+    {
+        updatedColumns = updatedColumnsBuilder.build();
     }
 
     public List<Operation> getOperations()
@@ -193,6 +202,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
 
     public void addCondition(ColumnCondition cond)
     {
+        updatedColumnsBuilder.add(cond.column);
+
         List<ColumnCondition> conds = null;
         if (cond.column.isStatic())
         {
@@ -777,6 +788,8 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                     }
                 }
             }
+
+            stmt.finishPreparation();
             return stmt;
         }
 

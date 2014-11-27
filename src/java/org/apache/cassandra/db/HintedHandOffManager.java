@@ -488,7 +488,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         ReadCommand cmd = new PartitionRangeReadCommand(hintStore.metadata,
                                                         FBUtilities.nowInSeconds(),
                                                         ColumnFilter.NONE,
-                                                        DataLimits.cqlLimits(Integer.MAX_VALUE, 1, true),
+                                                        DataLimits.cqlLimits(Integer.MAX_VALUE, 1),
                                                         DataRange.allData(hintStore.metadata, StorageService.getPartitioner()));
 
         try (PartitionIterator iter = cmd.executeLocally(hintStore))

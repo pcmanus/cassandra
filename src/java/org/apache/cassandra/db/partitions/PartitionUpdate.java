@@ -160,11 +160,14 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         if (staticRow() != Rows.EMPTY_STATIC_ROW)
             sb.append("-----\n").append(Rows.toString(metadata, staticRow()));
 
-        Iterator<Row> iterator = iterator();
+        // Note that we don't want toString to force sorting, as 1) it can help with debuggin
+        // and 2) we can't write after sorting but we want to be able to print an update while
+        // we build it (again for debugging)
+        Iterator<Row> iterator = super.iterator();
         while (iterator.hasNext())
-            sb.append("-----\n").append(Rows.toString(metadata, iterator.next(), true));
+            sb.append("\n-----\n").append(Rows.toString(metadata, iterator.next(), false));
 
-        sb.append("-----\n");
+        sb.append("\n-----\n");
         return sb.toString();
     }
 
@@ -241,6 +244,9 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         if (isStatic)
             throw new UnsupportedOperationException();
 
+        if (isSorted)
+            throw new IllegalStateException("An update should not written again once it has been read");
+
         return writer;
     }
 
@@ -283,12 +289,12 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
         public int size()
         {
-            return metadata.clusteringColumns().size();
+            return metadata.comparator.size();
         }
 
         public ByteBuffer get(int i)
         {
-            int base = row * metadata.clusteringColumns().size();
+            int base = row * metadata.comparator.size();
             return clusterings[base + i];
         }
     };

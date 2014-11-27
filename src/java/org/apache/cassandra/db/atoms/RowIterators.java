@@ -65,7 +65,7 @@ public abstract class RowIterators
             sb.append("-----\n").append(Rows.toString(metadata, iterator.staticRow()));
 
         while (iterator.hasNext())
-            sb.append("-----\n").append(Rows.toString(metadata, iterator.next()));
+            sb.append("\n-----\n").append(Rows.toString(metadata, iterator.next()));
 
         sb.append("\n-----\n");
         return sb.toString();

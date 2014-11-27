@@ -41,7 +41,7 @@ public abstract class AbstractClusteringPrefix implements ClusteringPrefix
         for (int i = 0; i < size(); i++)
             values[i] = get(i);
 
-        return new SimpleClusteringPrefix(values, eoc);
+        return new SimpleClusteringPrefix(values, size(), eoc);
     }
 
     public int dataSize()
@@ -57,7 +57,7 @@ public abstract class AbstractClusteringPrefix implements ClusteringPrefix
         ByteBuffer[] values = new ByteBuffer[size()];
         for (int i = 0; i < size(); i++)
             values[i] = get(i);
-        return new SimpleClusteringPrefix(values, eoc());
+        return new SimpleClusteringPrefix(values, size(), eoc());
     }
 
     public long unsharedHeapSize()

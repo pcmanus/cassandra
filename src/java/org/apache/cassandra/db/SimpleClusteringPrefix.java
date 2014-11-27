@@ -23,25 +23,27 @@ import org.apache.cassandra.utils.ObjectSizes;
 
 public class SimpleClusteringPrefix extends AbstractClusteringPrefix
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleClusteringPrefix(new ByteBuffer[0], EOC.NONE));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleClusteringPrefix(new ByteBuffer[0], 0, EOC.NONE));
 
     private final ByteBuffer[] values;
+    private final int size;
     private final EOC eoc;
 
-    public SimpleClusteringPrefix(ByteBuffer[] values, ClusteringPrefix.EOC eoc)
+    public SimpleClusteringPrefix(ByteBuffer[] values, int size, ClusteringPrefix.EOC eoc)
     {
         this.values = values;
+        this.size = size;
         this.eoc = eoc;
     }
 
     public SimpleClusteringPrefix(ByteBuffer value)
     {
-        this(new ByteBuffer[]{ value }, EOC.NONE);
+        this(new ByteBuffer[]{ value }, 1, EOC.NONE);
     }
 
     public int size()
     {
-        return values.length;
+        return size;
     }
 
     public ByteBuffer get(int i)
@@ -66,7 +68,7 @@ public class SimpleClusteringPrefix extends AbstractClusteringPrefix
         if (this.eoc == eoc)
             return this;
 
-        return new SimpleClusteringPrefix(values, eoc);
+        return new SimpleClusteringPrefix(values, size, eoc);
     }
 
     @Override

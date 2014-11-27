@@ -105,7 +105,6 @@ public class CreateTableStatement extends SchemaAlteringStatement
                            ? ColumnDefinition.staticDef(cfm, col.getKey().bytes, col.getValue(), componentIndex)
                            : ColumnDefinition.regularDef(cfm, col.getKey().bytes, col.getValue(), componentIndex));
         }
-
         return columnDefs;
     }
 

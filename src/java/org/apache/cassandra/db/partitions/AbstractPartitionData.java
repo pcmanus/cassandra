@@ -336,18 +336,18 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         private void ensureCapacity(int rowToSet)
         {
-            int capacity = timestamps.length;
-            if (rowToSet < capacity)
+            int originalCapacity = timestamps.length;
+            if (rowToSet < originalCapacity)
                 return;
 
-            int newCapacity = capacity == 0 ? 4 : (capacity * 3) / 2 + 1;
+            int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
 
             int clusteringSize = metadata.clusteringColumns().size();
 
             clusterings = Arrays.copyOf(clusterings, newCapacity * clusteringSize);
             timestamps = Arrays.copyOf(timestamps, newCapacity);
 
-            Arrays.fill(timestamps, capacity, newCapacity, Cells.NO_TIMESTAMP);
+            Arrays.fill(timestamps, originalCapacity, newCapacity, Cells.NO_TIMESTAMP);
         }
     }
 

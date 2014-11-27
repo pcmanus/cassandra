@@ -127,7 +127,7 @@ public class ClusteringComparator implements Comparator<Clusterable>
     public int compare(Clusterable cl1, Clusterable cl2)
     {
         ClusteringPrefix c1 = cl1.clustering();
-        ClusteringPrefix c2 = cl1.clustering();
+        ClusteringPrefix c2 = cl2.clustering();
 
         int s1 = c1.size();
         int s2 = c2.size();
@@ -182,8 +182,18 @@ public class ClusteringComparator implements Comparator<Clusterable>
 
     public String getString(ClusteringPrefix prefix)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        StringBuilder sb = new StringBuilder();
+        sb.append("[");
+        for (int i = 0; i < prefix.size(); i++)
+        {
+            if (i > 0)
+                sb.append(", ");
+            ByteBuffer val = prefix.get(i);
+            if (val == null)
+                throw new IllegalStateException();
+            sb.append(val == null ? "null" : subtype(i).getString(val));
+        }
+        return sb.append("]").toString();
     }
 
     public Comparator<IndexInfo> indexComparator()

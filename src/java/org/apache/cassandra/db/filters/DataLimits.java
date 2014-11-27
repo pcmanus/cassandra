@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.db.filters;
 
+import java.io.IOException;
+
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.partitions.*;
@@ -29,19 +31,36 @@ import org.apache.cassandra.db.partitions.*;
  */
 public abstract class DataLimits
 {
-    // TODO
-    public static final DataLimits NONE = null;
-
-    public static DataLimits cqlLimits(int cqlRowLimit, boolean isDistinct)
+    // Please note that this shouldn't be use for thrift
+    public static final DataLimits NONE = new CQLLimits(Integer.MAX_VALUE)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        @Override
+        public boolean hasEnoughData(CachedPartition cached, int nowInSec)
+        {
+            return false;
+        }
+
+        @Override
+        public PartitionIterator filter(PartitionIterator iter, int nowInSec)
+        {
+            return iter;
+        }
+
+        @Override
+        public AtomIterator filter(AtomIterator iter, int nowInSec)
+        {
+            return iter;
+        }
+    };
+
+    public static DataLimits cqlLimits(int cqlRowLimit)
+    {
+        return new CQLLimits(cqlRowLimit);
     }
 
-    public static DataLimits cqlLimits(int cqlRowLimit, int perPartitionLimit, boolean isDistinct)
+    public static DataLimits cqlLimits(int cqlRowLimit, int perPartitionLimit)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new CQLLimits(cqlRowLimit, perPartitionLimit);
     }
 
     public static DataLimits thriftLimits(int partitionLimit, int cellPerPartitionLimit)
@@ -50,51 +69,179 @@ public abstract class DataLimits
         throw new UnsupportedOperationException();
     }
 
-    public DataLimits forPaging(int pageSize)
+    public abstract DataLimits forPaging(int pageSize);
+    public abstract boolean hasEnoughLiveData(CachedPartition cached, int nowInSec);
+
+    // Note that -1 is allowed for nowInSec if we want to count every row (typically
+    // if we know everything passed on will be live)
+    public abstract RowCounter newRowCounter(int nowInSec);
+
+    // TODO: why do we need that again?
+    public abstract int count();
+    public abstract boolean countCells();
+
+    public PartitionIterator filter(PartitionIterator iter, int nowInSec)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new CountingPartitionIterator(iter, newRowCounter(nowInSec));
+    }
+
+    public AtomIterator filter(AtomIterator iter, int nowInSec)
+    {
+        return new CountingAtomIterator(iter, newRowCounter(nowInSec));
     }
 
     /**
      * Estimate the number of results (the definition of "results" will be rows for CQL queries
      * and partitions for thrift ones) that a full scan of the provided cfs would yield.
      */
-    public float estimateTotalResults(ColumnFamilyStore cfs)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-        //if (cfs.metadata.comparator.isDense())
-        //{
-        //    // one storage row per result row, so use key estimate directly
-        //    return cfs.estimateKeys();
-        //}
-        //else
-        //{
-        //    float resultRowsPerStorageRow = ((float) cfs.getMeanColumns()) / cfs.metadata.regularColumns().size();
-        //    return resultRowsPerStorageRow * (cfs.estimateKeys());
-        //}
-    }
-
-    public abstract boolean hasEnoughData(CachedPartition cached, int nowInSec);
-
-    public abstract PartitionIterator filter(PartitionIterator iter);
-
-    public abstract AtomIterator filter(AtomIterator iter);
-
-    public abstract RowCounter newRowCounter();
-
-    public abstract int count();
-
-    public abstract boolean countCells();
+    //if (cfs.metadata.comparator.isDense())
+    //{
+    //    // one storage row per result row, so use key estimate directly
+    //    return cfs.estimateKeys();
+    //}
+    //else
+    //{
+    //    float resultRowsPerStorageRow = ((float) cfs.getMeanColumns()) / cfs.metadata.regularColumns().size();
+    //    return resultRowsPerStorageRow * (cfs.estimateKeys());
+    //}
+    public abstract float estimateTotalResults(ColumnFamilyStore cfs);
 
     public interface RowCounter
     {
         public void newPartition(DecoratedKey partitionKey);
         public void newRow(Row row);
-        public void partitionDone();
 
         public int counted();
+
         public boolean isDone();
+        public boolean isDoneForPartition();
+    }
+
+    private static class CQLLimits extends DataLimits
+    {
+        private final int rowLimit;
+        private final int perPartitionLimit;
+
+        private CQLLimits(int rowLimit)
+        {
+            this(rowLimit, Integer.MAX_VALUE);
+        }
+
+        private CQLLimits(int rowLimit, int perPartitionLimit)
+        {
+            this.rowLimit = rowLimit;
+            this.perPartitionLimit = perPartitionLimit;
+        }
+
+        public DataLimits forPaging(int pageSize)
+        {
+            return new CQLLimits(pageSize, perPartitionLimit);
+        }
+
+        public boolean hasEnoughLiveData(CachedPartition cached, int nowInSec)
+        {
+            // We want the number of row that are currently live. Getting that
+            // precise number force us to iterator the cached partition in general,
+            // but we can avoid that if:
+            //   - The number of rows with at least one non-expiring cell is
+            //     greater than what we ask. We're then fine.
+            //   - The number of rows is less than requested, in which case we
+            //     know there won't have enough data.
+            if (cached.rowsWithNonExpiringCells() >= rowLimit)
+                return true;
+
+            if (cached.rowCount() < rowLimit)
+                return false;
+
+            // Otherwise, we need to re-count
+            AtomIterator cacheIter = cached.atomIterator(cached.columns(), Slices.ALL, false);
+            try (CountingAtomIterator iter = new CountingAtomIterator(cacheIter, newRowCounter(nowInSec)))
+            {
+                // Consume the iterator until we've counted enough
+                while (iter.hasNext() && !iter.counter().isDone())
+                    iter.next();
+                return iter.counter().isDone();
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public RowCounter newRowCounter(int nowInSec)
+        {
+            if (nowInSec < 0)
+                return new LiveCounter();
+            else
+                return new Counter(nowInSec);
+        }
+
+        public int count()
+        {
+            return rowLimit;
+        }
+
+        public boolean countCells()
+        {
+            return false;
+        }
+
+        public float estimateTotalResults(ColumnFamilyStore cfs)
+        {
+            // TODO: we should start storing stats on the number of rows (instead of the number of cells, which
+            // is what getMeanColumns returns)
+            float resultRowsPerStorageRow = ((float) cfs.getMeanColumns()) / cfs.metadata.regularColumns().columnCount();
+            return resultRowsPerStorageRow * (cfs.estimateKeys());
+        }
+
+        private abstract class AbstractCounter implements RowCounter
+        {
+            protected int rowCounted;
+            protected int rowInCurrentPartition;
+
+            public void newPartition(DecoratedKey partitionKey)
+            {
+                rowInCurrentPartition = 0;
+            }
+
+            public int counted()
+            {
+                return rowCounted;
+            }
+
+            public boolean isDone()
+            {
+                return rowCounted >= rowLimit;
+            }
+
+            public void isDoneForPartition()
+            {
+                return isDone() || rowInCurrentPartition >= perPartitionLimit;
+            }
+        }
+
+        private class LiveCounter extends AbstractCounter
+        {
+            public void newRow(Row row)
+            {
+                ++rowCounted;
+            }
+        }
+
+        private class Counter extends AbstractCounter
+        {
+            private int nowInSec;
+
+            Counter(int nowInSec)
+            {
+                this.nowInSec = nowInSec;
+            }
+
+            public void newRow(Row row)
+            {
+                if (Rows.hasLiveData(row, nowInSec))
+                    ++rowCounted;
+            }
+        }
     }
 }

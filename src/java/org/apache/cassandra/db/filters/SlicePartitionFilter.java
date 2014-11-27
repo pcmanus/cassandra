@@ -82,7 +82,7 @@ public class SlicePartitionFilter implements PartitionFilter
         //   1) this filter requests the head of the partition and we request less than what
         //      the cache contains.
         //   2) the start and finish bounds of this filter are included in the cache.
-        if (isHeadFilter() && limits.hasEnoughData(partition, nowInSec))
+        if (isHeadFilter() && limits.hasEnoughLiveData(partition, nowInSec))
             return true;
 
         // Note that since partition is the head of a partition, to have no lower bound is ok

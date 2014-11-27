@@ -31,7 +31,7 @@ public class CountingDataIterator extends WrappingDataIterator
     public CountingDataIterator(DataIterator result, DataLimits limits)
     {
         super(result);
-        this.counter = limits.newRowCounter();
+        this.counter = limits.newRowCounter(-1);
     }
 
     public DataLimits.RowCounter counter()
@@ -66,7 +66,7 @@ public class CountingDataIterator extends WrappingDataIterator
         @Override
         public boolean hasNext()
         {
-            if (counter.isDone())
+            if (counter.isDoneForPartition())
                 return false;
 
             return super.hasNext();
@@ -78,13 +78,6 @@ public class CountingDataIterator extends WrappingDataIterator
             Row row = super.next();
             counter.newRow(row);
             return row;
-        }
-
-        @Override
-        public void close() throws IOException
-        {
-            super.close();
-            counter.partitionDone();
         }
     }
 }

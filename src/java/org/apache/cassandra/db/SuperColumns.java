@@ -60,12 +60,12 @@ public class SuperColumns
 
     public static ClusteringPrefix startOf(ByteBuffer scName)
     {
-        return new SimpleClusteringPrefix(new ByteBuffer[]{ scName }, ClusteringPrefix.EOC.START);
+        return new SimpleClusteringPrefix(new ByteBuffer[]{ scName }, 1, ClusteringPrefix.EOC.START);
     }
 
     public static ClusteringPrefix endOf(ByteBuffer scName)
     {
-        return new SimpleClusteringPrefix(new ByteBuffer[]{ scName }, ClusteringPrefix.EOC.END);
+        return new SimpleClusteringPrefix(new ByteBuffer[]{ scName }, 1, ClusteringPrefix.EOC.END);
     }
 
     // TODO

@@ -57,7 +57,7 @@ public class SimpleRowDataBlock
     public void merge(int i, int j, int nowInSec)
     {
         int s = columns.simpleColumnCount();
-        for (int k = 0; k < s; i++)
+        for (int k = 0; k < s; k++)
             data.mergeCell(i * s + k, j * s + k, nowInSec);
     }
 

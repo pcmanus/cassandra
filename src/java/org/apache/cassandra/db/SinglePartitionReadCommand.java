@@ -177,7 +177,7 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                 AtomIterator iter = ReadCommands.fullPartitionRead(metadata(), partitionKey(), nowInSec()).queryMemtableAndDisk(cfs);
 
                 // We want to cache only rowsToCache rows
-                CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache, false).filter(iter));
+                CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec()));
                 if (sentinelSuccess && !toCache.isEmpty())
                 {
                     Tracing.trace("Caching {} rows", toCache.rowCount());

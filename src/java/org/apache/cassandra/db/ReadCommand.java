@@ -130,7 +130,7 @@ public abstract class ReadCommand
         // we'll probably want to optimize by pushing it down the layer (like for dropped columns) as it
         // would be more efficient (the sooner we discard stuff we know we don't care, the less useless
         // processing we do on it).
-        return limits().filter(columnFilter().filter(resultIterator));
+        return limits().filter(columnFilter().filter(resultIterator), nowInSec());
     }
 
     public MessageOut<ReadCommand> createMessage()

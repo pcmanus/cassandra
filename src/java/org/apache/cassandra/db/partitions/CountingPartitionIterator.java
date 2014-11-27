@@ -17,28 +17,40 @@
  */
 package org.apache.cassandra.db.partitions;
 
-import org.apache.cassandra.cache.IRowCacheEntry;
-import org.apache.cassandra.db.atoms.Atom;
-import org.apache.cassandra.io.ISerializer;
+import java.io.IOException;
 
-/**
- * A partition as stored in the row cache.
- */
-public interface CachedPartition extends Partition, IRowCacheEntry
+import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.filters.DataLimits;
+
+public class CountingPartitionIterator extends WrappingPartitionIterator
 {
-    // TODO
-    public static final ISerializer<CachedPartition> cacheSerializer = null;
+    protected final DataLimits.RowCounter counter;
 
-    public int rowCount();
+    public CountingPartitionIterator(PartitionIterator result, DataLimits.RowCounter counter)
+    {
+        super(result);
+        this.counter = counter;
+    }
 
-    // The number of live rows in this cached partition. But please note that this always
-    // count expiring cells as live, see CFS.isFilterFullyCoveredBy for the reason of this.
-    public int rowsWithNonTombstoneCells();
+    public DataLimits.RowCounter counter()
+    {
+        return counter;
+    }
 
-    // The number of rows in this cached partition that have at least one
-    // no-expiring non-deleted cell.
-    public int rowsWithNonExpiringCells();
+    @Override
+    public boolean hasNext()
+    {
+        if (counter.isDone())
+            return false;
 
-    public Atom tail();
+        return super.hasNext();
+    }
 
+    @Override
+    public AtomIterator next()
+    {
+        AtomIterator iter = super.next();
+        counter.newPartition(iter.partitionKey());
+        return new CountingAtomIterator(iter);
+    }
 }
