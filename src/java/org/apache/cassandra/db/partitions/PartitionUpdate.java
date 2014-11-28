@@ -365,18 +365,18 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
 
             assert key == null;
 
-            AtomIteratorSerializer.FullHeader fh = AtomIteratorSerializer.serializer.deserializeHeader(in, version);
-            assert !fh.header.isReversed && !fh.isEmpty;
+            AtomIteratorSerializer.Header h = AtomIteratorSerializer.serializer.deserializeHeader(in, version);
+            assert !h.isReversed && !h.isEmpty;
             // TODO: get a better initial capacity
-            int rowCapacity = fh.rowEstimate > 0 ? fh.rowEstimate : 4;
+            int rowCapacity = h.rowEstimate > 0 ? h.rowEstimate : 4;
 
-            PartitionUpdate upd = new PartitionUpdate(fh.header.metadata, fh.header.key, fh.header.columns, rowCapacity);
-            upd.addPartitionDeletion(fh.partitionDeletion);
-            upd.staticRow = fh.staticRow;
+            PartitionUpdate upd = new PartitionUpdate(h.metadata, h.key, h.sHeader.columns(), rowCapacity);
+            upd.addPartitionDeletion(h.partitionDeletion);
+            upd.staticRow = h.staticRow;
             upd.isSorted = true;
 
             RangeTombstoneMarker.Writer markerWriter = upd.new RangeTombstoneCollector();
-            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, fh.header, upd.writer(false), markerWriter);
+            AtomIteratorSerializer.serializer.deserializeAtoms(in, version, h.sHeader, upd.writer(false), markerWriter);
             return upd;
         }
 

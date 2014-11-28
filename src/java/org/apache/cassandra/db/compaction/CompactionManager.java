@@ -818,7 +818,8 @@ public class CompactionManager implements CompactionManagerMBean
                                  repairedAt,
                                  cfs.metadata,
                                  cfs.partitioner,
-                                 new MetadataCollector(Collections.singleton(sstable), cfs.metadata.comparator, sstable.getSSTableLevel()));
+                                 new MetadataCollector(Collections.singleton(sstable), cfs.metadata.comparator, sstable.getSSTableLevel()),
+                                 sstable.header);
     }
 
     public static SSTableWriter createWriterForAntiCompaction(ColumnFamilyStore cfs,
@@ -832,23 +833,26 @@ public class CompactionManager implements CompactionManagerMBean
         // if all sstables have the same level, we can compact them together without creating overlap during anticompaction
         // note that we only anticompact from unrepaired sstables, which is not leveled, but we still keep original level
         // after first migration to be able to drop the sstables back in their original place in the repaired sstable manifest
+        PartitionColumns.Builder builder = PartitionColumns.builder();
+        AtomStats stats = AtomStats.NO_STATS;
         for (SSTableReader sstable : sstables)
         {
             if (minLevel == Integer.MAX_VALUE)
                 minLevel = sstable.getSSTableLevel();
 
             if (minLevel != sstable.getSSTableLevel())
-            {
                 minLevel = 0;
-                break;
-            }
+
+            builder.addAll(sstable.header.columns());
+            stats = stats.mergeWith(sstable.header.stats());
         }
         return new SSTableWriter(cfs.getTempSSTablePath(compactionFileLocation),
                                  expectedBloomFilterSize,
                                  repairedAt,
                                  cfs.metadata,
                                  cfs.partitioner,
-                                 new MetadataCollector(sstables, cfs.metadata.comparator, minLevel));
+                                 new MetadataCollector(sstables, cfs.metadata.comparator, minLevel),
+                                 new SerializationHeader(cfs.metadata, builder.build(), stats));
     }
 
 
@@ -955,8 +959,6 @@ public class CompactionManager implements CompactionManagerMBean
                 SSTableReader.releaseReferences(sstables);
         }
     }
-
-
 
     /**
      * Splits up an sstable into two new sstables. The first of the new tables will store repaired ranges, the second

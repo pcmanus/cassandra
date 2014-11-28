@@ -174,6 +174,8 @@ public class SSTableReader extends SSTable
     // not final since we need to be able to change level on a file.
     private volatile StatsMetadata sstableMetadata;
 
+    public final SerializationHeader header;
+
     private final AtomicLong keyCacheHit = new AtomicLong(0);
     private final AtomicLong keyCacheRequest = new AtomicLong(0);
 
@@ -313,6 +315,7 @@ public class SSTableReader extends SSTable
                                                                                                                EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
         ValidationMetadata validationMetadata = (ValidationMetadata) sstableMetadata.get(MetadataType.VALIDATION);
         StatsMetadata statsMetadata = (StatsMetadata) sstableMetadata.get(MetadataType.STATS);
+        SerializationHeader header = (SerializationHeader) sstableMetadata.get(MetadataType.HEADER);
 
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
@@ -332,6 +335,7 @@ public class SSTableReader extends SSTable
                                                   partitioner,
                                                   System.currentTimeMillis(),
                                                   statsMetadata,
+                                                  header,
                                                   false);
 
         // special implementation of load to use non-pooled SegmentedFile builders
@@ -362,6 +366,7 @@ public class SSTableReader extends SSTable
                                                                                                                EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
         ValidationMetadata validationMetadata = (ValidationMetadata) sstableMetadata.get(MetadataType.VALIDATION);
         StatsMetadata statsMetadata = (StatsMetadata) sstableMetadata.get(MetadataType.STATS);
+        SerializationHeader header = (SerializationHeader) sstableMetadata.get(MetadataType.HEADER);
 
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
@@ -381,6 +386,7 @@ public class SSTableReader extends SSTable
                                                   partitioner,
                                                   System.currentTimeMillis(),
                                                   statsMetadata,
+                                                  header,
                                                   false);
 
         // load index and filter
@@ -461,6 +467,7 @@ public class SSTableReader extends SSTable
                                       IFilter bf,
                                       long maxDataAge,
                                       StatsMetadata sstableMetadata,
+                                      SerializationHeader header,
                                       boolean isOpenEarly)
     {
         assert desc != null && partitioner != null && ifile != null && dfile != null && isummary != null && bf != null && sstableMetadata != null;
@@ -473,6 +480,7 @@ public class SSTableReader extends SSTable
                                  bf,
                                  maxDataAge,
                                  sstableMetadata,
+                                 header,
                                  isOpenEarly);
     }
 
@@ -483,10 +491,12 @@ public class SSTableReader extends SSTable
                           IPartitioner partitioner,
                           long maxDataAge,
                           StatsMetadata sstableMetadata,
+                          SerializationHeader header,
                           boolean isOpenEarly)
     {
         super(desc, components, metadata, partitioner);
         this.sstableMetadata = sstableMetadata;
+        this.header = header;
         this.maxDataAge = maxDataAge;
         this.isOpenEarly = isOpenEarly;
 
@@ -526,9 +536,10 @@ public class SSTableReader extends SSTable
                           IFilter bloomFilter,
                           long maxDataAge,
                           StatsMetadata sstableMetadata,
+                          SerializationHeader header,
                           boolean isOpenEarly)
     {
-        this(desc, components, metadata, partitioner, maxDataAge, sstableMetadata, isOpenEarly);
+        this(desc, components, metadata, partitioner, maxDataAge, sstableMetadata, header, isOpenEarly);
 
         this.ifile = ifile;
         this.dfile = dfile;
@@ -949,7 +960,7 @@ public class SSTableReader extends SSTable
 
             if (readMeterSyncFuture != null)
                 readMeterSyncFuture.cancel(false);
-            SSTableReader replacement = new SSTableReader(descriptor, components, metadata, partitioner, ifile, dfile, indexSummary.readOnlyClone(), bf, maxDataAge, sstableMetadata, isOpenEarly);
+            SSTableReader replacement = new SSTableReader(descriptor, components, metadata, partitioner, ifile, dfile, indexSummary.readOnlyClone(), bf, maxDataAge, sstableMetadata, header, isOpenEarly);
             replacement.readMeter = this.readMeter;
             replacement.first = this.last.compareTo(newStart) > 0 ? newStart : this.last;
             replacement.last = this.last;
@@ -1012,7 +1023,7 @@ public class SSTableReader extends SSTable
             if (readMeterSyncFuture != null)
                 readMeterSyncFuture.cancel(false);
 
-            SSTableReader replacement = new SSTableReader(descriptor, components, metadata, partitioner, ifile, dfile, newSummary, bf, maxDataAge, sstableMetadata, isOpenEarly);
+            SSTableReader replacement = new SSTableReader(descriptor, components, metadata, partitioner, ifile, dfile, newSummary, bf, maxDataAge, sstableMetadata, header, isOpenEarly);
             replacement.readMeter = this.readMeter;
             replacement.first = this.first;
             replacement.last = this.last;

@@ -27,7 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 
 import static org.apache.cassandra.utils.ByteBufferUtil.minimalBufferFor;
 
-// TODO: we should rename this class, maybe move it to ColumnStats
+// TODO: we should rename this class, maybe move it to MetadataCollector
 public class ColumnNameHelper
 {
     private static List<ByteBuffer> maybeGrow(List<ByteBuffer> l, int size)
@@ -144,71 +144,71 @@ public class ColumnNameHelper
         return b2;
     }
 
-    /**
-     * Merge 2 lists of min cell name components.
-     *
-     * @param minColumnNames lhs
-     * @param candidates rhs
-     * @param comparator comparator to use
-     * @return a list with smallest column names according to (sub)comparator
-     */
-    public static List<ByteBuffer> mergeMin(List<ByteBuffer> minColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
-    {
-        if (minColumnNames.isEmpty())
-            return minimalBuffersFor(candidates);
+    ///**
+    // * Merge 2 lists of min cell name components.
+    // *
+    // * @param minColumnNames lhs
+    // * @param candidates rhs
+    // * @param comparator comparator to use
+    // * @return a list with smallest column names according to (sub)comparator
+    // */
+    //public static List<ByteBuffer> mergeMin(List<ByteBuffer> minColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
+    //{
+    //    if (minColumnNames.isEmpty())
+    //        return minimalBuffersFor(candidates);
 
-        if (candidates.isEmpty())
-            return minColumnNames;
+    //    if (candidates.isEmpty())
+    //        return minColumnNames;
 
-        List<ByteBuffer> biggest = minColumnNames.size() > candidates.size() ? minColumnNames : candidates;
-        List<ByteBuffer> smallest = minColumnNames.size() > candidates.size() ? candidates : minColumnNames;
+    //    List<ByteBuffer> biggest = minColumnNames.size() > candidates.size() ? minColumnNames : candidates;
+    //    List<ByteBuffer> smallest = minColumnNames.size() > candidates.size() ? candidates : minColumnNames;
 
-        // We want to always copy the smallest list, and maybeGrow does it only if it's actually smaller
-        List<ByteBuffer> retList = smallest.size() == biggest.size()
-                                 ? new ArrayList<>(smallest)
-                                 : maybeGrow(smallest, biggest.size());
+    //    // We want to always copy the smallest list, and maybeGrow does it only if it's actually smaller
+    //    List<ByteBuffer> retList = smallest.size() == biggest.size()
+    //                             ? new ArrayList<>(smallest)
+    //                             : maybeGrow(smallest, biggest.size());
 
-        for (int i = 0; i < biggest.size(); i++)
-            retList.set(i, minimalBufferFor(min(retList.get(i), biggest.get(i), comparator.subtype(i))));
+    //    for (int i = 0; i < biggest.size(); i++)
+    //        retList.set(i, minimalBufferFor(min(retList.get(i), biggest.get(i), comparator.subtype(i))));
 
-        return retList;
-    }
+    //    return retList;
+    //}
 
-    private static List<ByteBuffer> minimalBuffersFor(List<ByteBuffer> candidates)
-    {
-        List<ByteBuffer> minimalBuffers = new ArrayList<ByteBuffer>(candidates.size());
-        for (ByteBuffer byteBuffer : candidates)
-            minimalBuffers.add(minimalBufferFor(byteBuffer));
-        return minimalBuffers;
-    }
+    //private static List<ByteBuffer> minimalBuffersFor(List<ByteBuffer> candidates)
+    //{
+    //    List<ByteBuffer> minimalBuffers = new ArrayList<ByteBuffer>(candidates.size());
+    //    for (ByteBuffer byteBuffer : candidates)
+    //        minimalBuffers.add(minimalBufferFor(byteBuffer));
+    //    return minimalBuffers;
+    //}
 
-    /**
-     * Merge 2 lists of max cell name components.
-     *
-     * @param maxColumnNames lhs
-     * @param candidates rhs
-     * @param comparator comparator to use
-     * @return a list with biggest column names according to (sub)comparator
-     */
-    public static List<ByteBuffer> mergeMax(List<ByteBuffer> maxColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
-    {
-        if (maxColumnNames.isEmpty())
-            return minimalBuffersFor(candidates);
+    ///**
+    // * Merge 2 lists of max cell name components.
+    // *
+    // * @param maxColumnNames lhs
+    // * @param candidates rhs
+    // * @param comparator comparator to use
+    // * @return a list with biggest column names according to (sub)comparator
+    // */
+    //public static List<ByteBuffer> mergeMax(List<ByteBuffer> maxColumnNames, List<ByteBuffer> candidates, ClusteringComparator comparator)
+    //{
+    //    if (maxColumnNames.isEmpty())
+    //        return minimalBuffersFor(candidates);
 
-        if (candidates.isEmpty())
-            return maxColumnNames;
+    //    if (candidates.isEmpty())
+    //        return maxColumnNames;
 
-        List<ByteBuffer> biggest = maxColumnNames.size() > candidates.size() ? maxColumnNames : candidates;
-        List<ByteBuffer> smallest = maxColumnNames.size() > candidates.size() ? candidates : maxColumnNames;
+    //    List<ByteBuffer> biggest = maxColumnNames.size() > candidates.size() ? maxColumnNames : candidates;
+    //    List<ByteBuffer> smallest = maxColumnNames.size() > candidates.size() ? candidates : maxColumnNames;
 
-        // We want to always copy the smallest list, and maybeGrow does it only if it's actually smaller
-        List<ByteBuffer> retList = smallest.size() == biggest.size()
-                                 ? new ArrayList<>(smallest)
-                                 : maybeGrow(smallest, biggest.size());
+    //    // We want to always copy the smallest list, and maybeGrow does it only if it's actually smaller
+    //    List<ByteBuffer> retList = smallest.size() == biggest.size()
+    //                             ? new ArrayList<>(smallest)
+    //                             : maybeGrow(smallest, biggest.size());
 
-        for (int i = 0; i < biggest.size(); i++)
-            retList.set(i, minimalBufferFor(max(retList.get(i), biggest.get(i), comparator.subtype(i))));
+    //    for (int i = 0; i < biggest.size(); i++)
+    //        retList.set(i, minimalBufferFor(max(retList.get(i), biggest.get(i), comparator.subtype(i))));
 
-        return retList;
-    }
+    //    return retList;
+    //}
 }

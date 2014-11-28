@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -32,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
@@ -79,6 +81,9 @@ public class Memtable
     // is only used when a user update the CF comparator, to know if the
     // memtable was created with the new or old comparator.
     public final ClusteringComparator initialComparator;
+
+    private final ColumnsCollector columnsCollector = new ColumnsCollector();
+    private final StatsCollector statsCollector = new StatsCollector();
 
     public Memtable(ColumnFamilyStore cfs)
     {
@@ -191,6 +196,8 @@ public class Memtable
         }
 
         liveDataSize.addAndGet(previous.addAllWithSizeDelta(update, opGroup, indexer));
+        columnsCollector.update(update.columns());
+        statsCollector.update(update.stats());
         currentOperations.addAndGet(update.operationCount());
     }
 
@@ -332,7 +339,7 @@ public class Memtable
 
             SSTableReader ssTable;
             // errors when creating the writer that may leave empty temp files.
-            SSTableWriter writer = createFlushWriter(cfs.getTempSSTablePath(sstableDirectory));
+            SSTableWriter writer = createFlushWriter(cfs.getTempSSTablePath(sstableDirectory), columnsCollector.get(), statsCollector.get());
             try
             {
                 // (we can't clear out the map as-we-go to free up memory,
@@ -377,7 +384,9 @@ public class Memtable
             }
         }
 
-        public SSTableWriter createFlushWriter(String filename)
+        public SSTableWriter createFlushWriter(String filename,
+                                               PartitionColumns columns,
+                                               AtomStats stats)
         {
             MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator).replayPosition(context);
             return new SSTableWriter(filename,
@@ -385,7 +394,8 @@ public class Memtable
                                      ActiveRepairService.UNREPAIRED_SSTABLE,
                                      cfs.metadata,
                                      cfs.partitioner,
-                                     sstableMetadataCollector);
+                                     sstableMetadataCollector,
+                                     new SerializationHeader(cfs.metadata, columns, stats));
         }
     }
 
@@ -406,5 +416,45 @@ public class Memtable
         allocator.setDiscarding();
         allocator.setDiscarded();
         return rowOverhead;
+    }
+
+    private static class ColumnsCollector
+    {
+        // TODO: we could probably do more efficient, but I'm being lazy
+        private final ConcurrentSkipListSet<ColumnDefinition> columns = new ConcurrentSkipListSet<>();
+
+        public void update(PartitionColumns columns)
+        {
+            for (ColumnDefinition s : columns.statics)
+                this.columns.add(s);
+            for (ColumnDefinition r : columns.regulars)
+                this.columns.add(r);
+        }
+
+        public PartitionColumns get()
+        {
+            PartitionColumns.builder().addAll(columns).build();
+        }
+    }
+
+    private static class StatsCollector
+    {
+        private final AtomicReference<AtomStats> stats = new AtomicReference<>(AtomStats.NO_STATS);
+
+        public void update(AtomStats newStats)
+        {
+            while (true)
+            {
+                AtomStats current = stats.get();
+                AtomStats updated = current.mergeWith(newStats);
+                if (stats.compareAndSet(current, updated))
+                    return;
+            }
+        }
+
+        public AtomStats get()
+        {
+            return stats.get();
+        }
     }
 }

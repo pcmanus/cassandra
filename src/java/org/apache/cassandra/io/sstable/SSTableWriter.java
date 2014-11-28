@@ -77,6 +77,8 @@ public class SSTableWriter extends SSTable
     private final MetadataCollector sstableMetadataCollector;
     private final long repairedAt;
 
+    private final SerializationHeader header;
+
     public SSTableWriter(String filename, long keyCount, long repairedAt)
     {
         this(filename,
@@ -117,13 +119,15 @@ public class SSTableWriter extends SSTable
                          long repairedAt,
                          CFMetaData metadata,
                          IPartitioner<?> partitioner,
-                         MetadataCollector sstableMetadataCollector)
+                         MetadataCollector sstableMetadataCollector,
+                         SerializationHeader header)
     {
         super(Descriptor.fromFilename(filename),
               components(metadata),
               metadata,
               partitioner);
         this.repairedAt = repairedAt;
+        this.header = header;
         iwriter = new IndexWriter(keyCount);
 
         if (compression)
@@ -196,14 +200,15 @@ public class SSTableWriter extends SSTable
 
         DecoratedKey key = iterator.partitionKey();
         long startPosition = beforeAppend(key);
-        try (ColumnStatsCollector withStats = new ColumnStatsCollector(iterator))
+
+        try (ColumnStatsCollector withStats = new ColumnStatsCollector(iterator, sstableMetadataCollector))
         {
-            ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile);
+            ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile, header, descriptor.version);
 
             RowIndexEntry entry = RowIndexEntry.create(startPosition, iterator.partitionLevelDeletion(), index);
             afterAppend(key, startPosition, entry);
 
-            sstableMetadataCollector.update(dataFile.getFilePointer() - startPosition, withStats.getColumnStats());
+            sstableMetadataCollector.addPartitionSizeInBytes(dataFile.getFilePointer() - startPosition);
             return entry;
         }
         catch (IOException e)
@@ -214,20 +219,13 @@ public class SSTableWriter extends SSTable
 
     private static class ColumnStatsCollector extends WrappingAtomIterator
     {
-        // note that we default to MIN_VALUE/MAX_VALUE here to be able to override them later in this method
-        // we are checking row/range tombstones and actual cells - there should always be data that overrides
-        // these with actual values
-        int cellCount;
-        ColumnStats.MaxTracker<Long> maxTimestampTracker = new ColumnStats.MaxTracker<>(Long.MAX_VALUE);
-        StreamingHistogram tombstones = new StreamingHistogram(SSTable.TOMBSTONE_HISTOGRAM_BIN_SIZE);
-        ColumnStats.MaxTracker<Integer> maxDeletionTimeTracker = new ColumnStats.MaxTracker<>(Integer.MAX_VALUE);
-        List<ByteBuffer> minColumnNamesSeen = Collections.emptyList();
-        List<ByteBuffer> maxColumnNamesSeen = Collections.emptyList();
-        boolean hasLegacyCounterShards = false;
+        private int cellCount;
+        private final MetadataCollector collector;
 
-        ColumnStatsCollector(AtomIterator iter)
+        ColumnStatsCollector(AtomIterator iter, MetadataCollector collector)
         {
             super(iter);
+            this.collector = collector;
             update(iter.partitionLevelDeletion());
         }
 
@@ -237,24 +235,23 @@ public class SSTableWriter extends SSTable
             Atom atom = super.next();
 
             ClusteringPrefix clustering = atom.clustering();
-            ClusteringComparator comparator = wrapped.metadata().comparator;
-            minColumnNamesSeen = ColumnNameHelper.minComponents(minColumnNamesSeen, clustering, comparator);
-            maxColumnNamesSeen = ColumnNameHelper.maxComponents(maxColumnNamesSeen, clustering, comparator);
+            collector.updateMinClusteringValues(clustering)
+                     .updateMaxClusteringValues(clustering);
 
             switch (atom.kind())
             {
                 case ROW:
                     Row row = (Row)atom;
                     if (row.timestamp() != Rows.NO_TIMESTAMP)
-                        maxTimestampTracker.update(row.timestamp());
+                        update(row.timestamp());
                     for (Cell cell : row)
                     {
                         ++cellCount;
-                        maxTimestampTracker.update(cell.timestamp());
+                        update(cell.timestamp());
                         if (cell.localDeletionTime() != Cells.NO_DELETION_TIME)
-                            maxDeletionTimeTracker.update(cell.localDeletionTime());
+                            collector.updateMaxDeletionTimeTracker(cell.localDeletionTime());
                         if (cell.isCounterCell())
-                            hasLegacyCounterShards = hasLegacyCounterShards || CounterCells.hasLegacyShards(cell);
+                            collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));
                     }
 
                     for (int i = 0; i < row.columns().complexColumnCount(); i++)
@@ -268,26 +265,27 @@ public class SSTableWriter extends SSTable
             return atom;
         }
 
+        private void update(long timestamp)
+        {
+            collector.updateMinTimestamp(timestamp);
+            collector.updateMaxTimestamp(timestamp);
+        }
+
         private void update(DeletionTime dt)
         {
             if (dt.isLive())
                 return;
 
-            maxDeletionTimeTracker.update(dt.localDeletionTime());
-            maxTimestampTracker.update(dt.markedForDeleteAt());
-            tombstones.update(dt.localDeletionTime());
+            update(dt.markedForDeleteAt());
+            collector.updateMaxLocalDeletionTime(dt.localDeletionTime())
+                     .updateTombstoneHistogram(dt.localDeletionTime());
         }
 
-        public ColumnStats getColumnStats()
+        @Override
+        public void close()
         {
-            return new ColumnStats(cellCount,
-                                   stats().minTimestamp,
-                                   maxTimestampTracker.get(),
-                                   maxDeletionTimeTracker.get(),
-                                   tombstones,
-                                   minColumnNamesSeen,
-                                   maxColumnNamesSeen,
-                                   hasLegacyCounterShards);
+            collector.addCellPerPartitionCount(cellCount);
+            super.close();
         }
     }
 
@@ -442,7 +440,8 @@ public class SSTableWriter extends SSTable
         Map<MetadataType, MetadataComponent> metadataComponents = sstableMetadataCollector.finalizeMetadata(
                                                                                     partitioner.getClass().getCanonicalName(),
                                                                                     metadata.getBloomFilterFpChance(),
-                                                                                    repairedAt);
+                                                                                    repairedAt,
+                                                                                    header);
         writeMetadata(descriptor, metadataComponents);
 
         // save the table of components

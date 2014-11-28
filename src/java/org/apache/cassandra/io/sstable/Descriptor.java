@@ -28,6 +28,7 @@ import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.io.sstable.metadata.IMetadataSerializer;
 import org.apache.cassandra.io.sstable.metadata.LegacyMetadataSerializer;
 import org.apache.cassandra.io.sstable.metadata.MetadataSerializer;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.io.sstable.Component.separator;
@@ -66,7 +67,7 @@ public class Descriptor
         //             index summaries can be downsampled and the sampling level is persisted
         //             switch uncompressed checksums to adler32
         //             tracks presense of legacy (local and remote) counter shards
-        // la (3.0.0): new file name format
+        // la (3.0.0): new file name format && file format (store CQL rows)
 
         public static final Version CURRENT = new Version(current_version);
 
@@ -80,6 +81,8 @@ public class Descriptor
         public final boolean hasRepairedAt;
         public final boolean tracksLegacyCounterShards;
         public final boolean newFileName;
+        public final boolean storeRows;
+        public final int correspondingMessagingVersion; // Only use by storage that 'storeRows' so far
 
         public Version(String version)
         {
@@ -92,6 +95,8 @@ public class Descriptor
             hasRepairedAt = version.compareTo("ka") >= 0;
             tracksLegacyCounterShards = version.compareTo("ka") >= 0;
             newFileName = version.compareTo("la") >= 0;
+            storeRows = version.compareTo("la") >= 0;
+            correspondingMessagingVersion = MessagingService.VERSION_30;
         }
 
         /**

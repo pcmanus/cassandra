@@ -186,9 +186,38 @@ public class Columns implements Iterable<ColumnDefinition>
         return new Columns(result, findFirstComplexIdx(result));
     }
 
+    public Iterator<ColumnDefinition> simpleColumns()
+    {
+        return new ColumnIterator(0, complexIdx);
+    }
+
+    public Iterator<ColumnDefinition> complexColumns()
+    {
+        return new ColumnIterator(complexIdx, columns.length);
+    }
+
     public Iterator<ColumnDefinition> iterator()
     {
         return Iterators.forArray(columns);
+    }
+
+    private class ColumnIterator extends AbstractIterator<ColumnDefinition>
+    {
+        private final int to;
+        private int idx;
+
+        private ColumnIterator(int from, int to)
+        {
+            this.idx = from;
+            this.to = to;
+        }
+
+        protected ColumnDefinition computeNext()
+        {
+            if (idx >= to)
+                return endOfData();
+            return columns[idx++];
+        }
     }
 
     @Override

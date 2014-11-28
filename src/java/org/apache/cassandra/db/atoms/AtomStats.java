@@ -18,7 +18,6 @@
 package org.apache.cassandra.db.atoms;
 
 import org.apache.cassandra.db.DeletionTime;
-import org.apache.cassandra.io.sstable.ColumnStats;
 
 /**
  * General statistics on atoms.
@@ -64,16 +63,22 @@ public class AtomStats
 
     public static class Collector
     {
-        private ColumnStats.MinTracker<Long> minTimestamp = new ColumnStats.MinTracker<>(Cells.NO_TIMESTAMP);
-        private ColumnStats.MinTracker<Integer> minDeletionTime = new ColumnStats.MinTracker<>(Cells.NO_DELETION_TIME);
-        private ColumnStats.MinTracker<Integer> minTTL = new ColumnStats.MinTracker<>(0);
+        private boolean isTimestampSet;
+        private long minTimestamp = Long.MAX_VALUE;
+
+        private boolean isDelTimeSet;
+        private int minDeletionTime = Integer.MAX_VALUE;
+
+        private boolean isTTLSet;
+        private int minTTL = Integer.MAX_VALUE;
 
         public void updateTimestamp(long timestamp)
         {
             if (timestamp == Cells.NO_TIMESTAMP)
                 return;
 
-            minTimestamp.update(timestamp);
+            isTimestampSet = true;
+            minTimestamp = Math.min(minTimestamp, timestamp);
         }
 
         public void updateLocalDeletionTime(int deletionTime)
@@ -81,7 +86,8 @@ public class AtomStats
             if (deletionTime == Cells.NO_DELETION_TIME)
                 return;
 
-            minDeletionTime.update(deletionTime);
+            isDelTimeSet = true;
+            minDeletionTime = Math.min(minDeletionTime, deletionTime);
         }
 
         public void updateDeletionTime(DeletionTime deletionTime)
@@ -98,14 +104,15 @@ public class AtomStats
             if (ttl <= Cells.NO_TTL)
                 return;
 
-            minTTL.update(ttl);
+            isTTLSet = true;
+            minTTL = Math.min(minTTL, ttl);
         }
 
         public AtomStats get()
         {
-            return new AtomStats(minTimestamp.get(),
-                                 minDeletionTime.get(),
-                                 minTTL.get());
+            return new AtomStats(isTimestampSet ? minTimestamp : Cells.NO_TIMESTAMP,
+                                 isDelTimeSet ? minDeletionTime : Cells.NO_DELETION_TIME,
+                                 isTTLSet ? minTTL : Cells.NO_TTL);
         }
     }
 }

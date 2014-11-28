@@ -85,7 +85,7 @@ public class AtomSerializer
     private final static int EXPIRATION_MASK  = 0x04;
     private final static int EMPTY_VALUE_MASK = 0x08;
 
-    public void serialize(Atom atom, AtomIteratorSerializer.Header header, DataOutputPlus out, int version)
+    public void serialize(Atom atom, SerializationHeader header, DataOutputPlus out, int version)
     throws IOException
     {
         if (atom.kind() == Atom.Kind.RANGE_TOMBSTONE_MARKER)
@@ -98,7 +98,7 @@ public class AtomSerializer
         }
     }
 
-    public void serialize(Row row, AtomIteratorSerializer.Header header, DataOutputPlus out, int version)
+    public void serialize(Row row, SerializationHeader header, DataOutputPlus out, int version)
     throws IOException
     {
         int flags = 0;
@@ -114,18 +114,19 @@ public class AtomSerializer
 
         out.writeByte((byte)flags);
         if (!isStatic)
-            ClusteringPrefix.serializer.serializeNoEOC(row.clustering(), out, version, header.metadata.comparator.types());
+            ClusteringPrefix.serializer.serializeNoEOC(row.clustering(), out, version, header.clusteringTypes());
 
         if (timestamp != Rows.NO_TIMESTAMP)
             out.writeLong(header.encodeTimestamp(timestamp));
 
-        Columns columns = isStatic ? header.columns.statics : header.columns.regulars;
-        for (int i = 0; i < columns.simpleColumnCount(); i++)
-            writeCell(row.getCell(columns.getSimple(i)), header, out);
+        Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
+        while (simpleIter.hasNext())
+            writeCell(row.getCell(simpleIter.next()), header, out);
 
-        for (int i = 0; i < columns.complexColumnCount(); i++)
+        Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
+        while (complexIter.hasNext())
         {
-            ColumnDefinition column = columns.getComplex(i);
+            ColumnDefinition column = complexIter.next();
             if (hasComplexDeletion)
                 AtomIteratorSerializer.writeDelTime(row.getDeletion(column), header, out);
 
@@ -139,7 +140,7 @@ public class AtomSerializer
         }
     }
 
-    public void serialize(RangeTombstoneMarker marker, AtomIteratorSerializer.Header header, DataOutputPlus out, int version)
+    public void serialize(RangeTombstoneMarker marker, SerializationHeader header, DataOutputPlus out, int version)
     throws IOException
     {
         int flags = IS_MARKER;
@@ -150,18 +151,18 @@ public class AtomSerializer
             flags |= HAS_END_EOC;
 
         out.writeByte((byte)flags);
-        ClusteringPrefix.serializer.serializeNoEOC(marker.clustering(), out, version, header.metadata.comparator.types());
+        ClusteringPrefix.serializer.serializeNoEOC(marker.clustering(), out, version, header.clusteringTypes());
         AtomIteratorSerializer.writeDelTime(marker.delTime(), header, out);
     }
 
-    public long serializedSize(Atom atom, AtomIteratorSerializer.Header header, int version, TypeSizes sizes)
+    public long serializedSize(Atom atom, SerializationHeader header, int version, TypeSizes sizes)
     {
         return atom.kind() == Atom.Kind.RANGE_TOMBSTONE_MARKER
              ? serializedSize((RangeTombstoneMarker)atom, header, version, sizes)
              : serializedSize((Row)atom, header, version, sizes);
     }
 
-    public long serializedSize(Row row, AtomIteratorSerializer.Header header, int version, TypeSizes sizes)
+    public long serializedSize(Row row, SerializationHeader header, int version, TypeSizes sizes)
     {
         long size = 1; // flags
 
@@ -175,13 +176,14 @@ public class AtomSerializer
         if (timestamp != Rows.NO_TIMESTAMP)
             size += sizes.sizeof(header.encodeTimestamp(timestamp));
 
-        Columns columns = isStatic ? header.columns.statics : header.columns.regulars;
-        for (int i = 0; i < columns.simpleColumnCount(); i++)
-            size += sizeOfCell(row.getCell(columns.getSimple(i)), header, sizes);
+        Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
+        while (simpleIter.hasNext())
+            size += sizeOfCell(row.getCell(iter.next()), header, sizes);
 
-        for (int i = 0; i < columns.complexColumnCount(); i++)
+        Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
+        while (complexIter.hasNext())
         {
-            ColumnDefinition column = columns.getComplex(i);
+            ColumnDefinition column = complexIter.next();
             if (hasComplexDeletion)
                 size += AtomIteratorSerializer.delTimeSerializedSize(row.getDeletion(column), header, sizes);
 
@@ -197,10 +199,10 @@ public class AtomSerializer
         return size;
     }
 
-    public long serializedSize(RangeTombstoneMarker marker, AtomIteratorSerializer.Header header, int version, TypeSizes sizes)
+    public long serializedSize(RangeTombstoneMarker marker, SerializationHeader header, int version, TypeSizes sizes)
     {
         return 1 // flags
-             + ClusteringPrefix.serializer.serializedSizeNoEOC(marker.clustering(), version, header.metadata.comparator.types(), sizes)
+             + ClusteringPrefix.serializer.serializedSizeNoEOC(marker.clustering(), version, header.clusteringTypes(), sizes)
              + AtomIteratorSerializer.delTimeSerializedSize(marker.delTime(), header, sizes);
     }
 
@@ -214,7 +216,7 @@ public class AtomSerializer
         return 1;
     }
 
-    private void writeCell(Cell cell, AtomIteratorSerializer.Header header, DataOutputPlus out)
+    private void writeCell(Cell cell, SerializationHeader header, DataOutputPlus out)
     throws IOException
     {
         if (cell == null)
@@ -237,7 +239,7 @@ public class AtomSerializer
         out.writeByte((byte)flags);
 
         if (hasValue)
-            cell.column().type.writeValue(cell.value(), out);
+            header.getType(cell.column()).writeValue(cell.value(), out);
         out.writeLong(header.encodeTimestamp(cell.timestamp()));
         if (isDeleted || isExpiring)
             out.writeInt(header.encodeDeletionTime(cell.localDeletionTime()));
@@ -248,7 +250,7 @@ public class AtomSerializer
             CellPath.serializer.serialize(cell.path(), out);
     }
 
-    private long sizeOfCell(Cell cell, AtomIteratorSerializer.Header header, TypeSizes sizes)
+    private long sizeOfCell(Cell cell, SerializationHeader header, TypeSizes sizes)
     {
         long size = 1; // flags
 
@@ -285,7 +287,7 @@ public class AtomSerializer
     }
 
     public Atom.Kind deserialize(DataInput in,
-                                 AtomIteratorSerializer.Header header,
+                                 SerializationHeader header,
                                  int version,
                                  Row.Writer rowWriter,
                                  RangeTombstoneMarker.Writer markerWriter)
@@ -318,13 +320,14 @@ public class AtomSerializer
             }
             rowWriter.writeTimestamp(hasTimestamp ? header.decodeTimestamp(in.readLong()) : Rows.NO_TIMESTAMP);
 
-            Columns columns = isStatic ? header.columns.statics : header.columns.regulars;
-            for (int i = 0; i < columns.simpleColumnCount(); i++)
-                readCell(columns.getSimple(i), in, header, rowWriter);
+            Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
+            while (simpleIter.hasNext())
+                readCell(simpleIter.next(), in, header, rowWriter);
 
-            for (int i = 0; i < columns.complexColumnCount(); i++)
+            Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
+            while (complexIter.hasNext())
             {
-                ColumnDefinition column = columns.getComplex(i);
+                ColumnDefinition column = complexIter.next();
                 if (hasComplexDeletion)
                     rowWriter.writeComplexDeletion(column, AtomIteratorSerializer.readDelTime(in, header));
 
@@ -335,7 +338,7 @@ public class AtomSerializer
         }
     }
 
-    private boolean readCell(ColumnDefinition column, DataInput in, AtomIteratorSerializer.Header header, Row.Writer writer)
+    private boolean readCell(ColumnDefinition column, DataInput in, SerializationHeader header, Row.Writer writer)
     throws IOException
     {
         int flags = in.readUnsignedByte();
@@ -346,7 +349,7 @@ public class AtomSerializer
         boolean isDeleted = (flags & DELETION_MASK) != 0;
         boolean isExpiring = (flags & EXPIRATION_MASK) != 0;
 
-        ByteBuffer value = hasValue ? column.type.readValue(in) : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        ByteBuffer value = hasValue ? header.getType(column).readValue(in) : ByteBufferUtil.EMPTY_BYTE_BUFFER;
         long timestamp = header.decodeTimestamp(in.readLong());
         int localDelTime = isDeleted || isExpiring
                          ? header.decodeDeletionTime(in.readInt())

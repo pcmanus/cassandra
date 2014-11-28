@@ -24,12 +24,9 @@ import java.util.*;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.atoms.Atom;
-import org.apache.cassandra.db.atoms.AtomIterator;
-import org.apache.cassandra.db.atoms.AtomIterators;
-import org.apache.cassandra.db.atoms.RangeTombstoneMarker;
-import org.apache.cassandra.db.atoms.SimpleRangeTombstoneMarker;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.sstable.IndexHelper;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableWriter;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -47,11 +44,11 @@ public class ColumnIndex
         this.columnsIndex = columnsIndex;
     }
 
-    public static ColumnIndex writeAndBuildIndex(AtomIterator iterator, SequentialWriter output) throws IOException
+    public static ColumnIndex writeAndBuildIndex(AtomIterator iterator, SequentialWriter output, SerializationHeader header, Descriptor.Version version) throws IOException
     {
-        assert !AtomIterators.isEmpty(iterator);
+        assert !AtomIterators.isEmpty(iterator) && version.storeRows;
 
-        Builder builder = new Builder(iterator, output);
+        Builder builder = new Builder(iterator, output, header, version.correspondingMessagingVersion);
         return builder.build();
     }
 
@@ -69,6 +66,8 @@ public class ColumnIndex
     {
         private final AtomIterator iterator;
         private final SequentialWriter writer;
+        private final SerializationHeader header;
+        private final int version;
 
         private final ColumnIndex result;
         private final long indexOffset;
@@ -83,10 +82,14 @@ public class ColumnIndex
         private DeletionTime openMarker;
 
         public Builder(AtomIterator iterator,
-                       SequentialWriter writer)
+                       SequentialWriter writer,
+                       SerializationHeader header,
+                       int version)
         {
             this.iterator = iterator;
             this.writer = writer;
+            this.header = header;
+            this.version = version;
 
             this.result = new ColumnIndex(new ArrayList<IndexHelper.IndexInfo>());
             this.indexOffset = partitionHeaderSize(iterator.partitionKey().getKey(), iterator.partitionLevelDeletion());
@@ -144,17 +147,17 @@ public class ColumnIndex
 
             if (firstClustering == null)
             {
-                firstClustering = clustering.takeAlias();
+                firstClustering = clustering.withEOC(ClusteringPrefix.EOC.START).takeAlias();
                 startPosition = currentPosition();
                 if (openMarker != null)
                 {
                     RangeTombstoneMarker marker = new SimpleRangeTombstoneMarker(firstClustering, true, openMarker);
-                    iterator.metadata().layout().oldFormatAtomSerializer().serializeForSSTable(marker, writer.stream);
+                    AtomSerializer.serializer.serialize(marker, header, writer.stream, version);
                     ++atomWritten;
                 }
             }
 
-            iterator.metadata().layout().oldFormatAtomSerializer().serializeForSSTable(atom, writer.stream);
+            AtomSerializer.serializer.serialize(atom, header, writer.stream, version);
             ++atomWritten;
 
             if (atom.kind() == Atom.Kind.RANGE_TOMBSTONE_MARKER)
