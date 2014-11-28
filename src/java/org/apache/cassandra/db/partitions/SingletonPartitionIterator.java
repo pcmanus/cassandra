@@ -51,7 +51,7 @@ public class SingletonPartitionIterator implements PartitionIterator
         throw new UnsupportedOperationException();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         iter.close();
     }

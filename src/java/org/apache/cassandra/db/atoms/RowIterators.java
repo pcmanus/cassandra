@@ -78,15 +78,9 @@ public abstract class RowIterators
         if (iterator.staticRow() != Rows.EMPTY_STATIC_ROW)
             Rows.copy(iterator.staticRow(), update.writer(true));
 
-        try (RowIterator iter = iterator)
-        {
-            while (iter.hasNext())
-                Rows.copy(iter.next(), update.writer(false));
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
+        while (iterator.hasNext())
+            Rows.copy(iterator.next(), update.writer(false));
+
         return update;
     }
 }

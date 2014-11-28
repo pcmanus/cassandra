@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.atoms;
 
-import java.io.Closeable;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -39,7 +38,7 @@ import org.apache.cassandra.db.*;
  * the returned objects for longer than the iteration, it must make a copy of
  * it explicitly.
  */
-public interface AtomIterator extends Iterator<Atom>, Closeable
+public interface AtomIterator extends Iterator<Atom>, AutoCloseable
 {
     /**
      * The metadata for the table this iterator on.
@@ -80,4 +79,6 @@ public interface AtomIterator extends Iterator<Atom>, Closeable
      * expect those to be exact.
      */
     public AtomStats stats();
+
+    public void close();
 }

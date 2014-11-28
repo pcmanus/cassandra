@@ -396,10 +396,10 @@ public class QueryProcessor implements QueryHandler
 
     public static UntypedResultSet resultify(String query, DataIterator partitions)
     {
-        try
+        try (DataIterator iter = partitions)
         {
             SelectStatement ss = (SelectStatement) getStatement(query, null).statement;
-            ResultSet cqlRows = ss.process(partitions);
+            ResultSet cqlRows = ss.process(iter);
             return UntypedResultSet.create(cqlRows);
         }
         catch (RequestValidationException e)

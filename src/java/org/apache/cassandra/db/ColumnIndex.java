@@ -117,13 +117,10 @@ public class ColumnIndex
         {
             writePartitionHeader(iterator.partitionKey().getKey(), iterator.partitionLevelDeletion());
 
-            try (AtomIterator iter = iterator)
-            {
-                while (iter.hasNext())
-                    add(iter.next());
+            while (iterator.hasNext())
+                add(iterator.next());
 
-                return close();
-            }
+            return close();
         }
 
         private long currentPosition()

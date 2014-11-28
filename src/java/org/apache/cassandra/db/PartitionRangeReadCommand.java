@@ -104,9 +104,14 @@ public class PartitionRangeReadCommand extends ReadCommand implements Pageable
             Tracing.trace("Executing seq scan across {} sstables for {}", view.sstables.size(), dataRange().keyRange().getString(metadata().getKeyValidator()));
             return new WrappingPartitionIterator(getSequentialIterator(view, cfs))
             {
+                private boolean closed;
+
                 @Override
-                public void close() throws IOException
+                public void close()
                 {
+                    if (closed)
+                        return;
+
                     try
                     {
                         super.close();
@@ -114,6 +119,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements Pageable
                     finally
                     {
                         op.close();
+                        closed = true;
                         cfs.metric.rangeLatency.addNano(System.nanoTime() - start);
                     }
                 }

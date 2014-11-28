@@ -329,7 +329,10 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                 // assert count == written: "Table had " + count + " columns, but " + written + " written";
             }
 
-            AtomIteratorSerializer.serializer.serialize(update.seekableAtomIterator(update.columns(), false), out, version, update.rows);
+            try (AtomIterator iter = update.seekableAtomIterator(update.columns(), false))
+            {
+                AtomIteratorSerializer.serializer.serialize(iter, out, version, update.rows);
+            }
         }
 
         public static PartitionUpdate deserialize(DataInput in, int version, LegacyLayout.Flag flag, DecoratedKey key) throws IOException
@@ -395,7 +398,10 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                 //}
             }
 
-            return AtomIteratorSerializer.serializer.serializedSize(update.seekableAtomIterator(update.columns(), false), version, update.rows);
+            try (AtomIterator iter = update.seekableAtomIterator(update.columns(), false))
+            {
+                return AtomIteratorSerializer.serializer.serializedSize(iter, version, update.rows);
+            }
         }
     }
 

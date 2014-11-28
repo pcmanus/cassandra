@@ -156,7 +156,7 @@ public class CompactionIterable extends AbstractCompactionIterable
         throw new UnsupportedOperationException();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         try
         {

@@ -129,12 +129,9 @@ public class AtomIteratorSerializer
         if (rowEstimate >= 0)
             out.writeInt(rowEstimate);
 
-        try (AtomIterator iter = iterator)
-        {
-            while (iter.hasNext())
-                AtomSerializer.serializer.serialize(iter.next(), header, out, version);
-            AtomSerializer.serializer.writeEndOfPartition(out);
-        }
+        while (iterator.hasNext())
+            AtomSerializer.serializer.serialize(iterator.next(), header, out, version);
+        AtomSerializer.serializer.writeEndOfPartition(out);
     }
 
     // Please not that this consume the iterator, and as such should not be called unless we have a simple way to
@@ -177,18 +174,9 @@ public class AtomIteratorSerializer
 
         size += sizes.sizeof(rowEstimate);
 
-        try (AtomIterator iter = iterator)
-        {
-            while (iter.hasNext())
-                size += AtomSerializer.serializer.serializedSize(iter.next(), header, version, sizes);
-            size += AtomSerializer.serializer.serializedSizeEndOfPartition(sizes);
-        }
-        catch (IOException e)
-        {
-            // Since this method is supposed to be only called for entirely in-memory data, we shouldn't
-            // get an IOException while closing.
-            throw new RuntimeException();
-        }
+        while (iterator.hasNext())
+            size += AtomSerializer.serializer.serializedSize(iterator.next(), header, version, sizes);
+        size += AtomSerializer.serializer.serializedSizeEndOfPartition(sizes);
 
         return size;
     }

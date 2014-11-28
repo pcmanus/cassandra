@@ -260,10 +260,6 @@ public class CounterMutation implements IMutation
                 updateForRow(markIter, rowIter.next(), cfs);
             }
         }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
     }
 
     private int compare(ClusteringPrefix c1, ClusteringPrefix c2, ColumnFamilyStore cfs)

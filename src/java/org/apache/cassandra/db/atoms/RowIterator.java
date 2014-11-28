@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.atoms;
 
-import java.io.Closeable;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -35,7 +34,7 @@ import org.apache.cassandra.utils.CloseableIterator;
  * reverse clustering order if isReverseOrder is true), and the Row objects returned
  * by next() are only valid until the next call to hasNext() or next().
  */
-public interface RowIterator extends Iterator<Row>, Closeable
+public interface RowIterator extends Iterator<Row>, AutoCloseable
 {
     /**
      * The metadata for the table this iterator on.
@@ -64,4 +63,6 @@ public interface RowIterator extends Iterator<Row>, Closeable
      * row).
      */
     public Row staticRow();
+
+    public void close();
 }

@@ -63,10 +63,16 @@ public abstract class DataIterators
 
         return new WrappingRowIterator(iter.next())
         {
-            public void close() throws IOException
+            public void close()
             {
-                super.close();
-                iter.close();
+                try
+                {
+                    super.close();
+                }
+                finally
+                {
+                    iter.close();
+                }
             }
         };
     }
@@ -104,9 +110,9 @@ public abstract class DataIterators
                 throw new UnsupportedOperationException();
             }
 
-            public void close() throws IOException
+            public void close()
             {
-                FileUtils.close(iterators);
+                FileUtils.closeQuietly(iterators);
             }
         };
     }
@@ -141,7 +147,7 @@ public abstract class DataIterators
             return iterator;
         }
 
-        public void close() throws IOException
+        public void close()
         {
             iterator.close();
         }

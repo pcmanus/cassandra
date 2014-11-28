@@ -49,6 +49,7 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.metrics.RestorableMeter;
 import org.apache.cassandra.service.StorageService;
@@ -753,10 +754,6 @@ public class SystemKeyspace
                 mutation.add(RowIterators.toUpdate(partition));
             }
         }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
     }
 
     public static DataIterator getSchema(String cfName)
@@ -775,6 +772,8 @@ public class SystemKeyspace
             RowIterator iter = readSchema(schemaCfName, keyspace);
             if (!RowIterators.isEmpty(iter))
                 schema.put(iter.partitionKey(), iter);
+            else
+                FileUtils.closeQuietly(iter);
         }
 
         return schema;

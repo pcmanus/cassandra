@@ -42,6 +42,7 @@ import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -77,10 +78,6 @@ public class DefsTables
             }
 
             return keyspaces;
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
         }
     }
 
@@ -146,14 +143,10 @@ public class DefsTables
                 else
                     updateKeyspace(KSMetaData.fromSchema(newPartition, Collections.<CFMetaData>emptyList(), new UTMetaData()));
             }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
         }
 
         // What's remain in old is those keyspace that are not in updated, i.e. the dropped ones.
-        System.err.println(">>> " + old.keySet());
+        FileUtils.closeQuietly(old.values());
         return old.keySet();
     }
 
@@ -193,10 +186,6 @@ public class DefsTables
                     }
                 });
             }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
         }
     }
 
@@ -235,10 +224,6 @@ public class DefsTables
                     }
                 });
             }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
         }
     }
 
@@ -276,10 +261,6 @@ public class DefsTables
                         updateFunction(UDFunction.fromSchema(UntypedResultSet.Row.fromInternalRow(metadata, key, newRow)));
                     }
                 });
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
             }
         }
     }

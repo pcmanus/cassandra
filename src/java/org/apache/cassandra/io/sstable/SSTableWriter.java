@@ -196,8 +196,7 @@ public class SSTableWriter extends SSTable
 
         DecoratedKey key = iterator.partitionKey();
         long startPosition = beforeAppend(key);
-        ColumnStatsCollector withStats = new ColumnStatsCollector(iterator);
-        try
+        try (ColumnStatsCollector withStats = new ColumnStatsCollector(iterator))
         {
             ColumnIndex index = ColumnIndex.writeAndBuildIndex(withStats, dataFile);
 

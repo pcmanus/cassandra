@@ -49,7 +49,7 @@ public abstract class WrappingPartitionIterator implements PartitionIterator
         wrapped.remove();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         wrapped.close();
     }

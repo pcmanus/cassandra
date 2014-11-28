@@ -94,10 +94,6 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                     {
                         super.close();
                     }
-                    catch (IOException e)
-                    {
-                        throw new RuntimeException(e);
-                    }
                     finally
                     {
                         cfs.metric.readLatency.addNano(System.nanoTime() - start);
@@ -177,24 +173,31 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
             {
                 int rowsToCache = cacheFullPartitions ? Integer.MAX_VALUE : metadata().getCaching().rowCache.rowsToCache;
                 AtomIterator iter = ReadCommands.fullPartitionRead(metadata(), partitionKey(), nowInSec()).queryMemtableAndDisk(cfs);
-
-                // We want to cache only rowsToCache rows
-                CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec()));
-                if (sentinelSuccess && !toCache.isEmpty())
+                try
                 {
-                    Tracing.trace("Caching {} rows", toCache.rowCount());
-                    CacheService.instance.rowCache.replace(key, sentinel, toCache);
-                    // Whether or not the previous replace has worked, our sentinel is not in the cache anymore
-                    sentinelReplaced = true;
-                }
+                    // We want to cache only rowsToCache rows
+                    CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec()));
+                    if (sentinelSuccess && !toCache.isEmpty())
+                    {
+                        Tracing.trace("Caching {} rows", toCache.rowCount());
+                        CacheService.instance.rowCache.replace(key, sentinel, toCache);
+                        // Whether or not the previous replace has worked, our sentinel is not in the cache anymore
+                        sentinelReplaced = true;
+                    }
 
-                // We then re-filter out what this query wants.
-                // Note that in the case where we don't cache full partitions, it's possible that the current query is interested in more
-                // than what we've cached, so we can't just use toCache.
-                AtomIterator cacheIterator = partitionFilter().getAtomIterator(toCache);
-                return cacheFullPartitions
-                     ? cacheIterator
-                     : AtomIterators.concat(cacheIterator, partitionFilter().filter(iter));
+                    // We then re-filter out what this query wants.
+                    // Note that in the case where we don't cache full partitions, it's possible that the current query is interested in more
+                    // than what we've cached, so we can't just use toCache.
+                    AtomIterator cacheIterator = partitionFilter().getAtomIterator(toCache);
+                    return cacheFullPartitions
+                         ? cacheIterator
+                         : AtomIterators.concat(cacheIterator, partitionFilter().filter(iter));
+                }
+                catch (RuntimeException e)
+                {
+                    iter.close();
+                    throw e;
+                }
             }
             finally
             {
@@ -217,13 +220,12 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
         final OpOrder.Group op = cfs.readOrdering.start();
         final int c = counter.getAndIncrement();
         System.err.println("Taken OP  " + c);
-        //Thread.dumpStack();
         return new WrappingAtomIterator(queryMemtableAndDiskInternal(cfs, copyOnHeap))
         {
             private boolean closed;
 
             @Override
-            public void close() throws IOException
+            public void close()
             {
                 // Make sure we don't close twice as this would confuse OpOrder
                 if (closed)

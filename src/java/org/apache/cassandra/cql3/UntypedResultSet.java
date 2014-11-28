@@ -29,6 +29,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
+import org.apache.cassandra.db.partitions.DataIterator;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.service.pager.QueryPager;
@@ -179,15 +180,22 @@ public abstract class UntypedResultSet implements Iterable<UntypedResultSet.Row>
 
                 protected Row computeNext()
                 {
-                    try {
+                    try
+                    {
                         while (currentPage == null || !currentPage.hasNext())
                         {
                             if (pager.isExhausted())
                                 return endOfData();
-                            currentPage = select.process(pager.fetchPage(pageSize)).rows.iterator();
+
+                            try (DataIterator iter = pager.fetchPage(pageSize))
+                            {
+                                currentPage = select.process(iter).rows.iterator();
+                            }
                         }
                         return new Row(metadata, currentPage.next());
-                    } catch (RequestValidationException | RequestExecutionException e) {
+                    }
+                    catch (RequestValidationException | RequestExecutionException e)
+                    {
                         throw new RuntimeException(e);
                     }
                 }

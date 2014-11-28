@@ -74,7 +74,7 @@ public abstract class WrappingRowIterator extends UnmodifiableIterator<Row>  imp
         return wrapped.next();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         wrapped.close();
     }

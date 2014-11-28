@@ -155,9 +155,17 @@ public class SSTableScanner implements ICompactionScanner
         }
     }
 
-    public void close() throws IOException
+    public void close()
     {
-        FileUtils.close(dfile, ifile);
+        try
+        {
+            FileUtils.close(dfile, ifile);
+        }
+        catch (IOException e)
+        {
+            sstable.markSuspect();
+            throw new CorruptSSTableException(e, sstable.getFilename());
+        }
     }
 
     public long getLengthInBytes()
@@ -271,15 +279,7 @@ public class SSTableScanner implements ICompactionScanner
 
         public void close()
         {
-            try
-            {
-                SSTableScanner.this.close();
-            }
-            catch (IOException e)
-            {
-                sstable.markSuspect();
-                throw new CorruptSSTableException(e, sstable.getFilename());
-            }
+            SSTableScanner.this.close();
         }
     }
 

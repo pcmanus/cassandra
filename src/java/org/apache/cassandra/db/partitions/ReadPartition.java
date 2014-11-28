@@ -58,10 +58,6 @@ public class ReadPartition extends ArrayBackedPartition
             while (iter.hasNext())
                 Rows.copy(iter.next(), writer);
         }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
         return partition;
     }
 

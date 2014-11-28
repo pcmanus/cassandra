@@ -186,10 +186,20 @@ public class SSTableIterator implements SeekableAtomIterator
         throw new UnsupportedOperationException();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         if (reader != null)
-            reader.close();
+        {
+            try
+            {
+                reader.close();
+            }
+            catch (IOException e)
+            {
+                sstable.markSuspect();
+                throw new CorruptSSTableException(e, reader.file.getPath());
+            }
+        }
     }
 
     private abstract class Reader

@@ -73,10 +73,6 @@ public class ArrayBackedPartition extends AbstractPartitionData implements Cache
                 }
             }
         }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
         return partition;
     }
 

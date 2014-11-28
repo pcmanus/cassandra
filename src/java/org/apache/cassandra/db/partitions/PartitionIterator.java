@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.partitions;
 
-import java.io.Closeable;
 import java.util.Iterator;
 
 import org.apache.cassandra.db.atoms.AtomIterator;
@@ -30,6 +29,7 @@ import org.apache.cassandra.db.atoms.AtomIterator;
  * reference on the returned objects for longer than the iteration, it must
  * make a copy of it explicitely.
  */
-public interface PartitionIterator extends Iterator<AtomIterator>, Closeable
+public interface PartitionIterator extends Iterator<AtomIterator>, AutoCloseable
 {
+    public void close();
 }

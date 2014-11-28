@@ -379,99 +379,101 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         RateLimiter rateLimiter = RateLimiter.create(throttleInKB == 0 ? Double.MAX_VALUE : throttleInKB * 1024);
 
         int nowInSec = FBUtilities.nowInSeconds();
-        AtomIterator atomIter = ReadCommands.fullPartitionRead(CFMetaData.HintsCf, epkey, nowInSec).queryMemtableAndDisk(hintStore);
-        RowIterator iter = AtomIterators.asRowIterator(atomIter, nowInSec);
-
-        List<WriteResponseHandler> responseHandlers = Lists.newArrayList();
-
-        while (iter.hasNext())
+        try (AtomIterator atomIter = ReadCommands.fullPartitionRead(CFMetaData.HintsCf, epkey, nowInSec).queryMemtableAndDisk(hintStore))
         {
-            // check if node is still alive and we should continue delivery process
-            if (!FailureDetector.instance.isAlive(endpoint))
-            {
-                logger.info("Endpoint {} died during hint delivery; aborting ({} delivered)", endpoint, rowsReplayed);
-                break;
-            }
+            RowIterator iter = AtomIterators.asRowIterator(atomIter, nowInSec);
 
-            // check if hints delivery has been paused during the process
-            if (hintedHandOffPaused)
-            {
-                logger.debug("Hints delivery process is paused, aborting");
-                break;
-            }
+            List<WriteResponseHandler> responseHandlers = Lists.newArrayList();
 
-            // Wait regularly on the endpoint acknowledgment. If we timeout on it,
-            // the endpoint is probably dead so stop delivery
-            if (responseHandlers.size() > MAX_SIMULTANEOUSLY_REPLAYED_HINTS && !checkDelivered(responseHandlers))
+            while (iter.hasNext())
             {
-                logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
-                break;
-            }
-
-            final Row hint = iter.next();
-            int version = Int32Type.instance.compose(hint.clustering().get(1));
-            final Cell cell = Rows.getCell(hint, hintColumn);
-
-            DataInputStream in = new DataInputStream(ByteBufferUtil.inputStream(cell.value()));
-            Mutation mutation;
-            try
-            {
-                mutation = Mutation.serializer.deserialize(in, version);
-            }
-            catch (UnknownColumnFamilyException e)
-            {
-                logger.debug("Skipping delivery of hint for deleted table", e);
-                deleteHint(hostIdBytes, hint.clustering(), cell.timestamp());
-                continue;
-            }
-            catch (IOException e)
-            {
-                throw new AssertionError(e);
-            }
-
-            for (UUID cfId : mutation.getColumnFamilyIds())
-            {
-                if (cell.timestamp() <= SystemKeyspace.getTruncatedAt(cfId))
+                // check if node is still alive and we should continue delivery process
+                if (!FailureDetector.instance.isAlive(endpoint))
                 {
-                    logger.debug("Skipping delivery of hint for truncated table {}", cfId);
-                    mutation = mutation.without(cfId);
+                    logger.info("Endpoint {} died during hint delivery; aborting ({} delivered)", endpoint, rowsReplayed);
+                    break;
                 }
-            }
 
-            if (mutation.isEmpty())
-            {
-                deleteHint(hostIdBytes, hint.clustering(), cell.timestamp());
-                continue;
-            }
-
-            MessageOut<Mutation> message = mutation.createMessage();
-            rateLimiter.acquire(message.serializedSize(MessagingService.current_version));
-            Runnable callback = new Runnable()
-            {
-                public void run()
+                // check if hints delivery has been paused during the process
+                if (hintedHandOffPaused)
                 {
-                    rowsReplayed.incrementAndGet();
+                    logger.debug("Hints delivery process is paused, aborting");
+                    break;
+                }
+
+                // Wait regularly on the endpoint acknowledgment. If we timeout on it,
+                // the endpoint is probably dead so stop delivery
+                if (responseHandlers.size() > MAX_SIMULTANEOUSLY_REPLAYED_HINTS && !checkDelivered(responseHandlers))
+                {
+                    logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
+                    break;
+                }
+
+                final Row hint = iter.next();
+                int version = Int32Type.instance.compose(hint.clustering().get(1));
+                final Cell cell = Rows.getCell(hint, hintColumn);
+
+                DataInputStream in = new DataInputStream(ByteBufferUtil.inputStream(cell.value()));
+                Mutation mutation;
+                try
+                {
+                    mutation = Mutation.serializer.deserialize(in, version);
+                }
+                catch (UnknownColumnFamilyException e)
+                {
+                    logger.debug("Skipping delivery of hint for deleted table", e);
                     deleteHint(hostIdBytes, hint.clustering(), cell.timestamp());
+                    continue;
                 }
-            };
-            WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.SIMPLE, callback);
-            MessagingService.instance().sendRR(message, endpoint, responseHandler, false);
-            responseHandlers.add(responseHandler);
-        }
+                catch (IOException e)
+                {
+                    throw new AssertionError(e);
+                }
 
-        // Wait on the last handlers
-        if (!checkDelivered(responseHandlers))
-            logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
+                for (UUID cfId : mutation.getColumnFamilyIds())
+                {
+                    if (cell.timestamp() <= SystemKeyspace.getTruncatedAt(cfId))
+                    {
+                        logger.debug("Skipping delivery of hint for truncated table {}", cfId);
+                        mutation = mutation.without(cfId);
+                    }
+                }
 
-        if (!iter.hasNext() || rowsReplayed.get() >= DatabaseDescriptor.getTombstoneWarnThreshold())
-        {
-            try
-            {
-                compact().get();
+                if (mutation.isEmpty())
+                {
+                    deleteHint(hostIdBytes, hint.clustering(), cell.timestamp());
+                    continue;
+                }
+
+                MessageOut<Mutation> message = mutation.createMessage();
+                rateLimiter.acquire(message.serializedSize(MessagingService.current_version));
+                Runnable callback = new Runnable()
+                {
+                    public void run()
+                    {
+                        rowsReplayed.incrementAndGet();
+                        deleteHint(hostIdBytes, hint.clustering(), cell.timestamp());
+                    }
+                };
+                WriteResponseHandler responseHandler = new WriteResponseHandler(endpoint, WriteType.SIMPLE, callback);
+                MessagingService.instance().sendRR(message, endpoint, responseHandler, false);
+                responseHandlers.add(responseHandler);
             }
-            catch (Exception e)
+
+            // Wait on the last handlers
+            if (!checkDelivered(responseHandlers))
+                logger.info("Timed out replaying hints to {}; aborting ({} delivered)", endpoint, rowsReplayed);
+
+            if (!iter.hasNext() || rowsReplayed.get() >= DatabaseDescriptor.getTombstoneWarnThreshold())
             {
-                throw new RuntimeException(e);
+                try
+                {
+                    compact().get();
+                }
+                catch (Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
             }
         }
     }
@@ -504,10 +506,6 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                         scheduleHintDelivery(target);
                 }
             }
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
         }
 
         if (logger.isDebugEnabled())
@@ -572,10 +570,6 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                         result.addFirst(tokenFactory.toString(partition.partitionKey().getToken()));
                 }
             }
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
         }
         return result;
     }

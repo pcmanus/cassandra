@@ -2027,7 +2027,7 @@ public class SSTableReader extends SSTable
             return null;
         }
 
-        public void close() throws IOException { }
+        public void close() { }
 
         public void remove() { }
     }

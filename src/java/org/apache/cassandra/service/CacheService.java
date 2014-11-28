@@ -475,9 +475,11 @@ public class CacheService implements CacheServiceMBean
                 {
                     DecoratedKey key = cfs.partitioner.decorateKey(buffer);
                     int nowInSec = FBUtilities.nowInSeconds();
-                    AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, nowInSec).queryMemtableAndDisk(cfs);
-                    CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec));
-                    return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry)toCache);
+                    try (AtomIterator iter = ReadCommands.fullPartitionRead(cfs.metadata, key, nowInSec).queryMemtableAndDisk(cfs))
+                    {
+                        CachedPartition toCache = ArrayBackedPartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec));
+                        return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry)toCache);
+                    }
                 }
             });
         }

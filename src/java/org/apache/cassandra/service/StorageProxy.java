@@ -1545,7 +1545,7 @@ public class StorageProxy implements StorageProxyMBean
             return result.hasNext() ? result.next() : endOfData();
         }
 
-        public void close() throws IOException
+        public void close()
         {
             if (result != null)
                 result.close();
@@ -1587,16 +1587,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 // else, sends the next batch of concurrent queries (after having close the previous iterator)
                 if (sentQueryIterator != null)
-                {
-                    try
-                    {
-                        sentQueryIterator.close();
-                    }
-                    catch (IOException e)
-                    {
-                        throw new RuntimeException(e);
-                    }
-                }
+                    sentQueryIterator.close();
                 sentQueryIterator = sendNextRequests();
             }
 
@@ -1671,7 +1662,7 @@ public class StorageProxy implements StorageProxyMBean
             return DataIterators.concat(concurrentQueries);
         }
 
-        public void close() throws IOException
+        public void close()
         {
             try
             {

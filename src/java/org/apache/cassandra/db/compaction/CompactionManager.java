@@ -801,12 +801,6 @@ public class CompactionManager implements CompactionManagerMBean
                 {
                     cfs.indexManager.deleteFromIndexes(partition, opGroup);
                 }
-                catch (IOException e)
-                {
-                    // In practice, partition is a SSTableIdentityIterator and it's close method does nothing
-                    // Actual closing of the underlying file is done when the scanner is closed in doCleanupOne
-                    throw new RuntimeException(e);
-                }
                 return null;
             }
         }

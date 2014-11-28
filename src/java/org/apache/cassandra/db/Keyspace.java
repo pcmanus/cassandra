@@ -19,6 +19,7 @@ package org.apache.cassandra.db;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.IOError;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;

@@ -227,13 +227,15 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             throw new InvalidRequestException("Cannot page queries with both ORDER BY and a IN restriction on the partition key; you must either remove the "
                                             + "ORDER BY or the IN and sort client side, or disable paging for this query");
 
-        DataIterator page = pager.fetchPage(pageSize);
-        ResultMessage.Rows msg = processResults(page, options, limit, nowInSec);
+        try (DataIterator page = pager.fetchPage(pageSize))
+        {
+            ResultMessage.Rows msg = processResults(page, options, limit, nowInSec);
 
-        if (!pager.isExhausted())
-            msg.result.metadata.setHasMorePages(pager.state());
+            if (!pager.isExhausted())
+                msg.result.metadata.setHasMorePages(pager.state());
 
-        return msg;
+            return msg;
+        }
     }
 
     private Pageable getPageableCommand(QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
@@ -252,19 +254,14 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     private ResultMessage.Rows execute(Pageable command, QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException, RequestExecutionException
     {
-        DataIterator data;
-        if (command == null)
+        try (DataIterator data = command == null
+                               ? DataIterators.EMPTY
+                               : (command instanceof Pageable.ReadCommands
+                                   ? StorageProxy.read(((Pageable.ReadCommands)command).commands, options.getConsistency())
+                                   : StorageProxy.getRangeSlice((PartitionRangeReadCommand)command, options.getConsistency())))
         {
-            data = DataIterators.EMPTY;
+            return processResults(data, options, limit, nowInSec);
         }
-        else
-        {
-            data = command instanceof Pageable.ReadCommands
-                 ? StorageProxy.read(((Pageable.ReadCommands)command).commands, options.getConsistency())
-                 : StorageProxy.getRangeSlice((PartitionRangeReadCommand)command, options.getConsistency());
-        }
-
-        return processResults(data, options, limit, nowInSec);
     }
 
     private ResultMessage.Rows pageAggregateQuery(QueryPager pager, QueryOptions options, int pageSize, int nowInSec)
@@ -278,16 +275,11 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 while (iter.hasNext())
                     processPartition(iter.next(), options, nowInSec, result);
             }
-            catch (IOException e)
-            {
-                // We shouldn't get one up there
-                throw new RuntimeException(e);
-            }
         }
         return new ResultMessage.Rows(result.build());
     }
 
-    public ResultMessage.Rows processResults(DataIterator partitions, QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
+    private ResultMessage.Rows processResults(DataIterator partitions, QueryOptions options, DataLimits limit, int nowInSec) throws RequestValidationException
     {
         ResultSet rset = process(partitions, options, limit, nowInSec);
         return new ResultMessage.Rows(rset);
@@ -307,13 +299,14 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         int nowInSec = FBUtilities.nowInSeconds();
         Pageable command = getPageableCommand(options, limit, nowInSec);
         ColumnFamilyStore cfs = Keyspace.openAndGetStore(cfm);
-        DataIterator data = command == null
-                          ? DataIterators.EMPTY
-                          : (command instanceof Pageable.ReadCommands
-                            ? readLocally(((Pageable.ReadCommands)command).commands, cfs, nowInSec)
-                            : PartitionIterators.asDataIterator(((PartitionRangeReadCommand)command).executeLocally(cfs), nowInSec));
-
-        return processResults(data, options, limit, nowInSec);
+        try (DataIterator data = command == null
+                                ? DataIterators.EMPTY
+                                : (command instanceof Pageable.ReadCommands
+                                  ? readLocally(((Pageable.ReadCommands)command).commands, cfs, nowInSec)
+                                  : PartitionIterators.asDataIterator(((PartitionRangeReadCommand)command).executeLocally(cfs), nowInSec)))
+        {
+            return processResults(data, options, limit, nowInSec);
+        }
     }
 
     public ResultSet process(DataIterator partitions) throws InvalidRequestException
@@ -993,16 +986,8 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
     private ResultSet process(DataIterator partitions, QueryOptions options, DataLimits limit, int nowInSec) throws InvalidRequestException
     {
         Selection.ResultSetBuilder result = selection.resultSetBuilder(nowInSec);
-        try (DataIterator iter = partitions)
-        {
-            while (iter.hasNext())
-                processPartition(iter.next(), options, nowInSec, result);
-        }
-        catch (IOException e)
-        {
-            // We shouldn't get one up here
-            throw new RuntimeException(e);
-        }
+        while (partitions.hasNext())
+            processPartition(partitions.next(), options, nowInSec, result);
 
         ResultSet cqlRows = result.build();
 
@@ -1094,10 +1079,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                     }
                 }
             }
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
         }
     }
 

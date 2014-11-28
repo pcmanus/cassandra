@@ -99,7 +99,7 @@ public class RowIteratorFromAtomIterator extends AbstractIterator<Row> implement
         return endOfData();
     }
 
-    public void close() throws IOException
+    public void close()
     {
         iter.close();
     }

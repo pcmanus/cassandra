@@ -472,23 +472,17 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
                                                          StorageService.getPartitioner().decorateKey(key),
                                                          new SlicePartitionFilter(toRead, slices, false)));
 
-        DataIterator partitions = local
-                                ? SelectStatement.readLocally(commands, Keyspace.openAndGetStore(cfm), nowInSec)
-                                : StorageProxy.read(commands, cl);
-
         Map<DecoratedKey, Partition> map = new HashMap();
 
-        try (DataIterator iter = partitions)
+        try (DataIterator iter = local
+                               ? SelectStatement.readLocally(commands, Keyspace.openAndGetStore(cfm), nowInSec)
+                               : StorageProxy.read(commands, cl))
         {
             while (iter.hasNext())
             {
                 Partition p = ReadPartition.create(iter.next());
                 map.put(p.partitionKey(), p);
             }
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
         }
         return map;
     }

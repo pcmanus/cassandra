@@ -357,31 +357,24 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy implem
             if (currentScanner == null)
                 return endOfData();
 
-            try
+            while (true)
             {
-                while (true)
-                {
-                    if (currentScanner.hasNext())
-                        return currentScanner.next();
+                if (currentScanner.hasNext())
+                    return currentScanner.next();
 
-                    positionOffset += currentScanner.getLengthInBytes();
-                    currentScanner.close();
-                    if (!sstableIterator.hasNext())
-                    {
-                        // reset to null so getCurrentPosition does not return wrong value
-                        currentScanner = null;
-                        return endOfData();
-                    }
-                    currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter());
+                positionOffset += currentScanner.getLengthInBytes();
+                currentScanner.close();
+                if (!sstableIterator.hasNext())
+                {
+                    // reset to null so getCurrentPosition does not return wrong value
+                    currentScanner = null;
+                    return endOfData();
                 }
-            }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
+                currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter());
             }
         }
 
-        public void close() throws IOException
+        public void close()
         {
             if (currentScanner != null)
                 currentScanner.close();

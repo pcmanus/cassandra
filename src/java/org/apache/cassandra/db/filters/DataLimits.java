@@ -162,10 +162,6 @@ public abstract class DataLimits
                     iter.next();
                 return iter.counter().isDone();
             }
-            catch (IOException e)
-            {
-                throw new RuntimeException(e);
-            }
         }
 
         public RowCounter newRowCounter(int nowInSec)

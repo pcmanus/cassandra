@@ -105,7 +105,7 @@ public abstract class PartitionIterators
                 throw new UnsupportedOperationException();
             }
 
-            public void close() throws IOException
+            public void close()
             {
                 iterator.close();
             }

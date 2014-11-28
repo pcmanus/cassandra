@@ -75,7 +75,7 @@ abstract class AbstractQueryPager implements QueryPager
         return new CountingDataIterator(iter, limits.forPaging(pageSize))
         {
             @Override
-            public void close() throws IOException
+            public void close()
             {
                 super.close();
                 remaining -= counter.counted();
@@ -104,7 +104,7 @@ abstract class AbstractQueryPager implements QueryPager
         }
 
         @Override
-        public void close() throws IOException
+        public void close()
         {
             super.close();
             lastWasRecorded = recordLast(lastKey, lastRow);
