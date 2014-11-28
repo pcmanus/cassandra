@@ -210,16 +210,12 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
         return queryMemtableAndDisk(cfs);
     }
 
-    private static final AtomicInteger counter = new AtomicInteger();
-
     public AtomIterator queryMemtableAndDisk(ColumnFamilyStore cfs)
     {
         Tracing.trace("Executing single-partition query on {}", cfs.name);
 
         boolean copyOnHeap = Memtable.MEMORY_POOL.needToCopyOnHeap();
         final OpOrder.Group op = cfs.readOrdering.start();
-        final int c = counter.getAndIncrement();
-        System.err.println("Taken OP  " + c);
         return new WrappingAtomIterator(queryMemtableAndDiskInternal(cfs, copyOnHeap))
         {
             private boolean closed;
@@ -237,7 +233,6 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
                 }
                 finally
                 {
-                    System.err.println("Release OP " + c);
                     op.close();
                     closed = true;
                 }
