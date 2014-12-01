@@ -433,7 +433,7 @@ public class Memtable
 
         public PartitionColumns get()
         {
-            PartitionColumns.builder().addAll(columns).build();
+            return PartitionColumns.builder().addAll(columns).build();
         }
     }
 

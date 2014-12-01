@@ -61,7 +61,8 @@ public abstract class AbstractSSTableSimpleWriter implements Closeable
             ActiveRepairService.UNREPAIRED_SSTABLE,
             metadata,
             DatabaseDescriptor.getPartitioner(),
-            new MetadataCollector(metadata.comparator));
+            new MetadataCollector(metadata.comparator),
+            new SerializationHeader(metadata, metadata.partitionColumns(), AtomStats.NO_STATS));
     }
 
     // find available generation and pick up filename from that

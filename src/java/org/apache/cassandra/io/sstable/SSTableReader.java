@@ -312,10 +312,10 @@ public class SSTableReader extends SSTable
         assert components.contains(Component.PRIMARY_INDEX) : "Primary index component is missing for sstable " + descriptor;
 
         Map<MetadataType, MetadataComponent> sstableMetadata = descriptor.getMetadataSerializer().deserialize(descriptor,
-                                                                                                               EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
+                                                                                                              EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
         ValidationMetadata validationMetadata = (ValidationMetadata) sstableMetadata.get(MetadataType.VALIDATION);
         StatsMetadata statsMetadata = (StatsMetadata) sstableMetadata.get(MetadataType.STATS);
-        SerializationHeader header = (SerializationHeader) sstableMetadata.get(MetadataType.HEADER);
+        SerializationHeader.Component header = (SerializationHeader.Component) sstableMetadata.get(MetadataType.HEADER);
 
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
@@ -335,7 +335,7 @@ public class SSTableReader extends SSTable
                                                   partitioner,
                                                   System.currentTimeMillis(),
                                                   statsMetadata,
-                                                  header,
+                                                  header.toHeader(metadata),
                                                   false);
 
         // special implementation of load to use non-pooled SegmentedFile builders
@@ -363,10 +363,10 @@ public class SSTableReader extends SSTable
         assert components.contains(Component.PRIMARY_INDEX) : "Primary index component is missing for sstable " + descriptor;
 
         Map<MetadataType, MetadataComponent> sstableMetadata = descriptor.getMetadataSerializer().deserialize(descriptor,
-                                                                                                               EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
+                                                                                                              EnumSet.of(MetadataType.VALIDATION, MetadataType.STATS));
         ValidationMetadata validationMetadata = (ValidationMetadata) sstableMetadata.get(MetadataType.VALIDATION);
         StatsMetadata statsMetadata = (StatsMetadata) sstableMetadata.get(MetadataType.STATS);
-        SerializationHeader header = (SerializationHeader) sstableMetadata.get(MetadataType.HEADER);
+        SerializationHeader.Component header = (SerializationHeader.Component) sstableMetadata.get(MetadataType.HEADER);
 
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
@@ -386,7 +386,7 @@ public class SSTableReader extends SSTable
                                                   partitioner,
                                                   System.currentTimeMillis(),
                                                   statsMetadata,
-                                                  header,
+                                                  header.toHeader(metadata),
                                                   false);
 
         // load index and filter
@@ -1839,6 +1839,26 @@ public class SSTableReader extends SSTable
     public long getMaxTimestamp()
     {
         return sstableMetadata.maxTimestamp;
+    }
+
+    public int getMinLocalDeletionTime()
+    {
+        return sstableMetadata.minLocalDeletionTime;
+    }
+
+    public int getMaxLocalDeletionTime()
+    {
+        return sstableMetadata.maxLocalDeletionTime;
+    }
+
+    public int getMinTTL()
+    {
+        return sstableMetadata.minTTL;
+    }
+
+    public int getMaxTTL()
+    {
+        return sstableMetadata.maxTTL;
     }
 
     public Set<Integer> getAncestors()

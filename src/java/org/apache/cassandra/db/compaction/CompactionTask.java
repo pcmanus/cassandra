@@ -35,9 +35,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.PartitionColumns;
+import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.atoms.AtomStats;
 import org.apache.cassandra.db.compaction.CompactionManager.CompactionExecutorStatsCollector;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableRewriter;
@@ -276,12 +280,31 @@ public class CompactionTask extends AbstractCompactionTask
                                  repairedAt,
                                  cfs.metadata,
                                  cfs.partitioner,
-                                 new MetadataCollector(sstables, cfs.metadata.comparator, getLevel()));
+                                 new MetadataCollector(sstables, cfs.metadata.comparator, getLevel()),
+                                 makeSerializationHeader(cfs.metadata, sstables));
     }
 
     protected int getLevel()
     {
         return 0;
+    }
+
+    public static SerializationHeader makeSerializationHeader(CFMetaData metadata, Set<SSTableReader> sstables)
+    {
+        // When computing the header for the compacted file, we use the sstable stats rather than
+        // the compacted file header because the later is computed before the creation of sstables
+        // and can thus be less accurate (if a sstable is compacted and some tombstones are dropped,
+        // it's 'min' stats can change but the header won't reflect that).
+        AtomStats.Collector stats = new AtomStats.Collector();
+        PartitionColumns.Builder columns = PartitionColumns.builder();
+        for (SSTableReader sstable : sstables)
+        {
+            stats.updateTimestamp(sstable.getMinTimestamp());
+            stats.updateLocalDeletionTime(sstable.getMinLocalDeletionTime());
+            stats.updateTTL(sstable.getMinTTL());
+            columns.addAll(sstable.header.columns());
+        }
+        return new SerializationHeader(metadata, columns.build(), stats.get());
     }
 
     protected CompactionController getCompactionController(Set<SSTableReader> toCompact)

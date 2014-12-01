@@ -73,11 +73,12 @@ public class OutgoingFileMessage extends StreamMessage
         }
         this.header = new FileMessageHeader(sstable.metadata.cfId,
                                             sequenceNumber,
-                                            sstable.descriptor.version.toString(),
+                                            sstable.descriptor.version,
                                             estimatedKeys,
                                             sections,
                                             compressionInfo,
-                                            repairedAt);
+                                            repairedAt,
+                                            sstable.header.toComponent());
     }
 
     @Override

@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.io.sstable.metadata;
 
+import org.apache.cassandra.db.SerializationHeader;
+
 /**
  * Defines Metadata component type.
  */
@@ -29,7 +31,7 @@ public enum MetadataType
     /** Metadata always keep in memory */
     STATS(StatsMetadata.serializer),
     /** Serialization header */
-    HEADER(SerializationHeader.serializer);
+    HEADER((IMetadataComponentSerializer)SerializationHeader.serializer);
 
     public final IMetadataComponentSerializer<MetadataComponent> serializer;
 

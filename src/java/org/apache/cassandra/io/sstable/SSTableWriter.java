@@ -79,14 +79,15 @@ public class SSTableWriter extends SSTable
 
     private final SerializationHeader header;
 
-    public SSTableWriter(String filename, long keyCount, long repairedAt)
+    public SSTableWriter(String filename, long keyCount, long repairedAt, SerializationHeader header)
     {
         this(filename,
              keyCount,
              repairedAt,
              Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)),
              StorageService.getPartitioner(),
-             new MetadataCollector(Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)).comparator));
+             new MetadataCollector(Schema.instance.getCFMetaData(Descriptor.fromFilename(filename)).comparator),
+             header);
     }
 
     private static Set<Component> components(CFMetaData metadata)
@@ -235,21 +236,20 @@ public class SSTableWriter extends SSTable
             Atom atom = super.next();
 
             ClusteringPrefix clustering = atom.clustering();
-            collector.updateMinClusteringValues(clustering)
-                     .updateMaxClusteringValues(clustering);
+            collector.updateClusteringValues(clustering);
 
             switch (atom.kind())
             {
                 case ROW:
                     Row row = (Row)atom;
                     if (row.timestamp() != Rows.NO_TIMESTAMP)
-                        update(row.timestamp());
+                        collector.updateTimestamp(row.timestamp());
                     for (Cell cell : row)
                     {
                         ++cellCount;
-                        update(cell.timestamp());
+                        collector.updateTimestamp(cell.timestamp());
                         if (cell.localDeletionTime() != Cells.NO_DELETION_TIME)
-                            collector.updateMaxDeletionTimeTracker(cell.localDeletionTime());
+                            collector.updateLocalDeletionTime(cell.localDeletionTime());
                         if (cell.isCounterCell())
                             collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));
                     }
@@ -265,20 +265,13 @@ public class SSTableWriter extends SSTable
             return atom;
         }
 
-        private void update(long timestamp)
-        {
-            collector.updateMinTimestamp(timestamp);
-            collector.updateMaxTimestamp(timestamp);
-        }
-
         private void update(DeletionTime dt)
         {
             if (dt.isLive())
                 return;
 
-            update(dt.markedForDeleteAt());
-            collector.updateMaxLocalDeletionTime(dt.localDeletionTime())
-                     .updateTombstoneHistogram(dt.localDeletionTime());
+            collector.updateTimestamp(dt.markedForDeleteAt());
+            collector.updateLocalDeletionTime(dt.localDeletionTime());
         }
 
         @Override
@@ -338,8 +331,9 @@ public class SSTableWriter extends SSTable
     public SSTableReader openEarly(long maxDataAge)
     {
         StatsMetadata sstableMetadata = (StatsMetadata) sstableMetadataCollector.finalizeMetadata(partitioner.getClass().getCanonicalName(),
-                                                  metadata.getBloomFilterFpChance(),
-                                                  repairedAt).get(MetadataType.STATS);
+                                                                                                  metadata.getBloomFilterFpChance(),
+                                                                                                  repairedAt,
+                                                                                                  header).get(MetadataType.STATS);
 
         // find the max (exclusive) readable key
         DecoratedKey exclusiveUpperBoundOfReadableIndex = iwriter.getMaxReadableKey(0);
@@ -361,7 +355,8 @@ public class SSTableWriter extends SSTable
                                                            components, metadata,
                                                            partitioner, ifile,
                                                            dfile, iwriter.summary.build(partitioner, exclusiveUpperBoundOfReadableIndex),
-                                                           iwriter.bf, maxDataAge, sstableMetadata, true);
+                                                           iwriter.bf, maxDataAge, sstableMetadata,
+                                                           header, true);
 
         // now it's open, find the ACTUAL last readable key (i.e. for which the data file has also been flushed)
         sstable.first = getMinimalKey(first);
@@ -412,6 +407,7 @@ public class SSTableWriter extends SSTable
                                                            iwriter.bf,
                                                            maxDataAge,
                                                            sstableMetadata,
+                                                           header,
                                                            false);
         sstable.first = getMinimalKey(first);
         sstable.last = getMinimalKey(last);

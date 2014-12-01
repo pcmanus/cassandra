@@ -78,7 +78,13 @@ public class Upgrader
             sstableMetadataCollector.sstableLevel(sstable.getSSTableLevel());
         }
 
-        return new SSTableWriter(cfs.getTempSSTablePath(directory), estimatedRows, repairedAt, cfs.metadata, cfs.partitioner, sstableMetadataCollector);
+        return new SSTableWriter(cfs.getTempSSTablePath(directory),
+                                 estimatedRows,
+                                 repairedAt,
+                                 cfs.metadata,
+                                 cfs.partitioner,
+                                 sstableMetadataCollector,
+                                 CompactionTask.makeSerializationHeader(cfs.metadata, toUpgrade));
     }
 
     public void upgrade()

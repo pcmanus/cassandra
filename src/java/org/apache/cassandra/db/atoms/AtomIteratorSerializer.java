@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
  * The serialization is composed of a header, follows by the atom of the iterator serialized
  * until we read the end of the partition (see AtomSerializer for details). The header itself
  * is:
- *     <cfid><key><flags><min_timetamp><min_localDelTime><min_ttl>[<static_columns>]<columns>[<partition_deletion>][<static_row>]
+ *     <cfid><key><flags><s_header>[<partition_deletion>][<static_row>]
  * where:
  *     <cfid> is the table cfid.
  *     <key> is the partition key.
@@ -50,12 +50,15 @@ import org.apache.cassandra.utils.UUIDSerializer;
  *         - has partition deletion: whether or not there is a <partition_deletion> following
  *         - has static row: whether or not there is a <static_row> following
  *         - has row estimate: whether or not there is a <row_estimate> following
- *     <min_timestamp> is the base timestamp used for delta-encoding timestamps
- *     <min_localDelTime> is the base localDeletionTime used for delta-encoding local deletion times
- *     <min_ttl> is the base localDeletionTime used for delta-encoding ttls
- *     <static_columns> is the static columns if a static row is present. It's
- *         the number of columns as an unsigned short, followed by the column names.
- *     <columns> is the columns of the rows of the iterator. It's serialized as <static_columns>.
+ *     <s_header> is the SerializationHeader. More precisely it's
+ *           <min_timetamp><min_localDelTime><min_ttl>[<static_columns>]<columns>
+ *         where:
+ *           - <min_timestamp> is the base timestamp used for delta-encoding timestamps
+ *           - <min_localDelTime> is the base localDeletionTime used for delta-encoding local deletion times
+ *           - <min_ttl> is the base localDeletionTime used for delta-encoding ttls
+ *           - <static_columns> is the static columns if a static row is present. It's
+ *             the number of columns as an unsigned short, followed by the column names.
+ *           - <columns> is the columns of the rows of the iterator. It's serialized as <static_columns>.
  *     <partition_deletion> is the deletion time for the partition (delta-encoded)
  *     <static_row> is the static row for this partition as serialized by AtomSerializer.
  *     <row_estimate> is the (potentially estimated) number of rows serialized. This is only use for
@@ -91,7 +94,7 @@ public class AtomIteratorSerializer
     public void serialize(AtomIterator iterator, DataOutputPlus out, SerializationHeader header, int version, int rowEstimate) throws IOException
     {
         serializeCfId(iterator.metadata().cfId, out, version);
-        header.keyType().writeValue(iterator.partitionKey().getKey(), out);
+        iterator.metadata().getKeyValidator().writeValue(iterator.partitionKey().getKey(), out);
 
         int flags = 0;
         if (iterator.isReverseOrder())
@@ -146,7 +149,7 @@ public class AtomIteratorSerializer
         TypeSizes sizes = TypeSizes.NATIVE;
 
         long size = cfIdSerializedSize(iterator.metadata().cfId, sizes, version)
-                  + header.keyType.writtenLength(iterator.partitionKey().getKey(), sizes)
+                  + header.keyType().writtenLength(iterator.partitionKey().getKey(), sizes)
                   + 1; // flags
 
         if (AtomIterators.isEmpty(iterator))
@@ -176,11 +179,11 @@ public class AtomIteratorSerializer
     public Header deserializeHeader(DataInput in, int version) throws IOException
     {
         CFMetaData metadata = deserializeCfId(in, version);
-        DecoratedKey key = StorageService.getPartitioner().decorateKey(header.keyType().readValue(in));
+        DecoratedKey key = StorageService.getPartitioner().decorateKey(metadata.getKeyValidator().readValue(in));
         int flags = in.readUnsignedByte();
         boolean isReversed = (flags & IS_REVERSED) != 0;
         if ((flags & IS_EMPTY) != 0)
-            return new Header(new SerializationHeader(metadata, PartitionColumns.NONE, AtomStats.NO_STATS), key, isReversed, true, null, null, 0);
+            return new Header(new SerializationHeader(metadata, PartitionColumns.NONE, AtomStats.NO_STATS), metadata, key, isReversed, true, null, null, 0);
 
         boolean hasPartitionDeletion = (flags & HAS_PARTITION_DELETION) != 0;
         boolean hasStatic = (flags & HAS_STATIC_ROW) != 0;
@@ -193,36 +196,38 @@ public class AtomIteratorSerializer
         Row staticRow = Rows.EMPTY_STATIC_ROW;
         if (hasStatic)
         {
-            ReusableRow row = new ReusableRow(statics);
-            AtomSerializer.serializer.deserialize(in, header, version, row.writer(), null);
+            ReusableRow row = new ReusableRow(header.columns().statics);
+            AtomSerializer.serializer.deserialize(in, header, version, null, row.writer(), null);
             staticRow = row;
         }
         int rowEstimate = hasRowEstimate ? in.readInt() : -1;
-        return new Header(header, key, isReversed, false, partitionDeletion, staticRow, rowEstimate);
+        return new Header(header, metadata, key, isReversed, false, partitionDeletion, staticRow, rowEstimate);
     }
 
     public void deserializeAtoms(DataInput in, int version, SerializationHeader header, Row.Writer rowWriter, RangeTombstoneMarker.Writer markerWriter) throws IOException
     {
-        while (AtomSerializer.serializer.deserialize(in, header, version, rowWriter, markerWriter) != null);
+        ReusableClusteringPrefix clustering = new ReusableClusteringPrefix(header.clusteringTypes().size());
+        while (AtomSerializer.serializer.deserialize(in, header, version, clustering, rowWriter, markerWriter) != null);
     }
 
     public AtomIterator deserialize(final DataInput in, final int version) throws IOException
     {
         final Header h = deserializeHeader(in, version);
 
-        if (fh.isEmpty)
-            return AtomIterators.emptyIterator(h.sHeader.metadata, h.key, h.isReversed);
+        if (h.isEmpty)
+            return AtomIterators.emptyIterator(h.metadata, h.key, h.isReversed);
 
-        return new AbstractAtomIterator(h.sHeader.metadata, h.key, h.partitionDeletion, h.sHeader.columns, h.staticRow, h.isReversed, h.sHeader.stats)
+        return new AbstractAtomIterator(h.metadata, h.key, h.partitionDeletion, h.sHeader.columns(), h.staticRow, h.isReversed, h.sHeader.stats())
         {
-            private final ReusableRow row = new ReusableRow(h.sHeader.columns.regulars);
+            private final ReusableClusteringPrefix clustering = new ReusableClusteringPrefix(h.metadata.clusteringColumns().size());
+            private final ReusableRow row = new ReusableRow(h.sHeader.columns().regulars);
             private final ReusableRangeTombstoneMarker marker = new ReusableRangeTombstoneMarker();
 
             protected Atom computeNext()
             {
                 try
                 {
-                    Atom.Kind kind = AtomSerializer.serializer.deserialize(in, h.sHeader, version, row.writer(), marker.writer());
+                    Atom.Kind kind = AtomSerializer.serializer.deserialize(in, h.sHeader, version, clustering, row.writer(), marker.writer());
                     if (kind == null)
                         return endOfData();
 

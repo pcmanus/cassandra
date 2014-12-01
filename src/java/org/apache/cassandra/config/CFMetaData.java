@@ -892,6 +892,12 @@ public final class CFMetaData
         throw new UnsupportedOperationException();
     }
 
+    public ColumnDefinition getDroppedColumnDefinition(ByteBuffer name)
+    {
+        // TODO
+        throw new UnsupportedOperationException();
+    }
+
     @Override
     public boolean equals(Object o)
     {

@@ -23,10 +23,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.compress.CompressionInfo;
 import org.apache.cassandra.utils.Pair;
@@ -42,19 +45,21 @@ public class FileMessageHeader
     public final UUID cfId;
     public final int sequenceNumber;
     /** SSTable version */
-    public final String version;
+    public final Descriptor.Version version;
     public final long estimatedKeys;
     public final List<Pair<Long, Long>> sections;
     public final CompressionInfo compressionInfo;
     public final long repairedAt;
+    public final SerializationHeader.Component header;
 
     public FileMessageHeader(UUID cfId,
                              int sequenceNumber,
-                             String version,
+                             Descriptor.Version version,
                              long estimatedKeys,
                              List<Pair<Long, Long>> sections,
                              CompressionInfo compressionInfo,
-                             long repairedAt)
+                             long repairedAt,
+                             SerializationHeader.Component header)
     {
         this.cfId = cfId;
         this.sequenceNumber = sequenceNumber;
@@ -63,6 +68,7 @@ public class FileMessageHeader
         this.sections = sections;
         this.compressionInfo = compressionInfo;
         this.repairedAt = repairedAt;
+        this.header = header;
     }
 
     /**
@@ -123,7 +129,7 @@ public class FileMessageHeader
         {
             UUIDSerializer.serializer.serialize(header.cfId, out, version);
             out.writeInt(header.sequenceNumber);
-            out.writeUTF(header.version);
+            out.writeUTF(header.version.toString());
             out.writeLong(header.estimatedKeys);
 
             out.writeInt(header.sections.size());
@@ -134,13 +140,16 @@ public class FileMessageHeader
             }
             CompressionInfo.serializer.serialize(header.compressionInfo, out, version);
             out.writeLong(header.repairedAt);
+
+            if (version >= MessagingService.VERSION_30)
+                SerializationHeader.serializer.serialize(header.header, out);
         }
 
         public FileMessageHeader deserialize(DataInput in, int version) throws IOException
         {
             UUID cfId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             int sequenceNumber = in.readInt();
-            String sstableVersion = in.readUTF();
+            Descriptor.Version sstableVersion = new Descriptor.Version(in.readUTF());
             long estimatedKeys = in.readLong();
             int count = in.readInt();
             List<Pair<Long, Long>> sections = new ArrayList<>(count);
@@ -148,14 +157,19 @@ public class FileMessageHeader
                 sections.add(Pair.create(in.readLong(), in.readLong()));
             CompressionInfo compressionInfo = CompressionInfo.serializer.deserialize(in, MessagingService.current_version);
             long repairedAt = in.readLong();
-            return new FileMessageHeader(cfId, sequenceNumber, sstableVersion, estimatedKeys, sections, compressionInfo, repairedAt);
+
+            SerializationHeader.Component header = version >= MessagingService.VERSION_30
+                                                 ? SerializationHeader.serializer.deserialize(sstableVersion, in)
+                                                 : null;
+
+            return new FileMessageHeader(cfId, sequenceNumber, sstableVersion, estimatedKeys, sections, compressionInfo, repairedAt, header);
         }
 
         public long serializedSize(FileMessageHeader header, int version)
         {
             long size = UUIDSerializer.serializer.serializedSize(header.cfId, version);
             size += TypeSizes.NATIVE.sizeof(header.sequenceNumber);
-            size += TypeSizes.NATIVE.sizeof(header.version);
+            size += TypeSizes.NATIVE.sizeof(header.version.toString());
             size += TypeSizes.NATIVE.sizeof(header.estimatedKeys);
 
             size += TypeSizes.NATIVE.sizeof(header.sections.size());
@@ -165,6 +179,10 @@ public class FileMessageHeader
                 size += TypeSizes.NATIVE.sizeof(section.right);
             }
             size += CompressionInfo.serializer.serializedSize(header.compressionInfo, version);
+
+            if (version >= MessagingService.VERSION_30)
+                size += SerializationHeader.serializer.serializedSize(header.header);
+
             return size;
         }
     }

@@ -84,6 +84,12 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             }
         }
 
+        public void serializeWithSizeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version, List<AbstractType<?>> types) throws IOException
+        {
+            out.writeShort(clustering.size());
+            serializeNoEOC(clustering, out, version, types);
+        }
+
         public long serializedSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
         {
             long size = headerBytesCount(clustering.size());
@@ -96,6 +102,11 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
                 size += types.get(i).writtenLength(v, sizes);
             }
             return size;
+        }
+
+        public long serializedWithSizeSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
+        {
+            return sizes.sizeof((short)clustering.size()) + serializedSizeNoEOC(clustering, version, types, sizes);
         }
 
         public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
@@ -111,6 +122,12 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
                     writer.writeComponent(i, types.get(i).readValue(in));
             }
             writer.writeEOC(eoc);
+        }
+
+        public void deserializeWithSizeNoEOC(DataInput in, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
+        {
+            int size = in.readUnsignedShort();
+            deserializeNoEOC(in, size, eoc, version, types, writer);
         }
 
         private int headerBytesCount(int size)

@@ -60,6 +60,7 @@ public class StreamReader
     protected final StreamSession session;
     protected final Descriptor.Version inputVersion;
     protected final long repairedAt;
+    protected final SerializationHeader.Component header;
 
     protected Descriptor desc;
 
@@ -69,8 +70,9 @@ public class StreamReader
         this.cfId = header.cfId;
         this.estimatedKeys = header.estimatedKeys;
         this.sections = header.sections;
-        this.inputVersion = new Descriptor.Version(header.version);
+        this.inputVersion = header.version;
         this.repairedAt = header.repairedAt;
+        this.header = header.header;
     }
 
     /**
@@ -123,7 +125,7 @@ public class StreamReader
             throw new IOException("Insufficient disk space to store " + totalSize + " bytes");
         desc = Descriptor.fromFilename(cfs.getTempSSTablePath(cfs.directories.getLocationForDisk(localDir)));
 
-        return new SSTableWriter(desc.filenameFor(Component.DATA), estimatedKeys, repairedAt);
+        return new SSTableWriter(desc.filenameFor(Component.DATA), estimatedKeys, repairedAt, header.toHeader(cfs.metadata));
     }
 
     protected void drain(InputStream dis, long bytesRead) throws IOException

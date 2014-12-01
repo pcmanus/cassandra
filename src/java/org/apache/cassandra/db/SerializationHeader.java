@@ -23,6 +23,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import com.google.common.base.Function;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
@@ -38,7 +40,7 @@ import org.apache.cassandra.io.sstable.metadata.IMetadataComponentSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public class SerializationHeader extends MetadataComponent
+public class SerializationHeader
 {
     private static final int DEFAULT_BASE_DELETION = computeDefaultBaseDeletion();
 
@@ -83,15 +85,21 @@ public class SerializationHeader extends MetadataComponent
                                AtomStats stats)
     {
         this(metadata.getKeyValidator(),
-             ImmutableList.copyOf(metadata.clusteringColumns()),
+             typesOf(metadata.clusteringColumns()),
              columns,
              stats,
              null);
     }
 
-    public MetadataType getType()
+    private static List<AbstractType<?>> typesOf(List<ColumnDefinition> columns)
     {
-        return MetadataType.HEADER;
+        return ImmutableList.copyOf(Lists.transform(columns, new Function<ColumnDefinition, AbstractType<?>>()
+        {
+            public AbstractType<?> apply(ColumnDefinition column)
+            {
+                return column.type;
+            }
+        }));
     }
 
     public PartitionColumns columns()
@@ -179,127 +187,169 @@ public class SerializationHeader extends MetadataComponent
         return baseTTL + ttl;
     }
 
-    public static class Serializer implements IMetadataComponentSerializer<SerializationHeader>
+    public Component toComponent()
     {
-        private void serialize(SerializationHeader header, DataOutputPlus out, boolean withTypes, boolean hasStatic) throws IOException
+        Map<ByteBuffer, AbstractType<?>> staticColumns = new LinkedHashMap<>();
+        Map<ByteBuffer, AbstractType<?>> regularColumns = new LinkedHashMap<>();
+        for (ColumnDefinition column : columns.statics)
+            staticColumns.put(column.name.bytes, column.type);
+        for (ColumnDefinition column : columns.regulars)
+            regularColumns.put(column.name.bytes, column.type);
+        return new Component(keyType, clusteringTypes, staticColumns, regularColumns, stats);
+    }
+
+    /**
+     * We need the CFMetadata to properly deserialize a SerializationHeader but it's clunky to pass that to
+     * a SSTable component, so we use this temporary object to delay the actual need for the metadata.
+     */
+    public static class Component extends MetadataComponent
+    {
+        private final AbstractType<?> keyType;
+        private final List<AbstractType<?>> clusteringTypes;
+        private final Map<ByteBuffer, AbstractType<?>> staticColumns;
+        private final Map<ByteBuffer, AbstractType<?>> regularColumns;
+        private final AtomStats stats;
+
+        private Component(AbstractType<?> keyType,
+                          List<AbstractType<?>> clusteringTypes,
+                          Map<ByteBuffer, AbstractType<?>> staticColumns,
+                          Map<ByteBuffer, AbstractType<?>> regularColumns,
+                          AtomStats stats)
+        {
+            this.keyType = keyType;
+            this.clusteringTypes = clusteringTypes;
+            this.staticColumns = staticColumns;
+            this.regularColumns = regularColumns;
+            this.stats = stats;
+        }
+
+        public MetadataType getType()
+        {
+            return MetadataType.HEADER;
+        }
+
+        public SerializationHeader toHeader(CFMetaData metadata)
+        {
+            Map<ByteBuffer, AbstractType<?>> typeMap = new HashMap<>(staticColumns.size() + regularColumns.size());
+            typeMap.putAll(staticColumns);
+            typeMap.putAll(regularColumns);
+
+            PartitionColumns.Builder builder = PartitionColumns.builder();
+            for (ByteBuffer name : typeMap.keySet())
+            {
+                ColumnDefinition column = metadata.getColumnDefinition(name);
+                if (column == null)
+                {
+                    column = metadata.getDroppedColumnDefinition(name);
+                    if (column == null)
+                        throw new RuntimeException("Unknown column " + UTF8Type.instance.getString(name) + " during deserialization");
+                }
+                builder.add(column);
+            }
+            return new SerializationHeader(keyType, clusteringTypes, builder.build(), stats, typeMap);
+        }
+    }
+
+    public static class Serializer implements IMetadataComponentSerializer<Component>
+    {
+        public void serializeForMessaging(SerializationHeader header, DataOutputPlus out, boolean hasStatic) throws IOException
         {
             writeStats(header.stats, out);
 
-            if (withTypes)
-            {
-                writeType(header.keyType, out);
-                out.writeShort(header.clusteringTypes.size());
-                for (AbstractType<?> type : header.clusteringTypes)
-                    writeType(type, out);
-            }
-
             if (hasStatic)
-                writeColumns(header.columns.statics, out, withTypes);
-            writeColumns(header.columns.regulars, out, withTypes);
-        }
-
-        private SerializationHeader deserialize(DataInput in, CFMetaData metadata, boolean withTypes, boolean hasStatic) throws IOException
-        {
-            AtomStats stats = readStats(in);
-
-            AbstractType<?> keyType = withTypes ? readType(in) : metadata.getKeyValidator();
-            List<AbstractType<?>> clusteringTypes = null;
-            if (withTypes)
-            {
-                int size = in.readUnsignedShort();
-                clusteringTypes = new ArrayList<>(size);
-                for (int i = 0; i < size; i++)
-                    clusteringTypes.add(readType(in));
-            }
-            else
-            {
-                clusteringTypes = ImmutableList.copyOf(metadata.clusteringColumns());
-            }
-
-            Map<ByteBuffer, AbstractType<?>> typeMap = withTypes ? new HashMap<ByteBuffer, AbstracType<?>>() : null;
-
-            Columns statics = hasStatic ? readColumns(in, metadata, withTypes, typeMap) : Columns.NONE;
-            Columns regulars = readColumns(in, metadata, withTypes, typeMap);
-
-            return new SerializationHeader(keyType, clusteringTypes, new PartitionColumns(statics, regulars), stats, typeMap);
-        }
-
-        private long serializedSize(SerializationHeader header, TypeSizes sizes, boolean withTypes, boolean hasStatic)
-        {
-            long size = statsSerializedSize(header.stats, sizes);
-
-            if (withTypes)
-            {
-                size += sizeofType(header.keyType, sizes);
-                size += sizes.sizeof((short)header.clusteringTypes.size());
-                for (AbstractType<?> type : header.clusteringTypes)
-                    size += sizeofType(type, sizes);
-            }
-
-            if (hasStatic)
-                size += sizeofColumns(header.columns.statics, sizes, withTypes);
-            size += sizeofColumns(header.columns.regulars, sizes, withTypes);
-            return size;
-        }
-
-        public void serializeForMessaging(SerializationHeader header, DataOutputPlus out, boolean hasStatic) throws IOException
-        {
-            serialize(header, out, false, hasStatic);
+                writeColumns(header.columns.statics, out);
+            writeColumns(header.columns.regulars, out);
         }
 
         public SerializationHeader deserializeForMessaging(DataInput in, CFMetaData metadata, boolean hasStatic) throws IOException
         {
-            return deserialize(in, metadata, false, hasStatic);
+            AtomStats stats = readStats(in);
+
+            AbstractType<?> keyType = metadata.getKeyValidator();
+            List<AbstractType<?>> clusteringTypes = typesOf(metadata.clusteringColumns());
+
+            Columns statics = hasStatic ? readColumns(in, metadata) : Columns.NONE;
+            Columns regulars = readColumns(in, metadata);
+
+            return new SerializationHeader(keyType, clusteringTypes, new PartitionColumns(statics, regulars), stats, null);
         }
 
         public long serializedSizeForMessaging(SerializationHeader header, TypeSizes sizes, boolean hasStatic)
         {
-            return serializedSize(header, sizes, false, hasStatic);
-        }
+            long size = statsSerializedSize(header.stats, sizes);
 
-        // For SSTables
-        public void serialize(SerializationHeader header, DataOutputPlus out) throws IOException
-        {
-            serialize(header, out, true, true);
-        }
-
-        // For SSTables
-        public SerializationHeader deserialize(CFMetaData metadata, Descriptor.Version version, DataInput in) throws IOException
-        {
-            return deserialize(in, metadata, true, true);
-        }
-
-        // For SSTables
-        public int serializedSize(SerializationHeader header) throws IOException
-        {
-            // TODO: we'll want to use vint
-            return (int)serializedSize(header, TypeSizes.NATIVE, true, true);
-        }
-
-        private void writeColumns(Columns columns, DataOutputPlus out, boolean withTypes) throws IOException
-        {
-            out.writeShort(columns.columnCount());
-            for (ColumnDefinition column : columns)
-            {
-                ByteBufferUtil.writeWithShortLength(column.name.bytes, out);
-                if (withTypes)
-                    writeType(column.type, out);
-            }
-        }
-
-        private long sizeofColumns(Columns columns, TypeSizes sizes, boolean withTypes)
-        {
-            long size = sizes.sizeof((short)columns.columnCount());
-            for (ColumnDefinition column : columns)
-            {
-                size += sizes.sizeofWithShortLength(column.name.bytes);
-                if (withTypes)
-                    size += sizeofType(column.type, sizes);
-            }
+            if (hasStatic)
+                size += sizeofColumns(header.columns.statics, sizes);
+            size += sizeofColumns(header.columns.regulars, sizes);
             return size;
         }
 
-        private Columns readColumns(DataInput in, CFMetaData metadata, boolean withTypes, Map<ByteBuffer, AbstractType<?>> typeMap) throws IOException
+        // For SSTables
+        public void serialize(Component header, DataOutputPlus out) throws IOException
+        {
+            writeStats(header.stats, out);
+
+            writeType(header.keyType, out);
+            out.writeShort(header.clusteringTypes.size());
+            for (AbstractType<?> type : header.clusteringTypes)
+                writeType(type, out);
+
+            writeColumnsWithTypes(header.staticColumns, out);
+            writeColumnsWithTypes(header.regularColumns, out);
+        }
+
+        // For SSTables
+        public Component deserialize(Descriptor.Version version, DataInput in) throws IOException
+        {
+            AtomStats stats = readStats(in);
+
+            AbstractType<?> keyType = readType(in);
+            int size = in.readUnsignedShort();
+            List<AbstractType<?>> clusteringTypes = new ArrayList<>(size);
+            for (int i = 0; i < size; i++)
+                clusteringTypes.add(readType(in));
+
+            Map<ByteBuffer, AbstractType<?>> staticColumns = new LinkedHashMap<>();
+            Map<ByteBuffer, AbstractType<?>> regularColumns = new LinkedHashMap<>();
+
+            readColumnsWithType(in, staticColumns);
+            readColumnsWithType(in, regularColumns);
+
+            return new Component(keyType, clusteringTypes, staticColumns, regularColumns, stats);
+        }
+
+        // For SSTables
+        public int serializedSize(Component header)
+        {
+            TypeSizes sizes = TypeSizes.NATIVE;
+            int size = statsSerializedSize(header.stats, sizes);
+
+            size += sizeofType(header.keyType, sizes);
+            size += sizes.sizeof((short)header.clusteringTypes.size());
+            for (AbstractType<?> type : header.clusteringTypes)
+                size += sizeofType(type, sizes);
+
+            size += sizeofColumnsWithTypes(header.staticColumns, sizes);
+            size += sizeofColumnsWithTypes(header.regularColumns, sizes);
+            return size;
+        }
+
+        private void writeColumns(Columns columns, DataOutputPlus out) throws IOException
+        {
+            out.writeShort(columns.columnCount());
+            for (ColumnDefinition column : columns)
+                ByteBufferUtil.writeWithShortLength(column.name.bytes, out);
+        }
+
+        private long sizeofColumns(Columns columns, TypeSizes sizes)
+        {
+            long size = sizes.sizeof((short)columns.columnCount());
+            for (ColumnDefinition column : columns)
+                size += sizes.sizeofWithShortLength(column.name.bytes);
+            return size;
+        }
+
+        private Columns readColumns(DataInput in, CFMetaData metadata) throws IOException
         {
             int length = in.readUnsignedShort();
             ColumnDefinition[] columns = new ColumnDefinition[length];
@@ -314,11 +364,39 @@ public class SerializationHeader extends MetadataComponent
                         throw new RuntimeException("Unknown column " + UTF8Type.instance.getString(name) + " during deserialization");
                 }
                 columns[i] = column;
-
-                if (withTypes)
-                    typeMap.put(name, readType(in));
             }
             return new Columns(columns);
+        }
+
+        private void writeColumnsWithTypes(Map<ByteBuffer, AbstractType<?>> columns, DataOutputPlus out) throws IOException
+        {
+            out.writeShort(columns.size());
+            for (Map.Entry<ByteBuffer, AbstractType<?>> entry : columns.entrySet())
+            {
+                ByteBufferUtil.writeWithShortLength(entry.getKey(), out);
+                writeType(entry.getValue(), out);
+            }
+        }
+
+        private long sizeofColumnsWithTypes(Map<ByteBuffer, AbstractType<?>> columns, TypeSizes sizes)
+        {
+            long size = sizes.sizeof((short)columns.size());
+            for (Map.Entry<ByteBuffer, AbstractType<?>> entry : columns.entrySet())
+            {
+                size += sizes.sizeofWithShortLength(entry.getKey());
+                size += sizeofType(entry.getValue(), sizes);
+            }
+            return size;
+        }
+
+        private void readColumnsWithType(DataInput in, Map<ByteBuffer, AbstractType<?>> typeMap) throws IOException
+        {
+            int length = in.readUnsignedShort();
+            for (int i = 0; i < length; i++)
+            {
+                ByteBuffer name = ByteBufferUtil.readWithShortLength(in);
+                typeMap.put(name, readType(in));
+            }
         }
 
         private void writeType(AbstractType<?> type, DataOutputPlus out) throws IOException
@@ -333,7 +411,7 @@ public class SerializationHeader extends MetadataComponent
             return TypeParser.parse(UTF8Type.instance.compose(raw));
         }
 
-        private long sizeofType(AbstractType<?> type, TypeSizes sizes)
+        private int sizeofType(AbstractType<?> type, TypeSizes sizes)
         {
             return sizes.sizeofWithLength(UTF8Type.instance.decompose(type.toString()));
         }
@@ -345,7 +423,7 @@ public class SerializationHeader extends MetadataComponent
             out.writeInt(stats.minTTL);
         }
 
-        private long statsSerializedSize(AtomStats stats, TypeSizes sizes)
+        private int statsSerializedSize(AtomStats stats, TypeSizes sizes)
         {
             return sizes.sizeof(stats.minTimestamp)
                  + sizes.sizeof(stats.minLocalDeletionTime)

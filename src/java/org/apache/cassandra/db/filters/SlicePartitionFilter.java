@@ -154,8 +154,8 @@ public class SlicePartitionFilter implements PartitionFilter
 
     public boolean shouldInclude(SSTableReader sstable)
     {
-        List<ByteBuffer> minClusteringValues = sstable.getSSTableMetadata().minColumnNames;
-        List<ByteBuffer> maxClusteringValues = sstable.getSSTableMetadata().maxColumnNames;
+        List<ByteBuffer> minClusteringValues = sstable.getSSTableMetadata().minClusteringValues;
+        List<ByteBuffer> maxClusteringValues = sstable.getSSTableMetadata().maxClusteringValues;
 
         if (minClusteringValues.isEmpty() || maxClusteringValues.isEmpty())
             return true;

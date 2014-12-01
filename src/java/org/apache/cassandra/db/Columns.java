@@ -19,6 +19,7 @@ package org.apache.cassandra.db;
 
 import java.util.*;
 
+import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.ColumnDefinition;

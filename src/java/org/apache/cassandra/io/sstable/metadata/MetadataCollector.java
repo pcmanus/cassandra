@@ -35,7 +35,7 @@ import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
-import org.apache.cassandra.io.sstable.ColumnNameHelper;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -54,7 +54,7 @@ public class MetadataCollector
         return new EstimatedHistogram(114);
     }
 
-    static EstimatedHistogram defaultRowPartitionHistogram()
+    static EstimatedHistogram defaultPartitionSizeHistogram()
     {
         // EH of 150 can track a max value of 1697806495183, i.e., > 1.5PB
         return new EstimatedHistogram(150);
@@ -67,11 +67,14 @@ public class MetadataCollector
 
     public static StatsMetadata defaultStatsMetadata()
     {
-        return new StatsMetadata(defaultRowSizeHistogram(),
-                                 defaultColumnCountHistogram(),
+        return new StatsMetadata(defaultPartitionSizeHistogram(),
+                                 defaultCellPerPartitionCountHistogram(),
                                  ReplayPosition.NONE,
                                  Long.MIN_VALUE,
                                  Long.MAX_VALUE,
+                                 Integer.MAX_VALUE,
+                                 Integer.MAX_VALUE,
+                                 0,
                                  Integer.MAX_VALUE,
                                  NO_COMPRESSION_RATIO,
                                  defaultTombstoneDropTimeHistogram(),
@@ -88,13 +91,16 @@ public class MetadataCollector
     protected ReplayPosition replayPosition = ReplayPosition.NONE;
     protected long minTimestamp = Long.MAX_VALUE;
     protected long maxTimestamp = Long.MIN_VALUE;
+    protected int minLocalDeletionTime = Integer.MAX_VALUE;
     protected int maxLocalDeletionTime = Integer.MIN_VALUE;
+    protected int minTTL = Integer.MAX_VALUE;
+    protected int maxTTL = Integer.MIN_VALUE;
     protected double compressionRatio = NO_COMPRESSION_RATIO;
     protected Set<Integer> ancestors = new HashSet<>();
     protected StreamingHistogram estimatedTombstoneDropTime = defaultTombstoneDropTimeHistogram();
     protected int sstableLevel;
-    protected List<ByteBuffer> minClusteringValues = Collections.emptyList();
-    protected List<ByteBuffer> maxClusteringValues = Collections.emptyList();
+    protected ByteBuffer[] minClusteringValues;
+    protected ByteBuffer[] maxClusteringValues;
     protected boolean hasLegacyCounterShards = false;
 
     /**
@@ -109,6 +115,9 @@ public class MetadataCollector
     public MetadataCollector(ClusteringComparator comparator)
     {
         this.comparator = comparator;
+
+        this.minClusteringValues = new ByteBuffer[comparator.size()];
+        this.maxClusteringValues = new ByteBuffer[comparator.size()];
     }
 
     public MetadataCollector(Collection<SSTableReader> sstables, ClusteringComparator comparator, int level)
@@ -169,33 +178,25 @@ public class MetadataCollector
         return this;
     }
 
-    public MetadataCollector updateMinTimestamp(long potentialMin)
+    public MetadataCollector updateTimestamp(long newTimestamp)
     {
-        minTimestamp = Math.min(minTimestamp, potentialMin);
+        minTimestamp = Math.min(minTimestamp, newTimestamp);
+        maxTimestamp = Math.max(maxTimestamp, newTimestamp);
         return this;
     }
 
-    public MetadataCollector updateMaxTimestamp(long potentialMax)
+    public MetadataCollector updateLocalDeletionTime(int newLocalDeletionTime)
     {
-        maxTimestamp = Math.max(maxTimestamp, potentialMax);
+        minLocalDeletionTime = Math.max(minLocalDeletionTime, newLocalDeletionTime);
+        maxLocalDeletionTime = Math.max(maxLocalDeletionTime, newLocalDeletionTime);
+        estimatedTombstoneDropTime.update(newLocalDeletionTime);
         return this;
     }
 
-    public MetadataCollector updateMaxLocalDeletionTime(int maxLocalDeletionTime)
+    public MetadataCollector updateTTL(int newTTL)
     {
-        this.maxLocalDeletionTime = Math.max(this.maxLocalDeletionTime, maxLocalDeletionTime);
-        return this;
-    }
-
-    public MetadataCollector estimatedRowSize(EstimatedHistogram estimatedRowSize)
-    {
-        this.estimatedRowSize = estimatedRowSize;
-        return this;
-    }
-
-    public MetadataCollector estimatedColumnCount(EstimatedHistogram estimatedColumnCount)
-    {
-        this.estimatedColumnCount = estimatedColumnCount;
+        minTTL = Math.max(minTTL, newTTL);
+        maxTTL = Math.max(maxTTL, newTTL);
         return this;
     }
 
@@ -217,32 +218,42 @@ public class MetadataCollector
         return this;
     }
 
-    public MetadataCollector updateMinClusteringValues(ClusteringPrefix clutering)
+    public MetadataCollector updateClusteringValues(ClusteringPrefix clustering)
     {
-        this.minClusteringValues = ColumnNameHelper.minComponents(minClusteringValues, clustering, comparator);
+        int size = clustering.size();
+        for (int i = 0; i < size; i++)
+        {
+            AbstractType<?> type = comparator.subtype(i);
+            ByteBuffer newValue = clustering.get(i);
+            minClusteringValues[i] = min(minClusteringValues[i], newValue, type);
+            maxClusteringValues[i] = max(maxClusteringValues[i], newValue, type);
+        }
         return this;
     }
 
-    public MetadataCollector updateMaxClusteringValues(ClusteringPrefix clutering)
+    private static ByteBuffer min(ByteBuffer b1, ByteBuffer b2, AbstractType<?> comparator)
     {
-        this.maxClusteringValues = ColumnNameHelper.minComponents(maxClusteringValues, clustering, comparator);
-        return this;
+        if (b1 == null)
+            return b2;
+        if (b2 == null)
+            return b1;
+
+        if (comparator.compare(b1, b2) >= 0)
+            return b2;
+        return b1;
     }
 
-    // TODO: remove and rename ColumnNameHelper. Also, it would be more efficient to compute both min&max at once
-    //public MetadataCollector updateMinColumnNames(List<ByteBuffer> minColumnNames)
-    //{
-    //    if (minColumnNames.size() > 0)
-    //        this.minColumnNames = ColumnNameHelper.mergeMin(this.minColumnNames, minColumnNames, columnNameComparator);
-    //    return this;
-    //}
+    private static ByteBuffer max(ByteBuffer b1, ByteBuffer b2, AbstractType<?> comparator)
+    {
+        if (b1 == null)
+            return b2;
+        if (b2 == null)
+            return b1;
 
-    //public MetadataCollector updateMaxColumnNames(List<ByteBuffer> maxColumnNames)
-    //{
-    //    if (maxColumnNames.size() > 0)
-    //        this.maxColumnNames = ColumnNameHelper.mergeMax(this.maxColumnNames, maxColumnNames, columnNameComparator);
-    //    return this;
-    //}
+        if (comparator.compare(b1, b2) >= 0)
+            return b1;
+        return b2;
+    }
 
     public MetadataCollector updateHasLegacyCounterShards(boolean hasLegacyCounterShards)
     {
@@ -254,21 +265,25 @@ public class MetadataCollector
     {
         Map<MetadataType, MetadataComponent> components = Maps.newHashMap();
         components.put(MetadataType.VALIDATION, new ValidationMetadata(partitioner, bloomFilterFPChance));
-        components.put(MetadataType.STATS, new StatsMetadata(estimatedRowSize,
-                                                             estimatedColumnCount,
+        components.put(MetadataType.STATS, new StatsMetadata(estimatedPartitionSize,
+                                                             estimatedCellPerPartitionCount,
                                                              replayPosition,
                                                              minTimestamp,
                                                              maxTimestamp,
+                                                             minLocalDeletionTime,
                                                              maxLocalDeletionTime,
+                                                             // If there is no TTL, sets both min and max to 0 as this is more consistent
+                                                             minTTL == Integer.MAX_VALUE ? 0 : minTTL,
+                                                             maxTTL == Integer.MIN_VALUE ? 0 : maxTTL,
                                                              compressionRatio,
                                                              estimatedTombstoneDropTime,
                                                              sstableLevel,
-                                                             ImmutableList.copyOf(minColumnNames),
-                                                             ImmutableList.copyOf(maxColumnNames),
+                                                             ImmutableList.copyOf(minClusteringValues),
+                                                             ImmutableList.copyOf(maxClusteringValues),
                                                              hasLegacyCounterShards,
                                                              repairedAt));
         components.put(MetadataType.COMPACTION, new CompactionMetadata(ancestors, cardinality));
-        components.put(MetadataType.HEADER, header);
+        components.put(MetadataType.HEADER, header.toComponent());
         return components;
     }
 }
