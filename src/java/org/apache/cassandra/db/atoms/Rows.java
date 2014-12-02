@@ -220,7 +220,7 @@ public abstract class Rows
     //    //listener.onRowDone();
     //}
 
-    public static void merge(ClusteringPrefix clustering, Row[] rows, int nowInSec, final Row.Writer writer)
+    public static void merge(ClusteringPrefix clustering, Row[] rows, Columns mergedColumns, Row.Writer writer, int nowInSec, AtomIterators.MergeListener listener)
     {
         throw new UnsupportedOperationException();
         //merge(clustering, rows, new MergeHelper(nowInSec, rows.length), new AtomIterators.MergeListener()
@@ -374,6 +374,193 @@ public abstract class Rows
             //}
             //size += sizes.sizeof((short)0);
             //return size;
+        }
+    }
+
+    public static class Merger
+    {
+        private final int nowInSec;
+        private final AtomIterator.MergeListener listener;
+        private final Columns columns;
+
+        private ClusteringPrefix clustering;
+        private final Row[] rows;
+
+        private final ReusableRow row;
+        private final List<Iterator<Cell>> complexCells;
+
+        // For the sake of the listener if there is one
+        private final Cell[] cells;
+
+        public Merger(int size, int nowInSec, Columns columns, AtomIterator.MergeListener listener)
+        {
+            this.nowInSec = nowInSec;
+            this.listener = listener;
+            this.columns = columns;
+            this.rows = new Row[size];
+            this.row = new ReusableRow(columns);
+            this.complexCells = new ArrayList<>(size);
+
+            this.cells = listener == null ? null : new Cell[size];
+        }
+
+        public void clear()
+        {
+            Arrays.fill(rows, null);
+            complexCells.clear();
+        }
+
+        public void addRow(int i, Row row)
+        {
+            clustering = marker.clustering();
+            rows[i] = rows;
+        }
+
+        public Row merge(DeletionTime activeDeletion)
+        {
+            .... handle deletion
+            Row.Writer writer = row.writer();
+
+            writer.writeClustering(clustering);
+
+            long timestamp = Cells.NO_TIMESTAMP;
+            for (int i = 0; i < rows.length; i++)
+                timestamp = Math.max(timestamp, rows[i].timestamp());
+
+            writer.writeTimestamp(timestamp);
+
+            if (listener != null)
+                listener.onMergingRows(clustering, timestamp, rows);
+
+            for (int i = 0; i < columns.simpleColumnCount(); i++)
+            {
+                ColumnDefinition c = columns.getSimple(i);
+                Cell reconciled = null;
+                for (int j = 0; j < rows.length; j++)
+                {
+                    Cell cell = rows[i].getCell(c);
+                    if (cell != null)
+                    {
+                        reconciled = Cells.reconcile(reconciled, cell, nowInSec);
+                        if (cells != null)
+                            cells[j] = cell;
+                    }
+                }
+
+                writer.writeCell(reconciled);
+                if (listener != null)
+                    listener.onMergedCells(reconciled, cells);
+            }
+
+            for (int i = 0; i < columns.complexColumnCount(); i++)
+            {
+                ColumnDefinition c = columns.getComplex(i);
+
+
+
+                DeletionTime existingDt = existing.getDeletion(c);
+                DeletionTime updateDt = update.getDeletion(c);
+                if (existingDt.supersedes(updateDt))
+                    writer.writeComplexDeletion(c, existingDt);
+                else
+                    writer.writeComplexDeletion(c, updateDt);
+
+                Iterator<Cell> existingCells = existing.getCells(c);
+                Iterator<Cell> updateCells = update.getCells(c);
+                Cells.reconcileComplex(clustering, c, existingCells, updateCells, writer, nowInSec, indexUpdater);
+            }
+
+            writer.endOfRow();
+
+
+
+
+
+
+
+
+
+
+
+
+
+            Rows.merge(nextClustering, rows, columns(), row.writer(), nowInSec, listener);
+
+            // Because shadowed cells are skipped, the row could be empty. In which case
+            // we return null and the enclosing iterator will just skip it.
+            return row.isEmpty() ? null : row;
+        }
+
+        public void onMergingRows(ClusteringPrefix clustering, long timestamp, Row[] versions)
+        {
+            // If the row is shadowed by a more recent deletion, delete it's timestamp
+            long merged = partitionLevelDeletion.deletes(timestamp) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
+                ? Long.MIN_VALUE
+                : timestamp;
+
+            if (listener != null)
+                listener.onMergingRows(clustering, merged, versions);
+
+            writer.setClustering(clustering);
+            writer.setTimestamp(merged);
+        }
+
+        public void onMergedColumns(ColumnDefinition c, DeletionTime compositeDeletion, DeletionTimeArray versions)
+        {
+            // if the previous column had no cells but do have deletion info, write it now
+            if (prevColumn != null && !prevColumnDeletion.isLive())
+            {
+                if (listener != null)
+                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+                writer.newColumn(prevColumn, prevColumnDeletion);
+            }
+
+            // We don't want to call writer.newColumn just yet because it could be that the whole column
+            // ends up being fully shadowed by a top-level deletion or range tombstone
+            prevColumn = c;
+            prevColumnDeletion = partitionLevelDeletion.supersedes(compositeDeletion) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).supersedes(compositeDeletion))
+                ? DeletionTime.LIVE
+                : compositeDeletion.takeAlias();
+            prevColumnDeletionVersions.copy(versions);
+        }
+
+        public void onMergedCells(Cell cell, Cell[] versions)
+        {
+            // Skip shadowed cells
+            long timestamp = cell.timestamp();
+            if (partitionLevelDeletion.deletes(timestamp)
+                    || (openMarker > 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
+                    || prevColumnDeletion.deletes(timestamp))
+            {
+                if (listener != null)
+                    onMergedCells(null, versions);
+                return;
+            }
+
+            if (prevColumn != null)
+            {
+                if (listener != null)
+                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+                writer.newColumn(prevColumn, prevColumnDeletion);
+                prevColumn = null;
+            }
+
+            if (listener != null)
+                onMergedCells(cell, versions);
+            writer.newCell(cell);
+        }
+
+        public void onRowDone()
+        {
+            if (prevColumn != null && !prevColumnDeletion.isLive())
+            {
+                if (listener != null)
+                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
+                writer.newColumn(prevColumn, prevColumnDeletion);
+            }
+
+            prevColumn = null;
+            writer.endOfRow();
         }
     }
 

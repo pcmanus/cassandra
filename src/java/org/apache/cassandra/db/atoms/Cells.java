@@ -104,14 +104,6 @@ public abstract class Cells
         //return (rel == CounterContext.Relationship.GREATER_THAN || rel == CounterContext.Relationship.DISJOINT) ? cell : null;
     }
 
-    public static void reconcile(Cell existing,
-                                 Cell update,
-                                 Row.Writer writer,
-                                 int nowInSec)
-    {
-        reconcile(null, existing, update, writer, nowInSec, null);
-    }
-
     public static void reconcile(ClusteringPrefix clustering,
                                  Cell existing,
                                  Cell update,
@@ -137,9 +129,32 @@ public abstract class Cells
             return;
         }
 
-        if (existing.isCounterCell())
+
+        Cell reconciled = reconcile(existing, update, nowInSec);
+        if (reconciled == null)
+            return;
+
+        write(reconciled, writer);
+
+        if (reconciled == update || reconciled.isCounterCell())
         {
-            assert update.isCounterCell();
+            if (existing == null)
+                indexUpdater.insert(clustering, reconciled);
+            else
+                indexUpdater.update(clustering, existing, reconciled);
+        }
+    }
+
+    public static Cell reconcile(Cell c1, Cell c2, int nowInSec)
+    {
+        if (c1 == null)
+            return c2 == null ? null : c1;
+        if (c2 == null)
+            return c1;
+
+        if (c1.isCounterCell())
+        {
+            assert c2.isCounterCell();
             throw new UnsupportedOperationException();
             // TODO
             // For Counters
@@ -174,22 +189,13 @@ public abstract class Cells
             //                                 Math.max(timestampOfLastDelete, ((CounterCell) cell).timestampOfLastDelete()));
         }
 
-        Cell reconciled = reconcile(existing, update, nowInSec);
-        if (indexUpdater != null && reconciled == update)
-            indexUpdater.update(clustering, existing, update);
-
-        write(reconciled, writer);
-    }
-
-    private static Cell reconcile(Cell existing, Cell update, int nowInSec)
-    {
-        long tsExisting = existing.timestamp(), tsUpdate = existing.timestamp();
-        if (tsExisting != tsUpdate)
-            return tsExisting < tsUpdate ? existing : update;
-        boolean existingLive = isLive(existing, nowInSec);
-        if (existingLive != isLive(update, nowInSec))
-            return existingLive ? existing : update;
-        return existing.value().compareTo(update.value()) < 0 ? existing : update;
+        long ts1 = c1.timestamp(), ts2 = c2.timestamp();
+        if (ts1 != ts2)
+            return ts1 < ts2 ? c1 : c2;
+        boolean c1Live = isLive(c1, nowInSec);
+        if (c1Live != isLive(c2, nowInSec))
+            return c1Live ? c1 : c2;
+        return c1.value().compareTo(c2.value()) < 0 ? c1 : c2;
     }
 
     public static void reconcileComplex(ClusteringPrefix clustering,

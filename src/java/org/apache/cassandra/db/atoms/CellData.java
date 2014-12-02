@@ -82,6 +82,7 @@ class CellData
 
     private void setDefaults(int from, int to)
     {
+        Arrays.fill(values, from, to, null);
         Arrays.fill(timestamps, from, to, Cells.NO_TIMESTAMP);
 
         for (int i = from; i < to; i++)
@@ -170,6 +171,11 @@ class CellData
             if (values[i] != null)
                 size += values[i].remaining();
         return size;
+    }
+
+    public void clear()
+    {
+        setDefaults(0, values.length);
     }
 
     public long unsharedHeapSizeExcludingData()

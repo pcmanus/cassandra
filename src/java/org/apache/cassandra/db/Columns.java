@@ -130,8 +130,10 @@ public class Columns implements Iterable<ColumnDefinition>
 
     public Columns mergeTo(Columns other)
     {
-        if (this == other)
+        if (this == other || other == NONE)
             return this;
+        if (this == NONE)
+            return other;
 
         int i = 0, j = 0;
         int size = 0;

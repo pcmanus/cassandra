@@ -318,6 +318,10 @@ public class ComplexRowDataBlock
             base = 0;
             idx = 0;
             row = 0;
+            data.clear();
+            Arrays.fill(cellIdx, 0);
+            Arrays.fill(complexPaths, null);
+            complexDelTimes.clear();
         }
     }
 }

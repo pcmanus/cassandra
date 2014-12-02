@@ -218,12 +218,13 @@ public class SSTableIterator implements SeekableAtomIterator
         protected void createDeserializer()
         {
             assert file != null && deserializer == null;
-            deserializer = new AtomDeserializer(sstable.metadata,
-                                                file,
-                                                LegacyLayout.Flag.LOCAL,
-                                                Integer.MIN_VALUE,
-                                                sstable.descriptor.version,
-                                                columns.regulars);
+            deserializer = AtomDeserializer.create(sstable.metadata,
+                                                   file,
+                                                   LegacyLayout.Flag.LOCAL,
+                                                   Integer.MIN_VALUE,
+                                                   sstable.descriptor.version,
+                                                   columns.regulars,
+                                                   sstable.header);
         }
 
         public boolean hasNext() throws IOException

@@ -28,6 +28,7 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
     private static final long EMPTY_SIZE = ObjectSizes.measure(new ReusableClusteringPrefix(0));
 
     private final ByteBuffer[] values;
+    private int size;
     private EOC eoc;
 
     private Writer writer;
@@ -39,7 +40,7 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
 
     public int size()
     {
-        return values.length;
+        return size;
     }
 
     public ByteBuffer get(int i)
@@ -54,6 +55,12 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
         return writer;
     }
 
+    public void reset()
+    {
+        this.size = 0;
+        this.eoc = EOC.NONE;
+    }
+
     @Override
     public EOC eoc()
     {
@@ -62,17 +69,18 @@ public class ReusableClusteringPrefix extends AbstractClusteringPrefix
 
     public void copy(ClusteringPrefix clustering)
     {
-        for (int i = 0; i < values.length; i++)
+        for (int i = 0; i < clustering.size(); i++)
             values[i] = clustering.get(i);
 
+        size = clustering.size();
         eoc = clustering.eoc();
     }
 
     private class ReusableWriter implements Writer
     {
-        public void writeComponent(int i, ByteBuffer value)
+        public void writeComponent(ByteBuffer value)
         {
-            values[i] = value;
+            values[size++] = value;
         }
 
         public void writeEOC(EOC eoc)

@@ -135,23 +135,7 @@ public class ClusteringComparator implements Comparator<Clusterable>
 
         for (int i = 0; i < minSize; i++)
         {
-            ByteBuffer v1 = c1.get(i);
-            ByteBuffer v2 = c2.get(i);
-
-            if (v1 == null)
-            {
-                if (v2 == null)
-                    continue;
-                else
-                    return -1;
-            }
-            if (v2 == null)
-                return 1;
-
-            int cmp = isByteOrderComparable
-                    ? ByteBufferUtil.compareUnsigned(v1, v2)
-                    : clusteringTypes.get(i).compare(v1, v2);
-
+            int cmp = compareComponent(i, c1, c2);
             if (cmp != 0)
                 return cmp;
         }
@@ -159,6 +143,21 @@ public class ClusteringComparator implements Comparator<Clusterable>
         if (s1 == s2)
             return c1.eoc().compareTo(c2.eoc());
         return s1 < s2 ? c1.eoc().prefixComparisonResult : -c2.eoc().prefixComparisonResult;
+    }
+
+    public int compareComponent(int i, ClusteringPrefix c1, ClusteringPrefix c2)
+    {
+        ByteBuffer v1 = c1.get(i);
+        ByteBuffer v2 = c2.get(i);
+
+        if (v1 == null)
+            return v1 == null ? 0 : -1;
+        if (v2 == null)
+            return 1;
+
+        return isByteOrderComparable
+             ? ByteBufferUtil.compareUnsigned(v1, v2)
+             : clusteringTypes.get(i).compare(v1, v2);
     }
 
     public boolean isCompatibleWith(ClusteringComparator previous)

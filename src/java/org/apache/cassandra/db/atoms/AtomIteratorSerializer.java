@@ -260,6 +260,13 @@ public class AtomIteratorSerializer
         return new SimpleDeletionTime(markedAt, localDelTime);
     }
 
+    public static void skipDelTime(DataInput in, SerializationHeader header) throws IOException
+    {
+        // Note that since we might use VINT, we shouldn't assume the size of a long or an int
+        in.readLong();
+        in.readInt();
+    }
+
     public void serializeCfId(UUID cfId, DataOutputPlus out, int version) throws IOException
     {
         UUIDSerializer.serializer.serialize(cfId, out, version);

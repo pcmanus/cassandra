@@ -295,47 +295,127 @@ public class AtomSerializer
     throws IOException
     {
         int flags = in.readUnsignedByte();
-        if ((flags & END_OF_PARTITION) != 0)
+        if (isEndOfPartition(flags))
             return null;
 
-        if ((flags & IS_MARKER) != 0)
+        clustering.reset();
+        if (kind(flags) == Atom.Kind.RANGE_TOMBSTONE_MARKER)
         {
-            boolean isOpen = (flags & IS_OPEN) != 0;
-            ClusteringPrefix.EOC eoc = (flags & HAS_END_EOC) != 0 ? ClusteringPrefix.EOC.END : ClusteringPrefix.EOC.START;
-
+            ClusteringPrefix.EOC eoc = eoc(flags);
             ClusteringPrefix.serializer.deserializeWithSizeNoEOC(in, eoc, version, header.clusteringTypes(), clustering.writer());
-            markerWriter.writeMarker(clustering, isOpen, AtomIteratorSerializer.readDelTime(in, header));
+            deserializeMarker(in, header, version, clustering, flags, markerWriter);
             return Atom.Kind.RANGE_TOMBSTONE_MARKER;
         }
         else
         {
-            boolean isStatic = (flags & IS_STATIC) != 0;
-            boolean hasTimestamp = (flags & HAS_TIMESTAMP) != 0;
-            boolean hasComplexDeletion = (flags & HAS_COMPLEX_DELETION) != 0;
-
-            if (!isStatic)
-            {
+            if (!isStatic(flags))
                 ClusteringPrefix.serializer.deserializeNoEOC(in, header.clusteringTypes().size(), ClusteringPrefix.EOC.NONE, version, header.clusteringTypes(), clustering.writer());
-                rowWriter.writeClustering(clustering);
-            }
-            rowWriter.writeTimestamp(hasTimestamp ? header.decodeTimestamp(in.readLong()) : Rows.NO_TIMESTAMP);
 
-            Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
-            while (simpleIter.hasNext())
-                readCell(simpleIter.next(), in, header, rowWriter);
-
-            Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
-            while (complexIter.hasNext())
-            {
-                ColumnDefinition column = complexIter.next();
-                if (hasComplexDeletion)
-                    rowWriter.writeComplexDeletion(column, AtomIteratorSerializer.readDelTime(in, header));
-
-                while (readCell(column, in, header, rowWriter));
-            }
-
+            deserializeRow(in, header, version, clustering, flags, rowWriter);
             return Atom.Kind.ROW;
         }
+    }
+
+    public void deserializeMarker(DataInput in,
+                                  SerializationHeader header,
+                                  int version,
+                                  ClusteringPrefix clustering,
+                                  int flags,
+                                  RangeTombstoneMarker.Writer writer)
+    throws IOException
+    {
+        boolean isOpen = isOpenMarker(flags);
+        writer.writeMarker(clustering, isOpen, AtomIteratorSerializer.readDelTime(in, header));
+    }
+
+    public void skipMarker(DataInput in, SerializationHeader header, int version, int flags) throws IOException
+    {
+        AtomIteratorSerializer.skipDelTime(in, header);
+    }
+
+    public void deserializeRow(DataInput in,
+                               SerializationHeader header,
+                               int version,
+                               ClusteringPrefix clustering,
+                               int flags,
+                               Row.Writer writer)
+    throws IOException
+    {
+        boolean isStatic = isStatic(flags);
+        boolean hasTimestamp = (flags & HAS_TIMESTAMP) != 0;
+        boolean hasComplexDeletion = (flags & HAS_COMPLEX_DELETION) != 0;
+
+        if (!isStatic)
+            writer.writeClustering(clustering);
+
+        writer.writeTimestamp(hasTimestamp ? header.decodeTimestamp(in.readLong()) : Rows.NO_TIMESTAMP);
+
+        Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
+        while (simpleIter.hasNext())
+            readCell(simpleIter.next(), in, header, writer);
+
+        Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
+        while (complexIter.hasNext())
+        {
+            ColumnDefinition column = complexIter.next();
+            if (hasComplexDeletion)
+                writer.writeComplexDeletion(column, AtomIteratorSerializer.readDelTime(in, header));
+
+            while (readCell(column, in, header, writer));
+        }
+    }
+
+    public void skipRow(DataInput in, SerializationHeader header, int version, int flags) throws IOException
+    {
+        boolean isStatic = isStatic(flags);
+        boolean hasTimestamp = (flags & HAS_TIMESTAMP) != 0;
+        boolean hasComplexDeletion = (flags & HAS_COMPLEX_DELETION) != 0;
+
+        // Note that we don't want want to use FileUtils.skipBytesFully for anything that may not have
+        // the size we think due to VINT encoding
+        if (hasTimestamp)
+            in.readLong();
+
+        Iterator<ColumnDefinition> simpleIter = header.simpleColumns(isStatic);
+        while (simpleIter.hasNext())
+            skipCell(simpleIter.next(), in, header);
+
+        Iterator<ColumnDefinition> complexIter = header.complexColumns(isStatic);
+        while (complexIter.hasNext())
+        {
+            ColumnDefinition column = complexIter.next();
+            if (hasComplexDeletion)
+                AtomIteratorSerializer.skipDelTime(in, header);
+
+            while (skipCell(column, in, header));
+        }
+    }
+
+    public static boolean isEndOfPartition(int flags)
+    {
+        return (flags & END_OF_PARTITION) != 0;
+    }
+
+    public static Atom.Kind kind(int flags)
+    {
+        return (flags & IS_MARKER) != 0 ? Atom.Kind.RANGE_TOMBSTONE_MARKER : Atom.Kind.ROW;
+    }
+
+    public static boolean isStatic(int flags)
+    {
+        return (flags & IS_STATIC) != 0;
+    }
+
+    public static boolean isOpenMarker(int flags)
+    {
+        return (flags & IS_OPEN) != 0;
+    }
+
+    public static ClusteringPrefix.EOC eoc(int flags)
+    {
+        return kind(flags) == Atom.Kind.ROW
+             ? ClusteringPrefix.EOC.NONE
+             : ((flags & HAS_END_EOC) != 0 ? ClusteringPrefix.EOC.END : ClusteringPrefix.EOC.START);
     }
 
     private boolean readCell(ColumnDefinition column, DataInput in, SerializationHeader header, Row.Writer writer)
@@ -363,6 +443,32 @@ public class AtomSerializer
                       : null;
 
         writer.writeCell(column, false, value, timestamp, localDelTime, ttl, path);
+        return true;
+    }
+
+    private boolean skipCell(ColumnDefinition column, DataInput in, SerializationHeader header)
+    throws IOException
+    {
+        int flags = in.readUnsignedByte();
+        if ((flags & PRESENCE_MASK) == 0)
+            return false;
+
+        boolean hasValue = (flags & EMPTY_VALUE_MASK) == 0;
+        boolean isDeleted = (flags & DELETION_MASK) != 0;
+        boolean isExpiring = (flags & EXPIRATION_MASK) != 0;
+
+        if (hasValue)
+            header.getType(column).skipValue(in);
+
+        in.readLong(); // timestamp
+        if (isDeleted || isExpiring)
+            in.readInt(); // local deletion time
+        if (isExpiring)
+            in.readInt(); // ttl
+
+        if (column.isComplex())
+            CellPath.serializer.skip(in);
+
         return true;
     }
 }

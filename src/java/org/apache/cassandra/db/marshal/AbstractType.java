@@ -32,6 +32,7 @@ import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -273,6 +274,15 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
             return ByteBufferUtil.read(in, length);
         else
             return ByteBufferUtil.readWithLength(in);
+    }
+
+    public void skipValue(DataInput in) throws IOException
+    {
+        int length = valueLengthIfFixed();
+        if (length < 0)
+            length = in.readInt();
+
+        FileUtils.skipBytesFully(in, length);
     }
 
     /**

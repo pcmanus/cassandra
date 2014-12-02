@@ -52,5 +52,11 @@ public interface CellPath
             // TODO
             throw new UnsupportedOperationException();
         }
+
+        public void skip(DataInput in)
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
     }
 }

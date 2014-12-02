@@ -59,6 +59,14 @@ public abstract class PartitionIterators
         }
     };
 
+    private static final Comparator<PartitionIterator> partitionComparator = new Comparator<PartitionIterator>()
+    {
+        public int compare(PartitionIterator p1, PartitionIterator p2)
+        {
+            return p1.partitionKey().compareTo(p2.partitionKey());
+        }
+    }
+
     private PartitionIterators() {}
 
     public interface MergeListener
@@ -69,8 +77,8 @@ public abstract class PartitionIterators
 
     public static DataIterator mergeAsDataIterator(List<PartitionIterator> iterators, int nowInSec, MergeListener listener)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        // TODO: we could have a somewhat faster version if we were to merge the AtomIterators directly as RowIterators
+        return asDataIterator(merge(iterators, nowInSec, listener));
     }
 
     public static DataIterator asDataIterator(final PartitionIterator iterator, final int nowInSec)
@@ -112,19 +120,109 @@ public abstract class PartitionIterators
         };
     }
 
-    public static PartitionIterator merge(List<? extends PartitionIterator> iterators, int nowInSec, MergeListener listener)
+    public static PartitionIterator merge(final List<? extends PartitionIterator> iterators, final int nowInSec, final MergeListener listener)
     {
-        // TODO (make sure we special the case were there is only one iterator (even if there is a listener))
-        throw new UnsupportedOperationException();
+        MergeIterator<AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
+        {
+            private final List<AtomIterator> toMerge = new ArrayList<>(iterators.size());
+
+            public void reduce(int idx, AtomIterator current)
+            {
+                // Note that because the MergeListener cares about it, we want to preserve the index of the iterator.
+                // Non-present iterator will thus be null, which AtomIterators.merge handles.
+                toMerge.set(idx, current);
+            }
+
+            protected AtomIterator getReduced()
+            {
+                return AtomIterators.merge(toMerge, nowInSec, listener);
+            }
+
+            protected void onKeyChange()
+            {
+                toMerge.clear();
+                for (int i = 0; i < iterators.size(); i++)
+                    toMerge.add(null);
+            }
+        });
+
+        return new PartitionIterator()
+        {
+            public boolean hasNext()
+            {
+                return merged.hasNext();
+            }
+
+            public AtomIterator next()
+            {
+                return merged.next();
+            }
+
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            public void close()
+            {
+                merged.close();
+            }
+        };
     }
 
-    public static PartitionIterator merge(List<? extends PartitionIterator> iterators, int nowInSec)
+    public static PartitionIterator merge(final List<? extends PartitionIterator> iterators, final int nowInSec)
     {
         if (iterators.size() == 1)
             return iterators.get(0);
 
-        // TODO
-        throw new UnsupportedOperationException();
+        MergeIterator<AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
+        {
+            private final List<AtomIterator> toMerge = new ArrayList<>(iterators.size());
+
+            @Override
+            public boolean trivialReduceIsTrivial()
+            {
+                return false;
+            }
+
+            public void reduce(int idx, AtomIterator current)
+            {
+                toMerge.add(current);
+            }
+
+            protected AtomIterator getReduced()
+            {
+                return AtomIterators.merge(toMerge, nowInSec);
+            }
+
+            protected void onKeyChange()
+            {
+                toMerge.clear();
+            }
+        });
+
+        return new PartitionIterator()
+        {
+            public boolean hasNext()
+            {
+                return merged.hasNext();
+            }
+
+            public AtomIterator next()
+            {
+                return merged.next();
+            }
+
+            public void remove()
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            public void close()
+            {
+                merged.close();
+            }
+        };
     }
 
     public static PartitionIterator removeDroppedColumns(PartitionIterator iterator, final Map<ColumnIdentifier, Long> droppedColumns)

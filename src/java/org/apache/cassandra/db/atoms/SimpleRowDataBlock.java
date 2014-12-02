@@ -148,6 +148,7 @@ public class SimpleRowDataBlock
         public void reset()
         {
             base = 0;
+            data.clear();
         }
 
         public void endOfRow()

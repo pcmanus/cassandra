@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -65,8 +66,8 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
 
     public interface Writer
     {
+        public void writeComponent(ByteBuffer value);
         public void writeEOC(EOC eoc);
-        public void writeComponent(int i, ByteBuffer value);
     }
 
     public static class Serializer
@@ -115,11 +116,11 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             for (int i = 0; i < clusteringSize; i++)
             {
                 if (isNull(header, i))
-                    writer.writeComponent(i, null);
+                    writer.writeComponent(null);
                 else if (isEmpty(header, i))
-                    writer.writeComponent(i, ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                    writer.writeComponent(ByteBufferUtil.EMPTY_BYTE_BUFFER);
                 else
-                    writer.writeComponent(i, types.get(i).readValue(in));
+                    writer.writeComponent(types.get(i).readValue(in));
             }
             writer.writeEOC(eoc);
         }
@@ -180,6 +181,107 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             int b = header[i / 4];
             int mask = 1 << ((i % 4) * 2);
             return (b & mask) != 0;
+        }
+    }
+
+    public static class Deserializer
+    {
+        private final ClusteringComparator comparator;
+        private final DataInput in;
+        private final SerializationHeader serializationHeader;
+
+        private boolean nextIsRow;
+        private int nextSize;
+        private int[] nextHeader;
+
+        private final ReusableClusteringPrefix nextPrefix;
+
+        public Deserializer(ClusteringComparator comparator, DataInput in, SerializationHeader header)
+        {
+            this.comparator = comparator;
+            this.in = in;
+            this.serializationHeader = header;
+            this.nextPrefix = new ReusableClusteringPrefix(comparator.size());
+        }
+
+        public void prepare(int flags) throws IOException
+        {
+            assert !AtomSerializer.isStatic(flags);
+            this.nextIsRow = AtomSerializer.kind(flags) == Atom.Kind.ROW;
+            this.nextSize = nextIsRow ? comparator.size() : in.readUnsignedShort();
+            this.nextPrefix.reset();
+            this.nextPrefix.writer().writeEOC(AtomSerializer.eoc(flags));
+            this.nextHeader = serializer.readHeader(nextSize, in);
+        }
+
+        public int compareNextTo(Clusterable prefix) throws IOException
+        {
+            ClusteringPrefix other = prefix.clustering();
+
+            if (other.size() == 0)
+                return nextSize == 0 ? 0 : 1;
+
+            if (nextSize == 0)
+                return -1;
+
+            for (int i = 0; i < other.size(); i++)
+            {
+                if (!hasComponent(i))
+                    return nextPrefix.eoc().prefixComparisonResult;
+
+                int cmp = comparator.compareComponent(i, nextPrefix, other);
+                if (cmp != 0)
+                    return cmp;
+            }
+
+            if (other.size() == nextSize)
+                return nextPrefix.eoc().compareTo(other.eoc());
+
+            // We know that we'll have exited already if nextSize < other.size
+            return -other.eoc().prefixComparisonResult;
+        }
+
+        private boolean hasComponent(int i) throws IOException
+        {
+            if (i >= nextSize)
+                return false;
+
+            while (nextPrefix.size() <= i)
+                deserializeOne();
+
+            return true;
+        }
+
+        private boolean deserializeOne() throws IOException
+        {
+            if (nextPrefix.size() == nextSize)
+                return false;
+
+            int i = nextPrefix.size();
+            ByteBuffer toWrite = serializer.isNull(nextHeader, i)
+                               ? null
+                               : (serializer.isEmpty(nextHeader, i) ? ByteBufferUtil.EMPTY_BYTE_BUFFER : serializationHeader.clusteringTypes().get(i).readValue(in));
+            nextPrefix.writer().writeComponent(toWrite);
+            return true;
+        }
+
+        private void deserializeAll() throws IOException
+        {
+            while (deserializeOne())
+                continue;
+        }
+
+        public ClusteringPrefix readNext() throws IOException
+        {
+            deserializeAll();
+            return nextPrefix;
+        }
+
+        public void skipNext() throws IOException
+        {
+            for (int i = nextPrefix.size(); i < nextSize; i++)
+                if (!serializer.isNull(nextHeader, i) && !serializer.isEmpty(nextHeader, i))
+                    serializationHeader.clusteringTypes().get(i).skipValue(in);
         }
     }
 }
