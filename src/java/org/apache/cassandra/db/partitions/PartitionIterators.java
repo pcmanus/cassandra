@@ -23,12 +23,14 @@ import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.MergeIterator;
 
 /**
  * Static methods to work with partition iterators.
@@ -59,26 +61,26 @@ public abstract class PartitionIterators
         }
     };
 
-    private static final Comparator<PartitionIterator> partitionComparator = new Comparator<PartitionIterator>()
+    private static final Comparator<AtomIterator> partitionComparator = new Comparator<AtomIterator>()
     {
-        public int compare(PartitionIterator p1, PartitionIterator p2)
+        public int compare(AtomIterator p1, AtomIterator p2)
         {
             return p1.partitionKey().compareTo(p2.partitionKey());
         }
-    }
+    };
 
     private PartitionIterators() {}
 
     public interface MergeListener
     {
-        public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, AtomIterator[] versions);
+        public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, List<AtomIterator> versions);
         public void close();
     }
 
     public static DataIterator mergeAsDataIterator(List<PartitionIterator> iterators, int nowInSec, MergeListener listener)
     {
         // TODO: we could have a somewhat faster version if we were to merge the AtomIterators directly as RowIterators
-        return asDataIterator(merge(iterators, nowInSec, listener));
+        return asDataIterator(merge(iterators, nowInSec, listener), nowInSec);
     }
 
     public static DataIterator asDataIterator(final PartitionIterator iterator, final int nowInSec)
@@ -122,20 +124,38 @@ public abstract class PartitionIterators
 
     public static PartitionIterator merge(final List<? extends PartitionIterator> iterators, final int nowInSec, final MergeListener listener)
     {
-        MergeIterator<AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
+        assert listener != null;
+
+        final MergeIterator<AtomIterator, AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
         {
             private final List<AtomIterator> toMerge = new ArrayList<>(iterators.size());
 
+            private CFMetaData metadata;
+            private DecoratedKey partitionKey;
+            private boolean isReverseOrder;
+
+
             public void reduce(int idx, AtomIterator current)
             {
+                metadata = current.metadata();
+                partitionKey = current.partitionKey();
+                isReverseOrder = current.isReverseOrder();
+
                 // Note that because the MergeListener cares about it, we want to preserve the index of the iterator.
-                // Non-present iterator will thus be null, which AtomIterators.merge handles.
+                // Non-present iterator will thus be set to empty in getReduced.
                 toMerge.set(idx, current);
             }
 
             protected AtomIterator getReduced()
             {
-                return AtomIterators.merge(toMerge, nowInSec, listener);
+                // Replace nulls by empty iterators
+                AtomIterators.MergeListener atomListener = listener.getAtomMergeListener(partitionKey, toMerge);
+
+                for (int i = 0; i < toMerge.size(); i++)
+                    if (toMerge.get(i) == null)
+                        toMerge.set(i, AtomIterators.emptyIterator(metadata, partitionKey, isReverseOrder));
+
+                return AtomIterators.merge(toMerge, nowInSec, atomListener);
             }
 
             protected void onKeyChange()
@@ -175,7 +195,7 @@ public abstract class PartitionIterators
         if (iterators.size() == 1)
             return iterators.get(0);
 
-        MergeIterator<AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
+        final MergeIterator<AtomIterator, AtomIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<AtomIterator, AtomIterator>()
         {
             private final List<AtomIterator> toMerge = new ArrayList<>(iterators.size());
 

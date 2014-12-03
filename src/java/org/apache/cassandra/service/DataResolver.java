@@ -74,17 +74,25 @@ public class DataResolver extends AbstractResolver
             this.sources = sources;
         }
 
-        public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, AtomIterator[] versions)
+        public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, List<AtomIterator> versions)
         {
             return new MergeListener(partitionKey, columns(versions));
         }
 
-        private PartitionColumns columns(AtomIterator[] versions)
+        private PartitionColumns columns(List<AtomIterator> versions)
         {
-            for (int i = 0; i < versions.length; i++)
-                if (versions[i] != null)
-                    return versions[i].columns();
-            throw new AssertionError();
+            Columns statics = Columns.NONE;
+            Columns regulars = Columns.NONE;
+            for (AtomIterator iter : versions)
+            {
+                if (iter == null)
+                    continue;
+
+                PartitionColumns cols = iter.columns();
+                statics = statics.mergeTo(cols.statics);
+                regulars = regulars.mergeTo(cols.regulars);
+            }
+            return  new PartitionColumns(statics, regulars);
         }
 
         public void close()
@@ -159,12 +167,12 @@ public class DataResolver extends AbstractResolver
                 }
             }
 
-            public void onMergedColumns(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTimeArray versions)
+            public void onMergedComplexDeletion(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTime[] versions)
             {
                 currentColumn = c;
-                for (int i = 0; i < versions.size(); i++)
+                for (int i = 0; i < versions.length; i++)
                 {
-                    if (versions.supersedes(i, mergedCompositeDeletion))
+                    if (mergedCompositeDeletion.supersedes(versions[i]))
                         currentRow(i).writeComplexDeletion(c, mergedCompositeDeletion);
                 }
             }

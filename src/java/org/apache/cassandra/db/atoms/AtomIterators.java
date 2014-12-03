@@ -44,25 +44,13 @@ public abstract class AtomIterators
     public interface MergeListener
     {
         public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions);
-        public void onMergedComplexDeletion(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTimeArray versions);
+        public void onMergedComplexDeletion(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTime[] versions);
         public void onMergedCells(Cell mergedCell, Cell[] versions);
         public void onRowDone();
 
         public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions);
 
         public void close();
-    }
-
-    public abstract class AbstractMergeListener
-    {
-        protected AbstractMergeListener() {}
-
-        public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions) {}
-        public void onMergedColumns(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTimeArray versions) {}
-        public void onMergedCells(Cell mergedCell, Cell[] versions) {}
-        public void onRowDone() {}
-
-        public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions) {}
     }
 
     /**
@@ -96,7 +84,7 @@ public abstract class AtomIterators
         if (iterators.size() == 1)
             return iterators.get(0);
 
-        return new AtomMergeIterator(iterators, nowInSec);
+        return AtomMergeIterator.create(iterators, nowInSec, null);
     }
 
     /**
@@ -107,7 +95,8 @@ public abstract class AtomIterators
      */
     public static AtomIterator merge(List<AtomIterator> iterators, int nowInSec, MergeListener mergeListener)
     {
-        return new AtomMergeIterator(iterators, nowInSec, mergeListener);
+        assert mergeListener != null;
+        return AtomMergeIterator.create(iterators, nowInSec, mergeListener);
     }
 
     /**
@@ -266,13 +255,13 @@ public abstract class AtomIterators
         private final IMergeIterator<Atom, Atom> mergeIterator;
         private final MergeListener listener;
 
-        private AtomMergeIterator(List<AtomIterator> iterators, PartitionColumns columns, int nowInSec, MergeListener listener)
+        private AtomMergeIterator(List<AtomIterator> iterators, PartitionColumns columns, DeletionTime partitionDeletion, int nowInSec, MergeListener listener)
         {
             super(iterators.get(0).metadata(),
                   iterators.get(0).partitionKey(),
-                  collectPartitionLevelDeletion(iterators),
+                  partitionDeletion,
                   columns,
-                  mergeStaticRows(iterators, columns.statics, nowInSec, listener),
+                  mergeStaticRows(iterators, columns.statics, nowInSec, listener, partitionDeletion),
                   iterators.get(0).isReverseOrder(),
                   mergeStats(iterators));
 
@@ -285,8 +274,7 @@ public abstract class AtomIterators
         private static AtomMergeIterator create(List<AtomIterator> iterators, int nowInSec, MergeListener listener)
         {
             assert inputIsValid(iterators);
-
-            return new AtomMergeIterator(iterators, collectColumns(iterators), nowInSec, listener)
+            return new AtomMergeIterator(iterators, collectColumns(iterators), collectPartitionLevelDeletion(iterators), nowInSec, listener);
         }
 
         private static boolean inputIsValid(List<AtomIterator> iterators)
@@ -317,18 +305,22 @@ public abstract class AtomIterators
             return delTime;
         }
 
-        private static Row mergeStaticRows(List<AtomIterator> iterators, Columns columns, int nowInSec, MergeListener listener)
+        private static Row mergeStaticRows(List<AtomIterator> iterators,
+                                           Columns columns,
+                                           int nowInSec,
+                                           MergeListener listener,
+                                           DeletionTime partitionDeletion)
         {
             if (columns.isEmpty())
                 return Rows.EMPTY_STATIC_ROW;
 
-            Row[] toMerge = new Row[iterators.size()];
+            Rows.Merger merger = new Rows.Merger(iterators.size(), nowInSec, columns, listener);
             for (int i = 0; i < iterators.size(); i++)
-                toMerge[i] = iterators.get(i).staticRow();
+                merger.add(i, iterators.get(i).staticRow());
 
-            ReusableRow row = new ReusableRow(columns);
-            Rows.merge(EmptyClusteringPrefix.STATIC_PREFIX, toMerge, columns, row.writer(), nowInSec, listener);
-            return row;
+            // Note that we should call 'takeAlias' on the result in theory, but we know that we
+            // won't reuse the merger and so that it's ok not to.
+            return merger.merge(partitionDeletion);
         }
 
         private static PartitionColumns collectColumns(List<AtomIterator> iterators)
@@ -338,13 +330,21 @@ public abstract class AtomIterators
             Columns regulars = first.regulars;
             for (int i = 1; i < iterators.size(); i++)
             {
-                PartitionColumns cols = iterator.get(i).columns();
+                PartitionColumns cols = iterators.get(i).columns();
                 statics = statics.mergeTo(cols.statics);
                 regulars = regulars.mergeTo(cols.regulars);
             }
             return statics == first.statics && regulars == first.regulars
                  ? first
                  : new PartitionColumns(statics, regulars);
+        }
+
+        private static AtomStats mergeStats(List<AtomIterator> iterators)
+        {
+            AtomStats stats = AtomStats.NO_STATS;
+            for (AtomIterator iter : iterators)
+                stats = stats.mergeWith(iter.stats());
+            return stats;
         }
 
         protected Atom computeNext()
@@ -371,7 +371,7 @@ public abstract class AtomIterators
          * Specific reducer for merge operations that rewrite the same reusable
          * row every time. This also skip cells shadowed by range tombstones when writing.
          */
-        private class MergeReducer extends MergeIterator.Reducer<Atom, Atom> implements MergeListener
+        private class MergeReducer extends MergeIterator.Reducer<Atom, Atom>
         {
             private Atom.Kind nextKind;
 
@@ -380,7 +380,7 @@ public abstract class AtomIterators
 
             private MergeReducer(int size, int nowInSec)
             {
-                this.rowMerger = new Rows.Merger(size, nowInSec, listener);
+                this.rowMerger = new Rows.Merger(size, nowInSec, columns().regulars, listener);
                 this.markerMerger = new RangeTombstoneMarkers.Merger(size, partitionLevelDeletion(), listener);
             }
 

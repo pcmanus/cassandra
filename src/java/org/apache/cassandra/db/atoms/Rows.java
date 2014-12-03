@@ -31,6 +31,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.MergeIterator;
 
 /**
  * Static utilities to work on Row objects.
@@ -220,41 +221,41 @@ public abstract class Rows
     //    //listener.onRowDone();
     //}
 
-    public static void merge(ClusteringPrefix clustering, Row[] rows, Columns mergedColumns, Row.Writer writer, int nowInSec, AtomIterators.MergeListener listener)
-    {
-        throw new UnsupportedOperationException();
-        //merge(clustering, rows, new MergeHelper(nowInSec, rows.length), new AtomIterators.MergeListener()
-        //{
-        //    public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
-        //    {
-        //        writer.setClustering(clustering);
-        //        writer.setTimestamp(mergedTimestamp);
-        //    }
+    //public static void merge(ClusteringPrefix clustering, Row[] rows, Columns mergedColumns, Row.Writer writer, int nowInSec, AtomIterators.MergeListener listener)
+    //{
+    //    throw new UnsupportedOperationException();
+    //    //merge(clustering, rows, new MergeHelper(nowInSec, rows.length), new AtomIterators.MergeListener()
+    //    //{
+    //    //    public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
+    //    //    {
+    //    //        writer.setClustering(clustering);
+    //    //        writer.setTimestamp(mergedTimestamp);
+    //    //    }
 
-        //    public void onMergedColumns(ColumnDefinition c, DeletionTime mergedComplexDeletion, DeletionTimeArray versions)
-        //    {
-        //        writer.newColumn(c, mergedComplexDeletion);
-        //    }
+    //    //    public void onMergedColumns(ColumnDefinition c, DeletionTime mergedComplexDeletion, DeletionTimeArray versions)
+    //    //    {
+    //    //        writer.newColumn(c, mergedComplexDeletion);
+    //    //    }
 
-        //    public void onMergedCells(Cell mergedCell, Cell[] versions)
-        //    {
-        //        writer.newCell(mergedCell);
-        //    }
+    //    //    public void onMergedCells(Cell mergedCell, Cell[] versions)
+    //    //    {
+    //    //        writer.newCell(mergedCell);
+    //    //    }
 
-        //    public void onRowDone()
-        //    {
-        //        writer.endOfRow();
-        //    }
+    //    //    public void onRowDone()
+    //    //    {
+    //    //        writer.endOfRow();
+    //    //    }
 
-        //    public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions)
-        //    {
-        //    }
+    //    //    public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions)
+    //    //    {
+    //    //    }
 
-        //    public void close()
-        //    {
-        //    }
-        //});
-    }
+    //    //    public void close()
+    //    //    {
+    //    //    }
+    //    //});
+    //}
 
     // Merge rows in memtable
     public static void merge(Row existing,
@@ -380,19 +381,21 @@ public abstract class Rows
     public static class Merger
     {
         private final int nowInSec;
-        private final AtomIterator.MergeListener listener;
+        private final AtomIterators.MergeListener listener;
         private final Columns columns;
 
         private ClusteringPrefix clustering;
         private final Row[] rows;
 
         private final ReusableRow row;
+        private final Cell[] cells;
         private final List<Iterator<Cell>> complexCells;
+        private final ComplexColumnReducer complexReducer = new ComplexColumnReducer();
 
         // For the sake of the listener if there is one
-        private final Cell[] cells;
+        private final DeletionTime[] complexDelTimes;
 
-        public Merger(int size, int nowInSec, Columns columns, AtomIterator.MergeListener listener)
+        public Merger(int size, int nowInSec, Columns columns, AtomIterators.MergeListener listener)
         {
             this.nowInSec = nowInSec;
             this.listener = listener;
@@ -401,7 +404,8 @@ public abstract class Rows
             this.row = new ReusableRow(columns);
             this.complexCells = new ArrayList<>(size);
 
-            this.cells = listener == null ? null : new Cell[size];
+            this.cells = new Cell[size];
+            this.complexDelTimes = listener == null ? null : new DeletionTime[size];
         }
 
         public void clear()
@@ -410,23 +414,22 @@ public abstract class Rows
             complexCells.clear();
         }
 
-        public void addRow(int i, Row row)
+        public void add(int i, Row row)
         {
-            clustering = marker.clustering();
-            rows[i] = rows;
+            clustering = row.clustering();
+            rows[i] = row;
         }
 
         public Row merge(DeletionTime activeDeletion)
         {
-            .... handle deletion
             Row.Writer writer = row.writer();
-
             writer.writeClustering(clustering);
 
             long timestamp = Cells.NO_TIMESTAMP;
             for (int i = 0; i < rows.length; i++)
                 timestamp = Math.max(timestamp, rows[i].timestamp());
 
+            timestamp = activeDeletion.deletes(timestamp) ? Cells.NO_TIMESTAMP : timestamp;
             writer.writeTimestamp(timestamp);
 
             if (listener != null)
@@ -435,304 +438,101 @@ public abstract class Rows
             for (int i = 0; i < columns.simpleColumnCount(); i++)
             {
                 ColumnDefinition c = columns.getSimple(i);
-                Cell reconciled = null;
                 for (int j = 0; j < rows.length; j++)
-                {
-                    Cell cell = rows[i].getCell(c);
-                    if (cell != null)
-                    {
-                        reconciled = Cells.reconcile(reconciled, cell, nowInSec);
-                        if (cells != null)
-                            cells[j] = cell;
-                    }
-                }
+                    cells[j] = rows[j].getCell(c);
 
-                writer.writeCell(reconciled);
-                if (listener != null)
-                    listener.onMergedCells(reconciled, cells);
+                reconcileCells(activeDeletion, c, writer);
             }
 
+            complexReducer.activeDeletion = activeDeletion;
+            complexReducer.writer = writer;
             for (int i = 0; i < columns.complexColumnCount(); i++)
             {
                 ColumnDefinition c = columns.getComplex(i);
 
+                DeletionTime maxComplexDeletion = DeletionTime.LIVE;
+                for (int j = 0; j < rows.length; j++)
+                {
+                    DeletionTime dt = rows[j].getDeletion(c);
+                    if (complexDelTimes != null)
+                        complexDelTimes[j] = dt;
 
+                    if (dt.supersedes(maxComplexDeletion))
+                        maxComplexDeletion = dt;
+                }
 
-                DeletionTime existingDt = existing.getDeletion(c);
-                DeletionTime updateDt = update.getDeletion(c);
-                if (existingDt.supersedes(updateDt))
-                    writer.writeComplexDeletion(c, existingDt);
-                else
-                    writer.writeComplexDeletion(c, updateDt);
+                boolean overrideActive = maxComplexDeletion.supersedes(activeDeletion);
+                maxComplexDeletion =  overrideActive ? maxComplexDeletion : DeletionTime.LIVE;
+                writer.writeComplexDeletion(c, maxComplexDeletion);
+                if (listener != null)
+                    listener.onMergedComplexDeletion(c, maxComplexDeletion, complexDelTimes);
 
-                Iterator<Cell> existingCells = existing.getCells(c);
-                Iterator<Cell> updateCells = update.getCells(c);
-                Cells.reconcileComplex(clustering, c, existingCells, updateCells, writer, nowInSec, indexUpdater);
+                mergeComplex(overrideActive ? maxComplexDeletion : activeDeletion, c);
             }
-
             writer.endOfRow();
-
-
-
-
-
-
-
-
-
-
-
-
-
-            Rows.merge(nextClustering, rows, columns(), row.writer(), nowInSec, listener);
+            if (listener != null)
+                listener.onRowDone();
 
             // Because shadowed cells are skipped, the row could be empty. In which case
-            // we return null and the enclosing iterator will just skip it.
+            // we return null.
             return row.isEmpty() ? null : row;
         }
 
-        public void onMergingRows(ClusteringPrefix clustering, long timestamp, Row[] versions)
+        private void reconcileCells(DeletionTime activeDeletion, ColumnDefinition c, Row.Writer writer)
         {
-            // If the row is shadowed by a more recent deletion, delete it's timestamp
-            long merged = partitionLevelDeletion.deletes(timestamp) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
-                ? Long.MIN_VALUE
-                : timestamp;
+            Cell reconciled = null;
+            for (int j = 0; j < cells.length; j++)
+            {
+                Cell cell = cells[j];
+                if (cell != null && !activeDeletion.deletes(cell.timestamp()))
+                    reconciled = Cells.reconcile(reconciled, cell, nowInSec);
+            }
 
-            if (listener != null)
-                listener.onMergingRows(clustering, merged, versions);
-
-            writer.setClustering(clustering);
-            writer.setTimestamp(merged);
+            if (reconciled != null)
+            {
+                Cells.write(reconciled, writer);
+                if (listener != null)
+                    listener.onMergedCells(reconciled, cells);
+            }
         }
 
-        public void onMergedColumns(ColumnDefinition c, DeletionTime compositeDeletion, DeletionTimeArray versions)
+        private void mergeComplex(DeletionTime activeDeletion, ColumnDefinition c)
         {
-            // if the previous column had no cells but do have deletion info, write it now
-            if (prevColumn != null && !prevColumnDeletion.isLive())
-            {
-                if (listener != null)
-                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                writer.newColumn(prevColumn, prevColumnDeletion);
-            }
+            complexCells.clear();
+            for (int j = 0; j < rows.length; j++)
+                complexCells.add(rows[j].getCells(c));
 
-            // We don't want to call writer.newColumn just yet because it could be that the whole column
-            // ends up being fully shadowed by a top-level deletion or range tombstone
-            prevColumn = c;
-            prevColumnDeletion = partitionLevelDeletion.supersedes(compositeDeletion) || (openMarker >= 0 && openMarkersCursor.setTo(openMarker).supersedes(compositeDeletion))
-                ? DeletionTime.LIVE
-                : compositeDeletion.takeAlias();
-            prevColumnDeletionVersions.copy(versions);
+            complexReducer.column = c;
+
+            // Note that we use the mergeIterator only to group cells to merge, but we
+            // write the result to the writer directly in the reducer, so all we care
+            // about is iterating over the result.
+            Iterator<Void> iter = MergeIterator.get(complexCells, c.cellComparator(), complexReducer);
+            while (iter.hasNext())
+                iter.next();
         }
 
-        public void onMergedCells(Cell cell, Cell[] versions)
+        private class ComplexColumnReducer extends MergeIterator.Reducer<Cell, Void>
         {
-            // Skip shadowed cells
-            long timestamp = cell.timestamp();
-            if (partitionLevelDeletion.deletes(timestamp)
-                    || (openMarker > 0 && openMarkersCursor.setTo(openMarker).deletes(timestamp))
-                    || prevColumnDeletion.deletes(timestamp))
+            private DeletionTime activeDeletion;
+            private Row.Writer writer;
+            private ColumnDefinition column;
+
+            public void reduce(int idx, Cell current)
             {
-                if (listener != null)
-                    onMergedCells(null, versions);
-                return;
+                cells[idx] = current;
             }
 
-            if (prevColumn != null)
+            protected Void getReduced()
             {
-                if (listener != null)
-                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                writer.newColumn(prevColumn, prevColumnDeletion);
-                prevColumn = null;
+                reconcileCells(activeDeletion, column, writer);
+                return null;
             }
 
-            if (listener != null)
-                onMergedCells(cell, versions);
-            writer.newCell(cell);
-        }
-
-        public void onRowDone()
-        {
-            if (prevColumn != null && !prevColumnDeletion.isLive())
+            protected void onKeyChange()
             {
-                if (listener != null)
-                    onMergedColumns(prevColumn, prevColumnDeletion, prevColumnDeletionVersions);
-                writer.newColumn(prevColumn, prevColumnDeletion);
+                Arrays.fill(cells, null);
             }
-
-            prevColumn = null;
-            writer.endOfRow();
         }
     }
-
-    /**
-     * Utility object to merge multiple rows.
-     * <p>
-     * We don't want to use a MergeIterator to merge multiple rows because we do that often
-     * in the process of merging AtomIterators and we don't want to allocate iterators every
-     * time (this object is reused over the course of merging multiple AtomIterator) and is
-     * overall cheaper by being specialized.
-     */
-    //static class MergeHelper
-    //{
-    //    public final int nowInSec;
-    //    private final int size;
-
-    //    private Row[] rows;
-    //    private long maxRowTimestamp;
-
-    //    private final ColumnData[] columns;
-    //    private final Iterator<ColumnData>[] columnIterators;
-
-    //    private ColumnDefinition columnToMerge;
-    //    private final ColumnData[] columnsDataToMerge;
-    //    private final DeletionTimeArray complexDeletions;
-    //    private final DeletionTimeArray.Cursor complexDeletionsCursor;
-    //    private int maxComplexDeletion;
-
-    //    private final int[] remainings;
-    //    private final Cell[] cellsToMerge;
-
-    //    public MergeHelper(int nowInSec, int size)
-    //    {
-    //        this.nowInSec = nowInSec;
-    //        this.size = size;
-
-    //        this.columns = new ColumnData[size];
-    //        this.columnIterators = (Iterator<ColumnData>[]) new Iterator[size];
-
-    //        this.columnsDataToMerge = new ColumnData[size];
-    //        this.complexDeletions = new DeletionTimeArray(size);
-    //        this.complexDeletionsCursor = complexDeletions.newCursor();
-    //        this.remainings = new int[size];
-    //        this.cellsToMerge = new Cell[size];
-    //    }
-
-    //    public void setRows(Row[] rows)
-    //    {
-    //        this.rows = rows;
-    //        this.maxRowTimestamp = Long.MIN_VALUE;
-    //        for (int i = 0; i < rows.length; i++)
-    //        {
-    //            Row r = rows[i];
-    //            if (r == null)
-    //            {
-    //                columnIterators[i] = Collections.<ColumnData>emptyIterator();
-    //            }
-    //            else
-    //            {
-    //                maxRowTimestamp = Math.max(maxRowTimestamp, r.timestamp());
-    //                columnIterators[i] = r.iterator();
-    //            }
-    //        }
-    //    }
-
-    //    private void reset(int prevMin, int i)
-    //    {
-    //        for (int j = prevMin; j < i; j++)
-    //        {
-    //            if (cellsToMerge[j] != null)
-    //            {
-    //                cellsToMerge[j] = null;
-    //                ++remainings[i];
-    //            }
-    //        }
-    //    }
-
-    //    public boolean hasMoreColumns()
-    //    {
-    //        columnToMerge = null;
-    //        maxComplexDeletion = -1;
-    //        for (int i = 0; i < size; i++)
-    //        {
-    //            columnsDataToMerge[i] = null;
-    //            complexDeletions.clear(i);
-
-    //            // Are we done with that iterator
-    //            ColumnData d = columns[i];
-    //            if (d == null)
-    //            {
-    //                if (!columnIterators[i].hasNext())
-    //                    continue;
-    //                d = columnIterators[i].next();
-    //                columns[i] = d;
-    //            }
-
-    //            ColumnDefinition c = d.column();
-    //            if (columnToMerge == null || columnToMerge.compareTo(c) > 0)
-    //                columnToMerge = c;
-    //        }
-
-    //        if (columnToMerge == null)
-    //            return false;
-
-    //        // We found the next column to merge, set remainings for it
-    //        for (int i = 0; i < size; i++)
-    //        {
-    //            ColumnData d = columns[i];
-    //            if (d != null && d.column().equals(columnToMerge))
-    //            {
-    //                columnsDataToMerge[i] = d;
-    //                complexDeletions.set(i, d.complexDeletionTime());
-    //                if (complexDeletions.isLive(i) && (maxComplexDeletion < 0 || complexDeletions.supersedes(i, maxComplexDeletion)))
-    //                    maxComplexDeletion = i;
-    //                remainings[i] = d.size();
-    //                columns[i] = null;
-    //            }
-    //        }
-    //        return true;
-    //    }
-
-    //    private int select(int i, Cell candidate)
-    //    {
-    //        cellsToMerge[i] = candidate;
-    //        --remainings[i];
-    //        return i;
-    //    }
-
-    //    public boolean hasMoreCellsForColumn()
-    //    {
-    //        int minCell = -1;
-    //        for (int i = 0; i < size; i++)
-    //        {
-    //            cellsToMerge[i] = null;
-    //            int remaining = remainings[i];
-    //            if (remaining == 0)
-    //                continue;
-
-    //            ColumnData d = columnsDataToMerge[i];
-    //            if (!d.column().isComplex())
-    //            {
-    //                select(i, d.cell(0));
-    //                continue;
-    //            }
-
-    //            Cell candidate = d.cell(d.size() - remaining);
-    //            if (minCell == -1)
-    //            {
-    //                minCell = select(i, candidate);
-    //                continue;
-    //            }
-
-    //            Comparator<CellPath> comparator = d.column().cellPathComparator();
-    //            int cmp = comparator.compare(candidate.path(), cellsToMerge[minCell].path());
-    //            if (cmp < 0)
-    //            {
-    //                // We've found a smaller cell, 'reset' cellsToMerge and set the candidate
-    //                reset(minCell, i);
-    //                minCell = select(i, candidate);
-    //            }
-    //            else if (cmp == 0)
-    //            {
-    //                select(i, candidate);
-    //            }
-    //        }
-
-    //        return minCell >= 0;
-    //    }
-
-    //    public DeletionTime mergedComplexDeletion()
-    //    {
-    //        return maxComplexDeletion < 0 ? DeletionTime.LIVE : complexDeletionsCursor.setTo(maxComplexDeletion);
-    //    }
-    //}
 }

@@ -202,7 +202,7 @@ public class AtomSerializer
     public long serializedSize(RangeTombstoneMarker marker, SerializationHeader header, int version, TypeSizes sizes)
     {
         return 1 // flags
-             + ClusteringPrefix.serializer.serializedSizeNoEOC(marker.clustering(), version, header.clusteringTypes(), sizes)
+             + ClusteringPrefix.serializer.serializedSizeWithSizeNoEOC(marker.clustering(), version, header.clusteringTypes(), sizes)
              + AtomIteratorSerializer.delTimeSerializedSize(marker.delTime(), header, sizes);
     }
 

@@ -65,11 +65,11 @@ public class CompactionIterable extends AbstractCompactionIterable
     {
         return new PartitionIterators.MergeListener()
         {
-            public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, AtomIterator[] versions)
+            public AtomIterators.MergeListener getAtomMergeListener(DecoratedKey partitionKey, List<AtomIterator> versions)
             {
                 int merged = 0;
-                for (int i = 0; i < versions.length; i++)
-                    if (versions[i] != null)
+                for (AtomIterator iter : versions)
+                    if (iter != null)
                         merged++;
                 CompactionIterable.this.updateCounterFor(merged);
 
@@ -89,7 +89,7 @@ public class CompactionIterable extends AbstractCompactionIterable
                         this.clustering = clustering;
                     }
 
-                    public void onMergedColumns(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTimeArray versions)
+                    public void onMergedComplexDeletion(ColumnDefinition c, DeletionTime mergedCompositeDeletion, DeletionTime[] versions)
                     {
                         this.column = c;
                     }

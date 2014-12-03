@@ -189,6 +189,11 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         throw new UnsupportedOperationException();
     }
 
+    public void freeze()
+    {
+        maybeSort();
+    }
+
     private void maybeSort()
     {
         if (isSorted)

@@ -18,7 +18,6 @@
 package org.apache.cassandra.utils;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.*;
 
 import com.google.common.collect.AbstractIterator;
@@ -35,9 +34,9 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         this.reducer = reducer;
     }
 
-    public static <In, Out> IMergeIterator<In, Out> get(List<? extends Iterator<In>> sources,
-                                                        Comparator<In> comparator,
-                                                        Reducer<In, Out> reducer)
+    public static <In, Out> MergeIterator<In, Out> get(List<? extends Iterator<In>> sources,
+                                                       Comparator<In> comparator,
+                                                       Reducer<In, Out> reducer)
     {
         if (sources.size() == 1)
         {
@@ -59,9 +58,12 @@ public abstract class MergeIterator<In,Out> extends AbstractIterator<Out> implem
         {
             try
             {
-                ((Closeable)iterator).close();
+                if (iterator instanceof AutoCloseable)
+                    ((AutoCloseable)iterator).close();
+                else if (iterator instanceof Closeable)
+                    ((Closeable)iterator).close();
             }
-            catch (IOException e)
+            catch (Exception e)
             {
                 throw new RuntimeException(e);
             }

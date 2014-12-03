@@ -25,11 +25,12 @@ public class ReusableRow extends AbstractReusableRow
     private long timestamp = Long.MIN_VALUE;
 
     private final RowDataBlock data;
-    private final Writer writer = new Writer();
+    private final Writer writer;
 
     public ReusableRow(Columns columns)
     {
         this.data = new RowDataBlock(columns, 1);
+        this.writer = new Writer(data);
     }
 
     protected RowDataBlock data()
@@ -60,7 +61,7 @@ public class ReusableRow extends AbstractReusableRow
 
     private class Writer extends RowDataBlock.Writer
     {
-        public Writer()
+        public Writer(RowDataBlock data)
         {
             super(data);
         }

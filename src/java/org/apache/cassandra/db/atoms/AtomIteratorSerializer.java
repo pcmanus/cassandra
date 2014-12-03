@@ -167,7 +167,8 @@ public class AtomIteratorSerializer
         if (hasStatic)
             size += AtomSerializer.serializer.serializedSize(staticRow, header, version, sizes);
 
-        size += sizes.sizeof(rowEstimate);
+        if (rowEstimate >= 0)
+            size += sizes.sizeof(rowEstimate);
 
         while (iterator.hasNext())
             size += AtomSerializer.serializer.serializedSize(iterator.next(), header, version, sizes);

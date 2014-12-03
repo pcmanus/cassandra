@@ -51,7 +51,7 @@ public abstract class RangeTombstoneMarkers
 
     public static class Merger
     {
-        private final AtomIterator.MergeListener listener;
+        private final AtomIterators.MergeListener listener;
         private final DeletionTime partitionDeletion;
 
         private ClusteringPrefix clustering;
@@ -59,7 +59,7 @@ public abstract class RangeTombstoneMarkers
 
         // Stores for each iterator, what is the currently open marker
         private final DeletionTimeArray openMarkers;
-        private final DeletionTimeArray.Cursor openMarkersCursor;
+        private final DeletionTimeArray.Cursor openMarkersCursor = new DeletionTimeArray.Cursor();
 
         // The index in openMarkers of the "biggest" marker. This is the last open marker
         // that has been returned for the merge.
@@ -68,15 +68,13 @@ public abstract class RangeTombstoneMarkers
         // As reusable marker to return the result
         private final ReusableRangeTombstoneMarker reusableMarker;
 
-        public Merger(int size, DeletionTime partitionDeletion, AtomIterator.MergeListener listener)
+        public Merger(int size, DeletionTime partitionDeletion, AtomIterators.MergeListener listener)
         {
             this.listener = listener;
             this.partitionDeletion = partitionDeletion;
 
             this.markers = new RangeTombstoneMarker[size];
             this.openMarkers = new DeletionTimeArray(size);
-            this.openMarkersCursor = openMarkers.newCursor();
-
             this.reusableMarker = new ReusableRangeTombstoneMarker();
         }
 
@@ -85,7 +83,7 @@ public abstract class RangeTombstoneMarkers
             Arrays.fill(markers, null);
         }
 
-        public void addMarker(int i, RangeTombstoneMarker marker)
+        public void add(int i, RangeTombstoneMarker marker)
         {
             clustering = marker.clustering();
             markers[i] = marker;
@@ -96,7 +94,7 @@ public abstract class RangeTombstoneMarkers
             int toReturn = -1;
             boolean hasCloseMarker = false;
 
-            for (int i = 0; i < size; i++)
+            for (int i = 0; i < markers.length; i++)
             {
                 RangeTombstoneMarker marker = markers[i];
                 if (marker == null)
@@ -125,7 +123,7 @@ public abstract class RangeTombstoneMarkers
 
             if (hasCloseMarker)
             {
-                for (int i = 0; i < size; i++)
+                for (int i = 0; i < markers.length; i++)
                 {
                     RangeTombstoneMarker marker = markers[i];
                     if (marker == null || marker.isOpenMarker())
@@ -165,7 +163,7 @@ public abstract class RangeTombstoneMarkers
                 return null;
 
             // Note that we can only arrive here if we have an open marker to return
-            openMarkersCursor.setTo(toReturn);
+            openMarkersCursor.setTo(openMarkers, toReturn);
             if (listener != null)
                 listener.onMergedRangeTombstoneMarkers(clustering, true, openMarkersCursor, markers);
             return reusableMarker.setTo(clustering, true, openMarkersCursor);
@@ -174,7 +172,7 @@ public abstract class RangeTombstoneMarkers
         public DeletionTime activeDeletion()
         {
             // Note that we'll only have an openMarker if it supersedes the partition deletion
-            return openMarker < 0 ? partitionDeletion : openMarkersCursor.setTo(openMarker);
+            return openMarker < 0 ? partitionDeletion : openMarkersCursor.setTo(openMarkers, openMarker);
         }
 
         private void updateOpenMarker()

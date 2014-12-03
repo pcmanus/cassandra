@@ -74,6 +74,9 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     {
         public void serializeNoEOC(ClusteringPrefix clustering, DataOutputPlus out, int version, List<AbstractType<?>> types) throws IOException
         {
+            if (clustering.size() == 0)
+                return;
+
             writeHeader(clustering, out);
             for (int i = 0; i < clustering.size(); i++)
             {
@@ -93,6 +96,9 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
 
         public long serializedSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
         {
+            if (clustering.size() == 0)
+                return 0;
+
             long size = headerBytesCount(clustering.size());
             for (int i = 0; i < clustering.size(); i++)
             {
@@ -105,13 +111,19 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             return size;
         }
 
-        public long serializedWithSizeSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
+        public long serializedSizeWithSizeNoEOC(ClusteringPrefix clustering, int version, List<AbstractType<?>> types, TypeSizes sizes)
         {
             return sizes.sizeof((short)clustering.size()) + serializedSizeNoEOC(clustering, version, types, sizes);
         }
 
         public void deserializeNoEOC(DataInput in, int clusteringSize, EOC eoc, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
         {
+            if (clusteringSize == 0)
+            {
+                writer.writeEOC(eoc);
+                return;
+            }
+
             int[] header = readHeader(clusteringSize, in);
             for (int i = 0; i < clusteringSize; i++)
             {
@@ -148,7 +160,7 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
                 {
                     int c = i * 4 + j;
                     if (c >= clustering.size())
-                        return;
+                        break;
 
                     ByteBuffer v = clustering.get(c);
                     if (v == null)

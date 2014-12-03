@@ -64,11 +64,6 @@ public class DeletionTimeArray
         Arrays.fill(delTimes, prevSize, newSize, Integer.MAX_VALUE);
     }
 
-    public Cursor newCursor()
-    {
-        return new Cursor();
-    }
-
     public boolean supersedes(int i, DeletionTime dt)
     {
         return markedForDeleteAts[i] > dt.markedForDeleteAt();
