@@ -135,7 +135,7 @@ public abstract class AtomDeserializer
                 return true;
 
             prepareNext();
-            return isDone;
+            return !isDone;
         }
 
         private void prepareNext() throws IOException

@@ -726,7 +726,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
         // check the first restriction to see if we're dealing with a multi-column restriction
         Restriction firstRestriction = restrictions[0];
-        if (firstRestriction.isMultiColumn())
+        if (firstRestriction != null && firstRestriction.isMultiColumn())
         {
             if (firstRestriction.isSlice())
                 return buildMultiColumnSliceBound(bound, defs, (MultiColumnRestriction.Slice) firstRestriction, builder, options);

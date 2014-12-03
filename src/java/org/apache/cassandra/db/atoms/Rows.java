@@ -427,7 +427,8 @@ public abstract class Rows
 
             long timestamp = Cells.NO_TIMESTAMP;
             for (int i = 0; i < rows.length; i++)
-                timestamp = Math.max(timestamp, rows[i].timestamp());
+                if (rows[i] != null)
+                    timestamp = Math.max(timestamp, rows[i].timestamp());
 
             timestamp = activeDeletion.deletes(timestamp) ? Cells.NO_TIMESTAMP : timestamp;
             writer.writeTimestamp(timestamp);
@@ -439,7 +440,7 @@ public abstract class Rows
             {
                 ColumnDefinition c = columns.getSimple(i);
                 for (int j = 0; j < rows.length; j++)
-                    cells[j] = rows[j].getCell(c);
+                    cells[j] = rows[j] == null ? null : rows[j].getCell(c);
 
                 reconcileCells(activeDeletion, c, writer);
             }
@@ -453,6 +454,9 @@ public abstract class Rows
                 DeletionTime maxComplexDeletion = DeletionTime.LIVE;
                 for (int j = 0; j < rows.length; j++)
                 {
+                    if (rows[j] == null)
+                        continue;
+
                     DeletionTime dt = rows[j].getDeletion(c);
                     if (complexDelTimes != null)
                         complexDelTimes[j] = dt;
@@ -500,7 +504,7 @@ public abstract class Rows
         {
             complexCells.clear();
             for (int j = 0; j < rows.length; j++)
-                complexCells.add(rows[j].getCells(c));
+                complexCells.add(rows[j] == null ? Iterators.<Cell>emptyIterator()  : rows[j].getCells(c));
 
             complexReducer.column = c;
 

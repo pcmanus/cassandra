@@ -141,7 +141,6 @@ public abstract class Slices
 
         public ClusteringPrefix lowerBound()
         {
-            assert hasLowerBound() : "This should not be called unless hasLowerBound() == true";
             return starts[0];
         }
 
@@ -152,7 +151,6 @@ public abstract class Slices
 
         public ClusteringPrefix upperBound()
         {
-            assert hasUpperBound() : "This should not be called unless hasLowerBound() == true";
             return ends[ends.length - 1];
         }
 

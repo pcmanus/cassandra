@@ -153,6 +153,12 @@ public interface MemtableRowData extends Clusterable
 
         public long unsharedHeapSizeExcludingData()
         {
+            return EMPTY_SIZE + ObjectSizes.sizeOnHeapExcludingData(values);
+        }
+
+        @Override
+        public long unsharedHeapSize()
+        {
             return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(values);
         }
 

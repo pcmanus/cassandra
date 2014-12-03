@@ -63,7 +63,7 @@ public abstract class AbstractClusteringPrefix implements ClusteringPrefix
     public long unsharedHeapSize()
     {
         // unsharedHeapSize is used inside the cache and in memtables. The implementations of ClusteringPrefix that are
-        // safe to use there (SimpleClusteringPrefix and MemtableRow.BufferClusteringPrefix) overwriter this.
+        // safe to use there (SimpleClusteringPrefix and MemtableRow.BufferClusteringPrefix) overwrite this.
         throw new UnsupportedOperationException();
     }
 

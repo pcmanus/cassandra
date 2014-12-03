@@ -177,7 +177,7 @@ public class ColumnIndex
 
         private ColumnIndex close() throws IOException
         {
-            writer.stream.writeShort(SSTableWriter.END_OF_ROW);
+            AtomSerializer.serializer.writeEndOfPartition(writer.stream);
 
             // It's possible we add no atoms, just a top level deletion
             if (atomWritten == 0)

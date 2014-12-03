@@ -57,6 +57,7 @@ public class SimpleClusteringPrefix extends AbstractClusteringPrefix
         return eoc;
     }
 
+    @Override
     public long unsharedHeapSize()
     {
         return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(values);

@@ -185,8 +185,7 @@ final class NodeBuilder
                 }
                 else
                 {
-                    // if not found, we need to apply updateFunction still
-                    key = updateFunction.apply(key);
+                    // if not found, we need to apply updateFunction but addNewKey will
                     addNewKey(key); // handles splitting parent if necessary via ensureRoom
                 }
 

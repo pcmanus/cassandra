@@ -521,7 +521,7 @@ public class DefsTables
         }
         while (newRow != null)
         {
-            differ.onAdded(oldRow);
+            differ.onAdded(newRow);
             newRow = newPartition.hasNext() ? newPartition.next() : null;
         }
     }
