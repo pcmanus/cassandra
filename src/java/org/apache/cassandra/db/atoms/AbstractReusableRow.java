@@ -82,7 +82,14 @@ public abstract class AbstractReusableRow implements Row
     public Cell getCell(ColumnDefinition c)
     {
         assert !c.isComplex();
-        return data().simpleData == null ? null : simpleCell().setTo(data().simpleData.data, c, (row() * columns().simpleColumnCount()) + columns().simpleIdx(c));
+        if (data().simpleData == null)
+            return null;
+
+        int idx = columns().simpleIdx(c);
+        if (idx < 0)
+            return null;
+
+        return simpleCell().setTo(data().simpleData.data, c, (row() * columns().simpleColumnCount()) + idx);
     }
 
     public Iterator<Cell> getCells(ColumnDefinition c)

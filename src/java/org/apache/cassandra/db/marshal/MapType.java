@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.db.atoms.Cell;
-import org.apache.cassandra.db.atoms.CollectionPath;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.CollectionSerializer;
@@ -129,7 +128,7 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
         while (cells.hasNext())
         {
             Cell c = cells.next();
-            bbs.add(((CollectionPath)c.path()).element());
+            bbs.add(c.path().get(0));
             bbs.add(c.value());
         }
         return bbs;

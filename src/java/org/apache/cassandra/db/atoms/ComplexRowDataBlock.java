@@ -18,8 +18,7 @@
 package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Iterator;
+import java.util.*;
 
 import com.google.common.collect.UnmodifiableIterator;
 
@@ -30,43 +29,26 @@ import org.apache.cassandra.utils.ObjectSizes;
 /**
  * Contains complex cells data for one or more rows.
  */
-public class ComplexRowDataBlock
+public abstract class ComplexRowDataBlock
 {
     private final Columns columns;
-
-    /*
-     * For a given complex column c, we have to store an unknown number of
-     * cells. So for each column of each row, we keep pointers (in data)
-     * to the start and end of the cells for this column (cells for a given
-     * columns are thus stored contiguously).
-     * For instance, if columns has 'c' complex columns, the x-th column of
-     * row 'n' will have it's cells in data at indexes
-     *    [cellIdx[(n * c) + x], cellIdx[(n * c) + x + 1])
-     */
-    private int[] cellIdx;
-    final CellData data;
-
-    // Complex cells has also a path. Those are indexed like the cells in
-    // data, through cellIdx.
-    private CellPath[] complexPaths;
 
     // For each complex column, it's deletion time (if any).
     final DeletionTimeArray complexDelTimes;
 
-    public ComplexRowDataBlock(Columns columns, int rows)
+    protected ComplexRowDataBlock(Columns columns, int rows)
     {
         this.columns = columns;
 
         int columnCount = rows * columns.complexColumnCount();
-
-        this.cellIdx = new int[columnCount * 2];
         this.complexDelTimes = new DeletionTimeArray(columnCount);
+    }
 
-        // We start with an estimated 4 cells per complex column. The arrays
-        // will grow if needed so this is just a somewhat random estimation.
-        int cellCount =  columnCount * 4;
-        this.data = new CellData(cellCount);
-        this.complexPaths = new CellPath[cellCount];
+    public static ComplexRowDataBlock create(Columns columns, int rows, boolean sortable)
+    {
+        return sortable
+             ? new SortableComplexRowDataBlock(columns, rows)
+             : new SimpleComplexRowDataBlock(columns, rows);
     }
 
     public Columns columns()
@@ -74,43 +56,57 @@ public class ComplexRowDataBlock
         return columns;
     }
 
+    protected abstract ComplexCellBlock cellBlock(int row);
+    protected abstract ComplexCellBlock cellBlockForWritting(int row);
+    protected abstract int cellBlockBase(int row);
+
+    protected abstract void swapCells(int i, int j);
+    protected abstract void mergeCells(int i, int j, int nowInSec);
+    protected abstract void moveCells(int i, int j);
+
+    protected abstract long cellDataUnsharedHeapSizeExcludingData();
+    protected abstract int dataCellSize();
+    protected abstract void clearCellData();
+
     // Swap row i and j
     public void swap(int i, int j)
     {
-        throw new UnsupportedOperationException();
+        swapCells(i, j);
+
+        int s = columns.complexColumnCount();
+        for (int k = 0; k < s; k++)
+            complexDelTimes.swap(i * s + k, j * s + k);
     }
 
     // Merge row i into j
     public void merge(int i, int j, int nowInSec)
     {
-        throw new UnsupportedOperationException();
+        mergeCells(i, j, nowInSec);
+
+        int s = columns.complexColumnCount();
+        for (int k = 0; k < s; k++)
+            if (complexDelTimes.supersedes(j * s + k, i * s + k))
+                complexDelTimes.move(j * s + k, i * s + k);
     }
 
     // Move row i into j
     public void move(int i, int j)
     {
-        throw new UnsupportedOperationException();
+        moveCells(i, j);
+        ensureDelTimesCapacity(Math.max(i, j));
+        int s = columns.complexColumnCount();
+        for (int k = 0; k < s; k++)
+            complexDelTimes.move(i * s + k, j * s + k);
     }
 
     public long unsharedHeapSizeExcludingData()
     {
-        return ObjectSizes.sizeOfArray(cellIdx)
-             + data.unsharedHeapSizeExcludingData()
-             + ObjectSizes.sizeOfArray(complexPaths)
-             + complexDelTimes.unsharedHeapSize();
+        return cellDataUnsharedHeapSizeExcludingData() + complexDelTimes.unsharedHeapSize();
     }
 
     public int dataSize()
     {
-        int size = data.dataSize()
-                 + cellIdx.length * 4
-                 + complexDelTimes.dataSize();
-
-        for (int i = 0; i < complexPaths.length; i++)
-            if (complexPaths[i] != null)
-                size += complexPaths[i].dataSize();
-
-        return size;
+        return dataCellSize() + complexDelTimes.dataSize();
     }
 
     public CellWriter cellWriter()
@@ -120,7 +116,11 @@ public class ComplexRowDataBlock
 
     public int complexDeletionIdx(int row, ColumnDefinition column)
     {
-        int idx = (row * columns.complexColumnCount()) + columns.complexIdx(column);
+        int baseIdx = columns.complexIdx(column);
+        if (baseIdx < 0)
+            return -1;
+
+        int idx = (row * columns.complexColumnCount()) + baseIdx;
         return idx < complexDelTimes.size() ? idx : -1;
     }
 
@@ -148,16 +148,6 @@ public class ComplexRowDataBlock
         return new ReusableIterator();
     }
 
-    private void ensureComplexPathsCapacity(int idxToSet)
-    {
-        int originalCapacity = complexPaths.length;
-        if (idxToSet < originalCapacity)
-            return;
-
-        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, idxToSet);
-        complexPaths = Arrays.copyOf(complexPaths, newCapacity);
-    }
-
     private void ensureDelTimesCapacity(int rowToSet)
     {
         int originalCapacity = complexDelTimes.size() / columns.complexColumnCount();
@@ -168,37 +158,323 @@ public class ComplexRowDataBlock
         complexDelTimes.resize(newCapacity * columns.complexColumnCount());
     }
 
-    private void ensureCellIdxCapacity(int rowToSet)
+    private static class SimpleComplexRowDataBlock extends ComplexRowDataBlock
     {
-        int originalCapacity = complexDelTimes.size() / (2 * columns.complexColumnCount());
-        if (rowToSet < originalCapacity)
-            return;
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleComplexRowDataBlock(Columns.NONE, 0));
 
-        int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
-        cellIdx = Arrays.copyOf(cellIdx, newCapacity * 2 * columns.complexColumnCount());
+        private final ComplexCellBlock cells;
+
+        private SimpleComplexRowDataBlock(Columns columns, int rows)
+        {
+            super(columns, rows);
+            this.cells = new ComplexCellBlock(columns, rows);
+        }
+
+        protected ComplexCellBlock cellBlock(int row)
+        {
+            return cells;
+        }
+
+        protected ComplexCellBlock cellBlockForWritting(int row)
+        {
+            cells.ensureCapacity(row);
+            return cells;
+        }
+
+        protected int cellBlockBase(int row)
+        {
+            return 2 * row * columns().complexColumnCount();
+        }
+
+        // Swap cells from row i and j
+        public void swapCells(int i, int j)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        // Merge cells from row i into j
+        public void mergeCells(int i, int j, int nowInSec)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        // Move cells from row i into j
+        public void moveCells(int i, int j)
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        protected long cellDataUnsharedHeapSizeExcludingData()
+        {
+            return EMPTY_SIZE + cells.unsharedHeapSizeExcludingData();
+        }
+
+        protected int dataCellSize()
+        {
+            return cells.dataSize();
+        }
+
+        protected void clearCellData()
+        {
+            cells.clear();
+        }
+    }
+
+    private static class SortableComplexRowDataBlock extends ComplexRowDataBlock
+    {
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new SortableComplexRowDataBlock(Columns.NONE, 0));
+
+        private final List<ComplexCellBlock> cells;
+
+        private SortableComplexRowDataBlock(Columns columns, int rows)
+        {
+            super(columns, rows);
+            this.cells = new ArrayList<>(rows);
+        }
+
+        protected ComplexCellBlock cellBlockForWritting(int row)
+        {
+            if (row < cells.size())
+                return cells.get(row);
+
+            // Some rows may have had no complex cells at all, so use nulls for them
+            ensureCapacity(row-1);
+
+            assert row == cells.size();
+            ComplexCellBlock block = new ComplexCellBlock(columns(), 1);
+            cells.add(block);
+            return block;
+        }
+
+        private void ensureCapacity(int row)
+        {
+            while (row >= cells.size())
+                cells.add(null);
+        }
+
+        protected ComplexCellBlock cellBlock(int row)
+        {
+            return row >= cells.size() ? null : cells.get(row);
+        }
+
+        protected int cellBlockBase(int row)
+        {
+            return 0;
+        }
+
+        // Swap row i and j
+        protected void swapCells(int i, int j)
+        {
+            int max = Math.max(i, j);
+            if (max >= cells.size())
+                ensureCapacity(max);
+
+            ComplexCellBlock block = cells.get(j);
+            move(i, j);
+            cells.set(i, block);
+        }
+
+        // Merge row i into j
+        protected void mergeCells(int i, int j, int nowInSec)
+        {
+            assert i > j;
+            if (i >= cells.size())
+                return;
+
+            ComplexCellBlock b1 = cells.get(i);
+            ComplexCellBlock b2 = cells.get(j);
+            ComplexCellBlock merged = new ComplexCellBlock(columns(), 1);
+
+            int idxMerged = 0;
+            int s = columns().complexColumnCount();
+            for (int k = 0; k < s; k++)
+            {
+                ColumnDefinition column = columns().getComplex(k);
+                Comparator<CellPath> comparator = column.cellPathComparator();
+
+                merged.cellIdx[2 * k] = idxMerged;
+
+                int idx1 = b1.cellIdx[2 * k];
+                int end1 = b1.cellIdx[2 * k + 1];
+                int idx2 = b2.cellIdx[2 * k];
+                int end2 = b2.cellIdx[2 * k + 1];
+
+                while (idx1 < end1 && idx2 < end2)
+                {
+                    int cmp = idx1 >= end1 ? 1
+                            : (idx2 >= end2 ? -1
+                            : comparator.compare(b1.complexPaths[idx1], b2.complexPaths[idx2]));
+
+                    if (cmp == 0)
+                        merge(b1, idx1++, b2, idx2++, merged, idxMerged++, nowInSec);
+                    else if (cmp < 0)
+                        copy(b1, idx1++, merged, idxMerged++);
+                    else
+                        copy(b2, idx2++, merged, idxMerged++);
+                }
+
+                merged.cellIdx[2 * k + 1] = idxMerged;
+            }
+        }
+
+        private void copy(ComplexCellBlock fromBlock, int fromIdx, ComplexCellBlock toBlock, int toIdx)
+        {
+            fromBlock.data.moveCell(fromIdx, toBlock.data, toIdx);
+            toBlock.ensureComplexPathsCapacity(toIdx);
+            toBlock.complexPaths[toIdx] = fromBlock.complexPaths[fromIdx];
+        }
+
+        private void merge(ComplexCellBlock b1, int idx1, ComplexCellBlock b2, int idx2, ComplexCellBlock mergedBlock, int mergedIdx, int nowInSec)
+        {
+            CellData.mergeCell(b1.data, idx1, b2.data, idx2, mergedBlock.data, mergedIdx, nowInSec);
+            mergedBlock.ensureComplexPathsCapacity(mergedIdx);
+            mergedBlock.complexPaths[mergedIdx] = b1.complexPaths[idx1];
+        }
+
+        // Move row i into j
+        protected void moveCells(int i, int j)
+        {
+            int max = Math.max(i, j);
+            if (max >= cells.size())
+                ensureCapacity(max);
+
+            cells.set(j, cells.get(i));
+        }
+
+        protected long cellDataUnsharedHeapSizeExcludingData()
+        {
+            long size = EMPTY_SIZE;
+            for (ComplexCellBlock block : cells)
+                if (block != null)
+                    size += block.unsharedHeapSizeExcludingData();
+            return size;
+        }
+
+        protected int dataCellSize()
+        {
+            int size = 0;
+            for (ComplexCellBlock block : cells)
+                if (block != null)
+                    size += block.dataSize();
+            return size;
+        }
+
+        protected void clearCellData()
+        {
+            for (ComplexCellBlock block : cells)
+                if (block != null)
+                    block.clear();
+        }
+    }
+
+    private static class ComplexCellBlock
+    {
+        private final Columns columns;
+
+        /*
+         * For a given complex column c, we have to store an unknown number of
+         * cells. So for each column of each row, we keep pointers (in data)
+         * to the start and end of the cells for this column (cells for a given
+         * columns are thus stored contiguously).
+         * For instance, if columns has 'c' complex columns, the x-th column of
+         * row 'n' will have it's cells in data at indexes
+         *    [cellIdx[2 * (n * c + x)], cellIdx[2 * (n * c + x) + 1])
+         */
+        private int[] cellIdx;
+
+        final CellData data;
+
+        // Complex cells has also a path. Those are indexed like the cells in
+        // data, through cellIdx.
+        private CellPath[] complexPaths;
+
+        public ComplexCellBlock(Columns columns, int rows)
+        {
+            this.columns = columns;
+
+            int columnCount = columns.complexColumnCount();
+            this.cellIdx = new int[columnCount * 2];
+
+            // We start with an estimated 4 cells per complex column. The arrays
+            // will grow if needed so this is just a somewhat random estimation.
+            int cellCount =  columnCount * 4;
+            this.data = new CellData(cellCount);
+            this.complexPaths = new CellPath[cellCount];
+        }
+
+        public long unsharedHeapSizeExcludingData()
+        {
+            long size = ObjectSizes.sizeOfArray(cellIdx)
+                      + data.unsharedHeapSizeExcludingData()
+                      + ObjectSizes.sizeOfArray(complexPaths);
+
+            for (int i = 0; i < complexPaths.length; i++)
+                if (complexPaths[i] != null)
+                    size += ((MemtableRowData.BufferCellPath)complexPaths[i]).unsharedHeapSizeExcludingData();
+            return size;
+        }
+
+        public int dataSize()
+        {
+            int size = data.dataSize() + cellIdx.length * 4;
+
+            for (int i = 0; i < complexPaths.length; i++)
+                if (complexPaths[i] != null)
+                    size += complexPaths[i].dataSize();
+
+            return size;
+        }
+
+        private void ensureCapacity(int rowToSet)
+        {
+            int columnCount = columns.complexColumnCount();
+            int originalCapacity = cellIdx.length / (2 * columnCount);
+            if (rowToSet < originalCapacity)
+                return;
+
+            int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
+            cellIdx = Arrays.copyOf(cellIdx, newCapacity * 2 * columnCount);
+        }
+
+        public void ensureComplexPathsCapacity(int idxToSet)
+        {
+            int originalCapacity = complexPaths.length;
+            if (idxToSet < originalCapacity)
+                return;
+
+            int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, idxToSet);
+            complexPaths = Arrays.copyOf(complexPaths, newCapacity);
+        }
+
+        public void clear()
+        {
+            data.clear();
+            Arrays.fill(cellIdx, 0);
+            Arrays.fill(complexPaths, null);
+        }
     }
 
     private static class ReusableCell extends CellData.ReusableCell
     {
-        private ComplexRowDataBlock dataBlock;
+        private ComplexCellBlock cellBlock;
 
-        ReusableCell setTo(ComplexRowDataBlock dataBlock, ColumnDefinition column, int idx)
+        ReusableCell setTo(ComplexCellBlock cellBlock, ColumnDefinition column, int idx)
         {
-            this.dataBlock = dataBlock;
-            super.setTo(dataBlock.data, column, idx);
+            this.cellBlock = cellBlock;
+            super.setTo(cellBlock.data, column, idx);
             return this;
         }
 
         @Override
         public CellPath path()
         {
-            return dataBlock.complexPaths[idx];
+            return cellBlock.complexPaths[idx];
         }
     }
 
     static class ReusableIterator extends UnmodifiableIterator<Cell>
     {
-        private ComplexRowDataBlock dataBlock;
+        private ComplexCellBlock cellBlock;
         private final ReusableCell cell = new ReusableCell();
         private int idx;
         private int endIdx;
@@ -209,32 +485,48 @@ public class ComplexRowDataBlock
 
         public ReusableIterator setTo(ComplexRowDataBlock dataBlock, int row, ColumnDefinition column)
         {
-            this.dataBlock = dataBlock;
             if (dataBlock == null)
+            {
+                this.cellBlock = null;
+                return null;
+            }
+
+            this.cellBlock = dataBlock.cellBlock(row);
+            if (cellBlock == null)
                 return null;
 
-            int columnIdx = 2 * ((row * dataBlock.columns.complexColumnCount()) + dataBlock.columns.complexIdx(column));
-            idx = dataBlock.cellIdx[columnIdx];
-            endIdx = dataBlock.cellIdx[columnIdx + 1];
+            int baseIdx = dataBlock.columns.complexIdx(column);
+            if (baseIdx < 0)
+                return null;
+
+            int columnIdx = dataBlock.cellBlockBase(row) + 2 * baseIdx;
+            idx = cellBlock.cellIdx[columnIdx];
+            endIdx = cellBlock.cellIdx[columnIdx + 1];
 
             return endIdx <= idx ? null : this;
         }
 
         public ReusableIterator setTo(ComplexRowDataBlock dataBlock, int row)
         {
-            this.dataBlock = dataBlock;
             if (dataBlock == null)
+            {
+                this.cellBlock = null;
+                return null;
+            }
+
+            this.cellBlock = dataBlock.cellBlock(row);
+            if (cellBlock == null)
                 return null;
 
+            int columnIdx = dataBlock.cellBlockBase(row);
             int columnCount = dataBlock.columns.complexColumnCount();
-            int columnIdx = 2 * row * columnCount;
 
             // find the index of the first cell of the row
             for (int i = columnIdx; i < columnIdx + (2 * columnCount); i += 2)
             {
-                if (dataBlock.cellIdx[i + 1] > dataBlock.cellIdx[i])
+                if (cellBlock.cellIdx[i + 1] > cellBlock.cellIdx[i])
                 {
-                    idx = dataBlock.cellIdx[i];
+                    idx = cellBlock.cellIdx[i];
                     break;
                 }
             }
@@ -242,9 +534,9 @@ public class ComplexRowDataBlock
             // find the index of the last cell of the row
             for (int i = columnIdx + (2 * columnCount) - 2; i >= columnIdx; i -= 2)
             {
-                if (dataBlock.cellIdx[i + 1] > dataBlock.cellIdx[i])
+                if (cellBlock.cellIdx[i + 1] > cellBlock.cellIdx[i])
                 {
-                    endIdx = dataBlock.cellIdx[i + 1];
+                    endIdx = cellBlock.cellIdx[i + 1];
                     break;
                 }
             }
@@ -254,7 +546,7 @@ public class ComplexRowDataBlock
 
         public boolean hasNext()
         {
-            if (dataBlock == null)
+            if (cellBlock == null)
                 return false;
 
             return idx < endIdx;
@@ -262,7 +554,7 @@ public class ComplexRowDataBlock
 
         public Cell next()
         {
-            cell.setTo(dataBlock, dataBlock.columns.getComplex(idx), idx);
+            cell.setTo(cellBlock, cellBlock.columns.getComplex(idx), idx);
             ++idx;
             return cell;
         }
@@ -278,25 +570,27 @@ public class ComplexRowDataBlock
 
         public void addCell(ColumnDefinition column, ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
         {
-            ensureCellIdxCapacity(row);
-            int columnIdx = 2 * (base + columns.complexIdx(column));
+            assert path != null;
 
-            int start = cellIdx[columnIdx];
-            int end = cellIdx[columnIdx + 1];
+            ComplexCellBlock cellBlock = cellBlockForWritting(row);
+            int columnIdx = cellBlockBase(row) + 2 * columns.complexIdx(column);
+
+            int start = cellBlock.cellIdx[columnIdx];
+            int end = cellBlock.cellIdx[columnIdx + 1];
             if (end <= start)
             {
                 // First cell for the complex column
-                cellIdx[columnIdx] = idx;
-                cellIdx[columnIdx + 1] = idx + 1;
+                cellBlock.cellIdx[columnIdx] = idx;
+                cellBlock.cellIdx[columnIdx + 1] = idx + 1;
             }
             else
             {
-                cellIdx[columnIdx + 1] = idx + 1;
+                cellBlock.cellIdx[columnIdx + 1] = idx + 1;
             }
 
-            data.setCell(idx, value, timestamp, localDeletionTime, ttl);
-            ensureComplexPathsCapacity(idx);
-            complexPaths[idx] = path;
+            cellBlock.data.setCell(idx, value, timestamp, localDeletionTime, ttl);
+            cellBlock.ensureComplexPathsCapacity(idx);
+            cellBlock.complexPaths[idx] = path;
             ++idx;
         }
 
@@ -318,9 +612,7 @@ public class ComplexRowDataBlock
             base = 0;
             idx = 0;
             row = 0;
-            data.clear();
-            Arrays.fill(cellIdx, 0);
-            Arrays.fill(complexPaths, null);
+            clearCellData();
             complexDelTimes.clear();
         }
     }

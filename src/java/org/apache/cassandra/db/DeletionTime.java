@@ -19,6 +19,7 @@ package org.apache.cassandra.db;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.security.MessageDigest;
 
 import com.google.common.base.Objects;
 
@@ -26,6 +27,7 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
 
 /**
@@ -61,6 +63,12 @@ public abstract class DeletionTime implements Comparable<DeletionTime>, IMeasura
     public boolean isLive()
     {
         return markedForDeleteAt() == Long.MIN_VALUE && localDeletionTime() == Integer.MAX_VALUE;
+    }
+
+    public void digest(MessageDigest digest)
+    {
+        FBUtilities.updateWithLong(digest, markedForDeleteAt());
+        FBUtilities.updateWithInt(digest, localDeletionTime());
     }
 
     @Override

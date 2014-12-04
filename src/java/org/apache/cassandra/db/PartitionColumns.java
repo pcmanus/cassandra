@@ -18,6 +18,7 @@
 package org.apache.cassandra.db;
 
 import java.util.*;
+import java.security.MessageDigest;
 
 import com.google.common.collect.Iterators;
 
@@ -61,6 +62,12 @@ public class PartitionColumns implements Iterable<ColumnDefinition>
         StringBuilder sb = new StringBuilder();
         sb.append("[").append(statics).append(" | ").append(regulars).append("]");
         return sb.toString();
+    }
+
+    public void digest(MessageDigest digest)
+    {
+        regulars.digest(digest);
+        statics.digest(digest);
     }
 
     public static Builder builder()

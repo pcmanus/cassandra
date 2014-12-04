@@ -94,6 +94,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
     private final Integer componentIndex;
 
     private final Comparator<CellPath> cellPathComparator;
+    private final Comparator<Cell> cellComparator;
 
     public static ColumnDefinition partitionKeyDef(CFMetaData cfm, ByteBuffer name, AbstractType<?> validator, Integer componentIndex)
     {
@@ -155,10 +156,11 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         this.indexName = indexName;
         this.componentIndex = componentIndex;
         this.setIndexType(indexType, indexOptions);
-        this.cellPathComparator = getCellPathComparator(kind, validator);
+        this.cellPathComparator = makeCellPathComparator(kind, validator);
+        this.cellComparator = makeCellComparator(cellPathComparator);
     }
 
-    private static Comparator<CellPath> getCellPathComparator(Kind kind, AbstractType<?> validator)
+    private static Comparator<CellPath> makeCellPathComparator(Kind kind, AbstractType<?> validator)
     {
         if (kind == Kind.PARTITION_KEY || kind == Kind.CLUSTERING_COLUMN || !validator.isCollection())
             return null;
@@ -168,10 +170,23 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         {
             public int compare(CellPath path1, CellPath path2)
             {
-                assert path1 instanceof CollectionPath;
-                assert path2 instanceof CollectionPath;
+                assert path1.size() == 1 && path2.size() == 1;
+                return type.nameComparator().compare(path1.get(0), path2.get(0));
+            }
+        };
+    }
 
-                return type.nameComparator().compare(((CollectionPath)path1).element(), ((CollectionPath)path2).element());
+    private static Comparator<Cell> makeCellComparator(final Comparator<CellPath> cellPathComparator)
+    {
+        return new Comparator<Cell>()
+        {
+            public int compare(Cell c1, Cell c2)
+            {
+                int cmp = c1.column().compareTo(c2.column());
+                if (cmp != 0 || cellPathComparator == null)
+                    return cmp;
+
+                return cellPathComparator.compare(c1.path(), c2.path());
             }
         };
     }
@@ -514,12 +529,17 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     public Comparator<Cell> cellComparator()
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return cellComparator;
     }
 
     public boolean isComplex()
     {
         return cellPathComparator != null;
+    }
+
+    public CellPath.Serializer cellPathSerializer()
+    {
+        // Collections are our only complex so far, so keep it simple
+        return CollectionType.cellPathSerializer;
     }
 }

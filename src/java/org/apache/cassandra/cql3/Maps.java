@@ -306,7 +306,7 @@ public abstract class Maps
             if (key == null)
                 throw new InvalidRequestException("Invalid null map key");
 
-            CellPath path = new CollectionPath(key);
+            CellPath path = CellPath.create(key);
 
             if (value == null)
             {
@@ -346,7 +346,7 @@ public abstract class Maps
 
             Map<ByteBuffer, ByteBuffer> toAdd = ((Maps.Value)value).map;
             for (Map.Entry<ByteBuffer, ByteBuffer> entry : toAdd.entrySet())
-                params.addCell(column, writer, new CollectionPath(entry.getKey()), entry.getValue());
+                params.addCell(column, writer, CellPath.create(entry.getKey()), entry.getValue());
         }
     }
 
@@ -364,7 +364,7 @@ public abstract class Maps
                 throw new InvalidRequestException("Invalid null map key");
             assert key instanceof Constants.Value;
 
-            params.addTombstone(column, writer, new CollectionPath(((Constants.Value)key).bytes));
+            params.addTombstone(column, writer, CellPath.create(((Constants.Value)key).bytes));
         }
     }
 }

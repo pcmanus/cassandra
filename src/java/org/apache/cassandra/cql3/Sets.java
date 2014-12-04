@@ -279,7 +279,7 @@ public abstract class Sets
 
             Set<ByteBuffer> toAdd = ((Sets.Value)value).elements;
             for (ByteBuffer bb : toAdd)
-                params.addCell(column, writer, new CollectionPath(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                params.addCell(column, writer, CellPath.create(bb), ByteBufferUtil.EMPTY_BYTE_BUFFER);
         }
     }
 
@@ -303,7 +303,7 @@ public abstract class Sets
                                       : ((Sets.Value)value).elements;
 
             for (ByteBuffer bb : toDiscard)
-                params.addTombstone(column, writer, new CollectionPath(bb));
+                params.addTombstone(column, writer, CellPath.create(bb));
         }
     }
 }

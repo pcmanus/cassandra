@@ -18,8 +18,8 @@
 package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
 import java.util.*;
+import java.security.MessageDigest;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.AbstractIterator;
@@ -29,10 +29,11 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.IMergeIterator;
 import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
-import org.apache.cassandra.io.util.FileUtils;
 
 /**
  * Static methods to work with atom iterators.
@@ -163,8 +164,27 @@ public abstract class AtomIterators
 
     public static void digest(AtomIterator iterator, MessageDigest digest)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        // TODO: we're not computing digest the same way that old nodes. This
+        // means we'll have digest mismatches during upgrade. Is this ok? Computing
+        // digest as before will be a tad complex (you'd have to reconstruct the
+        // cell names etc...)
+        try (AtomIterator iter = iterator)
+        {
+            digest.update(iterator.partitionKey().getKey().duplicate());
+            iterator.partitionLevelDeletion().digest(digest);
+            iterator.columns().digest(digest);
+            FBUtilities.updateWithBoolean(digest, iterator.isReverseOrder());
+            Rows.digest(iterator.staticRow(), digest);
+
+            while (iter.hasNext())
+            {
+                Atom atom = iter.next();
+                if (atom.kind() == Atom.Kind.ROW)
+                    Rows.digest((Row)atom, digest);
+                else
+                    RangeTombstoneMarkers.digest((RangeTombstoneMarker)atom, digest);
+            }
+        }
     }
 
     /**

@@ -18,6 +18,7 @@
 package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
+import java.security.MessageDigest;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.*;
@@ -176,17 +177,27 @@ public interface MemtableRowData extends Clusterable
         }
     }
 
-    public class BufferCellPath implements CellPath
+    public class BufferCellPath extends CellPath.SimpleCellPath
     {
-        public static BufferCellPath clone(CellPath path, AbstractAllocator allocator)
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new BufferCellPath(new ByteBuffer[0]));
+
+        private BufferCellPath(ByteBuffer[] values)
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            super(values);
         }
 
-        public int dataSize()
+        public static BufferCellPath clone(CellPath path, AbstractAllocator allocator)
         {
-            throw new UnsupportedOperationException();
+            int size = path.size();
+            ByteBuffer[] values = new ByteBuffer[size];
+            for (int i = 0; i < size; i++)
+                values[i] = allocator.clone(path.get(0));
+            return new BufferCellPath(values);
+        }
+
+        public long unsharedHeapSizeExcludingData()
+        {
+            return EMPTY_SIZE + ObjectSizes.sizeOnHeapExcludingData(values);
         }
     }
 }

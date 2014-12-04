@@ -128,40 +128,66 @@ class CellData
     // Merge cell i into j
     public void mergeCell(int i, int j, int nowInSec)
     {
-        assert j < i;
+        mergeCell(this, i, this, j, this, j, nowInSec);
+    }
 
-        if (!hasCell(i))
-            return;
-
-        long tsi = timestamps[i], tsj = timestamps[j];
-        if (tsi != tsj)
+    public static void mergeCell(CellData d1, int i1, CellData d2, int i2, CellData merged, int iMerged, int nowInSec)
+    {
+        if (!d1.hasCell(i1))
         {
-            if (tsi < tsj)
-                moveCell(j, i);
+            if (d2.hasCell(i2))
+                d2.moveCell(i2, merged, iMerged);
             return;
         }
-        boolean iLive = delTimesAndTTLs[i * 2] > nowInSec;
-        boolean jLive = delTimesAndTTLs[j * 2] > nowInSec;
-        if (iLive != jLive)
+        if (!d2.hasCell(i2))
         {
-            if (jLive)
-                moveCell(j, i);
+            d1.moveCell(i1, merged, iMerged);
             return;
         }
 
-        if (values[i].compareTo(values[j]) >= 0)
-            moveCell(j, i);
+        long ts1 = d1.timestamps[i1], ts2 = d2.timestamps[i2];
+        if (ts1 != ts1)
+        {
+            if (ts1 < ts2)
+                d2.moveCell(i2, merged, iMerged);
+            else
+                d1.moveCell(i1, merged, iMerged);
+            return;
+        }
+        boolean live1 = d1.delTimesAndTTLs[i1 * 2] > nowInSec;
+        boolean live2 = d2.delTimesAndTTLs[i2 * 2] > nowInSec;
+        if (live1 != live2)
+        {
+            if (live1)
+                d1.moveCell(i1, merged, iMerged);
+            else
+                d2.moveCell(i2, merged, iMerged);
+            return;
+        }
+
+        if (d1.values[i1].compareTo(d2.values[i2]) < 0)
+            d2.moveCell(i2, merged, iMerged);
+        else
+            d1.moveCell(i1, merged, iMerged);
     }
 
     // Move cell i into j
     public void moveCell(int i, int j)
     {
-        ensureCapacity(Math.max(i, j));
+        moveCell(i, this, j);
+    }
 
-        values[j] = values[i];
-        timestamps[j] = timestamps[i];
-        delTimesAndTTLs[2 * j] = delTimesAndTTLs[2 * i];
-        delTimesAndTTLs[(2 * j) + 1] = delTimesAndTTLs[(2 * i) + 1];
+    public void moveCell(int i, CellData target, int j)
+    {
+        if (!hasCell(i) || (target == this && i == j))
+            return;
+
+        target.ensureCapacity(j);
+
+        target.values[j] = values[i];
+        target.timestamps[j] = timestamps[i];
+        target.delTimesAndTTLs[2 * j] = delTimesAndTTLs[2 * i];
+        target.delTimesAndTTLs[(2 * j) + 1] = delTimesAndTTLs[(2 * i) + 1];
     }
 
     public int dataSize()

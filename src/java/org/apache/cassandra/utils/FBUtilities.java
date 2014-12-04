@@ -718,4 +718,9 @@ public class FBUtilities
         digest.update((byte) ((val >>>  8) & 0xFF));
         digest.update((byte)  ((val >>> 0) & 0xFF));
     }
+
+    public static void updateWithBoolean(MessageDigest digest, boolean val)
+    {
+        updateWithByte(digest, val ? 0 : 1);
+    }
 }

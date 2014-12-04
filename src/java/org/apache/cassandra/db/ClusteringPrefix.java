@@ -20,7 +20,8 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
+import java.util.*;
+import java.security.MessageDigest;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.atoms.*;
@@ -63,6 +64,8 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     public ClusteringPrefix withEOC(EOC eoc);
 
     public ClusteringPrefix takeAlias();
+
+    public void digest(MessageDigest digest);
 
     public interface Writer
     {
@@ -156,7 +159,7 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
             for (int i = 0; i < nbBytes; i++)
             {
                 int b = 0;
-                for (int j = 0; j < 4; i++)
+                for (int j = 0; j < 4; j++)
                 {
                     int c = i * 4 + j;
                     if (c >= clustering.size())
@@ -269,10 +272,10 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
 
         private boolean deserializeOne() throws IOException
         {
-            if (nextPrefix.size() == nextSize)
+            int i = nextPrefix.size();
+            if (i == nextSize)
                 return false;
 
-            int i = nextPrefix.size();
             ByteBuffer toWrite = serializer.isNull(nextHeader, i)
                                ? null
                                : (serializer.isEmpty(nextHeader, i) ? ByteBufferUtil.EMPTY_BYTE_BUFFER : serializationHeader.clusteringTypes().get(i).readValue(in));

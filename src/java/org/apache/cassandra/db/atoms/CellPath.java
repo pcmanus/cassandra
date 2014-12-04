@@ -19,6 +19,8 @@ package org.apache.cassandra.db.atoms;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -26,37 +28,57 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 /**
  * A path for a cell belonging to a complex column type (non-frozen collection or UDT).
  */
-public interface CellPath
+public abstract class CellPath
 {
-    public static final Serializer serializer = new Serializer();
+    public abstract int size();
+    public abstract ByteBuffer get(int i);
 
-    // Note that only MemtableRowData.BufferCellPath needs to bother with this
-    public int dataSize();
-
-    public static class Serializer
+    // The only complex we currently have are collections that have only one value.
+    public static CellPath create(ByteBuffer value)
     {
-        public void serialize(CellPath path, DataOutputPlus out)
+        return new SimpleCellPath(new ByteBuffer[]{ value });
+    }
+
+    public int dataSize()
+    {
+        int size = 0;
+        for (int i = 0; i < size(); i++)
+            size += get(i).remaining();
+        return size;
+    }
+
+    public void digest(MessageDigest digest)
+    {
+        for (int i = 0; i < size(); i++)
+            digest.update(get(i).duplicate());
+    }
+
+    public interface Serializer
+    {
+        public void serialize(CellPath path, DataOutputPlus out) throws IOException;
+        public CellPath deserialize(DataInput in) throws IOException;
+        public long serializedSize(CellPath path, TypeSizes sizes);
+        public void skip(DataInput in) throws IOException;
+    }
+
+    static class SimpleCellPath extends CellPath
+    {
+        protected final ByteBuffer[] values;
+
+        public SimpleCellPath(ByteBuffer[] values)
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            this.values = values;
         }
 
-        public CellPath deserialize(DataInput in)
+        public int size()
         {
-            // TODO
-            throw new UnsupportedOperationException();
+            return values.length;
         }
 
-        public long serializedSize(CellPath path, TypeSizes sizes)
+        public ByteBuffer get(int i)
         {
-            // TODO
-            throw new UnsupportedOperationException();
-        }
-
-        public void skip(DataInput in)
-        {
-            // TODO
-            throw new UnsupportedOperationException();
+            return values[i];
         }
     }
+
 }

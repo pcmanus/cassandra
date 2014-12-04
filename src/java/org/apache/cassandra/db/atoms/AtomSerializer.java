@@ -247,7 +247,7 @@ public class AtomSerializer
             out.writeInt(header.encodeTTL(cell.ttl()));
 
         if (cell.column().isComplex())
-            CellPath.serializer.serialize(cell.path(), out);
+            cell.column().cellPathSerializer().serialize(cell.path(), out);
     }
 
     private long sizeOfCell(Cell cell, SerializationHeader header, TypeSizes sizes)
@@ -271,7 +271,7 @@ public class AtomSerializer
             size += sizes.sizeof(header.encodeTTL(cell.ttl()));
 
         if (cell.column().isComplex())
-            size += CellPath.serializer.serializedSize(cell.path(), sizes);
+            size += cell.column().cellPathSerializer().serializedSize(cell.path(), sizes);
 
         return size;
     }
@@ -439,7 +439,7 @@ public class AtomSerializer
                 : Cells.NO_TTL;
 
         CellPath path = column.isComplex()
-                      ? CellPath.serializer.deserialize(in)
+                      ? column.cellPathSerializer().deserialize(in)
                       : null;
 
         writer.writeCell(column, false, value, timestamp, localDelTime, ttl, path);
@@ -467,7 +467,7 @@ public class AtomSerializer
             in.readInt(); // ttl
 
         if (column.isComplex())
-            CellPath.serializer.skip(in);
+            column.cellPathSerializer().skip(in);
 
         return true;
     }

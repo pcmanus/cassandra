@@ -286,7 +286,7 @@ public class ColumnCondition
 
             if (column.type instanceof MapType)
             {
-                Cell cell = Rows.getCell(row, column, new CollectionPath(collectionElement));
+                Cell cell = Rows.getCell(row, column, CellPath.create(collectionElement));
                 return isSatisfiedByValue(value, cell, ((MapType) column.type).values, operator);
             }
 
@@ -353,7 +353,7 @@ public class ColumnCondition
 
             if (column.type instanceof MapType)
             {
-                Cell item = Rows.getCell(row, column, new CollectionPath(collectionElement));
+                Cell item = Rows.getCell(row, column, CellPath.create(collectionElement));
                 AbstractType<?> valueType = ((MapType) column.type).values;
                 for (ByteBuffer value : inValues)
                 {
@@ -432,7 +432,7 @@ public class ColumnCondition
                     return operator.equals(Relation.Type.GT) || operator.equals(Relation.Type.GTE) || operator.equals(Relation.Type.NEQ);
 
                 // for lists we use the cell value; for sets we use the cell name
-                ByteBuffer cellValue = isSet ? ((CollectionPath)iter.next().path()).element() : iter.next().value();
+                ByteBuffer cellValue = isSet ? iter.next().path().get(0) : iter.next().value();
                 int comparison = type.compare(cellValue, conditionIter.next());
                 if (comparison != 0)
                     return evaluateComparisonWithOperator(comparison, operator);
@@ -490,7 +490,7 @@ public class ColumnCondition
                 Cell c = iter.next();
 
                 // compare the keys
-                int comparison = type.keys.compare(((CollectionPath)c.path()).element(), conditionEntry.getKey());
+                int comparison = type.keys.compare(c.path().get(0), conditionEntry.getKey());
                 if (comparison != 0)
                     return evaluateComparisonWithOperator(comparison, operator);
 

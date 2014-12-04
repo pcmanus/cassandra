@@ -30,15 +30,15 @@ import org.apache.cassandra.utils.ObjectSizes;
 // TODO: need to abstract have have a subclass for counters too
 public class RowDataBlock
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowDataBlock(Columns.NONE, 0));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new RowDataBlock(Columns.NONE, 0, false));
 
     final SimpleRowDataBlock simpleData;
     final ComplexRowDataBlock complexData;
 
-    public RowDataBlock(Columns columns, int rows)
+    public RowDataBlock(Columns columns, int rows, boolean sortable)
     {
         this.simpleData = columns.hasSimple() ? new SimpleRowDataBlock(columns, rows) : null;
-        this.complexData = columns.hasComplex() ? new ComplexRowDataBlock(columns, rows) : null;
+        this.complexData = columns.hasComplex() ? ComplexRowDataBlock.create(columns, rows, sortable) : null;
     }
 
     public Columns columns()

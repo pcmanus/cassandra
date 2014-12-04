@@ -20,6 +20,7 @@ package org.apache.cassandra.db.atoms;
 import java.nio.ByteBuffer;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.security.MessageDigest;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
@@ -102,6 +103,23 @@ public abstract class Cells
 
         //CounterContext.Relationship rel = CounterCell.contextManager.diff(cell.value(), value());
         //return (rel == CounterContext.Relationship.GREATER_THAN || rel == CounterContext.Relationship.DISJOINT) ? cell : null;
+    }
+
+    public static void digest(Cell cell, MessageDigest digest)
+    {
+        if (cell.isCounterCell())
+        {
+            // TODO
+            throw new UnsupportedOperationException();
+        }
+
+        digest.update(cell.value().duplicate());
+        FBUtilities.updateWithLong(digest, cell.timestamp());
+        FBUtilities.updateWithInt(digest, cell.localDeletionTime());
+        FBUtilities.updateWithInt(digest, cell.ttl());
+
+        if (cell.path() != null)
+            cell.path().digest(digest);
     }
 
     public static void reconcile(ClusteringPrefix clustering,
@@ -195,7 +213,7 @@ public abstract class Cells
         boolean c1Live = isLive(c1, nowInSec);
         if (c1Live != isLive(c2, nowInSec))
             return c1Live ? c1 : c2;
-        return c1.value().compareTo(c2.value()) < 0 ? c1 : c2;
+        return c1.value().compareTo(c2.value()) < 0 ? c2 : c1;
     }
 
     public static void reconcileComplex(ClusteringPrefix clustering,
@@ -235,61 +253,6 @@ public abstract class Cells
 
     private static Cell getNext(Iterator<Cell> iterator)
     {
-        return iterator.hasNext() ? iterator.next() : null;
+        return iterator == null || !iterator.hasNext() ? null : iterator.next();
     }
-
-
-    // TODO: we could have more specialized version of cells...
-    //private static class SimpleCell implements Cell
-    //{
-    //    private final ByteBuffer value;
-    //    private final long timestamp;
-    //    private final int localDeletionTime;
-    //    private final int ttl;
-    //    private final CellPath path;
-
-    //    private SimpleCell(ByteBuffer value, long timestamp, int localDeletionTime, int ttl, CellPath path)
-    //    {
-    //        this.value = value;
-    //        this.timestamp = timestamp;
-    //        this.localDeletionTime = localDeletionTime;
-    //        this.ttl = ttl;
-    //        this.path = path;
-    //    }
-
-    //    public boolean isCounterCell()
-    //    {
-    //        return false;
-    //    }
-
-    //    public ByteBuffer value()
-    //    {
-    //        return value;
-    //    }
-
-    //    public long timestamp()
-    //    {
-    //        return timestamp;
-    //    }
-
-    //    public int localDeletionTime()
-    //    {
-    //        return localDeletionTime;
-    //    }
-
-    //    public int ttl()
-    //    {
-    //        return ttl;
-    //    }
-
-    //    public CellPath path()
-    //    {
-    //        return path;
-    //    }
-
-    //    public Cell takeAlias()
-    //    {
-    //        return this;
-    //    }
-    //}
 }

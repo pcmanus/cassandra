@@ -62,9 +62,11 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                             DeletionInfo delInfo,
                             RowDataBlock data,
                             PartitionColumns columns,
-                            int initialRowCapacity)
+                            int initialRowCapacity,
+                            boolean isSorted)
     {
         super(metadata, key, delInfo, columns, data, initialRowCapacity);
+        this.isSorted = isSorted;
     }
 
     public PartitionUpdate(CFMetaData metadata,
@@ -72,7 +74,13 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
                            PartitionColumns columns,
                            int initialRowCapacity)
     {
-        this(metadata, key, DeletionInfo.live(), new RowDataBlock(columns.regulars, initialRowCapacity), columns, initialRowCapacity);
+        this(metadata,
+             key,
+             DeletionInfo.live(),
+             new RowDataBlock(columns.regulars, initialRowCapacity, true),
+             columns,
+             initialRowCapacity,
+             false);
     }
 
     public static PartitionUpdate fromBytes(ByteBuffer bytes)
@@ -95,9 +103,10 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
         return new PartitionUpdate(metadata,
                                    key,
                                    new DeletionInfo(timestamp, FBUtilities.nowInSeconds()),
-                                   new RowDataBlock(Columns.NONE, 0),
+                                   new RowDataBlock(Columns.NONE, 0, true),
                                    PartitionColumns.NONE,
-                                   0);
+                                   0,
+                                   false);
     }
 
     public int operationCount()
@@ -375,10 +384,15 @@ public class PartitionUpdate extends AbstractPartitionData implements Iterable<R
             // TODO: get a better initial capacity
             int rowCapacity = h.rowEstimate > 0 ? h.rowEstimate : 4;
 
-            PartitionUpdate upd = new PartitionUpdate(h.metadata, h.key, h.sHeader.columns(), rowCapacity);
-            upd.addPartitionDeletion(h.partitionDeletion);
+            PartitionUpdate upd = new PartitionUpdate(h.metadata,
+                                                      h.key,
+                                                      new DeletionInfo(h.partitionDeletion),
+                                                      new RowDataBlock(h.sHeader.columns().regulars, rowCapacity, false),
+                                                      h.sHeader.columns(),
+                                                      rowCapacity,
+                                                      true);
+
             upd.staticRow = h.staticRow;
-            upd.isSorted = true;
 
             RangeTombstoneMarker.Writer markerWriter = upd.new RangeTombstoneCollector();
             AtomIteratorSerializer.serializer.deserializeAtoms(in, version, h.sHeader, upd.writer(false), markerWriter);

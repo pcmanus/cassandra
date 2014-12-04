@@ -284,10 +284,13 @@ public abstract class PartitionIterators
         };
     }
 
-    public static void digest(PartitionIterator iter, MessageDigest digest)
+    public static void digest(PartitionIterator iterator, MessageDigest digest)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        try (PartitionIterator iter = iterator)
+        {
+            while (iter.hasNext())
+                AtomIterators.digest(iter.next(), digest);
+        }
     }
 
     public static Serializer serializerForIntraNode()

@@ -25,12 +25,15 @@ import com.google.common.collect.UnmodifiableIterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.ObjectSizes;
 
 /**
  * Contains simple cells data for one or more rows.
  */
 public class SimpleRowDataBlock
 {
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new SimpleRowDataBlock(Columns.NONE, 0));
+
     final Columns columns;
     final CellData data;
 
@@ -71,7 +74,7 @@ public class SimpleRowDataBlock
 
     public long unsharedHeapSizeExcludingData()
     {
-        return data.unsharedHeapSizeExcludingData();
+        return EMPTY_SIZE + data.unsharedHeapSizeExcludingData();
     }
 
     public int dataSize()

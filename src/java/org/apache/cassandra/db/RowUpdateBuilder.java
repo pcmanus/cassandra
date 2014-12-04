@@ -66,6 +66,7 @@ public class RowUpdateBuilder
         if (update.metadata().isCQL3Table())
             writer.writeTimestamp(timestamp);
 
+        assert clusteringValues.length == update.metadata().comparator.size();
         writer.writeClustering(update.metadata().comparator.make(clusteringValues));
     }
 
@@ -154,7 +155,7 @@ public class RowUpdateBuilder
         ColumnDefinition c = getDefinition(columnName);
         assert c.type instanceof MapType;
         MapType mt = (MapType)c.type;
-        Cells.writeCell(c, new CollectionPath(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, update.metadata(), writer);
+        Cells.writeCell(c, CellPath.create(bb(key, mt.keys)), bb(value, mt.values), timestamp, 0, update.metadata(), writer);
         return this;
     }
 
@@ -163,12 +164,12 @@ public class RowUpdateBuilder
         ColumnDefinition c = getDefinition(columnName);
         assert c.type instanceof ListType;
         ListType lt = (ListType)c.type;
-        Cells.writeCell(c, new CollectionPath(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, update.metadata(), writer);
+        Cells.writeCell(c, CellPath.create(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())), bb(value, lt.elements), timestamp, 0, update.metadata(), writer);
         return this;
     }
 
     private ColumnDefinition getDefinition(String name)
     {
-        return update.metadata().getColumnDefinition(new ColumnIdentifier(name, false));
+        return update.metadata().getColumnDefinition(new ColumnIdentifier(name, true));
     }
 }

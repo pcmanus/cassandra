@@ -98,7 +98,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
              key,
              new DeletionInfo(partitionDeletion.takeAlias()),
              columns,
-             new RowDataBlock(columns.regulars, initialRowCapacity),
+             new RowDataBlock(columns.regulars, initialRowCapacity, false),
              initialRowCapacity);
     }
 

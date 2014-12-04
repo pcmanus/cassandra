@@ -18,6 +18,7 @@
 package org.apache.cassandra.db;
 
 import java.util.*;
+import java.security.MessageDigest;
 
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
@@ -171,10 +172,12 @@ public class Columns implements Iterable<ColumnDefinition>
         j = 0;
         for (int k = 0; k < size; k++)
         {
-            int cmp = columns[i].compareTo(other.columns[j]);
+            int cmp = i >= columns.length ? 1
+                    : (j >= other.columns.length ? -1 : columns[i].compareTo(other.columns[j]));
             if (cmp == 0)
             {
-                result[k] = columns[i++];
+                result[k] = columns[i];
+                ++i;
                 ++j;
             }
             else if (cmp < 0)
@@ -202,6 +205,12 @@ public class Columns implements Iterable<ColumnDefinition>
     public Iterator<ColumnDefinition> iterator()
     {
         return Iterators.forArray(columns);
+    }
+
+    public void digest(MessageDigest digest)
+    {
+        for (ColumnDefinition c : this)
+            digest.update(c.name.bytes.duplicate());
     }
 
     private class ColumnIterator extends AbstractIterator<ColumnDefinition>

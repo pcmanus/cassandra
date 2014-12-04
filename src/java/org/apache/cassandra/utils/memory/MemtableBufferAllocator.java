@@ -73,7 +73,7 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
 
         public void allocateNewRow(Columns columns)
         {
-            data = new RowDataBlock(columns, 1);
+            data = new RowDataBlock(columns, 1, false);
             updateWriter(data);
         }
 

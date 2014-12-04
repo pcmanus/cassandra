@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.db.atoms.Cell;
-import org.apache.cassandra.db.atoms.CollectionPath;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.SetSerializer;
@@ -96,7 +95,7 @@ public class SetType<T> extends CollectionType<Set<T>>
     {
         List<ByteBuffer> bbs = new ArrayList<ByteBuffer>();
         while (cells.hasNext())
-            bbs.add(((CollectionPath)cells.next().path()).element());
+            bbs.add(cells.next().path().get(0));
         return bbs;
     }
 }

@@ -119,8 +119,11 @@ public abstract class DataIterators
 
     public static void digest(DataIterator iterator, MessageDigest digest)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        try (DataIterator iter = iterator)
+        {
+            while (iter.hasNext())
+                RowIterators.digest(iter.next(), digest);
+        }
     }
 
     public static DataIterator singletonIterator(RowIterator iterator)

@@ -72,7 +72,7 @@ public class UpdateParameters
 
     public void addCell(ColumnDefinition column, Row.Writer writer, CellPath path, ByteBuffer value) throws InvalidRequestException
     {
-        writer.writeCell(column, false, value, timestamp, ttl == Cells.NO_TTL ? Cells.NO_DELETION_TIME : localDeletionTime, ttl, null);
+        writer.writeCell(column, false, value, timestamp, ttl == Cells.NO_TTL ? Cells.NO_DELETION_TIME : localDeletionTime, ttl, path);
     }
 
     public void addCounter(ColumnDefinition column, Row.Writer writer, long increment) throws InvalidRequestException

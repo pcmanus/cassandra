@@ -218,8 +218,11 @@ public abstract class Slices
             outer:
             for (int i = 0; i < starts.length; i++)
             {
+                ClusteringPrefix start = starts[i];
+                ClusteringPrefix end = ends[i];
+
                 // If this slice start after max or end before min, it can't intersect
-                if (compare(starts[i], maxClusteringValues, true) > 0 || compare(ends[i], minClusteringValues, false) < 0)
+                if (compare(start, maxClusteringValues, true) > 0 || compare(end, minClusteringValues, false) < 0)
                     continue;
 
                 // We could safely return true here, but there's a minor optimization: if the first component
@@ -229,8 +232,6 @@ public abstract class Slices
                 for (int j = 0; j < minClusteringValues.size() && j < maxClusteringValues.size(); j++)
                 {
                     AbstractType<?> t = comparator.subtype(j);
-                    ClusteringPrefix start = starts[j];
-                    ClusteringPrefix end = ends[j];
 
                     ByteBuffer s = j < start.size() ? start.get(j) : ByteBufferUtil.EMPTY_BYTE_BUFFER;
                     ByteBuffer f = j < end.size() ? end.get(j) : ByteBufferUtil.EMPTY_BYTE_BUFFER;

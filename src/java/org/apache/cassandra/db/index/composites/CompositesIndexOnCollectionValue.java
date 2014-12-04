@@ -72,7 +72,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
 
         // When indexing, cell will be present, but when searching, it won't  (CASSANDRA-7525)
         if (cell != null)
-            builder.add(((CollectionPath)cell.path()).element());
+            builder.add(cell.path().get(0));
         return builder.build();
     }
 
@@ -93,7 +93,7 @@ public class CompositesIndexOnCollectionValue extends CompositesIndex
 
     public boolean isStale(IndexedEntry entry, Row data, int nowInSec)
     {
-        Cell cell = Rows.getCell(data, columnDef, new CollectionPath(entry.indexedEntryCollectionKey));
+        Cell cell = Rows.getCell(data, columnDef, CellPath.create(entry.indexedEntryCollectionKey));
         return cell == null
             || !Cells.isLive(cell, nowInSec)
             || ((CollectionType) columnDef.type).valueComparator().compare(entry.indexValue.getKey(), cell.value()) != 0;

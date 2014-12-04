@@ -19,10 +19,12 @@ package org.apache.cassandra.db.atoms;
 
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.security.MessageDigest;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * Static utilities to work on RangeTombstoneMarker objects.
@@ -47,6 +49,14 @@ public abstract class RangeTombstoneMarkers
         sb.append(" - ").append(marker.isOpenMarker() ? "open" : "close");
         sb.append("@").append(marker.delTime().markedForDeleteAt());
         return sb.toString();
+    }
+
+    public static void digest(RangeTombstoneMarker marker, MessageDigest digest)
+    {
+        FBUtilities.updateWithByte(digest, marker.kind().ordinal());
+        marker.clustering().digest(digest);
+        FBUtilities.updateWithBoolean(digest, marker.isOpenMarker());
+        marker.delTime().digest(digest);
     }
 
     public static class Merger

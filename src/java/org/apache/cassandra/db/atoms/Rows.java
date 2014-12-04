@@ -21,6 +21,7 @@ import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.security.MessageDigest;
 
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
@@ -31,6 +32,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MergeIterator;
 
 /**
@@ -158,6 +160,19 @@ public abstract class Rows
         throw new UnsupportedOperationException();
     }
 
+    public static void digest(Row row, MessageDigest digest)
+    {
+        FBUtilities.updateWithByte(digest, row.kind().ordinal());
+        row.clustering().digest(digest);
+        FBUtilities.updateWithLong(digest, row.timestamp());
+        Iterator<ColumnDefinition> iter = row.columns().complexColumns();
+        while (iter.hasNext())
+            row.getDeletion(iter.next()).digest(digest);
+
+        for (Cell cell : row)
+            Cells.digest(cell, digest);
+    }
+
     public static String toString(CFMetaData metadata, Row row)
     {
         return toString(metadata, row, false);
@@ -190,72 +205,6 @@ public abstract class Rows
         }
         return sb.toString();
     }
-
-    // Merge multiple rows that are assumed to represent the same row (same clustering prefix).
-    //public static void merge(ClusteringPrefix clustering, Row[] rows, MergeHelper helper, AtomIterators.MergeListener listener)
-    //{
-    //    throw new UnsupportedOperationException();
-    //    //helper.setRows(rows);
-    //    //listener.onMergingRows(clustering, helper.maxRowTimestamp, rows);
-
-    //    //while (helper.hasMoreColumns())
-    //    //{
-    //    //    ColumnDefinition c = helper.columnToMerge;
-    //    //    listener.onMergedColumns(c, helper.mergedComplexDeletion(), helper.complexDeletions);
-
-    //    //    while (helper.hasMoreCellsForColumn())
-    //    //    {
-    //    //        Cell[] versions = helper.cellsToMerge;
-    //    //        Cell merged = null;
-    //    //        for (int i = 0; i < versions.length; i++)
-    //    //        {
-    //    //            Cell cell = versions[i];
-    //    //            if (cell == null)
-    //    //                continue;
-
-    //    //            merged = merged == null ? cell : Cells.reconcile(merged, cell, helper.nowInSec);
-    //    //        }
-    //    //        listener.onMergedCells(merged, versions);
-    //    //    }
-    //    //}
-    //    //listener.onRowDone();
-    //}
-
-    //public static void merge(ClusteringPrefix clustering, Row[] rows, Columns mergedColumns, Row.Writer writer, int nowInSec, AtomIterators.MergeListener listener)
-    //{
-    //    throw new UnsupportedOperationException();
-    //    //merge(clustering, rows, new MergeHelper(nowInSec, rows.length), new AtomIterators.MergeListener()
-    //    //{
-    //    //    public void onMergingRows(ClusteringPrefix clustering, long mergedTimestamp, Row[] versions)
-    //    //    {
-    //    //        writer.setClustering(clustering);
-    //    //        writer.setTimestamp(mergedTimestamp);
-    //    //    }
-
-    //    //    public void onMergedColumns(ColumnDefinition c, DeletionTime mergedComplexDeletion, DeletionTimeArray versions)
-    //    //    {
-    //    //        writer.newColumn(c, mergedComplexDeletion);
-    //    //    }
-
-    //    //    public void onMergedCells(Cell mergedCell, Cell[] versions)
-    //    //    {
-    //    //        writer.newCell(mergedCell);
-    //    //    }
-
-    //    //    public void onRowDone()
-    //    //    {
-    //    //        writer.endOfRow();
-    //    //    }
-
-    //    //    public void onMergedRangeTombstoneMarkers(ClusteringPrefix prefix, boolean isOpenMarker, DeletionTime mergedDelTime, RangeTombstoneMarker[] versions)
-    //    //    {
-    //    //    }
-
-    //    //    public void close()
-    //    //    {
-    //    //    }
-    //    //});
-    //}
 
     // Merge rows in memtable
     public static void merge(Row existing,
@@ -504,7 +453,11 @@ public abstract class Rows
         {
             complexCells.clear();
             for (int j = 0; j < rows.length; j++)
-                complexCells.add(rows[j] == null ? Iterators.<Cell>emptyIterator()  : rows[j].getCells(c));
+            {
+                Row row = rows[j];
+                Iterator<Cell> iter = row == null ? null : row.getCells(c);
+                complexCells.add(iter == null ? Iterators.<Cell>emptyIterator() : iter);
+            }
 
             complexReducer.column = c;
 

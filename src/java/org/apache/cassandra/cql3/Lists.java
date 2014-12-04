@@ -395,7 +395,7 @@ public abstract class Lists
             for (int i = 0; i < toAdd.size(); i++)
             {
                 ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes());
-                params.addCell(column, writer, new CollectionPath(uuid), toAdd.get(i));
+                params.addCell(column, writer, CellPath.create(uuid), toAdd.get(i));
             }
         }
     }
@@ -421,7 +421,7 @@ public abstract class Lists
             {
                 PrecisionTime pt = PrecisionTime.getNext(time);
                 ByteBuffer uuid = ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes(pt.millis, pt.nanos));
-                params.addCell(column, writer, new CollectionPath(uuid), toAdd.get(i));
+                params.addCell(column, writer, CellPath.create(uuid), toAdd.get(i));
             }
         }
     }

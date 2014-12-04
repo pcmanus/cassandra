@@ -20,6 +20,7 @@ package org.apache.cassandra.db.atoms;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.security.MessageDigest;
 
 import com.google.common.collect.AbstractIterator;
 
@@ -28,6 +29,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MergeIterator;
 
 /**
@@ -82,5 +84,23 @@ public abstract class RowIterators
             Rows.copy(iterator.next(), update.writer(false));
 
         return update;
+    }
+
+    public static void digest(RowIterator iterator, MessageDigest digest)
+    {
+        // TODO: we're not computing digest the same way that old nodes. This
+        // means we'll have digest mismatches during upgrade. Is this ok? Computing
+        // digest as before will be a tad complex (you'd have to reconstruct the
+        // cell names etc...)
+        try (RowIterator iter = iterator)
+        {
+            digest.update(iterator.partitionKey().getKey().duplicate());
+            iterator.columns().digest(digest);
+            FBUtilities.updateWithBoolean(digest, iterator.isReverseOrder());
+            Rows.digest(iterator.staticRow(), digest);
+
+            while (iter.hasNext())
+                Rows.digest(iter.next(), digest);
+        }
     }
 }

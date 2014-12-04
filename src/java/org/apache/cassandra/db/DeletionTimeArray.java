@@ -74,6 +74,23 @@ public class DeletionTimeArray
         return markedForDeleteAts[i] > markedForDeleteAts[j];
     }
 
+    public void swap(int i, int j)
+    {
+        long m = markedForDeleteAts[j];
+        int l = delTimes[j];
+
+        move(i, j);
+
+        markedForDeleteAts[i] = m;
+        delTimes[i] = l;
+    }
+
+    public void move(int i, int j)
+    {
+        markedForDeleteAts[j] = markedForDeleteAts[i];
+        delTimes[j] = delTimes[i];
+    }
+
     public boolean isLive(int i)
     {
         return markedForDeleteAts[i] > Long.MIN_VALUE;

@@ -1362,7 +1362,11 @@ public final class CFMetaData
      */
     public ColumnDefinition getColumnDefinition(ColumnIdentifier name)
     {
-        return columnMetadata.get(name.bytes);
+        ColumnDefinition def = columnMetadata.get(name.bytes);
+        if (def == null)
+            throw new RuntimeException("Cannot find " + name + " in " + columnMetadata);
+        return def;
+        //return columnMetadata.get(name.bytes);
     }
 
     // In general it is preferable to work with ColumnIdentifier to make it

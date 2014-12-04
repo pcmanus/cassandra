@@ -29,7 +29,7 @@ public class ReusableRow extends AbstractReusableRow
 
     public ReusableRow(Columns columns)
     {
-        this.data = new RowDataBlock(columns, 1);
+        this.data = new RowDataBlock(columns, 1, false);
         this.writer = new Writer(data);
     }
 

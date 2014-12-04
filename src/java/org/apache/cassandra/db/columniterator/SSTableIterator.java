@@ -20,6 +20,9 @@ package org.apache.cassandra.db.columniterator;
 import java.io.IOException;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
@@ -35,6 +38,8 @@ import org.apache.cassandra.utils.CloseableIterator;
  */
 public class SSTableIterator implements SeekableAtomIterator
 {
+    private static final Logger logger = LoggerFactory.getLogger(SSTableIterator.class);
+
     private final SSTableReader sstable;
     private final DecoratedKey key;
     private final DeletionTime partitionLevelDeletion;
