@@ -230,6 +230,9 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
         {
             ClusteringPrefix other = prefix.clustering();
 
+            if (other == EmptyClusteringPrefix.TOP)
+                return -1;
+
             if (other.size() == 0)
                 return nextSize == 0 ? 0 : 1;
 

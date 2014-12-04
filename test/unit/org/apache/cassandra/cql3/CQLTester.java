@@ -163,40 +163,40 @@ public abstract class CQLTester
         currentTypes.clear();
 
         // We want to clean up after the test, but dropping a table is rather long so just do that asynchronously
-        StorageService.optionalTasks.execute(new Runnable()
-        {
-            public void run()
-            {
-                try
-                {
-                    schemaChange(String.format("DROP TABLE %s.%s", KEYSPACE, tableToDrop));
+        //StorageService.optionalTasks.execute(new Runnable()
+        //{
+        //    public void run()
+        //    {
+        //        try
+        //        {
+        //            schemaChange(String.format("DROP TABLE %s.%s", KEYSPACE, tableToDrop));
 
-                    for (String typeName : typesToDrop)
-                        schemaChange(String.format("DROP TYPE %s.%s", KEYSPACE, typeName));
+        //            for (String typeName : typesToDrop)
+        //                schemaChange(String.format("DROP TYPE %s.%s", KEYSPACE, typeName));
 
-                    // Dropping doesn't delete the sstables. It's not a huge deal but it's cleaner to cleanup after us
-                    // Thas said, we shouldn't delete blindly before the SSTableDeletingTask for the table we drop
-                    // have run or they will be unhappy. Since those taks are scheduled on StorageService.tasks and that's
-                    // mono-threaded, just push a task on the queue to find when it's empty. No perfect but good enough.
+        //            // Dropping doesn't delete the sstables. It's not a huge deal but it's cleaner to cleanup after us
+        //            // Thas said, we shouldn't delete blindly before the SSTableDeletingTask for the table we drop
+        //            // have run or they will be unhappy. Since those taks are scheduled on StorageService.tasks and that's
+        //            // mono-threaded, just push a task on the queue to find when it's empty. No perfect but good enough.
 
-                    final CountDownLatch latch = new CountDownLatch(1);
-                    StorageService.tasks.execute(new Runnable()
-                    {
-                            public void run()
-                            {
-                                latch.countDown();
-                            }
-                    });
-                    latch.await(2, TimeUnit.SECONDS);
+        //            final CountDownLatch latch = new CountDownLatch(1);
+        //            StorageService.tasks.execute(new Runnable()
+        //            {
+        //                    public void run()
+        //                    {
+        //                        latch.countDown();
+        //                    }
+        //            });
+        //            latch.await(2, TimeUnit.SECONDS);
 
-                    removeAllSSTables(KEYSPACE, tableToDrop);
-                }
-                catch (Exception e)
-                {
-                    throw new RuntimeException(e);
-                }
-            }
-        });
+        //            removeAllSSTables(KEYSPACE, tableToDrop);
+        //        }
+        //        catch (Exception e)
+        //        {
+        //            throw new RuntimeException(e);
+        //        }
+        //    }
+        //});
     }
 
     public void flush()
