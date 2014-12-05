@@ -400,6 +400,22 @@ public abstract class Slices
                 return false;
             }
         }
+
+        @Override
+        public String toString()
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < starts.length; i++)
+                sb.append("[").append(str(starts[i])).append(", ").append(str(ends[i])).append("]");
+            return sb.toString();
+        }
+
+        private String str(ClusteringPrefix c)
+        {
+            return c == EmptyClusteringPrefix.BOTTOM ? "BOTTOM"
+                 : c == EmptyClusteringPrefix.TOP ? "TOP"
+                 : comparator.getString(c);
+        }
     }
 
     private static class SelectAllSlices extends Slices
@@ -481,6 +497,12 @@ public abstract class Slices
         {
             return iter;
         }
+
+        @Override
+        public String toString()
+        {
+            return "ALL";
+        }
     }
 
     private static class SelectNoSlices extends Slices
@@ -561,6 +583,12 @@ public abstract class Slices
         public AtomIterator makeSliceIterator(SeekableAtomIterator iter)
         {
             return AtomIterators.emptyIterator(iter.metadata(), iter.partitionKey(), iter.isReverseOrder());
+        }
+
+        @Override
+        public String toString()
+        {
+            return "NONE";
         }
     }
 }

@@ -117,6 +117,12 @@ public class MapType<K, V> extends CollectionType<Map<K, V>>
         return keys.isByteOrderComparable();
     }
 
+    @Override
+    protected int collectionSize(List<ByteBuffer> values)
+    {
+        return values.size() / 2;
+    }
+
     protected void appendToStringBuilder(StringBuilder sb)
     {
         sb.append(getClass().getName()).append(TypeParser.stringifyTypeParameters(Arrays.asList(keys, values)));

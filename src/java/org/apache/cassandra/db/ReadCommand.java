@@ -20,6 +20,9 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.db.filters.*;
@@ -36,6 +39,8 @@ import org.apache.cassandra.net.MessagingService;
  */
 public abstract class ReadCommand
 {
+    private static final Logger logger = LoggerFactory.getLogger(ReadCommand.class);
+
     public static final IVersionedSerializer<ReadCommand> serializer = new Serializer();
 
     public static final IVersionedSerializer<ReadCommand> legacyRangeSliceCommandSerializer = new LegacyRangeSliceCommandSerializer();

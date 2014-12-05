@@ -115,7 +115,7 @@ public class ReadPartition extends ArrayBackedPartition
 
     public Row getRow(ClusteringPrefix clustering)
     {
-        return searchIterator().next(clustering);
+        return searchIterator(columns()).next(clustering);
     }
 
     @Override

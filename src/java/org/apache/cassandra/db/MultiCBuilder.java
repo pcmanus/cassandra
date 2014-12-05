@@ -21,10 +21,11 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
+import java.util.SortedSet;
 import java.util.TreeSet;
 
 import static java.util.Collections.singletonList;
+import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * Builder that allow to build multiple clustering prefix at the same time.
@@ -174,7 +175,7 @@ public class MultiCBuilder
      *
      * @return the clusterings
      */
-    public List<ClusteringPrefix> build()
+    public SortedSet<ClusteringPrefix> build()
     {
         return build(ClusteringPrefix.EOC.NONE);
     }
@@ -184,23 +185,22 @@ public class MultiCBuilder
      *
      * @return the clusterings
      */
-    public List<ClusteringPrefix> build(ClusteringPrefix.EOC eoc)
+    public SortedSet<ClusteringPrefix> build(ClusteringPrefix.EOC eoc)
     {
         built = true;
 
         if (elementsList.isEmpty())
-            return singletonList(builder.build(eoc));
+            return FBUtilities.singleton(builder.build(eoc), builder.comparator());
 
         // Use a TreeSet to sort and eliminate duplicates
-        Set<ClusteringPrefix> set = new TreeSet<>(builder.comparator());
+        SortedSet<ClusteringPrefix> set = new TreeSet<>(builder.comparator());
 
         for (int i = 0, m = elementsList.size(); i < m; i++)
         {
             List<ByteBuffer> elements = elementsList.get(i);
             set.add(builder.buildWith(elements, eoc));
         }
-
-        return new ArrayList<>(set);
+        return set;
     }
 
     private void checkUpdateable()

@@ -106,6 +106,6 @@ public class UpdateParameters
             return null;
 
         Partition partition = prefetchedRows.get(key);
-        return partition == null ? null : partition.searchIterator().next(clustering);
+        return partition == null ? null : partition.searchIterator(partition.columns()).next(clustering);
     }
 }

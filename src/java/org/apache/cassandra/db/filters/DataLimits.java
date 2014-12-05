@@ -239,5 +239,12 @@ public abstract class DataLimits
                     ++rowCounted;
             }
         }
+
+        @Override
+        public String toString()
+        {
+            return String.format("%s%s", rowLimit == Integer.MAX_VALUE ? "NONE" : rowLimit
+                                       , perPartitionLimit == Integer.MAX_VALUE ? "" : " (" + perPartitionLimit + "/partition)");
+        }
     }
 }

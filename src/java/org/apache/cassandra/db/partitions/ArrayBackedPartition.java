@@ -41,7 +41,7 @@ public class ArrayBackedPartition extends AbstractPartitionData implements Cache
         return create(iterator, 16);
     }
 
-    private static ArrayBackedPartition create(AtomIterator iterator, int initialRowCapacity)
+    public static ArrayBackedPartition create(AtomIterator iterator, int initialRowCapacity)
     {
         // TODO: we need to fix this if we continue to use this in ReadResponse
         assert !iterator.isReverseOrder();

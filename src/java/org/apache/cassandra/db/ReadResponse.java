@@ -61,6 +61,7 @@ public class ReadResponse
         return ByteBuffer.wrap(digest.digest());
     }
 
+    // TODO: doesn't work for local reads, when there is digests to checks!!!
     public PartitionIterator makeIterator()
     {
         return data.makeIterator();

@@ -189,15 +189,7 @@ public abstract class Rows
         sb.append("Row");
         if (row.timestamp() != NO_TIMESTAMP)
             sb.append("@").append(row.timestamp());
-        sb.append(": ");
-        for (int i = 0; i < clustering.size(); i++)
-        {
-            if (i > 0)
-                sb.append(", ");
-            ColumnDefinition c = metadata.clusteringColumns().get(i);
-            sb.append(c.name).append("=").append(c.type.getString(clustering.get(i)));
-        }
-        sb.append(" | ");
+        sb.append(": ").append(clustering.toString(metadata)).append(" | ");
         boolean isFirst = true;
         for (Cell cell : row)
         {

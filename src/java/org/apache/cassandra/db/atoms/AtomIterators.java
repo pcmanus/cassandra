@@ -203,12 +203,6 @@ public abstract class AtomIterators
         throw new UnsupportedOperationException();
     }
 
-    public static AtomIterator filterNulls(AtomIterator iterator)
-    {
-        // TODO
-        throw new UnsupportedOperationException();
-    }
-
     public static AtomIterator cloningIterator(AtomIterator iterator, AbstractAllocator allocator)
     {
         // TODO

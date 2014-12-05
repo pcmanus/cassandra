@@ -36,6 +36,11 @@ public class RowFilteringAtomIterator extends WrappingAtomIterator
         return true;
     }
 
+    protected boolean includeRow(Row row)
+    {
+        return true;
+    }
+
     protected boolean includePartitionDeletion(DeletionTime dt)
     {
         return true;
@@ -67,7 +72,7 @@ public class RowFilteringAtomIterator extends WrappingAtomIterator
             if (atom.kind() == Atom.Kind.ROW)
             {
                 Row row = filter.setTo((Row)atom);
-                if (!row.isEmpty())
+                if (!row.isEmpty() && includeRow(row))
                 {
                     next = row;
                     return true;

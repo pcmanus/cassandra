@@ -107,13 +107,13 @@ abstract class AbstractQueryPager implements QueryPager
         public void close()
         {
             super.close();
-            lastWasRecorded = recordLast(lastKey, lastRow);
+            lastWasRecorded = lastRow == null ? false : recordLast(lastKey, lastRow);
         }
 
         private class RowPagerIterator extends WrappingRowIterator
         {
             private Row next;
-            private boolean isFirst;
+            private boolean isFirst = true;
 
             RowPagerIterator(RowIterator iter)
             {
@@ -123,11 +123,13 @@ abstract class AbstractQueryPager implements QueryPager
              @Override
             public boolean hasNext()
             {
+                if (next != null)
+                    return true;
+
                 if (!super.hasNext())
                     return false;
 
                 next = super.next();
-
                 if (isFirst)
                 {
                     isFirst = false;

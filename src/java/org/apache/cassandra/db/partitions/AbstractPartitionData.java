@@ -29,8 +29,13 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.utils.SearchIterator;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 {
+    private static final Logger logger = LoggerFactory.getLogger(AbstractPartitionData.class);
+
     protected final CFMetaData metadata;
     protected final DecoratedKey key;
 
@@ -161,12 +166,24 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
     public Iterator<Row> iterator()
     {
-        return new RowIterator();
+        return new RowIterator(null);
     }
 
-    public SearchIterator<ClusteringPrefix, Row> searchIterator()
+    public SearchIterator<ClusteringPrefix, Row> searchIterator(PartitionColumns columns)
     {
-        throw new UnsupportedOperationException();
+        final RowIterator iter = new RowIterator(columns);
+        return new SearchIterator<ClusteringPrefix, Row>()
+        {
+            public boolean hasNext()
+            {
+                return iter.hasNext();
+            }
+
+            public Row next(ClusteringPrefix key)
+            {
+                return iter.seekTo(key) ? iter.next() : null;
+            }
+        };
     }
 
     public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)
@@ -174,11 +191,15 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         return slices.makeSliceIterator(seekableAtomIterator(columns, reversed));
     }
 
-    protected SeekableAtomIterator seekableAtomIterator(PartitionColumns columns, boolean reversed)
+    protected SeekableAtomIterator seekableAtomIterator(final PartitionColumns columns, boolean reversed)
     {
+        if (reversed)
+            // TODO
+            throw new UnsupportedOperationException();
+
         return new AbstractSeekableIterator(this, columns, reversed)
         {
-            private final RowIterator rowIterator = new RowIterator();
+            private final RowIterator rowIterator = new RowIterator(columns);
             private RowAndTombstoneMergeIterator mergeIterator = new RowAndTombstoneMergeIterator(metadata.comparator);
 
             protected Atom computeNext()
@@ -198,7 +219,7 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
         };
     }
 
-    private class RowIterator extends AbstractIterator<Row>
+    private class RowIterator extends UnmodifiableIterator<Row>
     {
         private final AbstractReusableRow reusableRow = new AbstractReusableRow()
         {
@@ -223,6 +244,8 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
             }
         };
 
+        private final FilteringRow filter;
+
         private final ClusteringPrefix clustering = new AbstractClusteringPrefix()
         {
             final int size = metadata.clusteringColumns().size();
@@ -241,23 +264,42 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
 
         private int row = -1;
 
-        public Row computeNext()
+        private RowIterator(final PartitionColumns columns)
         {
-            return ++row >= rows ? endOfData() : reusableRow;
+            this.filter = columns == null ? null : new FilteringRow()
+            {
+                protected boolean include(ColumnDefinition column)
+                {
+                    return columns.contains(column);
+                }
+            };
         }
 
-        public void seekTo(ClusteringPrefix from)
+        public boolean hasNext()
         {
-            binarySearch(row, rows, from);
+            return row + 1 < rows;
+        }
+
+        public Row next()
+        {
+            ++row;
+            return filter == null ? reusableRow : filter.setTo(reusableRow);
+        }
+
+        public boolean seekTo(ClusteringPrefix from)
+        {
+            boolean found = binarySearch(row + 1, rows, from);
             // Since we'll actually increment row first thing in computeNext, decrement it now in preparation
             --row;
+            return found;
         }
 
         /**
          * Simple binary search.
          * This sets row on either the search name if it's found, or on the "insertion point".
+         * Returns true if was found, false otherwise.
          */
-        private void binarySearch(int fromIndex, int toIndex, ClusteringPrefix name)
+        private boolean binarySearch(int fromIndex, int toIndex, ClusteringPrefix name)
         {
             int low = fromIndex;
             row = toIndex;
@@ -269,12 +311,13 @@ public abstract class AbstractPartitionData implements Iterable<Row>, Partition
                 if ((result = metadata.comparator.compare(name, clustering)) > 0)
                     low = row + 1;
                 else if (result == 0)
-                    return;
+                    return true;
                 else
                     high = row - 1;
             }
-            if (result >= 0)
+            if (result < 0)
                 row += 1;
+            return false;
         }
     }
 

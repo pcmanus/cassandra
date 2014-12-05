@@ -19,9 +19,18 @@ package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.CFMetaData;
+
 public class EmptyClusteringPrefix extends AbstractClusteringPrefix
 {
-    public static final EmptyClusteringPrefix STATIC_PREFIX = new EmptyClusteringPrefix(EOC.NONE);
+    public static final EmptyClusteringPrefix STATIC_PREFIX = new EmptyClusteringPrefix(EOC.NONE)
+    {
+        @Override
+        public String toString(CFMetaData metadata)
+        {
+            return "STATIC";
+        }
+    };
 
     public static final EmptyClusteringPrefix EMPTY = new EmptyClusteringPrefix(EOC.NONE);
     public static final EmptyClusteringPrefix BOTTOM = new EmptyClusteringPrefix(EOC.START);
@@ -84,5 +93,17 @@ public class EmptyClusteringPrefix extends AbstractClusteringPrefix
     public long unsharedHeapSize()
     {
         return 0;
+    }
+
+    @Override
+    public String toString(CFMetaData metadata)
+    {
+        switch (eoc)
+        {
+            case START: return "BOTTOM";
+            case NONE:  return "EMPTY";
+            case END:   return "TOP";
+        }
+        throw new AssertionError();
     }
 }

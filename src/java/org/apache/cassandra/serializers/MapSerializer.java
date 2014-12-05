@@ -82,7 +82,7 @@ public class MapSerializer<K, V> extends CollectionSerializer<Map<K, V>>
         }
         catch (BufferUnderflowException e)
         {
-            throw new MarshalException("Not enough bytes to read a set");
+            throw new MarshalException("Not enough bytes to read a map");
         }
     }
 

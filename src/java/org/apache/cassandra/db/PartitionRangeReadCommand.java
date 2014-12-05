@@ -155,4 +155,15 @@ public class PartitionRangeReadCommand extends ReadCommand implements Pageable
             }
         };
     }
+
+    @Override
+    public String toString()
+    {
+        return String.format("Read(%s.%s cfilter=%s limits=%s %s)",
+                             metadata().ksName,
+                             metadata().cfName,
+                             columnFilter(),
+                             limits(),
+                             dataRange().toString(metadata()));
+    }
 }

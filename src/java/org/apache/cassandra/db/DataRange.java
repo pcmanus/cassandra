@@ -108,6 +108,11 @@ public class DataRange
         return new DataRange(range, partitionFilter);
     }
 
+    public String toString(CFMetaData metadata)
+    {
+        return String.format("range=%s pfilter=%s", keyRange.getString(metadata.getKeyValidator()), partitionFilter.toString(metadata));
+    }
+
     private static class Paging extends DataRange
     {
         private final ClusteringPrefix firstPartitionStart;

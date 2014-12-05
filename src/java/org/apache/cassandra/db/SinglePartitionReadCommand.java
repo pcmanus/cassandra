@@ -244,4 +244,16 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
     public abstract SinglePartitionReadCommand maybeGenerateRetryCommand(DataResolver resolver, Row row);
 
     protected abstract AtomIterator queryMemtableAndDiskInternal(ColumnFamilyStore cfs, boolean copyOnHeap);
+
+    @Override
+    public String toString()
+    {
+        return String.format("Read(%s.%s columnFilter=%s limits=%s key=%s filter=%s)",
+                             metadata().ksName,
+                             metadata().cfName,
+                             columnFilter(),
+                             limits(),
+                             metadata().getKeyValidator().getString(partitionKey().getKey()),
+                             partitionFilter.toString(metadata()));
+    }
 }

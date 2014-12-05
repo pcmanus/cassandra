@@ -38,7 +38,7 @@ public class RowIteratorFromAtomIterator extends AbstractIterator<Row> implement
         {
             protected boolean includeTimestamp(long timestamp)
             {
-                return false;
+                return true;
             }
 
             protected boolean include(ColumnDefinition column)

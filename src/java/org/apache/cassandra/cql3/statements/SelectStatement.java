@@ -100,7 +100,6 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
 
     private final PartitionColumns selectedColumns;
 
-
     // Used by forSelection below
     private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier, Boolean>emptyMap(), false, false);
 
@@ -435,13 +434,11 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         }
         else
         {
-            // TODO: names filter
-            throw new UnsupportedOperationException();
-            //SortedSet<CellName> cellNames = getRequestedColumns(options);
-            //if (cellNames == null) // in case of IN () for the last column of the key
-            //    return null;
-            //QueryProcessor.validateCellNames(cellNames, cfm.comparator);
-            //return new NamesQueryFilter(cellNames, true);
+            SortedSet<ClusteringPrefix> clusterings = getRequestedColumns(options);
+            if (clusterings == null) // in case of IN () for the last column of the key
+                return null;
+
+            return new NamesPartitionFilter(selectedColumns, clusterings);
         }
     }
 
@@ -624,74 +621,32 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         return false;
     }
 
-    // TODO
-    //private SortedSet<CellName> getRequestedColumns(QueryOptions options) throws InvalidRequestException
-    //{
-    //    // Note: getRequestedColumns don't handle static columns, but due to CASSANDRA-5762
-    //    // we always do a slice for CQL3 tables, so it's ok to ignore them here
-    //    assert !isColumnRange();
+    private SortedSet<ClusteringPrefix> getRequestedColumns(QueryOptions options) throws InvalidRequestException
+    {
+        // Note: getRequestedColumns don't handle static columns, but due to CASSANDRA-5762
+        // we always do a slice for CQL3 tables, so it's ok to ignore them here
+        assert !isColumnRange();
 
-    //    CompositesBuilder builder = new CompositesBuilder(cfm.comparator.prefixBuilder(), cfm.comparator);
-    //    Iterator<ColumnDefinition> idIter = cfm.clusteringColumns().iterator();
-    //    for (Restriction r : columnRestrictions)
-    //    {
-    //        ColumnDefinition def = idIter.next();
-    //        assert r != null && !r.isSlice();
+        MultiCBuilder builder = new MultiCBuilder(new CBuilder(cfm.comparator));
+        Iterator<ColumnDefinition> idIter = cfm.clusteringColumns().iterator();
+        for (Restriction r : columnRestrictions)
+        {
+            ColumnDefinition def = idIter.next();
+            assert r != null && !r.isSlice();
 
-    //        List<ByteBuffer> values = r.values(options);
+            List<ByteBuffer> values = r.values(options);
 
-    //        if (values.isEmpty())
-    //            return null;
+            if (values.isEmpty())
+                return null;
 
-    //        builder.addEachElementToAll(values);
-    //        if (builder.containsNull())
-    //            throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s",
-    //                                                            def.name));
-    //    }
-    //    SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
-    //    for (Composite composite : builder.build())
-    //        columns.addAll(addSelectedColumns(composite));
+            builder.addEachElementToAll(values);
+            if (builder.containsNull())
+                throw new InvalidRequestException(String.format("Invalid null value for clustering key part %s",
+                                                                def.name));
+        }
 
-    //    return columns;
-    //}
-    //
-    //private SortedSet<CellName> addSelectedColumns(Composite prefix)
-    //{
-    //    if (cfm.comparator.isDense())
-    //    {
-    //        return FBUtilities.singleton(cfm.comparator.create(prefix, null), cfm.comparator);
-    //    }
-    //    else
-    //    {
-    //        // Collections require doing a slice query because a given collection is a
-    //        // non-know set of columns, so we shouldn't get there
-    //        assert !selectACollection();
-
-    //        SortedSet<CellName> columns = new TreeSet<CellName>(cfm.comparator);
-
-    //        // We need to query the selected column as well as the marker
-    //        // column (for the case where the row exists but has no columns outside the PK)
-    //        // Two exceptions are "static CF" (non-composite non-compact CF) and "super CF"
-    //        // that don't have marker and for which we must query all columns instead
-    //        if (cfm.comparator.isCompound() && !cfm.isSuper())
-    //        {
-    //            // marker
-    //            columns.add(cfm.comparator.rowMarker(prefix));
-
-    //            // selected columns
-    //            for (ColumnDefinition def : selection.getColumns())
-    //                if (def.kind == ColumnDefinition.Kind.REGULAR || def.kind == ColumnDefinition.Kind.STATIC)
-    //                    columns.add(cfm.comparator.create(prefix, def));
-    //        }
-    //        else
-    //        {
-    //            // We now that we're not composite so we can ignore static columns
-    //            for (ColumnDefinition def : cfm.regularColumns())
-    //                columns.add(cfm.comparator.create(prefix, def));
-    //        }
-    //        return columns;
-    //    }
-    //}
+        return builder.build();
+    }
 
     private boolean selectACollection()
     {
@@ -748,7 +703,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 // There wasn't any non EQ relation on that key, we select all records having the preceding component as prefix.
                 // For composites, if there was preceding component and we're computing the end, we must change the last component
                 // End-Of-Component, otherwise we would be selecting only one record.
-                return compositeBuilder.build(bound == Bound.START ? EOC.START : EOC.END);
+                return new ArrayList<>(compositeBuilder.build(bound == Bound.START ? EOC.START : EOC.END));
             }
 
             if (r.isSlice())
@@ -756,7 +711,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
                 assert !isPartitionKey; // Parition key slices are handled by getTokenBound
                 compositeBuilder.addElementToAll(getSliceValue(r, b, options));
                 Relation.Type relType = ((Restriction.Slice) r).getRelation(bound, b);
-                return compositeBuilder.build(eocForRelation(relType));
+                return new ArrayList<>(compositeBuilder.build(eocForRelation(relType)));
             }
 
             compositeBuilder.addEachElementToAll(r.values(options));
@@ -770,7 +725,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
         // partitioner (see #5240). But as partition key must always have all their components anyway,
         // that's ok.
         EOC eoc = isPartitionKey ? EOC.NONE : (bound == Bound.START ? EOC.START : EOC.END);
-        return compositeBuilder.build(eoc);
+        return new ArrayList<>(compositeBuilder.build(eoc));
     }
 
     private static EOC eocForRelation(Relation.Type op)

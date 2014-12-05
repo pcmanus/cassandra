@@ -19,9 +19,7 @@ package org.apache.cassandra.db.partitions;
 
 import java.io.IOException;
 
-import org.apache.cassandra.db.atoms.Row;
-import org.apache.cassandra.db.atoms.RowIterator;
-import org.apache.cassandra.db.atoms.WrappingRowIterator;
+import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.filters.DataLimits;
 
 public class CountingDataIterator extends WrappingDataIterator

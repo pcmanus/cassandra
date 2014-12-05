@@ -20,6 +20,8 @@ package org.apache.cassandra.db.filters;
 import java.util.List;
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.columniterator.SSTableIterator;
@@ -102,31 +104,32 @@ public class SlicePartitionFilter implements PartitionFilter
     // Given another iterator, only return the atoms that match this filter
     public AtomIterator filter(AtomIterator iterator)
     {
-        // TODO: we actually should filter out non-selected columns (including static ones)
         final Slices.InOrderTester tester = slices.inOrderTester(reversed);
 
-        return AtomIterators.filterNulls(new WrappingAtomIterator(iterator)
+        FilteringRow row = new FilteringRow()
         {
+            protected boolean include(ColumnDefinition column)
+            {
+                return selectedColumns.contains(column);
+            }
+        };
+
+        // Note that we don't filter markers because that's a bit trickier (we don't know in advance until when
+        // the range extend) and it's harmless to left them.
+        return new RowFilteringAtomIterator(iterator, row)
+        {
+            @Override
+            protected boolean includeRow(Row row)
+            {
+                return tester.includes(row.clustering());
+            }
+
             @Override
             public boolean hasNext()
             {
-                if (tester.isDone())
-                    return false;
-                return super.hasNext();
+                return !tester.isDone() && super.hasNext();
             }
-
-            @Override
-            public Atom next()
-            {
-                Atom atom = super.next();
-                // TODO: we could skip some markers but that's a bit trickier as
-                // we don't know until where the range extend
-                if (atom.kind() == Atom.Kind.RANGE_TOMBSTONE_MARKER)
-                    return atom;
-
-                return tester.includes(atom.clustering()) ? atom : null;
-            }
-        });
+        };
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, DecoratedKey key)
@@ -161,6 +164,11 @@ public class SlicePartitionFilter implements PartitionFilter
             return true;
 
         return slices.intersects(minClusteringValues, maxClusteringValues);
+    }
+
+    public String toString(CFMetaData metadata)
+    {
+        return String.format("slice(%s, slices=%s, reversed=%b)", selectedColumns, slices, reversed);
     }
 
     // From SliceQueryFilter

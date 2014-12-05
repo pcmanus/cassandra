@@ -39,8 +39,8 @@ public abstract class FilteringRow implements Row
     protected boolean includeTimestamp(long timestamp) { return true; }
     protected boolean include(ColumnDefinition column) { return true; }
 
-    protected abstract boolean includeCell(Cell cell);
-    protected abstract boolean includeDeletion(ColumnDefinition c, DeletionTime dt);
+    protected boolean includeCell(Cell cell) { return true; }
+    protected boolean includeDeletion(ColumnDefinition c, DeletionTime dt) { return true; }
 
     public Atom.Kind kind()
     {

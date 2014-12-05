@@ -167,4 +167,20 @@ public class ColumnFilter implements Iterable<ColumnFilter.Expression>
             return Objects.hashCode(column.name, operator, value);
         }
     }
+
+    @Override
+    public String toString()
+    {
+        if (expressions.isEmpty())
+            return "NONE";
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < expressions.size(); i++)
+        {
+            if (i > 0)
+                sb.append(" AND ");
+            sb.append(expressions.get(i));
+        }
+        return sb.toString();
+    }
 }

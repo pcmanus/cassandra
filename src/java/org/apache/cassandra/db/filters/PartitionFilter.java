@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.db.filters;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.AtomIterator;
 import org.apache.cassandra.db.filters.DataLimits;
@@ -48,6 +49,8 @@ public interface PartitionFilter
     public AtomIterator getAtomIterator(Partition partition);
 
     public boolean shouldInclude(SSTableReader sstable);
+
+    public String toString(CFMetaData metadata);
 
     // From old OnDiskAtomFilter
     //    public static class Serializer implements IVersionedSerializer<IDiskAtomFilter>

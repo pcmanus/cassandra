@@ -39,6 +39,8 @@ public interface Partition
 
     public PartitionColumns columns();
 
+    public AtomStats stats();
+
     /**
      * Whether the partition object has no informations at all, including any deletion informations.
      */
@@ -47,7 +49,7 @@ public interface Partition
     /**
      * Return the row corresponding to the provided clustering, or null if there is not such row.
      */
-    public SearchIterator<ClusteringPrefix, Row> searchIterator();
+    public SearchIterator<ClusteringPrefix, Row> searchIterator(PartitionColumns columns);
 
     /**
      * Returns an AtomIterator over the atoms contained by this partition

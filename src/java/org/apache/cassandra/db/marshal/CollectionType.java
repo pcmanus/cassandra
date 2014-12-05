@@ -124,10 +124,17 @@ public abstract class CollectionType<T> extends AbstractType<T>
         return true;
     }
 
+    // Overrided by maps
+    protected int collectionSize(List<ByteBuffer> values)
+    {
+        return values.size();
+    }
+
     protected int enforceLimit(List<ByteBuffer> values, int version)
     {
-        if (version >= 3 || values.size() <= MAX_ELEMENTS)
-            return values.size();
+        int size = collectionSize(values);
+        if (version >= 3 || size <= MAX_ELEMENTS)
+            return size;
 
         logger.error("Detected collection with {} elements, more than the {} limit. Only the first {} elements will be returned to the client. "
                    + "Please see http://cassandra.apache.org/doc/cql3/CQL.html#collections for more details.", values.size(), MAX_ELEMENTS, MAX_ELEMENTS);

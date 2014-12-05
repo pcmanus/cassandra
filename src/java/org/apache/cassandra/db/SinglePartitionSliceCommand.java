@@ -87,7 +87,7 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Slic
         ColumnFamilyStore.ViewFragment view = cfs.select(cfs.viewFilter(partitionKey()));
 
         List<AtomIterator> iterators = new ArrayList<>(Iterables.size(view.memtables) + view.sstables.size());
-        SlicePartitionFilter filter = (SlicePartitionFilter)partitionFilter();
+        SlicePartitionFilter filter = partitionFilter();
 
         for (Memtable memtable : view.memtables)
         {
@@ -176,8 +176,6 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Slic
 
         cfs.metric.updateSSTableIterated(sstablesIterated);
 
-        // we need to distinguish between "there is no data at all for this row" (BF will let us rebuild that efficiently)
-        // and "there used to be data, but it's gone now" (we should cache the empty CF so we don't need to rebuild that slower)
         if (iterators.isEmpty())
             return AtomIterators.emptyIterator(cfs.metadata, partitionKey(), filter.isReversed());
 

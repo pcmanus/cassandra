@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.security.MessageDigest;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -66,6 +67,8 @@ public interface ClusteringPrefix extends Clusterable, IMeasurableMemory, Aliasa
     public ClusteringPrefix takeAlias();
 
     public void digest(MessageDigest digest);
+
+    public String toString(CFMetaData metadata);
 
     public interface Writer
     {

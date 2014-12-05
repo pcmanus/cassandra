@@ -127,10 +127,17 @@ public class AtomicBTreePartition implements Partition
         return !BTree.isEmpty(ref.tree);
     }
 
-    public SearchIterator<ClusteringPrefix, Row> searchIterator()
+    public AtomStats stats()
+    {
+        return ref.stats;
+    }
+
+    public SearchIterator<ClusteringPrefix, Row> searchIterator(PartitionColumns columns)
     {
         // TODO: we could optimize comparison for "NativeRow" à la #6755
-        return new BTreeSearchIterator<>(ref.tree, metadata.comparator);
+        // We need to wrap the iterator of the btree, since it contains MemtableRowData, not rows directly
+        throw new UnsupportedOperationException();
+        //return new BTreeSearchIterator<>(ref.tree, metadata.comparator);
     }
 
     public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed)

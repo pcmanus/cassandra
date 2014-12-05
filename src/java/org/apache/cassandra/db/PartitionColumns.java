@@ -57,6 +57,7 @@ public class PartitionColumns implements Iterable<ColumnDefinition>
         return Iterators.concat(statics.iterator(), regulars.iterator());
     }
 
+    @Override
     public String toString()
     {
         StringBuilder sb = new StringBuilder();

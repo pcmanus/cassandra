@@ -21,6 +21,8 @@ import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.security.MessageDigest;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.utils.FBUtilities;
 
 public abstract class AbstractClusteringPrefix implements ClusteringPrefix
@@ -103,5 +105,18 @@ public abstract class AbstractClusteringPrefix implements ClusteringPrefix
 
         return this.eoc() == that.eoc();
     }
-}
 
+    @Override
+    public String toString(CFMetaData metadata)
+    {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < size(); i++)
+        {
+            if (i > 0)
+                sb.append(", ");
+            ColumnDefinition c = metadata.clusteringColumns().get(i);
+            sb.append(c.name).append("=").append(get(i) == null ? "null" : c.type.getString(get(i)));
+        }
+        return sb.toString();
+    }
+}

@@ -20,17 +20,22 @@ package org.apache.cassandra.db.filters;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
 import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.columniterator.SSTableIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
+import org.apache.cassandra.utils.SearchIterator;
 
 /**
  * A filter over a single partition.
  */
 public class NamesPartitionFilter implements PartitionFilter
 {
+    // TODO: we should either handle statics, or make it clear we don't (by rejecting the static prefix if provided)
     private final PartitionColumns selectedColumns;
     private final SortedSet<ClusteringPrefix> prefixes;
 
@@ -43,6 +48,11 @@ public class NamesPartitionFilter implements PartitionFilter
     public PartitionColumns selectedColumns()
     {
         return selectedColumns;
+    }
+
+    public SortedSet<ClusteringPrefix> requestedRows()
+    {
+        return prefixes;
     }
 
     public boolean selectsAllPartition()
@@ -86,46 +96,99 @@ public class NamesPartitionFilter implements PartitionFilter
     // Given another iterator, only return the atoms that match this filter
     public AtomIterator filter(AtomIterator iterator)
     {
-        // TODO
-        throw new UnsupportedOperationException();
-        //return new AbstractFilteringIterator(iterator)
-        //{
-        //    private boolean isDone;
+        FilteringRow row = new FilteringRow()
+        {
+            protected boolean include(ColumnDefinition column)
+            {
+                return selectedColumns.contains(column);
+            }
+        };
 
-        //    protected abstract RangeTombstone filter(RangeTombstone rt)
-        //    {
-        //        return tester.intersects(rt.min(), rt.max()) ? rt : null;
-        //    }
+        // Note that we don't filter markers because that's a bit trickier (we don't know in advance until when
+        // the range extend) and it's harmless to left them.
+        return new RowFilteringAtomIterator(iterator, row)
+        {
+            @Override
+            protected boolean includeRow(Row row)
+            {
+                return prefixes.contains(row.clustering());
+            }
+        };
+    }
 
-        //    protected abstract Row filter(Row row)
-        //    {
-        //        return tester.includes(row.clustering()) ? row : null;
-        //    }
+    public static AtomIterator makeIterator(final SeekableAtomIterator iter, final SortedSet<ClusteringPrefix> clusterings)
+    {
+        assert !iter.isReverseOrder();
+        return new WrappingAtomIterator(iter)
+        {
+            private final Iterator<ClusteringPrefix> prefixIter = clusterings.iterator();
+            private Atom next;
 
-        //    @Override
-        //    protected boolean isDone()
-        //    {
-        //        return tester.isDone();
-        //    }
-        //};
+            @Override
+            public boolean hasNext()
+            {
+                if (next != null)
+                    return true;
+
+                while (prefixIter.hasNext())
+                {
+                    ClusteringPrefix nextPrefix = prefixIter.next();
+                    if (iter.seekTo(nextPrefix, nextPrefix))
+                    {
+                        next = iter.next();
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public Atom next()
+            {
+                if (next == null && !hasNext())
+                    throw new NoSuchElementException();
+
+                Atom toReturn = next;
+                next = null;
+                return toReturn;
+            }
+        };
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, DecoratedKey key)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return makeIterator(new SSTableIterator(sstable, key, selectedColumns), prefixes);
     }
 
     public AtomIterator getSSTableAtomIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, RowIndexEntry indexEntry)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return makeIterator(new SSTableIterator(sstable, file, key, selectedColumns, indexEntry), prefixes);
     }
 
-    public AtomIterator getAtomIterator(Partition partition)
+    public AtomIterator getAtomIterator(final Partition partition)
     {
-        // TODO
-        throw new UnsupportedOperationException();
+        return new AbstractAtomIterator(partition.metadata(),
+                                        partition.partitionKey(),
+                                        partition.partitionLevelDeletion(),
+                                        selectedColumns,
+                                        Rows.EMPTY_STATIC_ROW,
+                                        false,
+                                        partition.stats())
+        {
+            private final Iterator<ClusteringPrefix> prefixIter = prefixes.iterator();
+            private final SearchIterator<ClusteringPrefix, Row> searcher = partition.searchIterator(selectedColumns);
+
+            protected Atom computeNext()
+            {
+                while (prefixIter.hasNext() && searcher.hasNext())
+                {
+                    Row row = searcher.next(prefixIter.next());
+                    if (row != null)
+                        return row;
+                }
+                return endOfData();
+            }
+        };
     }
 
     public boolean shouldInclude(SSTableReader sstable)
@@ -137,6 +200,19 @@ public class NamesPartitionFilter implements PartitionFilter
     public int maxQueried(boolean countCells)
     {
         return countCells ? prefixes.size() * selectedColumns.regulars.columnCount() : prefixes.size();
+    }
+
+    public String toString(CFMetaData metadata)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("names(").append(selectedColumns).append(", {");
+        boolean isFirst = true;
+        for (ClusteringPrefix prefix : prefixes)
+        {
+            if (isFirst) isFirst = false; else sb.append(", ");
+            sb.append(prefix.toString(metadata));
+        }
+        return sb.append("}").toString();
     }
 
     // From NamesQueryFilter
