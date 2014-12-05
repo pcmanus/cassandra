@@ -115,7 +115,8 @@ public class ReadCallback<TMessage, TResolved> implements IAsyncCallback<TMessag
             }
             else if (logger.isDebugEnabled())
             {
-                logger.debug("Read timeout: {}", ex.toString());
+                String gotData = received > 0 ? (resolver.isDataPresent() ? " (including data)" : " (only digests)") : "";
+                logger.debug("Timed out; received {} of {} responses{}", new Object[]{ received, blockfor, gotData });
             }
             throw ex;
         }

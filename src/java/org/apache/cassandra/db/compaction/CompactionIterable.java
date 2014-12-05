@@ -71,6 +71,7 @@ public class CompactionIterable extends AbstractCompactionIterable
                 for (AtomIterator iter : versions)
                     if (iter != null)
                         merged++;
+
                 CompactionIterable.this.updateCounterFor(merged);
 
                 /*

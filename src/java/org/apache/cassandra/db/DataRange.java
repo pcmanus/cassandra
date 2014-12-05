@@ -6,7 +6,6 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -104,6 +103,11 @@ public class DataRange
         return new Paging(range, partitionFilter, firstPartitionStart, lastPartitionEnd);
     }
 
+    public DataRange forSubRange(AbstractBounds<RowPosition> range)
+    {
+        return new DataRange(range, partitionFilter);
+    }
+
     private static class Paging extends DataRange
     {
         private final ClusteringPrefix firstPartitionStart;
@@ -130,6 +134,23 @@ public class DataRange
             if (lastPartitionEnd != null && key.equals(stopKey()))
                 filter = filter.withUpdatedEnd(comparator, lastPartitionEnd);
             return filter;
+        }
+
+        @Override
+        public DataRange forSubRange(AbstractBounds<RowPosition> range)
+        {
+            if (firstPartitionStart != null && range.left.equals(keyRange().left))
+            {
+                if (lastPartitionEnd != null && range.right.equals(keyRange().right))
+                    return this;
+
+                return new Paging(range, partitionFilter, firstPartitionStart, null);
+            }
+
+            if (lastPartitionEnd != null && range.right.equals(keyRange().right))
+                return new Paging(range, partitionFilter, null, lastPartitionEnd);
+
+            return new DataRange(range, partitionFilter);
         }
     }
 }

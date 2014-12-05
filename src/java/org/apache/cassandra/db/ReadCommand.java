@@ -86,7 +86,7 @@ public abstract class ReadCommand
 
     public boolean isDigestQuery()
     {
-        return isDigestQuery();
+        return isDigestQuery;
     }
 
     public void setDigestQuery(boolean isDigestQuery)

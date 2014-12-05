@@ -70,7 +70,7 @@ public abstract class AbstractFilteringIterator extends WrappingPartitionIterato
             if (next != null)
                 return true;
         }
-        return false;
+        return next != null;
     }
 
     public AtomIterator next()

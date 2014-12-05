@@ -148,7 +148,6 @@ public class CompactionTask extends AbstractCompactionTask
 
         try (CompactionController controller = getCompactionController(sstables);)
         {
-
             Set<SSTableReader> actuallyCompact = Sets.difference(sstables, controller.getFullyExpiredSSTables());
 
             long estimatedTotalKeys = Math.max(cfs.metadata.getMinIndexInterval(), SSTableReader.getApproximateKeyCount(actuallyCompact));

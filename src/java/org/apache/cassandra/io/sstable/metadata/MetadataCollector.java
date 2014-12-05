@@ -34,6 +34,7 @@ import com.clearspring.analytics.stream.cardinality.ICardinality;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.SerializationHeader;
+import org.apache.cassandra.db.atoms.Cells;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.Component;
@@ -89,12 +90,9 @@ public class MetadataCollector
     // TODO: cound the number of row per partition (either with the number of cells, or instead)
     protected EstimatedHistogram estimatedCellPerPartitionCount = defaultCellPerPartitionCountHistogram();
     protected ReplayPosition replayPosition = ReplayPosition.NONE;
-    protected long minTimestamp = Long.MAX_VALUE;
-    protected long maxTimestamp = Long.MIN_VALUE;
-    protected int minLocalDeletionTime = Integer.MAX_VALUE;
-    protected int maxLocalDeletionTime = Integer.MIN_VALUE;
-    protected int minTTL = Integer.MAX_VALUE;
-    protected int maxTTL = Integer.MIN_VALUE;
+    protected final MinMaxLongTracker timestampTracker = new MinMaxLongTracker();
+    protected final MinMaxIntTracker localDeletionTimeTracker = new MinMaxIntTracker(Cells.NO_DELETION_TIME, Cells.NO_DELETION_TIME);
+    protected final MinMaxIntTracker ttlTracker = new MinMaxIntTracker(Cells.NO_TTL, Cells.NO_TTL);
     protected double compressionRatio = NO_COMPRESSION_RATIO;
     protected Set<Integer> ancestors = new HashSet<>();
     protected StreamingHistogram estimatedTombstoneDropTime = defaultTombstoneDropTimeHistogram();
@@ -180,23 +178,20 @@ public class MetadataCollector
 
     public MetadataCollector updateTimestamp(long newTimestamp)
     {
-        minTimestamp = Math.min(minTimestamp, newTimestamp);
-        maxTimestamp = Math.max(maxTimestamp, newTimestamp);
+        timestampTracker.update(newTimestamp);
         return this;
     }
 
     public MetadataCollector updateLocalDeletionTime(int newLocalDeletionTime)
     {
-        minLocalDeletionTime = Math.max(minLocalDeletionTime, newLocalDeletionTime);
-        maxLocalDeletionTime = Math.max(maxLocalDeletionTime, newLocalDeletionTime);
+        localDeletionTimeTracker.update(newLocalDeletionTime);
         estimatedTombstoneDropTime.update(newLocalDeletionTime);
         return this;
     }
 
     public MetadataCollector updateTTL(int newTTL)
     {
-        minTTL = Math.max(minTTL, newTTL);
-        maxTTL = Math.max(maxTTL, newTTL);
+        ttlTracker.update(newTTL);
         return this;
     }
 
@@ -268,13 +263,12 @@ public class MetadataCollector
         components.put(MetadataType.STATS, new StatsMetadata(estimatedPartitionSize,
                                                              estimatedCellPerPartitionCount,
                                                              replayPosition,
-                                                             minTimestamp,
-                                                             maxTimestamp,
-                                                             minLocalDeletionTime,
-                                                             maxLocalDeletionTime,
-                                                             // If there is no TTL, sets both min and max to 0 as this is more consistent
-                                                             minTTL == Integer.MAX_VALUE ? 0 : minTTL,
-                                                             maxTTL == Integer.MIN_VALUE ? 0 : maxTTL,
+                                                             timestampTracker.min(),
+                                                             timestampTracker.max(),
+                                                             localDeletionTimeTracker.min(),
+                                                             localDeletionTimeTracker.max(),
+                                                             ttlTracker.min(),
+                                                             ttlTracker.max(),
                                                              compressionRatio,
                                                              estimatedTombstoneDropTime,
                                                              sstableLevel,
@@ -285,5 +279,99 @@ public class MetadataCollector
         components.put(MetadataType.COMPACTION, new CompactionMetadata(ancestors, cardinality));
         components.put(MetadataType.HEADER, header.toComponent());
         return components;
+    }
+
+    public static class MinMaxLongTracker
+    {
+        private final long defaultMin;
+        private final long defaultMax;
+
+        private boolean isSet = false;
+        private long min;
+        private long max;
+
+        public MinMaxLongTracker()
+        {
+            this(Long.MIN_VALUE, Long.MAX_VALUE);
+        }
+
+        public MinMaxLongTracker(long defaultMin, long defaultMax)
+        {
+            this.defaultMin = defaultMin;
+            this.defaultMax = defaultMax;
+        }
+
+        public void update(long value)
+        {
+            if (!isSet)
+            {
+                min = max = value;
+                isSet = true;
+            }
+            else
+            {
+                if (value < min)
+                    min = value;
+                if (value > max)
+                    max = value;
+            }
+        }
+
+        public long min()
+        {
+            return isSet ? min : defaultMin;
+        }
+
+        public long max()
+        {
+            return isSet ? max : defaultMax;
+        }
+    }
+
+    public static class MinMaxIntTracker
+    {
+        private final int defaultMin;
+        private final int defaultMax;
+
+        private boolean isSet = false;
+        private int min;
+        private int max;
+
+        public MinMaxIntTracker()
+        {
+            this(Integer.MIN_VALUE, Integer.MAX_VALUE);
+        }
+
+        public MinMaxIntTracker(int defaultMin, int defaultMax)
+        {
+            this.defaultMin = defaultMin;
+            this.defaultMax = defaultMax;
+        }
+
+        public void update(int value)
+        {
+            if (!isSet)
+            {
+                min = max = value;
+                isSet = true;
+            }
+            else
+            {
+                if (value < min)
+                    min = value;
+                if (value > max)
+                    max = value;
+            }
+        }
+
+        public int min()
+        {
+            return isSet ? min : defaultMin;
+        }
+
+        public int max()
+        {
+            return isSet ? max : defaultMax;
+        }
     }
 }

@@ -214,9 +214,7 @@ public class SelectStatement implements CQLStatement, MeasurableForPreparedCache
             pageSize = DEFAULT_COUNT_PAGE_SIZE;
 
         if (pageSize <= 0 || command == null || !QueryPagers.mayNeedPaging(command, pageSize))
-        {
             return execute(command, options, limit, nowInSec);
-        }
 
         QueryPager pager = QueryPagers.pager(command, cl, options.getPagingState());
         if (selection.isAggregate())

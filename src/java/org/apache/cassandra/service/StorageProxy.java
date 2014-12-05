@@ -1241,7 +1241,7 @@ public class StorageProxy implements StorageProxyMBean
 
         List<DataIterator> results = new ArrayList<>(cmdCount);
         for (int i = 0; i < cmdCount; i++)
-            results.set(i, reads[i].getResult());
+            results.add(reads[i].getResult());
 
         return DataIterators.concat(results);
     }
@@ -1481,6 +1481,9 @@ public class StorageProxy implements StorageProxyMBean
 
         protected RangeForQuery computeNext()
         {
+            if (!ranges.hasNext())
+                return endOfData();
+
             RangeForQuery current = ranges.next();
 
             // getRestrictedRange has broken the queried range into per-[vnode] token ranges, but this doesn't take
@@ -1512,6 +1515,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 // If we get there, merge this range and the next one
                 current = new RangeForQuery(current.range.withNewRight(next.range.right), merged, filteredMerged);
+                ranges.next(); // consume the range we just merged since we've only peeked so far
             }
             return current;
         }
@@ -1575,7 +1579,7 @@ public class StorageProxy implements StorageProxyMBean
 
         public RowIterator computeNext()
         {
-            if (sentQueryIterator == null || !sentQueryIterator.hasNext())
+            while (sentQueryIterator == null || !sentQueryIterator.hasNext())
             {
                 // If we don't have more range to handle, we're done
                 if (!ranges.hasNext())

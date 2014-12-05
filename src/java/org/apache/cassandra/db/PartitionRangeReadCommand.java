@@ -63,20 +63,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements Pageable
 
     public PartitionRangeReadCommand forSubRange(AbstractBounds<RowPosition> range)
     {
-        //Composite newStart = subRange.left.equals(keyRange.left) ? start : ((SliceQueryFilter)predicate).start();
-        //Composite newStop = subRange.right.equals(keyRange.right) ? stop : ((SliceQueryFilter)predicate).finish();
-        //return new PagedRangeCommand(keyspace,
-        //                             columnFamily,
-        //                             timestamp,
-        //                             subRange,
-        //                             (SliceQueryFilter)predicate,
-        //                             newStart,
-        //                             newStop,
-        //                             rowFilter,
-        //                             limit,
-        //                             countCQL3Rows);
-        // TODO
-        throw new UnsupportedOperationException();
+        return new PartitionRangeReadCommand(metadata(), nowInSec(), columnFilter(), limits(), dataRange().forSubRange(range));
     }
 
     public PartitionRangeReadCommand copy()

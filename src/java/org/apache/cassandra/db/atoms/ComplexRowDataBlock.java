@@ -476,6 +476,12 @@ public abstract class ComplexRowDataBlock
     {
         private ComplexCellBlock cellBlock;
         private final ReusableCell cell = new ReusableCell();
+
+        private int rowIdx;
+
+        private int columnIdx;
+        private int endColumnIdx;
+
         private int idx;
         private int endIdx;
 
@@ -495,14 +501,14 @@ public abstract class ComplexRowDataBlock
             if (cellBlock == null)
                 return null;
 
-            int baseIdx = dataBlock.columns.complexIdx(column);
-            if (baseIdx < 0)
+            columnIdx = dataBlock.columns.complexIdx(column);
+            if (columnIdx < 0)
                 return null;
 
-            int columnIdx = dataBlock.cellBlockBase(row) + 2 * baseIdx;
-            idx = cellBlock.cellIdx[columnIdx];
-            endIdx = cellBlock.cellIdx[columnIdx + 1];
+            endColumnIdx = columnIdx + 1;
+            rowIdx = dataBlock.cellBlockBase(row);
 
+            resetCellIdx();
             return endIdx <= idx ? null : this;
         }
 
@@ -518,45 +524,50 @@ public abstract class ComplexRowDataBlock
             if (cellBlock == null)
                 return null;
 
-            int columnIdx = dataBlock.cellBlockBase(row);
-            int columnCount = dataBlock.columns.complexColumnCount();
+            columnIdx = 0;
+            endColumnIdx = dataBlock.columns.complexColumnCount();
 
-            // find the index of the first cell of the row
-            for (int i = columnIdx; i < columnIdx + (2 * columnCount); i += 2)
+            rowIdx = dataBlock.cellBlockBase(row);
+
+            findNextColumnWithCells();
+            return columnIdx < endColumnIdx ? null : this;
+        }
+
+        private void findNextColumnWithCells()
+        {
+            while (columnIdx < endColumnIdx)
             {
-                if (cellBlock.cellIdx[i + 1] > cellBlock.cellIdx[i])
-                {
-                    idx = cellBlock.cellIdx[i];
-                    break;
-                }
+                resetCellIdx();
+                if (idx < endIdx)
+                    return;
+                ++columnIdx;
             }
+        }
 
-            // find the index of the last cell of the row
-            for (int i = columnIdx + (2 * columnCount) - 2; i >= columnIdx; i -= 2)
-            {
-                if (cellBlock.cellIdx[i + 1] > cellBlock.cellIdx[i])
-                {
-                    endIdx = cellBlock.cellIdx[i + 1];
-                    break;
-                }
-            }
-
-            return endIdx <= idx ? null : this;
+        private void resetCellIdx()
+        {
+            int i = rowIdx + 2 * columnIdx;
+            idx = cellBlock.cellIdx[i];
+            endIdx = cellBlock.cellIdx[i + 1];
         }
 
         public boolean hasNext()
         {
-            if (cellBlock == null)
+            if (columnIdx >= endColumnIdx)
                 return false;
 
-            return idx < endIdx;
+            if (idx < endIdx)
+                return true;
+
+            ++columnIdx;
+            findNextColumnWithCells();
+
+            return columnIdx < endColumnIdx;
         }
 
         public Cell next()
         {
-            cell.setTo(cellBlock, cellBlock.columns.getComplex(idx), idx);
-            ++idx;
-            return cell;
+            return cell.setTo(cellBlock, cellBlock.columns.getComplex(columnIdx), idx++);
         }
     }
 

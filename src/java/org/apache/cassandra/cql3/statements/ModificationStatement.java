@@ -24,6 +24,8 @@ import java.util.*;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import org.github.jamm.MemoryMeter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
@@ -51,6 +53,8 @@ import org.apache.cassandra.utils.Pair;
  */
 public abstract class ModificationStatement implements CQLStatement, MeasurableForPreparedCache
 {
+    private static final Logger logger = LoggerFactory.getLogger(ModificationStatement.class);
+
     private static final ColumnIdentifier CAS_RESULT_COLUMN = new ColumnIdentifier("[applied]", false);
 
     public static enum StatementType { INSERT, UPDATE, DELETE }
@@ -655,7 +659,6 @@ public abstract class ModificationStatement implements CQLStatement, MeasurableF
         {
             // We don't use counters internally.
             assert mutation instanceof Mutation;
-
             ((Mutation) mutation).apply();
         }
         return null;

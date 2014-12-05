@@ -58,10 +58,13 @@ public class RowFilteringAtomIterator extends WrappingAtomIterator
     @Override
     public boolean hasNext()
     {
-        while (next == null && super.hasNext())
+        if (next != null)
+            return true;
+
+        while (super.hasNext())
         {
             Atom atom = super.next();
-            if (next.kind() == Atom.Kind.ROW)
+            if (atom.kind() == Atom.Kind.ROW)
             {
                 Row row = filter.setTo((Row)atom);
                 if (!row.isEmpty())
@@ -87,6 +90,8 @@ public class RowFilteringAtomIterator extends WrappingAtomIterator
     {
         if (next == null)
             hasNext();
-        return next;
+        Atom toReturn = next;
+        next = null;
+        return toReturn;
     }
 }

@@ -367,6 +367,7 @@ public class SSTableReader extends SSTable
         ValidationMetadata validationMetadata = (ValidationMetadata) sstableMetadata.get(MetadataType.VALIDATION);
         StatsMetadata statsMetadata = (StatsMetadata) sstableMetadata.get(MetadataType.STATS);
         SerializationHeader.Component header = (SerializationHeader.Component) sstableMetadata.get(MetadataType.HEADER);
+        assert !descriptor.version.storeRows || header != null;
 
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
@@ -380,13 +381,14 @@ public class SSTableReader extends SSTable
         }
 
         logger.info("Opening {} ({} bytes)", descriptor, new File(descriptor.filenameFor(Component.DATA)).length());
+
         SSTableReader sstable = new SSTableReader(descriptor,
                                                   components,
                                                   metadata,
                                                   partitioner,
                                                   System.currentTimeMillis(),
                                                   statsMetadata,
-                                                  header.toHeader(metadata),
+                                                  header == null ? null : header.toHeader(metadata),
                                                   false);
 
         // load index and filter

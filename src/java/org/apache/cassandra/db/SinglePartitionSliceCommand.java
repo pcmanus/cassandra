@@ -183,7 +183,6 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Slic
 
         Tracing.trace("Merging data from memtables and {} sstables", sstablesIterated);
         return AtomIterators.merge(iterators, nowInSec());
-
     }
 
 // From SliceFromReadCommand

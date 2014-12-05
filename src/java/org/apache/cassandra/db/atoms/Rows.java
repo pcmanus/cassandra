@@ -25,6 +25,8 @@ import java.security.MessageDigest;
 
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
@@ -40,6 +42,8 @@ import org.apache.cassandra.utils.MergeIterator;
  */
 public abstract class Rows
 {
+    private static final Logger logger = LoggerFactory.getLogger(Rows.class);
+
     private Rows() {}
 
     public static final long NO_TIMESTAMP = Long.MIN_VALUE;
