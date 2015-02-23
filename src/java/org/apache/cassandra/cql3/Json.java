@@ -17,119 +17,124 @@
  */
 package org.apache.cassandra.cql3;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
+
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.serializers.MarshalException;
 import org.codehaus.jackson.map.ObjectMapper;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
 
 /** Term-related classes for INSERT JSON support. */
 public class Json
 {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    public interface Raw extends Term.Raw
+    public interface Raw
     {
-        public void setExpectedReceivers(Set<? extends ColumnSpecification> receivers);
+        public Prepared prepareAndCollectMarkers(CFMetaData metadata, Collection<ColumnDefinition> receivers, VariableSpecifications boundNames);
+    }
+
+    public static abstract class Prepared
+    {
+        private final String keyspace;
+
+        protected Prepared(String keyspace)
+        {
+            this.keyspace = keyspace;
+        }
+
+        protected abstract Term.Raw getRawTermForColumn(ColumnDefinition def);
+
+        public Term getPrimarykeyValueFor(ColumnDefinition def)
+        {
+            // Note that we know we don't have to call collectMarkerSpecification since it has already been collected
+            return getRawTermForColumn(def).prepare(keyspace, def);
+        }
+
+        public Operation getSetOperationFor(ColumnDefinition def)
+        {
+            // Note that we know we don't have to call collectMarkerSpecification on the operation since we have
+            // already collected all we need.
+            return new Operation.SetValue(getRawTermForColumn(def)).prepare(keyspace, def);
+        }
     }
 
     /**
      * Represents a literal JSON string in an INSERT JSON statement.
-     * For example: INSERT INTO mytable (key, col) JSON '{"key": 0, "col": 0}';
+     * For example: INSERT INTO mytable JSON '{"key": 0, "col": 0}';
      */
     public static class Literal implements Raw
     {
-        private AllValues allJsonValues;
         private final String text;
-        private Set<? extends ColumnSpecification> expectedReceivers;
 
         public Literal(String text)
         {
             this.text = text;
         }
 
-        public TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+        public Prepared prepareAndCollectMarkers(CFMetaData metadata, Collection<ColumnDefinition> receivers, VariableSpecifications boundNames)
         {
-            return TestResult.NOT_ASSIGNABLE;
-        }
-
-        /**
-         * prepare() has somewhat unique behavior for JSON values.  Although this literal represents the values
-         * for multiple receivers, prepare() returns a Terminal for the single, specific receiver that's passed.
-         * Callers should call prepare() on this once for each receiver in the INSERT statement.
-         */
-        @Override
-        public Value prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
-        {
-            // only create the AllValuesWrapper once and return it for all calls
-            if (allJsonValues == null)
-                allJsonValues = new AllValues(text, expectedReceivers);
-
-            return new Value(allJsonValues, receiver);
-        }
-
-        public void setExpectedReceivers(Set<? extends ColumnSpecification> expectedReceivers)
-        {
-            this.expectedReceivers = expectedReceivers;
+            return new SimplePrepared(metadata.ksName, parseJson(text, receivers));
         }
     }
 
     /**
      * Represents a marker for a JSON string in an INSERT JSON statement.
-     * For example: INSERT INTO mytable (key, col) JSON ?;
+     * For example: INSERT INTO mytable JSON ?;
      */
-    public static class Marker extends AbstractMarker.Raw implements Raw
+    public static class Marker implements Raw
     {
-        private DelayedAllValues allJsonValues;
-        private Set<? extends ColumnSpecification> expectedReceivers;
+        protected final int bindIndex;
 
         public Marker(int bindIndex)
         {
-            super(bindIndex);
+            this.bindIndex = bindIndex;
         }
 
-        private static ColumnSpecification makeReceiver(ColumnSpecification receiver) throws InvalidRequestException
+        public Prepared prepareAndCollectMarkers(CFMetaData metadata, Collection<ColumnDefinition> receivers, VariableSpecifications boundNames)
         {
-            ColumnIdentifier identifier = new ColumnIdentifier("json_values", true);
-            return new ColumnSpecification(receiver.ksName, receiver.cfName, identifier, UTF8Type.instance);
+            boundNames.add(bindIndex, makeReceiver(metadata));
+            return new DelayedPrepared(metadata.ksName, bindIndex, receivers);
         }
 
-        /**
-         * See the comment on Literal.prepare().  The behavior here is the same, except that a NonTerminal will be
-         * returned.
-         */
-        @Override
-        public DelayedValue prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException
+        private static ColumnSpecification makeReceiver(CFMetaData metadata) throws InvalidRequestException
         {
-            // only create the AllValuesWrapper once and return it for all calls
-            if (allJsonValues == null)
-                allJsonValues = new DelayedAllValues(bindIndex, makeReceiver(receiver), expectedReceivers);
-
-            return new DelayedValue(allJsonValues, receiver);
-        }
-
-
-        public void setExpectedReceivers(Set<? extends ColumnSpecification> expectedReceivers)
-        {
-            this.expectedReceivers = expectedReceivers;
+            ColumnIdentifier identifier = new ColumnIdentifier("[json]", true);
+            return new ColumnSpecification(metadata.ksName, metadata.cfName, identifier, UTF8Type.instance);
         }
     }
 
     /**
-     * A Terminal for a single column.
+     * A Term for a single (parsed) column value.
+     *
+     * Note that this is intrinsically an already prepared term, but
+     * this still implements Term.Raw so that it can easily use to create
+     * raw operations.
      */
-    public static class Value extends Term.Terminal
+    private static class ColumnValue extends Term.Terminal implements Term.Raw
     {
-        private final ColumnSpecification column;
+        private final ColumnDefinition column;
         private final Object parsedJsonValue;
 
-        public Value(Object parsedJsonValue, ColumnSpecification column)
+        public ColumnValue(Object parsedJsonValue, ColumnDefinition column)
         {
             this.parsedJsonValue = parsedJsonValue;
             this.column = column;
+        }
+
+        public Term prepare(String keyspace, ColumnSpecification receiver)
+        {
+            return this;
+        }
+
+        public TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+        {
+            return TestResult.NOT_ASSIGNABLE;
         }
 
         public ByteBuffer get(int protocolVersion) throws InvalidRequestException
@@ -146,33 +151,47 @@ public class Json
     }
 
     /**
-     * A NonTerminal for a single column.
+     * A non-terminal Term for a single column value.
+     *
+     * As with {@code ColumValue}, this is intrinsically a prepared term but
+     * implements Terms.Raw for convenience.
      */
-    public static class DelayedValue extends Term.NonTerminal
+    private static class DelayedValue extends Term.NonTerminal implements Term.Raw
     {
-        private final DelayedAllValues allJsonValues;
-        private final ColumnSpecification column;
+        private final DelayedPrepared prepared;
+        private final ColumnDefinition column;
 
-        public DelayedValue(DelayedAllValues allJsonValues, ColumnSpecification column)
+        public DelayedValue(DelayedPrepared prepared, ColumnDefinition column)
         {
-            this.allJsonValues = allJsonValues;
+            this.prepared = prepared;
             this.column = column;
+        }
+
+        public Term prepare(String keyspace, ColumnSpecification receiver)
+        {
+            return this;
+        }
+
+        public AssignmentTestable.TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+        {
+            return AssignmentTestable.TestResult.WEAKLY_ASSIGNABLE;
         }
 
         public void collectMarkerSpecification(VariableSpecifications boundNames)
         {
-            allJsonValues.collectMarkerSpecification(boundNames);
+            // We've already collected what we should (and in practice this method is never called).
         }
 
         public boolean containsBindMarker()
         {
-            return allJsonValues.containsBindMarker();
+            return true;
         }
 
-        public Value bind(QueryOptions options) throws InvalidRequestException
+        public Term.Terminal bind(QueryOptions options) throws InvalidRequestException
         {
-            AllValues boundValues = allJsonValues.bind(options);
-            return boundValues.createColumnTerminal(column);
+            prepared.bind(options);
+            Object value = prepared.getValue(column);
+            return value == null ? null : new ColumnValue(value, column);
         }
     }
 
@@ -194,101 +213,93 @@ public class Json
         }
     }
 
-    /** Represents a full set of JSON values in an INSERT JSON statement. */
-    private static class AllValues extends Term.Terminal
+    private static Map<ColumnIdentifier, Object> parseJson(String jsonString, Collection<ColumnDefinition> expectedReceivers)
+    throws InvalidRequestException
     {
-        private final Map<ColumnIdentifier, Object> columnMap;
-
-        public AllValues(String jsonString, Set<? extends ColumnSpecification> expectedReceivers) throws InvalidRequestException
+        try
         {
-            try
-            {
-                Map<String, Object> valueMap = objectMapper.readValue(jsonString, Map.class);
+            Map<String, Object> valueMap = objectMapper.readValue(jsonString, Map.class);
 
-                if (valueMap == null)
-                    throw new InvalidRequestException("Got null for INSERT JSON values");
+            if (valueMap == null)
+                throw new InvalidRequestException("Got null for INSERT JSON values");
 
-                handleCaseSensitivity(valueMap);
+            handleCaseSensitivity(valueMap);
 
-                columnMap = new HashMap<>(expectedReceivers.size());
-                for (ColumnSpecification spec : expectedReceivers)
-                {
-                    Object parsedJsonObject = valueMap.remove(spec.name.toString());
-                    if (parsedJsonObject == null)
-                        columnMap.put(spec.name, null);
-                    else
-                        columnMap.put(spec.name, parsedJsonObject);
-                }
+            Map<ColumnIdentifier, Object> columnMap = new HashMap<>(expectedReceivers.size());
+            for (ColumnDefinition def : expectedReceivers)
+                columnMap.put(def.name, valueMap.remove(def.name.toString()));
 
-                if (!valueMap.isEmpty())
-                {
-                    throw new InvalidRequestException(String.format(
-                            "JSON values map contains unrecognized column: %s", valueMap.keySet().iterator().next()));
-                }
-            }
-            catch (IOException exc)
-            {
-                throw new InvalidRequestException(String.format("Could not decode JSON string as a map: %s. (String was: %s)", exc.toString(), jsonString));
-            }
-            catch (MarshalException exc)
-            {
-                throw new InvalidRequestException(exc.getMessage());
-            }
+            if (!valueMap.isEmpty())
+                throw new InvalidRequestException(String.format("JSON values map contains unrecognized column: %s",
+                                                                valueMap.keySet().iterator().next()));
+
+            return columnMap;
         }
-
-        public ByteBuffer get(int protocolVersion)
+        catch (IOException exc)
         {
-            throw new AssertionError("AllValues.get() should not be called directly");
+            throw new InvalidRequestException(String.format("Could not decode JSON string as a map: %s. (String was: %s)",
+                                                            exc.toString(), jsonString));
         }
-
-        /**
-         *  Creates a JSON.Value terminal for a specific column.
-         */
-        Value createColumnTerminal(ColumnSpecification column)
+        catch (MarshalException exc)
         {
-            Object parsedJsonObject = columnMap.get(column.name);
-            if (parsedJsonObject == null)
-                return null;
-
-            return new Value(parsedJsonObject, column);
+            throw new InvalidRequestException(exc.getMessage());
         }
     }
 
-    /** Like AllValues, but NonTerminal because a marker was used (e.g. "INSERT INTO ... JSON ?;"). */
-    private static class DelayedAllValues extends AbstractMarker
+    private static class SimplePrepared extends Prepared
     {
-        // Because multiple single-column DelayedValue objects will point to this, collectMarkerSpecification() and
-        // bind() may be called multiple times.  Keep track of this to avoid repeating this work.
-        private AllValues boundValues;
-        private boolean haveCollectedMarkerSpecs = false;
-        private final Set<? extends ColumnSpecification> expectedReceivers;
+        private final Map<ColumnIdentifier, Object> columnMap;
 
-        public DelayedAllValues(int bindIndex, ColumnSpecification receiver, Set<? extends ColumnSpecification> expectedReceivers)
+        public SimplePrepared(String keyspace, Map<ColumnIdentifier, Object> columnMap)
         {
-            super(bindIndex, receiver);
-            this.expectedReceivers = expectedReceivers;
+            super(keyspace);
+            this.columnMap = columnMap;
         }
 
-        public void collectMarkerSpecification(VariableSpecifications boundNames)
+        protected Term.Raw getRawTermForColumn(ColumnDefinition def)
         {
-            if (!haveCollectedMarkerSpecs)
-            {
-                super.collectMarkerSpecification(boundNames);
-                haveCollectedMarkerSpecs = true;
-            }
+            Object value = columnMap.get(def.name);
+            if (value == null)
+                return Constants.NULL_LITERAL;
+
+            return new ColumnValue(value, def);
+        }
+    }
+
+    private static class DelayedPrepared extends Prepared
+    {
+        private final int bindIndex;
+        private final Collection<ColumnDefinition> columns;
+
+        private Map<ColumnIdentifier, Object> columnMap;
+
+        public DelayedPrepared(String keyspace, int bindIndex, Collection<ColumnDefinition> columns)
+        {
+            super(keyspace);
+            this.bindIndex = bindIndex;
+            this.columns = columns;
         }
 
-        public AllValues bind(QueryOptions options) throws InvalidRequestException
+        protected Term.Raw getRawTermForColumn(ColumnDefinition def)
         {
-            if (boundValues != null)
-                return boundValues;
+            return new DelayedValue(this, def);
+        }
+
+        public void bind(QueryOptions options) throws InvalidRequestException
+        {
+            if (columnMap != null)
+                return;
 
             ByteBuffer value = options.getValues().get(bindIndex);
             if (value == null)
                 throw new InvalidRequestException("Got null for INSERT JSON values");
 
-            boundValues = new AllValues(UTF8Type.instance.getSerializer().deserialize(value), expectedReceivers);
-            return boundValues;
+            columnMap = parseJson(UTF8Type.instance.getSerializer().deserialize(value), columns);
+        }
+
+        public Object getValue(ColumnDefinition def)
+        {
+            return columnMap.get(def.name);
         }
     }
 }

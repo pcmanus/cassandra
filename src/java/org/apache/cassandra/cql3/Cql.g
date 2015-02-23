@@ -364,34 +364,42 @@ orderByClause[Map<ColumnIdentifier.Raw, Boolean> orderings]
  * USING TIMESTAMP <long>;
  *
  */
-insertStatement returns [UpdateStatement.ParsedInsert expr]
+insertStatement returns [ModificationStatement.Parsed expr]
+    : K_INSERT K_INTO cf=columnFamilyName (st1=insertStatementRegular[cf] { $expr = st1; } | K_JSON st2=insertStatementJson[cf] { $expr = st2; })
+    ;
+
+insertStatementRegular[CFName cf] returns [UpdateStatement.ParsedInsert expr]
     @init {
         Attributes.Raw attrs = new Attributes.Raw();
         List<ColumnIdentifier.Raw> columnNames  = new ArrayList<ColumnIdentifier.Raw>();
         List<Term.Raw> values = new ArrayList<Term.Raw>();
         boolean ifNotExists = false;
-        boolean isJson = false;
     }
-    : K_INSERT K_INTO cf=columnFamilyName
-        ( '(' c1=cident { columnNames.add(c1); }  ( ',' cn=cident { columnNames.add(cn); } )* ')'
-          K_VALUES
-           '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
-        | K_JSON
-           v1=jsonValue { values.add(v1); isJson = true; columnNames = null; })
-
-        ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
-        ( usingClause[attrs] )?
+    : '(' c1=cident { columnNames.add(c1); }  ( ',' cn=cident { columnNames.add(cn); } )* ')'
+      K_VALUES
+      '(' v1=term { values.add(v1); } ( ',' vn=term { values.add(vn); } )* ')'
+      ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
+      ( usingClause[attrs] )?
       {
-          $expr = new UpdateStatement.ParsedInsert(cf,
-                                                   attrs,
-                                                   columnNames,
-                                                   values,
-                                                   ifNotExists,
-                                                   isJson);
+          $expr = new UpdateStatement.ParsedInsert(cf, attrs, columnNames, values, ifNotExists);
       }
     ;
 
-jsonValue returns [Term.Raw value]
+insertStatementJson[CFName cf] returns [UpdateStatement.ParsedInsertJson expr]
+    @init {
+        Attributes.Raw attrs = new Attributes.Raw();
+        boolean ifNotExists = false;
+    }
+    :  val=jsonValue
+       ( K_IF K_NOT K_EXISTS { ifNotExists = true; } )?
+       ( usingClause[attrs] )?
+       {
+          $expr = new UpdateStatement.ParsedInsertJson(cf, attrs, val, ifNotExists);
+       }
+    ;
+
+
+jsonValue returns [Json.Raw value]
     :
     | s=STRING_LITERAL { $value = new Json.Literal($s.text); }
     | ':' id=ident     { $value = newJsonBindVariables(id); }

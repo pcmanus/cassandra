@@ -66,7 +66,7 @@ public interface Term
      * because calls to non pure functions will be NonTerminal (see #5616)
      * even if they don't have bind markers.
      */
-    public abstract boolean containsBindMarker();
+    public boolean containsBindMarker();
 
     boolean usesFunction(String ksName, String functionName);
 
