@@ -164,6 +164,20 @@ public class RowUpdateBuilder
         return this;
     }
 
+    public RowUpdateBuilder add(ColumnDefinition columnDefinition, Object value)
+    {
+        if (value == null)
+            writer.writeCell(columnDefinition, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, deletionLiveness, null);
+        else
+            writer.writeCell(columnDefinition, false, bb(value, columnDefinition.type), defaultLiveness, null);
+        return this;
+    }
+
+    public RowUpdateBuilder delete(ColumnDefinition columnDefinition)
+    {
+        return add(columnDefinition, null);
+    }
+
     private ByteBuffer bb(Object value, AbstractType<?> type)
     {
         return (value instanceof ByteBuffer) ? (ByteBuffer)value : ((AbstractType)type).decompose(value);
