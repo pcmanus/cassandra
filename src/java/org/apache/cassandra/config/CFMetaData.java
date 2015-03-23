@@ -279,7 +279,7 @@ public final class CFMetaData
 
     // This rebuild informations that are intrinsically duplicate of the table definition but
     // are kept because they are often useful in a different format.
-    private void rebuild()
+    public void rebuild()
     {
         this.comparator = new ClusteringComparator(extractTypes(clusteringColumns));
 

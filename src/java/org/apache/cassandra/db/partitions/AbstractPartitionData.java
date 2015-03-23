@@ -318,6 +318,11 @@ public abstract class AbstractPartitionData implements Partition
         };
     }
 
+    public AtomIterator toAtomIterator()
+    {
+        return atomIterator(columns(), Slices.ALL, false, nowInSec());
+    }
+
     public AtomIterator atomIterator(PartitionColumns columns, Slices slices, boolean reversed, int nowInSec)
     {
         return slices.makeSliceIterator(sliceableAtomIterator(columns, reversed, nowInSec));
