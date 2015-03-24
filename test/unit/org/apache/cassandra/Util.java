@@ -294,6 +294,11 @@ public class Util
         return PartitionIterators.getOnlyElement(cmd.executeLocally(cfs), cmd);
     }
 
+    public static ArrayBackedPartition materializePartition(ColumnFamilyStore cfs, DecoratedKey key)
+    {
+        return ReadPartition.create(readFullPartition(cfs, key));
+    }
+
     public static void consume(AtomIterator iter)
     {
         try (AtomIterator iterator = iter)
