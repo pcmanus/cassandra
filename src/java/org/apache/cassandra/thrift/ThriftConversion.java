@@ -47,7 +47,7 @@ import org.apache.cassandra.utils.UUIDGen;
 public class ThriftConversion
 {
     public static final String DEFAULT_KEY_ALIAS = "key";
-    public static final String DEFAULT_COLUMN_ALIAS = "column";
+    public static final String DEFAULT_CLUSTERING_ALIAS = "column";
     public static final String DEFAULT_VALUE_ALIAS = "value";
 
     public static org.apache.cassandra.db.ConsistencyLevel fromThrift(ConsistencyLevel cl)
@@ -220,7 +220,7 @@ public class ThriftConversion
                                           ? cf_def.subcomparator_type == null ? BytesType.instance : TypeParser.parse(cf_def.subcomparator_type)
                                           : null;
 
-            AbstractType<?> keyValidator = cf_def.isSetKey_validation_class() ? TypeParser.parse(cf_def.key_validation_class) : null;
+            AbstractType<?> keyValidator = cf_def.isSetKey_validation_class() ? TypeParser.parse(cf_def.key_validation_class) : BytesType.instance;
             AbstractType<?> defaultValidator = TypeParser.parse(cf_def.default_validation_class);
 
             // Convert the REGULAR definitions from the input CfDef
@@ -340,11 +340,11 @@ public class ThriftConversion
             {
                 List<AbstractType<?>> subTypes = ((CompositeType)comparator).types;
                 for (int i = 0; i < subTypes.size(); i++)
-                    defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_KEY_ALIAS + (i + 1), subTypes.get(i), i));
+                    defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_CLUSTERING_ALIAS + (i + 1), subTypes.get(i), i));
             }
             else
             {
-                defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_KEY_ALIAS, comparator, null));
+                defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_CLUSTERING_ALIAS, comparator, null));
             }
         }
         else
