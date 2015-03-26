@@ -633,7 +633,7 @@ public class AtomSerializer
         boolean useRowTTL = isExpiring && rowLiveness.hasTTL() && cell.livenessInfo().ttl() == rowLiveness.ttl() && cell.livenessInfo().localDeletionTime() == rowLiveness.localDeletionTime();
 
         if (hasValue)
-            size += cell.column().type.writtenLength(cell.value(), sizes);
+            size += header.getType(cell.column()).writtenLength(cell.value(), sizes);
 
         if (!useRowTimestamp)
             size += sizes.sizeof(header.encodeTimestamp(cell.livenessInfo().timestamp()));

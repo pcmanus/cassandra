@@ -446,7 +446,7 @@ public abstract class ReadCommand extends ReadQuery
             TypeSizes sizes = TypeSizes.NATIVE;
 
             return 1 // kind + isDigestQuery
-                 + CFMetaData.serializer.serializedSize(command.metadata(), version)
+                 + CFMetaData.serializer.serializedSize(command.metadata(), version, sizes)
                  + sizes.sizeof(command.nowInSec())
                  + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)
                  + DataLimits.serializer.serializedSize(command.limits(), version)

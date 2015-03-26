@@ -102,7 +102,7 @@ public class AtomIteratorSerializer
     public void serialize(AtomIterator iterator, DataOutputPlus out, SerializationHeader header, int version, int rowEstimate) throws IOException
     {
         CFMetaData.serializer.serialize(iterator.metadata(), out, version);
-        iterator.metadata().getKeyValidator().writeValue(iterator.partitionKey().getKey(), out);
+        header.keyType().writeValue(iterator.partitionKey().getKey(), out);
 
         int flags = 0;
         if (iterator.isReverseOrder())
@@ -156,7 +156,7 @@ public class AtomIteratorSerializer
 
         assert rowEstimate >= 0;
 
-        long size = CFMetaData.serializer.serializedSize(iterator.metadata(), version)
+        long size = CFMetaData.serializer.serializedSize(iterator.metadata(), version, sizes)
                   + header.keyType().writtenLength(iterator.partitionKey().getKey(), sizes)
                   + 1; // flags
 

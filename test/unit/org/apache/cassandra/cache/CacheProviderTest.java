@@ -68,7 +68,7 @@ public class CacheProviderTest
 
         cfm = CFMetaData.Builder.create(KEYSPACE1, CF_STANDARD1)
                                         .addPartitionKey("pKey", AsciiType.instance)
-                                        .addRegularColumn(new ColumnIdentifier("col1", true), AsciiType.instance)
+                                        .addRegularColumn("col1", AsciiType.instance)
                                         .build();
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     SimpleStrategy.class,
@@ -78,14 +78,13 @@ public class CacheProviderTest
 
     private ArrayBackedPartition createPartition()
     {
-        ColumnDefinition cDef = new ColumnDefinition(cfm, ByteBufferUtil.bytes("col1"), AsciiType.instance, 0, ColumnDefinition.Kind.REGULAR);
-        RowUpdateBuilder builder = new RowUpdateBuilder(cfm, System.currentTimeMillis(), "key1");
-        builder.add(cDef, "val1");
-        builder.build().apply();
+        new RowUpdateBuilder(cfm, System.currentTimeMillis(), "key1")
+            .add("col1", "val1")
+            .build()
+            .apply();
 
         ColumnFamilyStore store = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD1);
-        DecoratedKey dk = StorageService.getPartitioner().decorateKey(ByteBufferUtil.bytes("key1"));
-        return Util.materializePartition(store, dk);
+        return Util.materializePartition(store, Util.dk("key1"));
     }
 
     private void simpleCase(ArrayBackedPartition partition, ICache<MeasureableString, IRowCacheEntry> cache)
@@ -104,13 +103,13 @@ public class CacheProviderTest
 
     private void assertDigests(IRowCacheEntry one, ArrayBackedPartition two)
     {
-        assertTrue(one instanceof ReadPartition);
+        assertTrue(one instanceof ArrayBackedPartition);
         try
         {
             MessageDigest d1 = MessageDigest.getInstance("MD5");
             MessageDigest d2 = MessageDigest.getInstance("MD5");
-            RowIterators.digest(((ReadPartition) one).rowIterator(), d1);
-            RowIterators.digest(((ReadPartition) two).rowIterator(), d2);
+            AtomIterators.digest(((ArrayBackedPartition) one).atomIterator(), d1);
+            AtomIterators.digest(((ArrayBackedPartition) two).atomIterator(), d2);
             assertTrue(MessageDigest.isEqual(d1.digest(), d2.digest()));
         }
         catch (NoSuchAlgorithmException e)
@@ -162,6 +161,7 @@ public class CacheProviderTest
     public void testKeys()
     {
         UUID cfId = UUID.randomUUID();
+
 
         byte[] b1 = {1, 2, 3, 4};
         RowCacheKey key1 = new RowCacheKey(cfId, ByteBuffer.wrap(b1));
