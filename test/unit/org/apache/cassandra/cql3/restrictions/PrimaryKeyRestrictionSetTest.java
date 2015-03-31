@@ -934,7 +934,7 @@ public class PrimaryKeyRestrictionSetTest
     private static Restriction newSingleEq(CFMetaData cfMetaData, int index, ByteBuffer value)
     {
         ColumnDefinition columnDef = getClusteringColumnDefinition(cfMetaData, index);
-        return new SingleColumnRestriction.EQ(columnDef, toTerm(value));
+        return new SingleColumnRestriction.EQRestriction(columnDef, toTerm(value));
     }
 
     /**
@@ -952,7 +952,7 @@ public class PrimaryKeyRestrictionSetTest
         {
             columnDefinitions.add(getClusteringColumnDefinition(cfMetaData, firstIndex + i));
         }
-        return new MultiColumnRestriction.EQ(columnDefinitions, toMultiItemTerminal(values));
+        return new MultiColumnRestriction.EQRestriction(columnDefinitions, toMultiItemTerminal(values));
     }
 
     /**
@@ -973,7 +973,7 @@ public class PrimaryKeyRestrictionSetTest
             columnDefinitions.add(getClusteringColumnDefinition(cfMetaData, firstIndex + i));
             terms.add(toMultiItemTerminal(values[i].toArray(new ByteBuffer[0])));
         }
-        return new MultiColumnRestriction.InWithValues(columnDefinitions, terms);
+        return new MultiColumnRestriction.InRestrictionWithValues(columnDefinitions, terms);
     }
 
     /**
@@ -987,7 +987,7 @@ public class PrimaryKeyRestrictionSetTest
     private static Restriction newSingleIN(CFMetaData cfMetaData, int index, ByteBuffer... values)
     {
         ColumnDefinition columnDef = getClusteringColumnDefinition(cfMetaData, index);
-        return new SingleColumnRestriction.InWithValues(columnDef, toTerms(values));
+        return new SingleColumnRestriction.InRestrictionWithValues(columnDef, toTerms(values));
     }
 
     /**

@@ -132,6 +132,7 @@ public class PartitionColumns implements Iterable<ColumnDefinition>
             }
             else
             {
+                assert c.isRegular();
                 if (regularColumns == null)
                     regularColumns = new TreeSet<>();
                 regularColumns.add(c);

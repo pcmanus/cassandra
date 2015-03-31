@@ -149,11 +149,11 @@ public abstract class TokenRestriction extends AbstractPrimaryKeyRestrictions
         return new PrimaryKeyRestrictionSet(comparator, true).mergeWith(restriction);
     }
 
-    public static final class EQ extends TokenRestriction
+    public static final class EQRestriction extends TokenRestriction
     {
         private final Term value;
 
-        public EQ(ClusteringComparator comparator, List<ColumnDefinition> columnDefs, Term value)
+        public EQRestriction(ClusteringComparator comparator, List<ColumnDefinition> columnDefs, Term value)
         {
             super(comparator, columnDefs);
             this.value = value;

@@ -141,12 +141,12 @@ public final class SingleColumnRelation extends Relation
         if (mapKey == null)
         {
             Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
-            return new SingleColumnRestriction.EQ(columnDef, term);
+            return new SingleColumnRestriction.EQRestriction(columnDef, term);
         }
         List<? extends ColumnSpecification> receivers = toReceivers(columnDef, cfm.isDense());
         Term entryKey = toTerm(Collections.singletonList(receivers.get(0)), mapKey, cfm.ksName, boundNames);
         Term entryValue = toTerm(Collections.singletonList(receivers.get(1)), value, cfm.ksName, boundNames);
-        return new SingleColumnRestriction.Contains(columnDef, entryKey, entryValue);
+        return new SingleColumnRestriction.ContainsRestriction(columnDef, entryKey, entryValue);
     }
 
     @Override
@@ -159,9 +159,9 @@ public final class SingleColumnRelation extends Relation
         if (terms == null)
         {
             Term term = toTerm(receivers, value, cfm.ksName, boundNames);
-            return new SingleColumnRestriction.InWithMarker(columnDef, (Lists.Marker) term);
+            return new SingleColumnRestriction.InRestrictionWithMarker(columnDef, (Lists.Marker) term);
         }
-        return new SingleColumnRestriction.InWithValues(columnDef, terms);
+        return new SingleColumnRestriction.InRestrictionWithValues(columnDef, terms);
     }
 
     @Override
@@ -182,7 +182,7 @@ public final class SingleColumnRelation extends Relation
     {
         ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
         Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
-        return new SingleColumnRestriction.Contains(columnDef, term, isKey);
+        return new SingleColumnRestriction.ContainsRestriction(columnDef, term, isKey);
     }
 
     /**

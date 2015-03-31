@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3.restrictions;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.statements.Bound;
@@ -106,6 +107,15 @@ final class PrimaryKeyRestrictionSet extends AbstractPrimaryKeyRestrictions
             this.in = true;
         else
             this.eq = true;
+    }
+
+    private List<ByteBuffer> toByteBuffers(SortedSet<? extends ClusteringPrefix> clusterings)
+    {
+        // It's currently a tad hard to follow that this is only called for partition key so we should fix that
+        List<ByteBuffer> l = new ArrayList<>(clusterings.size());
+        for (ClusteringPrefix clustering : clusterings)
+            l.add(CFMetaData.serializePartitionKey(clustering));
+        return l;
     }
 
     @Override
@@ -274,20 +284,14 @@ final class PrimaryKeyRestrictionSet extends AbstractPrimaryKeyRestrictions
                                   SecondaryIndexManager indexManager,
                                   QueryOptions options) throws InvalidRequestException
     {
-        Boolean clusteringColumns = null;
         int position = 0;
 
         for (Restriction restriction : restrictions)
         {
             ColumnDefinition columnDef = restriction.getFirstColumn();
 
-            // PrimaryKeyRestrictionSet contains only one kind of column, either partition key or clustering columns.
-            // Therefore we only need to check the column kind once. All the other columns will be of the same kind.
-            if (clusteringColumns == null)
-                clusteringColumns = columnDef.isClusteringColumn() ? Boolean.TRUE : Boolean.FALSE;
-
             // We ignore all the clustering columns that can be handled by slices.
-            if (clusteringColumns && !restriction.isContains()&& position == columnDef.position())
+            if (!isPartitionKey && !restriction.isContains()&& position == columnDef.position())
             {
                 position = restriction.getLastColumn().position() + 1;
                 if (!restriction.hasSupportingIndex(indexManager))

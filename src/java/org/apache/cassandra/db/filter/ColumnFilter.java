@@ -71,11 +71,6 @@ public class ColumnFilter implements Iterable<ColumnFilter.Expression>
         expressions.add(new MapEqualityExpression(def, key, op, value));
     }
 
-    public void add(Expression expression)
-    {
-        expressions.add(expression);
-    }
-
     /**
      * Filters the provided iterator so that only the row satisfying the expression of this filter
      * are included in the resulting iterator.

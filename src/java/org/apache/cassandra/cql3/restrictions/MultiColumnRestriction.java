@@ -51,14 +51,6 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
         this.columnDefs = columnDefs;
     }
 
-    protected boolean isPartitionKey()
-    {
-        for (ColumnDefinition def : columnDefs)
-            if (!def.isPartitionKey())
-                return false;
-        return true;
-    }
-
     @Override
     public boolean isMultiColumn()
     {
@@ -136,11 +128,11 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
      */
     protected abstract boolean isSupportedBy(SecondaryIndex index);
 
-    public static class EQ extends MultiColumnRestriction
+    public static class EQRestriction extends MultiColumnRestriction
     {
         protected final Term value;
 
-        public EQ(List<ColumnDefinition> columnDefs, Term value)
+        public EQRestriction(List<ColumnDefinition> columnDefs, Term value)
         {
             super(columnDefs);
             this.value = value;
@@ -198,9 +190,9 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
         }
     }
 
-    public abstract static class IN extends MultiColumnRestriction
+    public abstract static class INRestriction extends MultiColumnRestriction
     {
-        public IN(List<ColumnDefinition> columnDefs)
+        public INRestriction(List<ColumnDefinition> columnDefs)
         {
             super(columnDefs);
         }
@@ -261,11 +253,11 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
      * An IN restriction that has a set of terms for in values.
      * For example: "SELECT ... WHERE (a, b, c) IN ((1, 2, 3), (4, 5, 6))" or "WHERE (a, b, c) IN (?, ?)"
      */
-    public static class InWithValues extends MultiColumnRestriction.IN
+    public static class InRestrictionWithValues extends INRestriction
     {
         protected final List<Term> values;
 
-        public InWithValues(List<ColumnDefinition> columnDefs, List<Term> values)
+        public InRestrictionWithValues(List<ColumnDefinition> columnDefs, List<Term> values)
         {
             super(columnDefs);
             this.values = values;
@@ -300,11 +292,11 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
      * An IN restriction that uses a single marker for a set of IN values that are tuples.
      * For example: "SELECT ... WHERE (a, b, c) IN ?"
      */
-    public static class InWithMarker extends MultiColumnRestriction.IN
+    public static class InRestrictionWithMarker extends INRestriction
     {
         protected final AbstractMarker marker;
 
-        public InWithMarker(List<ColumnDefinition> columnDefs, AbstractMarker marker)
+        public InRestrictionWithMarker(List<ColumnDefinition> columnDefs, AbstractMarker marker)
         {
             super(columnDefs);
             this.marker = marker;

@@ -69,7 +69,7 @@ public final class TokenRelation extends Relation
     {
         List<ColumnDefinition> columnDefs = getColumnDefinitions(cfm);
         Term term = toTerm(toReceivers(cfm, columnDefs), value, cfm.ksName, boundNames);
-        return new TokenRestriction.EQ(cfm.getKeyValidatorAsClusteringComparator(), columnDefs, term);
+        return new TokenRestriction.EQRestriction(cfm.getKeyValidatorAsClusteringComparator(), columnDefs, term);
     }
 
     @Override

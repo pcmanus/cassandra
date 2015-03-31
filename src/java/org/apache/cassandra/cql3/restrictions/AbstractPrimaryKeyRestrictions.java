@@ -20,7 +20,6 @@ package org.apache.cassandra.cql3.restrictions;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.db.ClusteringPrefix;
@@ -58,14 +57,5 @@ abstract class AbstractPrimaryKeyRestrictions extends AbstractRestriction implem
     public final int size()
     {
         return getColumnDefs().size();
-    }
-
-    protected List<ByteBuffer> toByteBuffers(SortedSet<? extends ClusteringPrefix> clusterings)
-    {
-        // It's currently a tad hard to follow that this is only called for partition key so we should fix that
-        List<ByteBuffer> l = new ArrayList<>(clusterings.size());
-        for (ClusteringPrefix clustering : clusterings)
-            l.add(CFMetaData.serializePartitionKey(clustering));
-        return l;
     }
 }

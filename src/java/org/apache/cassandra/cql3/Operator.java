@@ -41,12 +41,6 @@ public enum Operator
         {
             return "<";
         }
-
-        @Override
-        public Operator reverse()
-        {
-            return GT;
-        }
     },
     LTE(3)
     {
@@ -54,12 +48,6 @@ public enum Operator
         public String toString()
         {
             return "<=";
-        }
-
-        @Override
-        public Operator reverse()
-        {
-            return GTE;
         }
     },
     GTE(1)
@@ -69,12 +57,6 @@ public enum Operator
         {
             return ">=";
         }
-
-        @Override
-        public Operator reverse()
-        {
-            return LTE;
-        }
     },
     GT(2)
     {
@@ -82,12 +64,6 @@ public enum Operator
         public String toString()
         {
             return ">";
-        }
-
-        @Override
-        public Operator reverse()
-        {
-            return LT;
         }
     },
     IN(7)
@@ -192,15 +168,5 @@ public enum Operator
     public String toString()
     {
          return this.name();
-    }
-
-    /**
-     * Returns the reverse operator if this one.
-     *
-     * @return the reverse operator of this one.
-     */
-    public Operator reverse()
-    {
-        return this;
     }
 }

@@ -97,11 +97,11 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
      */
     protected abstract boolean isSupportedBy(SecondaryIndex index);
 
-    public static final class EQ extends SingleColumnRestriction
+    public static final class EQRestriction extends SingleColumnRestriction
     {
         private final Term value;
 
-        public EQ(ColumnDefinition columnDef, Term value)
+        public EQRestriction(ColumnDefinition columnDef, Term value)
         {
             super(columnDef);
             this.value = value;
@@ -154,9 +154,9 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
         }
     }
 
-    public static abstract class IN extends SingleColumnRestriction
+    public static abstract class INRestriction extends SingleColumnRestriction
     {
-        public IN(ColumnDefinition columnDef)
+        public INRestriction(ColumnDefinition columnDef)
         {
             super(columnDef);
         }
@@ -201,11 +201,11 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
         protected abstract List<ByteBuffer> getValues(QueryOptions options) throws InvalidRequestException;
     }
 
-    public static class InWithValues extends IN
+    public static class InRestrictionWithValues extends INRestriction
     {
         protected final List<Term> values;
 
-        public InWithValues(ColumnDefinition columnDef, List<Term> values)
+        public InRestrictionWithValues(ColumnDefinition columnDef, List<Term> values)
         {
             super(columnDef);
             this.values = values;
@@ -233,11 +233,11 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
         }
     }
 
-    public static class InWithMarker extends IN
+    public static class InRestrictionWithMarker extends INRestriction
     {
         protected final AbstractMarker marker;
 
-        public InWithMarker(ColumnDefinition columnDef, AbstractMarker marker)
+        public InRestrictionWithMarker(ColumnDefinition columnDef, AbstractMarker marker)
         {
             super(columnDef);
             this.marker = marker;
@@ -358,14 +358,14 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
     }
 
     // This holds CONTAINS, CONTAINS_KEY, and map[key] = value restrictions because we might want to have any combination of them.
-    public static final class Contains extends SingleColumnRestriction
+    public static final class ContainsRestriction extends SingleColumnRestriction
     {
         private List<Term> values = new ArrayList<>(); // for CONTAINS
         private List<Term> keys = new ArrayList<>(); // for CONTAINS_KEY
         private List<Term> entryKeys = new ArrayList<>(); // for map[key] = value
         private List<Term> entryValues = new ArrayList<>(); // for map[key] = value
 
-        public Contains(ColumnDefinition columnDef, Term t, boolean isKey)
+        public ContainsRestriction(ColumnDefinition columnDef, Term t, boolean isKey)
         {
             super(columnDef);
             if (isKey)
@@ -374,7 +374,7 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
                 values.add(t);
         }
 
-        public Contains(ColumnDefinition columnDef, Term mapKey, Term mapValue)
+        public ContainsRestriction(ColumnDefinition columnDef, Term mapKey, Term mapValue)
         {
             super(columnDef);
             entryKeys.add(mapKey);
@@ -400,10 +400,10 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
                       "Collection column %s can only be restricted by CONTAINS, CONTAINS KEY, or map-entry equality",
                       columnDef.name);
 
-            SingleColumnRestriction.Contains newContains = new Contains(columnDef);
+            SingleColumnRestriction.ContainsRestriction newContains = new ContainsRestriction(columnDef);
 
             copyKeysAndValues(this, newContains);
-            copyKeysAndValues((Contains) otherRestriction, newContains);
+            copyKeysAndValues((ContainsRestriction) otherRestriction, newContains);
 
             return newContains;
         }
@@ -508,7 +508,7 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
          * @param from the <code>Contains</code> to copy from
          * @param to the <code>Contains</code> to copy to
          */
-        private static void copyKeysAndValues(Contains from, Contains to)
+        private static void copyKeysAndValues(ContainsRestriction from, ContainsRestriction to)
         {
             to.values.addAll(from.values);
             to.keys.addAll(from.keys);
@@ -516,7 +516,7 @@ public abstract class SingleColumnRestriction extends AbstractRestriction
             to.entryValues.addAll(from.entryValues);
         }
 
-        private Contains(ColumnDefinition columnDef)
+        private ContainsRestriction(ColumnDefinition columnDef)
         {
             super(columnDef);
         }
