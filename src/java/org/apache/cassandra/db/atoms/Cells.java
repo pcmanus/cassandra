@@ -216,7 +216,15 @@ public abstract class Cells
         boolean c1Live = c1.isLive(nowInSec);
         if (c1Live != c2.isLive(nowInSec))
             return c1Live ? c2 : c1;
-        return c1.value().compareTo(c2.value()) < 0 ? c2 : c1;
+
+        int c = c1.value().compareTo(c2.value());
+        if (c < 0)
+            return c2;
+        else if (c > 0)
+            return c1;
+
+        // Prefer the longest ttl if relevant
+        return c1.livenessInfo().localDeletionTime() < c2.livenessInfo().localDeletionTime() ? c2 : c1;
     }
 
     /**

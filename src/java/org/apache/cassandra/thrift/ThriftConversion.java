@@ -349,8 +349,8 @@ public class ThriftConversion
         }
         else
         {
-            defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_KEY_ALIAS + 1, comparator, 0));
-            defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_KEY_ALIAS + 2, subComparator, 1));
+            defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_CLUSTERING_ALIAS + 1, comparator, 0));
+            defs.add(ColumnDefinition.clusteringKeyDef(ks, cf, DEFAULT_CLUSTERING_ALIAS + 2, subComparator, 1));
         }
 
         if (defaultValidator != null)

@@ -133,7 +133,13 @@ class CellData
             return;
         }
 
-        if (d1.values[i1].compareTo(d2.values[i2]) < 0)
+        int c = d1.values[i1].compareTo(d2.values[i2]);
+        if (c < 0)
+            d2.moveCell(i2, merged, iMerged);
+        else if (c > 0)
+            d1.moveCell(i1, merged, iMerged);
+
+        if (d1.livenessInfos.localDeletionTime(i1) < d2.livenessInfos.localDeletionTime(i2))
             d2.moveCell(i2, merged, iMerged);
         else
             d1.moveCell(i1, merged, iMerged);
