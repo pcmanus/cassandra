@@ -241,16 +241,16 @@ public abstract class CQLTester
             {
                 try
                 {
-                    for (int i = tablesToDrop.size() - 1; i >=0; i--)
+                    for (int i = tablesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP TABLE IF EXISTS %s.%s", KEYSPACE, tablesToDrop.get(i)));
 
-                    for (int i = aggregatesToDrop.size() - 1; i >=0; i--)
+                    for (int i = aggregatesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP AGGREGATE IF EXISTS %s", aggregatesToDrop.get(i)));
 
-                    for (int i = functionsToDrop.size() - 1; i >=0; i--)
+                    for (int i = functionsToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP FUNCTION IF EXISTS %s", functionsToDrop.get(i)));
 
-                    for (int i = typesToDrop.size() - 1; i >=0; i--)
+                    for (int i = typesToDrop.size() - 1; i >= 0; i--)
                         schemaChange(String.format("DROP TYPE IF EXISTS %s.%s", KEYSPACE, typesToDrop.get(i)));
 
                     // Dropping doesn't delete the sstables. It's not a huge deal but it's cleaner to cleanup after us
@@ -261,10 +261,10 @@ public abstract class CQLTester
                     final CountDownLatch latch = new CountDownLatch(1);
                     ScheduledExecutors.nonPeriodicTasks.execute(new Runnable()
                     {
-                            public void run()
-                            {
-                                latch.countDown();
-                            }
+                        public void run()
+                        {
+                            latch.countDown();
+                        }
                     });
                     latch.await(2, TimeUnit.SECONDS);
 
@@ -335,6 +335,15 @@ public abstract class CQLTester
         {
             throw new RuntimeException(e);
         }
+    }
+
+    public ColumnFamilyStore cfs()
+    {
+        String currentTable = currentTable();
+        if (currentTable != null)
+            return Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable);
+
+        return null;
     }
 
     public boolean usePrepared()
