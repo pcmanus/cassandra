@@ -208,7 +208,6 @@ public class SSTableIterator extends AbstractSSTableIterator
             {
                 private boolean beforeStart = true;
                 private int currentIndexIdx = startIdx;
-                private IndexHelper.IndexInfo currentIndex = startIndex;
 
                 protected Atom computeNext()
                 {
@@ -235,7 +234,7 @@ public class SSTableIterator extends AbstractSSTableIterator
                         }
 
                         // If we've crossed an index block boundary, update our informations
-                        if (currentIndexIdx < indexes.size() && file.bytesPastMark(mark) >= currentIndex.width)
+                        if (currentIndexIdx < indexes.size() && file.bytesPastMark(mark) >= currentIndex().width)
                             updateBlock(++currentIndexIdx);
 
                         // Return the next atom unless we've reached the end, or we're beyond our slice
