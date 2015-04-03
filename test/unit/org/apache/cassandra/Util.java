@@ -30,6 +30,7 @@ import java.util.concurrent.Future;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.atoms.*;
@@ -86,6 +87,12 @@ public class Util
     }
 
 
+    public static Cell getRegularCell(CFMetaData metadata, Row row, String name)
+    {
+        ColumnDefinition cdef = new ColumnDefinition(metadata.ksName, metadata.cfName, new ColumnIdentifier(name, true), metadata.columnNameComparator, null, ColumnDefinition.Kind.REGULAR);
+
+        return row.getCell(cdef);
+    }
 
     /*
     public static CellName cellname(String... strs)
@@ -175,7 +182,8 @@ public class Util
         if (superColumn != null)
             filter.add(cfs.metadata.compactValueColumn(), Operator.EQ, superColumn);
 
-        ReadCommand command =  new PartitionRangeReadCommand(cfs.metadata, FBUtilities.nowInSeconds(), filter, DataLimits.cqlLimits(100000), DataRange.allData(cfs.metadata, cfs.partitioner));
+
+        ReadCommand command = new PartitionRangeReadCommand(cfs.metadata, FBUtilities.nowInSeconds() +1 , filter, DataLimits.cqlLimits(100000), DataRange.allData(cfs.metadata, cfs.partitioner));
 
         return command.executeLocally(cfs);
     }

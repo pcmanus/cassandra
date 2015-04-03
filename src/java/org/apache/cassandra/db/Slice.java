@@ -102,6 +102,17 @@ public class Slice
         return new Slice(Bound.inclusiveStartOf(values), Bound.inclusiveEndOf(values));
     }
 
+    public static Slice make(ClusteringComparator comparator, Clustering start, Clustering end)
+    {
+        // This doesn't give us what we want with the clustering prefix
+        assert start != Clustering.STATIC_CLUSTERING && end != Clustering.STATIC_CLUSTERING;
+
+        ByteBuffer[] startValues = extractValues(start);
+        ByteBuffer[] endValues = extractValues(end);
+
+        return new Slice(Bound.inclusiveStartOf(startValues), Bound.inclusiveEndOf(endValues));
+    }
+
     private static ByteBuffer[] extractValues(ClusteringPrefix clustering)
     {
         ByteBuffer[] values = new ByteBuffer[clustering.size()];
@@ -338,6 +349,11 @@ public class Slice
         {
             super.writeTo(writer);
             writer.writeBoundKind(kind());
+        }
+
+        public Bound invert()
+        {
+            return withNewKind(kind().invert());
         }
 
         // For use by intersects, it's called with the sstable bound opposite to the slice bound

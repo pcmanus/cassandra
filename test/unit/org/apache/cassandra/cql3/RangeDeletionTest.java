@@ -30,6 +30,6 @@ public class RangeDeletionTest extends CQLTester
         flush();
         execute("DELETE FROM %s WHERE a=? AND b=?", 1, 1);
         flush();
-        assertEmpty(execute("SELECT * FROM %s WHERE a=? AND b=? AND c=?", 1, 1, 1));
+        assertEmpty(execute("SELECT * FROM %s"));
     }
 }

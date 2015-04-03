@@ -77,7 +77,24 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
         {
             return this != Kind.EXCL_START_BOUND && this != Kind.EXCL_END_BOUND;
         }
+
+        public Kind invert()
+        {
+            switch (this)
+            {
+                case EXCL_START_BOUND: return EXCL_END_BOUND;
+                case EXCL_END_BOUND: return EXCL_START_BOUND;
+                case INCL_END_BOUND: return INCL_START_BOUND;
+                case INCL_START_BOUND: return INCL_END_BOUND;
+                case CLUSTERING: return CLUSTERING;
+                case STATIC_CLUSTERING: return STATIC_CLUSTERING;
+                default:
+                    throw new IllegalStateException("Missing entry for " + this);
+            }
+        }
     }
+
+
 
     public Kind kind();
 

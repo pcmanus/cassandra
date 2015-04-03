@@ -522,6 +522,9 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
         {
             assert i == 0 || comparator.compare(ends[i-1], start) <= 0;
 
+            if (i > 0 && !start.isStart())
+                start = start.invert();
+
             int c = comparator.compare(start, ends[i]);
             assert c <= 0;
             if (c == 0)
@@ -558,7 +561,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
                 // First deal with what might come before the newly added one.
                 if (comparator.compare(starts[i], start) < 0)
                 {
-                    addInternal(i, starts[i], start, markedAts[i], delTimes[i]);
+                    addInternal(i, starts[i], start.invert(), markedAts[i], delTimes[i]);
                     i++;
                     // We don't need to do the following line, but in spirit that's what we want to do
                     // setInternal(i, start, ends[i], markedAts, delTime])
@@ -609,7 +612,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
                     // one to reflect the not overwritten parts. We're then done.
                     addInternal(i, start, end, markedAt, delTime);
                     i++;
-                    setInternal(i, end, ends[i], markedAts[i], delTimes[i]);
+                    setInternal(i, end.invert(), ends[i], markedAts[i], delTimes[i]);
                     return;
                 }
             }
@@ -628,7 +631,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
                         addInternal(i, start, end, markedAt, delTime);
                         return;
                     }
-                    addInternal(i, start, starts[i], markedAt, delTime);
+                    addInternal(i, start, starts[i].invert(), markedAt, delTime);
                     i++;
                 }
 

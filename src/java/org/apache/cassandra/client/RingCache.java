@@ -29,7 +29,6 @@ import org.apache.cassandra.dht.Token;
 //import org.apache.cassandra.hadoop.ConfigHelper;
 import org.apache.cassandra.thrift.Cassandra;
 import org.apache.cassandra.thrift.TokenRange;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.thrift.TException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

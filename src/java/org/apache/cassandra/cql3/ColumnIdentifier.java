@@ -42,7 +42,7 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
 public class ColumnIdentifier extends org.apache.cassandra.cql3.selection.Selectable implements IMeasurableMemory
 {
     public final ByteBuffer bytes;
-    private final String text;
+    public final String text;
 
     private static final long EMPTY_SIZE = ObjectSizes.measure(new ColumnIdentifier("", true));
 

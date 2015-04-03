@@ -52,7 +52,7 @@ public class RowUpdateBuilder
 
     private final Row.Writer writer;
 
-    private RowUpdateBuilder(PartitionUpdate update, long timestamp, int ttl, Mutation mutation)
+    public RowUpdateBuilder(PartitionUpdate update, long timestamp, int ttl, Mutation mutation)
     {
         this.update = update;
 
@@ -150,6 +150,13 @@ public class RowUpdateBuilder
         ColumnDefinition def = getDefinition(columnName);
         assert def.type.isCollection() && def.type.isMultiCell();
         writer.writeComplexDeletion(def, new SimpleDeletionTime(defaultLiveness.timestamp() - 1, update.nowInSec()));
+        return this;
+    }
+
+    public RowUpdateBuilder addRangeTombstone(Slice slice)
+    {
+        update.addRangeTombstone(slice, deletionTime);
+
         return this;
     }
 

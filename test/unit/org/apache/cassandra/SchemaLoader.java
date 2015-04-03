@@ -415,12 +415,16 @@ public class SchemaLoader
     }
     public static CFMetaData indexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
     {
-        CFMetaData cfm = CFMetaData.Builder.create(ksName, cfName).addPartitionKey("key",AsciiType.instance).build();
+        CFMetaData cfm = CFMetaData.Builder.create(ksName, cfName)
+                .addPartitionKey("key", AsciiType.instance)
+                .addClusteringColumn("cols", AsciiType.instance)
+                .addRegularColumn("birthdate", LongType.instance)
+                .build();
 
         ByteBuffer cName = ByteBufferUtil.bytes("birthdate");
-        IndexType keys = withIdxType ? IndexType.KEYS : null;
-        return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, LongType.instance, null)
-                                                       .setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, keys, null));
+        cfm.getColumnDefinition(cName).setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, IndexType.COMPOSITES, Collections.EMPTY_MAP);
+
+        return cfm;
     }
     public static CFMetaData compositeIndexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
     {
@@ -430,7 +434,7 @@ public class SchemaLoader
         ByteBuffer cName = ByteBufferUtil.bytes("col1");
         IndexType idxType = withIdxType ? IndexType.COMPOSITES : null;
         return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, UTF8Type.instance, 1)
-                                                       .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()));
+                .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()));
     }
     
     private static CFMetaData jdbcCFMD(String ksName, String cfName, AbstractType comp)
