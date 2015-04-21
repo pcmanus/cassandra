@@ -48,6 +48,10 @@ import org.apache.cassandra.transport.messages.QueryMessage;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.MD5Digest;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+
 public class MessagePayloadTest extends CQLTester
 {
     public static Map<String, byte[]> requestPayload;
@@ -210,9 +214,12 @@ public class MessagePayloadTest extends CQLTester
                     client.execute(queryMessage);
                     Assert.fail();
                 }
-                catch (ProtocolException e)
+                catch (RuntimeException e)
                 {
                     // that's what we want
+                    Throwable cause = e.getCause();
+                    assertNotNull(cause);
+                    assertTrue(cause instanceof ProtocolException);
                 }
                 queryMessage.setCustomPayload(null);
                 client.execute(queryMessage);
@@ -225,9 +232,12 @@ public class MessagePayloadTest extends CQLTester
                     client.execute(prepareMessage);
                     Assert.fail();
                 }
-                catch (ProtocolException e)
+                catch (RuntimeException e)
                 {
                     // that's what we want
+                    Throwable cause = e.getCause();
+                    assertNotNull(cause);
+                    assertTrue(cause instanceof ProtocolException);
                 }
                 prepareMessage.setCustomPayload(null);
                 ResultMessage.Prepared prepareResponse = (ResultMessage.Prepared) client.execute(prepareMessage);
@@ -241,9 +251,12 @@ public class MessagePayloadTest extends CQLTester
                     client.execute(executeMessage);
                     Assert.fail();
                 }
-                catch (ProtocolException e)
+                catch (RuntimeException e)
                 {
                     // that's what we want
+                    Throwable cause = e.getCause();
+                    assertNotNull(cause);
+                    assertTrue(cause instanceof ProtocolException);
                 }
 
                 BatchMessage batchMessage = new BatchMessage(BatchStatement.Type.UNLOGGED,
@@ -258,9 +271,12 @@ public class MessagePayloadTest extends CQLTester
                     client.execute(batchMessage);
                     Assert.fail();
                 }
-                catch (ProtocolException e)
+                catch (RuntimeException e)
                 {
                     // that's what we want
+                    Throwable cause = e.getCause();
+                    assertNotNull(cause);
+                    assertTrue(cause instanceof ProtocolException);
                 }
             }
             finally
