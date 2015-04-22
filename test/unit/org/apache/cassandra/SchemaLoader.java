@@ -485,7 +485,7 @@ public class SchemaLoader
                   .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()));
     }
     
-    private static CFMetaData jdbcCFMD(String ksName, String cfName, AbstractType comp)
+    public static CFMetaData jdbcCFMD(String ksName, String cfName, AbstractType comp)
     {
         return CFMetaData.Builder.create(ksName, cfName).addPartitionKey("key", comp).addClusteringColumn("name", comp).build();
     }

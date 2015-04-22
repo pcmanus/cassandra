@@ -148,7 +148,7 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
 
     private static Comparator<CellPath> makeCellPathComparator(Kind kind, AbstractType<?> validator)
     {
-        if (kind.isPrimaryKeyKind() || !validator.isCollection() || !validator.isMultiCell())
+        if ((kind != null && kind.isPrimaryKeyKind()) || !validator.isCollection() || !validator.isMultiCell())
             return null;
 
         final CollectionType type = (CollectionType)validator;
