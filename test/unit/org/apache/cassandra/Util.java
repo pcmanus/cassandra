@@ -354,7 +354,10 @@ public class Util
 
     public static ArrayBackedPartition materializePartition(ColumnFamilyStore cfs, DecoratedKey key)
     {
-        return ReadPartition.create(readFullPartition(cfs, key));
+        try (AtomIterator iter = readFullPartition(cfs, key))
+        {
+            return ReadPartition.create(iter);
+        }
     }
 
     public static Row getSingleRow(ColumnFamilyStore cfs, DecoratedKey dk)
