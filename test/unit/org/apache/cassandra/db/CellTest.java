@@ -128,7 +128,7 @@ public class CellTest
         return new TestCell(cdef, ByteBufferUtil.bytes(value), info);
     }
 
-    class TestCell extends AbstractCell
+    public static class TestCell extends AbstractCell
     {
         private final ColumnDefinition column;
         private final ByteBuffer value;
