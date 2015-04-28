@@ -29,22 +29,25 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
-
-import org.apache.cassandra.db.ClusteringPrefix;
+import com.google.common.collect.Iterators;
+import org.apache.commons.lang3.StringUtils;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.atoms.*;
-import org.apache.cassandra.db.filter.*;
-import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.atoms.AtomIterator;
+import org.apache.cassandra.db.atoms.Cell;
+import org.apache.cassandra.db.atoms.Row;
 import org.apache.cassandra.db.compaction.AbstractCompactionTask;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.dht.Range;
@@ -59,6 +62,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.CounterId;
 import org.apache.cassandra.utils.FBUtilities;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class Util
@@ -429,5 +434,42 @@ public class Util
         for (ColumnDefinition def : clusteringColumns)
             types.add(def.type);
         return CBuilder.create(new ClusteringComparator(types));
+    }
+
+    // moved & refactored from KeyspaceTest in < 3.0
+    public static void assertColumns(Row row, String... expectedColumnNames)
+    {
+        Iterator<Cell> cells = row == null ? Iterators.<Cell>emptyIterator() : row.iterator();
+        String[] actual = Iterators.toArray(Iterators.transform(cells, new Function<Cell, String>()
+        {
+            public String apply(Cell cell)
+            {
+                return cell.column().name.toString();
+            }
+        }), String.class);
+
+        assert Arrays.equals(actual, expectedColumnNames)
+        : String.format("Columns [%s])] is not expected [%s]",
+                        ((row == null) ? "" : row.columns().toString()),
+                        StringUtils.join(expectedColumnNames, ","));
+    }
+
+    public static void assertColumn(CFMetaData cfm, Row row, String name, String value, long timestamp)
+    {
+        Cell cell = row.getCell(cfm.getColumnDefinition(new ColumnIdentifier(name, true)));
+        assertColumn(cell, value, timestamp);
+    }
+
+    public static void assertColumn(Cell cell, String value, long timestamp)
+    {
+        assertNotNull(cell);
+        assertEquals(0, ByteBufferUtil.compareUnsigned(cell.value(), ByteBufferUtil.bytes(value)));
+        assertEquals(timestamp, cell.livenessInfo().timestamp());
+    }
+
+    public static void assertClustering(CFMetaData cfm, Row row, Object... clusteringValue)
+    {
+        assertEquals(row.clustering().size(), clusteringValue.length);
+        assertEquals(0, cfm.comparator.compare(row.clustering(), cfm.comparator.make(clusteringValue)));
     }
 }
