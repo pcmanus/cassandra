@@ -28,9 +28,7 @@ import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 /**
@@ -149,7 +147,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
     public void update(ByteBuffer rowKey, Clustering clustering, Cell oldCell, Cell cell, OpOrder.Group opGroup, int nowInSec)
     {
         // insert the new value before removing the old one, so we never have a period
-        // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540                    
+        // where the row is invisible to both queries (the opposite seems preferable); see CASSANDRA-5540
         insert(rowKey, clustering, cell, opGroup, nowInSec);
         if (SecondaryIndexManager.shouldCleanupOldValue(oldCell, cell))
             delete(rowKey, clustering, oldCell, opGroup, nowInSec);
@@ -207,11 +205,11 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         indexCfs.metadata.reloadIndexMetadataProperties(baseCfs.metadata);
         indexCfs.reload();
     }
-    
+
     public long estimateResultRows()
     {
         return getIndexCfs().getMeanColumns();
-    } 
+    }
 
     public void validate(Clustering clustering) throws InvalidRequestException
     {
