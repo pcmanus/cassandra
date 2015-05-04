@@ -24,6 +24,7 @@ import java.security.MessageDigest;
 import com.google.common.base.Objects;
 
 import org.apache.cassandra.cache.IMeasurableMemory;
+import org.apache.cassandra.db.atoms.Cell;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileUtils;
@@ -114,6 +115,11 @@ public abstract class DeletionTime implements Comparable<DeletionTime>, IMeasura
     public boolean isPurgeable(long maxPurgeableTimestamp, int gcBefore)
     {
         return markedForDeleteAt() < maxPurgeableTimestamp && localDeletionTime() < gcBefore;
+    }
+
+    public Cell maybe(Cell cell)
+    {
+        return cell == null || deletes(cell.livenessInfo()) ? null : cell;
     }
 
     public boolean deletes(LivenessInfo info)

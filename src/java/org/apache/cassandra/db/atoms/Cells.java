@@ -128,10 +128,8 @@ public abstract class Cells
                                  int nowInSec,
                                  SecondaryIndexManager.Updater indexUpdater)
     {
-        if (deletion.deletes(existing.livenessInfo()))
-            existing = null;
-        if (deletion.deletes(update.livenessInfo()))
-            update = null;
+        existing = deletion.maybe(existing);
+        update = deletion.maybe(update);
         if (existing == null || update == null)
         {
             if (update != null)
