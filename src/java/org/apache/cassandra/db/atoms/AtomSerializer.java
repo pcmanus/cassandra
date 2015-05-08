@@ -151,14 +151,14 @@ public class AtomSerializer
         if (!isStatic)
             Clustering.serializer.serialize(row.clustering(), out, version, header.clusteringTypes());
 
-        if (pkLiveness.hasTimestamp())
+        if ((flags & HAS_TIMESTAMP) != 0)
             out.writeLong(header.encodeTimestamp(pkLiveness.timestamp()));
-        if (pkLiveness.hasTTL())
+        if ((flags & HAS_TTL) != 0)
         {
             out.writeInt(header.encodeTTL(pkLiveness.ttl()));
             out.writeInt(header.encodeDeletionTime(pkLiveness.localDeletionTime()));
         }
-        if (!deletion.isLive())
+        if ((flags & HAS_DELETION) != 0)
             AtomIteratorSerializer.writeDelTime(deletion, header, out);
 
         if (!header.isForSSTable())

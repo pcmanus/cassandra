@@ -128,19 +128,19 @@ public abstract class Cells
                                  int nowInSec,
                                  SecondaryIndexManager.Updater indexUpdater)
     {
-        if (existing == null || deletion.deletes(existing.livenessInfo()))
+        existing = deletion.maybe(existing);
+        update = deletion.maybe(update);
+        if (existing == null || update == null)
         {
-            if (update == null || deletion.deletes(update.livenessInfo()))
-                return Long.MAX_VALUE;
-
-            indexUpdater.insert(clustering, update);
-            update.writeTo(writer);
-            return Long.MAX_VALUE;
-        }
-
-        if (update == null || deletion.deletes(update.livenessInfo()))
-        {
-            existing.writeTo(writer);
+            if (update != null)
+            {
+                indexUpdater.insert(clustering, update);
+                update.writeTo(writer);
+            }
+            else if (existing != null)
+            {
+                existing.writeTo(writer);
+            }
             return Long.MAX_VALUE;
         }
 
@@ -149,10 +149,7 @@ public abstract class Cells
 
         if (reconciled == update)
         {
-            if (existing == null)
-                indexUpdater.insert(clustering, reconciled);
-            else
-                indexUpdater.update(clustering, existing, reconciled);
+            indexUpdater.update(clustering, existing, reconciled);
         }
         return Math.abs(existing.livenessInfo().timestamp() - update.livenessInfo().timestamp());
     }

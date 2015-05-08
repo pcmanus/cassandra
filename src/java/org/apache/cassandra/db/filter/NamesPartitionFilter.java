@@ -98,7 +98,7 @@ public class NamesPartitionFilter extends AbstractPartitionFilter
     public NamesPartitionFilter forPaging(ClusteringComparator comparator, Clustering lastReturned, boolean inclusive)
     {
         int cmp = comparator.compare(lastReturned, clusteringsInQueryOrder.first());
-        if (cmp < 0 && (inclusive && cmp == 0))
+        if (cmp < 0 || (inclusive && cmp == 0))
             return this;
 
         SortedSet<Clustering> newClusterings;

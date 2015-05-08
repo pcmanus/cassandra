@@ -242,7 +242,7 @@ public class Memtable
         boolean isBound = keyRange instanceof Bounds;
         boolean includeStart = isBound || keyRange instanceof IncludingExcludingBounds;
         boolean includeStop = isBound || keyRange instanceof Range;
-        Map<RowPosition, AtomicBTreePartition> subMap = null;
+        Map<RowPosition, AtomicBTreePartition> subMap;
         if (startIsMin)
             subMap = stopIsMin ? partitions : partitions.headMap(keyRange.right, includeStop);
         else
