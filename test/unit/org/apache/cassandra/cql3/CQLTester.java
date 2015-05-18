@@ -79,6 +79,8 @@ public abstract class CQLTester
     private static final Cluster[] cluster;
     private static final Session[] session;
 
+    private static boolean isServerPrepared = false;
+
     static int maxProtocolVersion;
     static {
         int version;
@@ -99,7 +101,7 @@ public abstract class CQLTester
         session = new Session[maxProtocolVersion];
 
         // Once per-JVM is enough
-        prepareServer();
+        prepareServer(true);
 
         nativeAddr = InetAddress.getLoopbackAddress();
 
@@ -128,8 +130,11 @@ public abstract class CQLTester
     // is not expected to be the same without preparation)
     private boolean usePrepared = USE_PREPARED_VALUES;
 
-    public static void prepareServer()
+    public static void prepareServer(boolean checkInit)
     {
+        if (checkInit && isServerPrepared)
+            return;
+
         // Cleanup first
         try
         {
@@ -146,10 +151,12 @@ public abstract class CQLTester
             public void uncaughtException(Thread t, Throwable e)
             {
                 logger.error("Fatal exception in thread " + t, e);
+                System.exit(5); //If we don't exit the test hangs
             }
         });
 
         Keyspace.setInitialized();
+        isServerPrepared = true;
     }
 
     public static void cleanupAndLeaveDirs() throws IOException
@@ -655,7 +662,7 @@ public abstract class CQLTester
                                         rows.length>i ? "less" : "more", rows.length, i, protocolVersion), i == rows.length);
     }
 
-    protected void assertRows(UntypedResultSet result, Object[]... rows)
+    public static void assertRows(UntypedResultSet result, Object[]... rows)
     {
         if (result == null)
         {
@@ -723,7 +730,7 @@ public abstract class CQLTester
         assertRows(execute("SELECT * FROM %s"), rows);
     }
 
-    protected Object[] row(Object... expected)
+    public static Object[] row(Object... expected)
     {
         return expected;
     }

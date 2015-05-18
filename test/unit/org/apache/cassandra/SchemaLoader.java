@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.cache.CachingOptions;
 import org.apache.cassandra.config.*;
+import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.restrictions.StatementRestrictions;
@@ -77,25 +78,7 @@ public class SchemaLoader
 
     public static void prepareServer()
     {
-        try
-        {
-            cleanupAndLeaveDirs();
-        }
-        catch (IOException e)
-        {
-            logger.error("Failed to cleanup and recreate directories.");
-            throw new RuntimeException(e);
-        }
-
-        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler()
-        {
-            public void uncaughtException(Thread t, Throwable e)
-            {
-                logger.error("Fatal exception in thread " + t, e);
-            }
-        });
-
-        Keyspace.setInitialized();
+       CQLTester.prepareServer(false);
     }
 
     public static void startGossiper()
