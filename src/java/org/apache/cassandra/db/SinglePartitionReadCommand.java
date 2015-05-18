@@ -513,7 +513,7 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
         private QueryPager getPager(ConsistencyLevel consistency, ClientState clientState, PagingState pagingState, boolean local)
         {
             if (commands.size() == 1)
-                return getPager(commands.get(0), consistency, clientState, pagingState, local);
+                return SinglePartitionReadCommand.getPager(commands.get(0), consistency, clientState, pagingState, local);
 
             return new MultiPartitionPager(commands, consistency, clientState, local, pagingState, limits);
         }
