@@ -517,6 +517,12 @@ public abstract class SinglePartitionReadCommand<F extends PartitionFilter> exte
 
             return new MultiPartitionPager(commands, consistency, clientState, local, pagingState, limits);
         }
+
+        @Override
+        public String toString()
+        {
+            return commands.toString();
+        }
     }
 
     private static class Deserializer extends SelectionDeserializer

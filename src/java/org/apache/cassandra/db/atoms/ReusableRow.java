@@ -130,6 +130,8 @@ public class ReusableRow extends AbstractReusableRow
             super.reset();
             clustering.reset();
             liveness.reset();
+            maxLiveTimestamp = LivenessInfo.NO_TIMESTAMP;
+            deletion = DeletionTime.LIVE;
             return this;
         }
     }
