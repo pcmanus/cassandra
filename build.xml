@@ -96,8 +96,6 @@
 
     <property name="test.timeout" value="1200000" />
     <property name="test.long.timeout" value="600000" />
-    <property name="test.debug.suspend" value="n"/>
-    <property name="test.debug.port" value="5005"/>
 
     <!-- default for cql tests. Can be override by -Dcassandra.test.use_prepared=false -->
     <property name="cassandra.test.use_prepared" value="true" />
@@ -1142,8 +1140,6 @@
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
 	    <jvmarg value="-Dcassandra.test.offsetseed=@{poffset}"/>
         <jvmarg value="-Dcassandra.test.sstableformatdevelopment=true"/>
-        <jvmarg value="-Xdebug"/>
-        <jvmarg value="-Xrunjdwp:transport=dt_socket,server=y,suspend=${test.debug.suspend},address=${test.debug.port}"/>
         <optjvmargs/>
         <classpath>
           <path refid="cassandra.classpath" />
