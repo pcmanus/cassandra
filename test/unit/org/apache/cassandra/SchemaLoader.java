@@ -443,13 +443,12 @@ public class SchemaLoader
     public static CFMetaData superCFMD(String ksName, String cfName, String ccName, AbstractType cc, AbstractType subcc)
     {
         //This is busted
-        /*return CFMetaData.Builder.createSuper(ksName, cfName, false)
-                .addPartitionKey("0", BytesType.instance)
-                .addClusteringColumn("1", cc)
-                .addClusteringColumn("2", subcc)
-                .addRegularColumn("3", AsciiType.instance)
-                .build(); */
-
+//        return CFMetaData.Builder.createSuper(ksName, cfName, false)
+//            .addPartitionKey("0", BytesType.instance)
+//            .addClusteringColumn("1", cc)
+//            .addClusteringColumn("2", subcc)
+//            .addRegularColumn("3", AsciiType.instance)
+//            .build();
         return standardCFMD(ksName, cfName);
 
     }
