@@ -61,16 +61,6 @@ public abstract class UnfilteredRowIterators
     }
 
     /**
-     * Returns whether the provided iterator has no data (including no deletion data).
-     */
-    public static boolean isEmpty(UnfilteredRowIterator iterator)
-    {
-        return iterator.partitionLevelDeletion().isLive()
-            && iterator.staticRow().isEmpty()
-            && !iterator.hasNext();
-    }
-
-    /**
      * Returns a iterator that only returns rows with only live content.
      *
      * This is mainly used in the CQL layer when we know we don't care about deletion

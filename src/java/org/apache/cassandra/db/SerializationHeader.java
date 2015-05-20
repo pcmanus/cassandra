@@ -320,6 +320,10 @@ public class SerializationHeader
                 ColumnDefinition column = metadata.getColumnDefinition(name);
                 if (column == null)
                 {
+                    // TODO 8099: this looks like a potential race condition with schema changes to me: within a given node we
+                    // can accept writes to a column not present in the metadata, or receive stream data without them.
+                    // This shouldn't cause deserialization to fail
+
                     // If we don't find the definition, it could be we have data for a dropped column, and we shouldn't
                     // fail deserialization because of that. So we grab a "fake" ColumnDefinition that ensure proper
                     // deserialization. The column will be ignore later on anyway.
