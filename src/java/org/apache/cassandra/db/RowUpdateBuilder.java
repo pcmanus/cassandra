@@ -134,7 +134,8 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder clustering(Object... clusteringValues)
     {
-        assert clusteringValues.length == update.metadata().comparator.size();
+        assert clusteringValues.length == update.metadata().comparator.size()
+            : "Invalid clustering values length. Expected: " + update.metadata().comparator.size() + " got: " + clusteringValues.length;
         hasSetClustering = true;
         if (clusteringValues.length > 0)
             Rows.writeClustering(update.metadata().comparator.make(clusteringValues), writer());
