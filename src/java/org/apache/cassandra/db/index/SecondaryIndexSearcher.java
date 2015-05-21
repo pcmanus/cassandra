@@ -25,16 +25,15 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.filter.*;
-import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
-import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.partitions.WrappingUnfilteredPartitionIterator;
+import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 
 public abstract class SecondaryIndexSearcher
 {
@@ -141,6 +140,9 @@ public abstract class SecondaryIndexSearcher
 
     private PartitionFilter makeIndexFilter(AbstractSimplePerColumnSecondaryIndex index, ReadCommand command)
     {
+        // Note: as yet there's no route to get here - a 2i query *always* uses a
+        // PartitionRangeReadCommand. This is here in preparation for coming changes
+        // in SelectStatement.
         if (command instanceof SinglePartitionReadCommand)
         {
             SinglePartitionReadCommand sprc = (SinglePartitionReadCommand)command;
@@ -166,6 +168,7 @@ public abstract class SecondaryIndexSearcher
         }
         else
         {
+
             DataRange dataRange = ((PartitionRangeReadCommand)command).dataRange();
             AbstractBounds<PartitionPosition> range = dataRange.keyRange();
 
@@ -178,40 +181,50 @@ public abstract class SecondaryIndexSearcher
              */
             if (range.left instanceof DecoratedKey)
             {
-                assert range.right instanceof DecoratedKey;
-
-                DecoratedKey startKey = (DecoratedKey)range.left;
-                DecoratedKey endKey = (DecoratedKey)range.right;
-
-                Slice.Bound start = Slice.Bound.BOTTOM;
-                Slice.Bound end = Slice.Bound.TOP;
-
-                /*
-                 * For index queries over a range, we can't do a whole lot better than querying everything for the key range, though for
-                 * slice queries where we can slightly restrict the beginning and end.
-                 */
-                if (!dataRange.isNamesQuery())
+                // the right hand side of the range may not be a DecoratedKey (for instance if we're paging),
+                // but if it is, we can optimise slightly by restricting the slice
+                if (range.right instanceof DecoratedKey)
                 {
-                    SlicePartitionFilter startSliceFilter = ((SlicePartitionFilter)dataRange.partitionFilter(startKey));
-                    SlicePartitionFilter endSliceFilter = ((SlicePartitionFilter)dataRange.partitionFilter(endKey));
 
-                    // We can't effectively support reversed queries when we have a range, so we don't support it
-                    // (or through post-query reordering) and shouldn't get there.
-                    assert !startSliceFilter.isReversed() && !endSliceFilter.isReversed();
+                    DecoratedKey startKey = (DecoratedKey) range.left;
+                    DecoratedKey endKey = (DecoratedKey) range.right;
 
-                    Slices startSlices = startSliceFilter.requestedSlices();
-                    Slices endSlices = endSliceFilter.requestedSlices();
+                    Slice.Bound start = Slice.Bound.BOTTOM;
+                    Slice.Bound end = Slice.Bound.TOP;
 
-                    if (startSlices.size() > 0)
-                        start = startSlices.get(0).start();
+                    /*
+                     * For index queries over a range, we can't do a whole lot better than querying everything for the key range, though for
+                     * slice queries where we can slightly restrict the beginning and end.
+                     */
+                    if (!dataRange.isNamesQuery())
+                    {
+                        SlicePartitionFilter startSliceFilter = ((SlicePartitionFilter) dataRange.partitionFilter(startKey));
+                        SlicePartitionFilter endSliceFilter = ((SlicePartitionFilter) dataRange.partitionFilter(endKey));
 
-                    if (endSlices.size() > 0)
-                        end = endSlices.get(endSlices.size() - 1).end();
+                        // We can't effectively support reversed queries when we have a range, so we don't support it
+                        // (or through post-query reordering) and shouldn't get there.
+                        assert !startSliceFilter.isReversed() && !endSliceFilter.isReversed();
+
+                        Slices startSlices = startSliceFilter.requestedSlices();
+                        Slices endSlices = endSliceFilter.requestedSlices();
+
+                        if (startSlices.size() > 0)
+                            start = startSlices.get(0).start();
+
+                        if (endSlices.size() > 0)
+                            end = endSlices.get(endSlices.size() - 1).end();
+                    }
+
+                    slice = Slice.make(index.makeIndexBound(startKey.getKey(), start),
+                                       index.makeIndexBound(endKey.getKey(), end));
                 }
-
-                slice = Slice.make(index.makeIndexBound(startKey.getKey(), start), index.makeIndexBound(endKey.getKey(), end));
+                else
+                {
+                   // otherwise,  just start the index slice from the key we do have
+                   slice = Slice.make(index.makeIndexBound(((DecoratedKey)range.left).getKey(), Slice.Bound.BOTTOM),
+                                      Slice.Bound.TOP);
+                }
             }
-
             return new SlicePartitionFilter(PartitionColumns.NONE, Slices.with(index.getIndexComparator(), slice), false);
         }
     }
