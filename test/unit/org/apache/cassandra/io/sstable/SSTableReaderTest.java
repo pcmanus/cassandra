@@ -99,7 +99,7 @@ public class SSTableReaderTest
                                     KSMetaData.optsWithRF(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
-                                    SchemaLoader.indexCFMD(KEYSPACE1, CF_INDEXED, true),
+                                    SchemaLoader.compositeIndexCFMD(KEYSPACE1, CF_INDEXED, true),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARDLOWINDEXINTERVAL)
                                                 .minIndexInterval(8)
                                                 .maxIndexInterval(256)
@@ -285,7 +285,7 @@ public class SSTableReaderTest
     {
         // Create secondary index and flush to disk
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
-        ColumnFamilyStore store = keyspace.getColumnFamilyStore("Indexed1");
+        ColumnFamilyStore store = keyspace.getColumnFamilyStore(CF_INDEXED);
 
         new RowUpdateBuilder(store.metadata, System.currentTimeMillis(), "k1")
             .clustering("0")

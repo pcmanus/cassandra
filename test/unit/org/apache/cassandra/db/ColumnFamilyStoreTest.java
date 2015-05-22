@@ -61,9 +61,6 @@ public class ColumnFamilyStoreTest
     public static final String CF_STANDARD2 = "Standard2";
     public static final String CF_SUPER1 = "Super1";
     public static final String CF_SUPER6 = "Super6";
-    public static final String CF_INDEX1 = "Indexed1";
-    public static final String CF_INDEX2 = "Indexed2";
-    public static final String CF_INDEX3 = "Indexed3";
 
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
@@ -73,19 +70,14 @@ public class ColumnFamilyStoreTest
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1),
-                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
-                                    SchemaLoader.indexCFMD(KEYSPACE1, CF_INDEX1, true),
-                                    SchemaLoader.indexCFMD(KEYSPACE1, CF_INDEX2, false));
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2));
                                     // TODO: Fix superCFMD failing on legacy table creation. Seems to be applying composite comparator to partition key
                                     // SchemaLoader.superCFMD(KEYSPACE1, CF_SUPER1, LongType.instance));
                                     // SchemaLoader.superCFMD(KEYSPACE1, CF_SUPER6, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", LexicalUUIDType.instance, UTF8Type.instance),
         SchemaLoader.createKeyspace(KEYSPACE2,
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
-                                    SchemaLoader.standardCFMD(KEYSPACE2, CF_STANDARD1),
-                                    SchemaLoader.indexCFMD(KEYSPACE2, CF_INDEX1, true),
-                                    SchemaLoader.compositeIndexCFMD(KEYSPACE2, CF_INDEX2, true),
-                                    SchemaLoader.compositeIndexCFMD(KEYSPACE2, CF_INDEX3, true).gcGraceSeconds(0));
+                                    SchemaLoader.standardCFMD(KEYSPACE2, CF_STANDARD1));
     }
 
     @Before
@@ -93,13 +85,9 @@ public class ColumnFamilyStoreTest
     {
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD1).truncateBlocking();
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD2).truncateBlocking();
-        Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_INDEX1).truncateBlocking();
         // Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_SUPER1).truncateBlocking();
 
         Keyspace.open(KEYSPACE2).getColumnFamilyStore(CF_STANDARD1).truncateBlocking();
-        Keyspace.open(KEYSPACE2).getColumnFamilyStore(CF_INDEX1).truncateBlocking();
-        Keyspace.open(KEYSPACE2).getColumnFamilyStore(CF_INDEX2).truncateBlocking();
-        Keyspace.open(KEYSPACE2).getColumnFamilyStore(CF_INDEX3).truncateBlocking();
     }
 
     @Test

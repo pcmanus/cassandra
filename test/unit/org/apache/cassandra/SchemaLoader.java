@@ -149,8 +149,8 @@ public class SchemaLoader
                 superCFMD(ks1, "Super4", UTF8Type.instance),
                 superCFMD(ks1, "Super5", bytes),
                 superCFMD(ks1, "Super6", LexicalUUIDType.instance, UTF8Type.instance),
-                indexCFMD(ks1, "Indexed1", true),
-                indexCFMD(ks1, "Indexed2", false),
+                keysIndexCFMD(ks1, "Indexed1", true),
+                keysIndexCFMD(ks1, "Indexed2", false),
                 //CFMetaData.Builder.create(ks1, "StandardInteger1").withColumnNameComparator(IntegerType.instance).build(),
                 //CFMetaData.Builder.create(ks1, "StandardLong3").withColumnNameComparator(IntegerType.instance).build(),
                 //CFMetaData.Builder.create(ks1, "Counter1", false, false, true).build(),
@@ -189,7 +189,7 @@ public class SchemaLoader
                 standardCFMD(ks2, "Standard3"),
                 superCFMD(ks2, "Super3", bytes),
                 superCFMD(ks2, "Super4", TimeUUIDType.instance),
-                indexCFMD(ks2, "Indexed1", true),
+                keysIndexCFMD(ks2, "Indexed1", true),
                 compositeIndexCFMD(ks2, "Indexed2", true),
                 compositeIndexCFMD(ks2, "Indexed3", true).gcGraceSeconds(0)));
 
@@ -200,7 +200,7 @@ public class SchemaLoader
 
                 // Column Families
                 standardCFMD(ks3, "Standard1"),
-                indexCFMD(ks3, "Indexed1", true)));
+                keysIndexCFMD(ks3, "Indexed1", true)));
 
         // Keyspace 4
         schema.add(KSMetaData.testMetadata(ks4,
@@ -225,7 +225,7 @@ public class SchemaLoader
         schema.add(KSMetaData.testMetadata(ks6,
                 simple,
                 opts_rf1,
-                indexCFMD(ks6, "Indexed1", true)));
+                keysIndexCFMD(ks6, "Indexed1", true)));
 
         // KeyCacheSpace
         schema.add(KSMetaData.testMetadata(ks_kcs,
@@ -457,33 +457,36 @@ public class SchemaLoader
         return standardCFMD(ksName, cfName);
 
     }
-    public static CFMetaData indexCFMD(String ksName, String cfName, boolean withIdxType) throws ConfigurationException
+    public static CFMetaData compositeIndexCFMD(String ksName, String cfName, boolean withIndex) throws ConfigurationException
     {
+        // the withIndex flag exists to allow tests index creation
+        // on existing columns
         CFMetaData cfm = CFMetaData.Builder.create(ksName, cfName)
                 .addPartitionKey("key", AsciiType.instance)
-                .addClusteringColumn("cols", AsciiType.instance)
+                .addClusteringColumn("c1", AsciiType.instance)
                 .addRegularColumn("birthdate", LongType.instance)
                 .addRegularColumn("notbirthdate", LongType.instance)
                 .build();
 
-        ByteBuffer cName = ByteBufferUtil.bytes("birthdate");
-        IndexType keys = withIdxType ? IndexType.COMPOSITES : null;
-        cfm.getColumnDefinition(cName).setIndex(withIdxType ? ByteBufferUtil.bytesToHex(cName) : null, keys, Collections.EMPTY_MAP);
+        if (withIndex)
+            cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true))
+               .setIndex("birthdate_index", IndexType.COMPOSITES, Collections.EMPTY_MAP);
 
         return cfm;
     }
-    public static CFMetaData compositeIndexCFMD(String ksName, String cfName, final Boolean withIdxType) throws ConfigurationException
+    public static CFMetaData keysIndexCFMD(String ksName, String cfName, boolean withIndex) throws ConfigurationException
     {
-        CFMetaData cfm = CFMetaData.Builder.create(ksName, cfName)
-                                           .addPartitionKey("key", BytesType.instance)
-                                           .addClusteringColumn("c1", UTF8Type.instance)
-                                           .addClusteringColumn("c2", UTF8Type.instance)
+        CFMetaData cfm = CFMetaData.Builder.createDense(ksName, cfName, false, false)
+                                           .addPartitionKey("key", AsciiType.instance)
+                                           .addClusteringColumn("c1", AsciiType.instance)
+                                           .addRegularColumn("birthdate", LongType.instance)
                                            .build();
 
-        ByteBuffer cName = ByteBufferUtil.bytes("col1");
-        IndexType idxType = withIdxType ? IndexType.COMPOSITES : null;
-        return cfm.addColumnDefinition(ColumnDefinition.regularDef(cfm, cName, UTF8Type.instance, 1)
-                  .setIndex(withIdxType ? "col1_idx" : null, idxType, Collections.<String, String>emptyMap()));
+        if (withIndex)
+            cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true))
+               .setIndex("birthdate_index", IndexType.KEYS, Collections.EMPTY_MAP);
+
+        return cfm;
     }
     
     public static CFMetaData jdbcCFMD(String ksName, String cfName, AbstractType comp)

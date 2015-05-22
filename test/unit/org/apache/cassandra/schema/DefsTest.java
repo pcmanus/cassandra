@@ -85,11 +85,11 @@ public class DefsTest
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(5),
                                     SchemaLoader.standardCFMD(KEYSPACE1, TABLE1),
-                                    SchemaLoader.indexCFMD(KEYSPACE3, TABLE1i, true));
+                                    SchemaLoader.compositeIndexCFMD(KEYSPACE3, TABLE1i, true));
         SchemaLoader.createKeyspace(KEYSPACE6,
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
-                                    SchemaLoader.indexCFMD(KEYSPACE6, TABLE1i, true));
+                                    SchemaLoader.compositeIndexCFMD(KEYSPACE6, TABLE1i, true));
     }
 
     @Test
