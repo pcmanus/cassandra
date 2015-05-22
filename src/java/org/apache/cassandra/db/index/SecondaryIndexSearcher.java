@@ -235,23 +235,6 @@ public abstract class SecondaryIndexSearcher
                                                             ReadCommand command,
                                                             OpOrder.Group writeOp);
 
-    /**
-     * @return true this index is able to handle the given index expressions.
-     */
-    public boolean canHandle(ColumnFilter filter)
-    {
-        for (ColumnFilter.Expression expression : filter)
-        {
-            if (!columns.contains(expression.column()))
-                continue;
-
-            SecondaryIndex index = indexManager.getIndexForColumn(expression.column());
-            if (index != null && index.getIndexCfs() != null && index.supportsOperator(expression.operator()))
-                return true;
-        }
-        return false;
-    }
-
     protected ColumnFilter.Expression highestSelectivityPredicate(ColumnFilter filter, boolean includeInTrace)
     {
         ColumnFilter.Expression best = null;
