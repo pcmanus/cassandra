@@ -90,4 +90,14 @@ public interface UnfilteredRowIterator extends Iterator<Unfiltered>, AutoCloseab
     public int nowInSec();
 
     public void close();
+
+    /**
+     * Returns whether this iterator has no data (including no deletion data).
+     */
+    public default boolean isEmpty()
+    {
+        return partitionLevelDeletion().isLive()
+               && staticRow().isEmpty()
+               && !hasNext();
+    }
 }

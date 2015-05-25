@@ -92,7 +92,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                                                           hit,
                                                           indexKey.getKey(),
                                                           writeOp);
-                    if (dataIter == null || UnfilteredRowIterators.isEmpty(dataIter))
+                    if (dataIter != null && dataIter.isEmpty())
                     {
                         dataIter.close();
                     }
