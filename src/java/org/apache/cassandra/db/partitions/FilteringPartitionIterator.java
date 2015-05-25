@@ -70,7 +70,7 @@ public abstract class FilteringPartitionIterator extends WrappingUnfilteredParti
             if (shouldFilter(iterator))
             {
                 next = new FilteringIterator(iterator);
-                if (!isForThrift() && UnfilteredRowIterators.isEmpty(next))
+                if (!isForThrift() && next.isEmpty())
                 {
                     onEmpty(iterator.partitionKey());
                     iterator.close();

@@ -131,7 +131,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                                                                                      partitionKey,
                                                                                      filter);
                 UnfilteredRowIterator dataIter = filterStaleEntries(dataCmd.queryMemtableAndDisk(baseCfs), index, indexKey.getKey(), entries, writeOp);
-                if (UnfilteredRowIterators.isEmpty(dataIter))
+                if (dataIter.isEmpty())
                 {
                     dataIter.close();
                     return prepareNext();

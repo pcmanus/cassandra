@@ -84,7 +84,7 @@ public class SinglePartitionNamesCommand extends SinglePartitionReadCommand<Name
 
             try (UnfilteredRowIterator iter = filter.getUnfilteredRowIterator(partition, nowInSec()))
             {
-                if (UnfilteredRowIterators.isEmpty(iter))
+                if (iter.isEmpty())
                     continue;
 
                 UnfilteredRowIterator clonedFilter = copyOnHeap
@@ -116,7 +116,7 @@ public class SinglePartitionNamesCommand extends SinglePartitionReadCommand<Name
             sstable.incrementReadCount();
             try (UnfilteredRowIterator iter = filter.filter(sstable.iterator(partitionKey(), filter.queriedColumns(), filter.isReversed(), nowInSec(), isForThrift())))
             {
-                if (UnfilteredRowIterators.isEmpty(iter))
+                if (iter.isEmpty())
                     continue;
 
                 sstablesIterated++;

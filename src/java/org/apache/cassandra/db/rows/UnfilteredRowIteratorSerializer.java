@@ -101,7 +101,7 @@ public class UnfilteredRowIteratorSerializer
         if (iterator.isReverseOrder())
             flags |= IS_REVERSED;
 
-        if (UnfilteredRowIterators.isEmpty(iterator))
+        if (iterator.isEmpty())
         {
             out.writeByte((byte)(flags | IS_EMPTY));
             return;
@@ -153,7 +153,7 @@ public class UnfilteredRowIteratorSerializer
                   + header.keyType().writtenLength(iterator.partitionKey().getKey(), sizes)
                   + 1; // flags
 
-        if (UnfilteredRowIterators.isEmpty(iterator))
+        if (iterator.isEmpty())
             return size;
 
         DeletionTime partitionDeletion = iterator.partitionLevelDeletion();

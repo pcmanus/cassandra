@@ -18,12 +18,12 @@
 package org.apache.cassandra.db;
 
 import java.io.File;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -88,7 +88,7 @@ public class Memtable
     // memtable was created with the new or old comparator.
     public final ClusteringComparator initialComparator;
 
-    private final ColumnsCollector columnsCollector = new ColumnsCollector();
+    private final ColumnsCollector columnsCollector;
     private final StatsCollector statsCollector = new StatsCollector();
 
     public Memtable(ColumnFamilyStore cfs)
@@ -97,6 +97,7 @@ public class Memtable
         this.allocator = MEMORY_POOL.newAllocator();
         this.initialComparator = cfs.metadata.comparator;
         this.cfs.scheduleFlush();
+        this.columnsCollector = new ColumnsCollector(cfs.metadata.partitionColumns());
     }
 
     public MemtableAllocator getAllocator()
@@ -424,20 +425,45 @@ public class Memtable
 
     private static class ColumnsCollector
     {
-        // TODO: we could probably do more efficient, but I'm being lazy
-        private final ConcurrentSkipListSet<ColumnDefinition> columns = new ConcurrentSkipListSet<>();
+        private final HashMap<ColumnDefinition, AtomicBoolean> predefined = new HashMap<>();
+        private final ConcurrentSkipListSet<ColumnDefinition> extra = new ConcurrentSkipListSet<>();
+        ColumnsCollector(PartitionColumns columns)
+        {
+            for (ColumnDefinition def : columns.statics)
+                predefined.put(def, new AtomicBoolean());
+            for (ColumnDefinition def : columns.regulars)
+                predefined.put(def, new AtomicBoolean());
+        }
 
         public void update(PartitionColumns columns)
         {
             for (ColumnDefinition s : columns.statics)
-                this.columns.add(s);
+                update(s);
             for (ColumnDefinition r : columns.regulars)
-                this.columns.add(r);
+                update(r);
+        }
+
+        private void update(ColumnDefinition definition)
+        {
+            AtomicBoolean present = predefined.get(definition);
+            if (present != null)
+            {
+                if (!present.get())
+                    present.set(true);
+            }
+            else
+            {
+                extra.add(definition);
+            }
         }
 
         public PartitionColumns get()
         {
-            return PartitionColumns.builder().addAll(columns).build();
+            PartitionColumns.Builder builder = PartitionColumns.builder();
+            for (Map.Entry<ColumnDefinition, AtomicBoolean> e : predefined.entrySet())
+                if (e.getValue().get())
+                    builder.add(e.getKey());
+            return builder.addAll(extra).build();
         }
     }
 

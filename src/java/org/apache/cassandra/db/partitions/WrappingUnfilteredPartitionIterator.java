@@ -69,7 +69,7 @@ public abstract class WrappingUnfilteredPartitionIterator extends AbstractUnfilt
 
             // As the wrappd iterator shouldn't return an empty iterator, if computeNext
             // gave us back it's input we save the isEmpty check.
-            if (maybeNext != null && (isForThrift() || maybeNext == wrappedNext || !UnfilteredRowIterators.isEmpty(maybeNext)))
+            if (maybeNext != null && (isForThrift() || maybeNext == wrappedNext || !maybeNext.isEmpty()))
             {
                 next = maybeNext;
                 return;

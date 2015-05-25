@@ -44,7 +44,7 @@ public class ColumnIndex
 
     public static ColumnIndex writeAndBuildIndex(UnfilteredRowIterator iterator, SequentialWriter output, SerializationHeader header, Version version) throws IOException
     {
-        assert !UnfilteredRowIterators.isEmpty(iterator) && version.storeRows();
+        assert !iterator.isEmpty() && version.storeRows();
 
         Builder builder = new Builder(iterator, output, header, version.correspondingMessagingVersion());
         return builder.build();

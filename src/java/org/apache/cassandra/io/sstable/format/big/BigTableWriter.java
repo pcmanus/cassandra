@@ -138,7 +138,7 @@ public class BigTableWriter extends SSTableWriter
             return null;
         }
 
-        if (UnfilteredRowIterators.isEmpty(iterator))
+        if (iterator.isEmpty())
             return null;
 
         long startPosition = beforeAppend(key);

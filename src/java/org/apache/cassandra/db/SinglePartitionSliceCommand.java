@@ -203,7 +203,7 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Slic
             Tracing.trace("Merging data from memtables and {} sstables", sstablesIterated);
 
             UnfilteredRowIterator merged = UnfilteredRowIterators.merge(iterators);
-            if (!UnfilteredRowIterators.isEmpty(merged))
+            if (!merged.isEmpty())
             {
                 DecoratedKey key = merged.partitionKey();
                 cfs.metric.samplers.get(Sampler.READS).addSample(key.getKey(), key.hashCode(), 1);
