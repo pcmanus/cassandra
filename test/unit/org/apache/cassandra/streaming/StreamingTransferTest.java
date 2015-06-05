@@ -90,7 +90,7 @@ public class StreamingTransferTest
                         .addClusteringColumn("cols", Int32Type.instance)
                         .addRegularColumn("val", BytesType.instance)
                         .build(),
-                SchemaLoader.indexCFMD(KEYSPACE1, CF_INDEX, true));
+                SchemaLoader.compositeIndexCFMD(KEYSPACE1, CF_INDEX, true));
         SchemaLoader.createKeyspace(KEYSPACE2,
                 SimpleStrategy.class,
                 KSMetaData.optsWithRF(1));

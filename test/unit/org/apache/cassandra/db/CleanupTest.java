@@ -75,7 +75,7 @@ public class CleanupTest
                                     SimpleStrategy.class,
                                     KSMetaData.optsWithRF(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1),
-                                    SchemaLoader.indexCFMD(KEYSPACE1, CF_INDEXED1, true));
+                                    SchemaLoader.compositeIndexCFMD(KEYSPACE1, CF_INDEXED1, true));
     }
 
     /*
