@@ -359,7 +359,7 @@ public class RangeTombstoneListTest
 
     private static Clustering clustering(int i)
     {
-        return new SimpleClustering(bb(i));
+        return new Clustering(bb(i));
     }
 
     private static ByteBuffer bb(int i)

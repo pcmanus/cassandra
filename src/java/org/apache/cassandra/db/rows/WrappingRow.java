@@ -151,7 +151,7 @@ public abstract class WrappingRow extends AbstractRow
         }
         else
         {
-            ReusableRow copy = new ReusableRow(clustering().size(), columns(), true, isCounter);
+            ReusableRow copy = new ReusableRow(columns(), true, isCounter);
             copyTo(copy.writer());
             return copy;
         }

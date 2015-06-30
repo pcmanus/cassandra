@@ -60,11 +60,12 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         private final AbstractAllocator allocator;
         private final boolean isCounter;
 
-        private MemtableRowData.BufferClustering clustering;
+        private Clustering clustering;
         private int clusteringIdx;
         private LivenessInfo info;
         private DeletionTime deletion;
         private RowDataBlock data;
+        private boolean isStatic;
 
         private RowBufferAllocator(AbstractAllocator allocator, boolean isCounter)
         {
@@ -76,17 +77,14 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
         public void allocateNewRow(int clusteringSize, Columns columns, boolean isStatic)
         {
             data = new RowDataBlock(columns, 1, false, isCounter);
-            clustering = isStatic ? null : new MemtableRowData.BufferClustering(clusteringSize);
             clusteringIdx = 0;
             updateWriter(data);
+            this.isStatic = isStatic;
         }
 
         public MemtableRowData allocatedRowData()
         {
-            MemtableRowData row = new MemtableRowData.BufferRowData(clustering == null ? Clustering.STATIC_CLUSTERING : clustering,
-                                                                    info,
-                                                                    deletion,
-                                                                    data);
+            MemtableRowData row = new MemtableRowData.BufferRowData(clustering, info, deletion, data);
 
             clustering = null;
             info = LivenessInfo.NONE;
@@ -96,9 +94,25 @@ public abstract class MemtableBufferAllocator extends MemtableAllocator
             return row;
         }
 
-        public void writeClusteringValue(ByteBuffer value)
+        public void writeClustering(Clustering clustering)
         {
-            clustering.setClusteringValue(clusteringIdx++, value == null ? null : allocator.clone(value));
+            if (clustering.size() == 0)
+            {
+                assert clustering == Clustering.EMPTY || (isStatic && clustering == Clustering.STATIC_CLUSTERING);
+                this.clustering = clustering;
+            }
+            else
+            {
+                this.clustering = clone(clustering, allocator);
+            }
+        }
+
+        private static Clustering clone(Clustering clustering, AbstractAllocator allocator)
+        {
+            ByteBuffer[] clonedValues = new ByteBuffer[clustering.size()];
+            for (int i = 0; i < clonedValues.length; i++)
+                clonedValues[i] = clustering.get(i) == null ? null : allocator.clone(clustering.get(i));
+            return new Clustering(clonedValues);
         }
 
         public void writePartitionKeyLivenessInfo(LivenessInfo info)

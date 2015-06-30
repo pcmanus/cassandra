@@ -135,7 +135,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
                                                   1);
 
         Row.Writer writer = upd.writer();
-        Rows.writeClustering(SystemKeyspace.Hints.comparator.make(hintId, MessagingService.current_version), writer);
+        writer.writeClustering(SystemKeyspace.Hints.comparator.make(hintId, MessagingService.current_version));
 
         ByteBuffer value = ByteBuffer.wrap(FBUtilities.serialize(mutation, Mutation.serializer, MessagingService.current_version));
         writer.writeCell(hintColumn, false, value, SimpleLivenessInfo.forUpdate(now, ttl, FBUtilities.nowInSeconds(), SystemKeyspace.Hints), null);
@@ -188,7 +188,7 @@ public class HintedHandOffManager implements HintedHandOffManagerMBean
         PartitionUpdate upd = new PartitionUpdate(SystemKeyspace.Hints, dk, PartitionColumns.of(hintColumn), 1);
 
         Row.Writer writer = upd.writer();
-        Rows.writeClustering(clustering, writer);
+        writer.writeClustering(clustering);
         Cells.writeTombstone(writer, hintColumn, timestamp, FBUtilities.nowInSeconds());
 
         new Mutation(upd).applyUnsafe(); // don't bother with commitlog since we're going to flush as soon as we're done with delivery

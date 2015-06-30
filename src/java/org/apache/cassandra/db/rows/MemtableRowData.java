@@ -79,7 +79,7 @@ public interface MemtableRowData extends Clusterable
         public long unsharedHeapSizeExcludingData()
         {
             return EMPTY_SIZE
-                 + (clustering == Clustering.STATIC_CLUSTERING ? 0 : ((BufferClustering)clustering).unsharedHeapSizeExcludingData())
+                 + (clustering == Clustering.STATIC_CLUSTERING ? 0 : clustering.unsharedHeapSizeExcludingData())
                  + dataBlock.unsharedHeapSizeExcludingData();
         }
 
@@ -127,54 +127,6 @@ public interface MemtableRowData extends Clusterable
             {
                 return rowData.deletion;
             }
-        }
-    }
-
-    public class BufferClustering extends Clustering
-    {
-        private static final long EMPTY_SIZE = ObjectSizes.measure(new BufferClustering(0));
-
-        private final ByteBuffer[] values;
-
-        public BufferClustering(int size)
-        {
-            this.values = new ByteBuffer[size];
-        }
-
-        public void setClusteringValue(int i, ByteBuffer value)
-        {
-            values[i] = value;
-        }
-
-        public int size()
-        {
-            return values.length;
-        }
-
-        public ByteBuffer get(int i)
-        {
-            return values[i];
-        }
-
-        public ByteBuffer[] getRawValues()
-        {
-            return values;
-        }
-
-        public long unsharedHeapSizeExcludingData()
-        {
-            return EMPTY_SIZE + ObjectSizes.sizeOnHeapExcludingData(values);
-        }
-
-        @Override
-        public long unsharedHeapSize()
-        {
-            return EMPTY_SIZE + ObjectSizes.sizeOnHeapOf(values);
-        }
-
-        public Clustering takeAlias()
-        {
-            return this;
         }
     }
 

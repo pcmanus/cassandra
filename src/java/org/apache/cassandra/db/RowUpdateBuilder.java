@@ -49,7 +49,6 @@ public class RowUpdateBuilder
     private Row.Writer regularWriter;
     private Row.Writer staticWriter;
 
-    private boolean hasSetClustering;
     private boolean useRowMarker = true;
 
     private RowUpdateBuilder(PartitionUpdate update, long timestamp, int ttl, int localDeletionTime, Mutation mutation)
@@ -70,16 +69,27 @@ public class RowUpdateBuilder
         this(update, timestamp, ttl, FBUtilities.nowInSeconds(), mutation);
     }
 
+    private void startRow(Clustering clustering)
+    {
+        assert staticWriter == null : "Cannot update both static and non-static columns with the same RowUpdateBuilder object";
+        assert regularWriter == null : "Cannot add the clustering twice to the same row";
+
+        regularWriter = update.writer();
+        regularWriter.writeClustering(clustering);
+
+        // If a CQL table, add the "row marker"
+        if (update.metadata().isCQLTable() && useRowMarker)
+            regularWriter.writePartitionKeyLivenessInfo(defaultLiveness);
+    }
+
     private Row.Writer writer()
     {
         assert staticWriter == null : "Cannot update both static and non-static columns with the same RowUpdateBuilder object";
         if (regularWriter == null)
         {
-            regularWriter = update.writer();
-
-            // If a CQL table, add the "row marker"
-            if (update.metadata().isCQLTable() && useRowMarker)
-                regularWriter.writePartitionKeyLivenessInfo(defaultLiveness);
+            // we don't force people to call clustering() if the table has no clustering, so call it ourselves
+            assert update.metadata().comparator.size() == 0 : "Missing call to clustering()";
+            startRow(Clustering.EMPTY);
         }
         return regularWriter;
     }
@@ -142,10 +152,9 @@ public class RowUpdateBuilder
     public RowUpdateBuilder clustering(Object... clusteringValues)
     {
         assert clusteringValues.length == update.metadata().comparator.size()
-            : "Invalid clustering values length. Expected: " + update.metadata().comparator.size() + " got: " + clusteringValues.length;
-        hasSetClustering = true;
-        if (clusteringValues.length > 0)
-            Rows.writeClustering(update.metadata().comparator.make(clusteringValues), writer());
+             : "Invalid clustering values length. Expected: " + update.metadata().comparator.size() + " got: " + clusteringValues.length;
+
+        startRow(clusteringValues.length == 0 ? Clustering.EMPTY : update.metadata().comparator.make(clusteringValues));
         return this;
     }
 
@@ -167,12 +176,13 @@ public class RowUpdateBuilder
     {
         assert clusteringValues.length == update.metadata().comparator.size() || (clusteringValues.length == 0 && !update.columns().statics.isEmpty());
 
-        Row.Writer writer = clusteringValues.length == update.metadata().comparator.size()
-                          ? update.writer()
-                          : update.staticWriter();
+        boolean isStatic = clusteringValues.length != update.metadata().comparator.size();
+        Row.Writer writer = isStatic
+                          ? update.staticWriter()
+                          : update.writer();
 
-        if (clusteringValues.length > 0)
-            Rows.writeClustering(update.metadata().comparator.make(clusteringValues), writer);
+        if (!isStatic)
+            writer.writeClustering(clusteringValues.length == 0 ? Clustering.EMPTY : update.metadata().comparator.make(clusteringValues));
         writer.writeRowDeletion(new SimpleDeletionTime(timestamp, FBUtilities.nowInSeconds()));
         writer.endOfRow();
     }
@@ -216,7 +226,7 @@ public class RowUpdateBuilder
     {
         ColumnDefinition c = getDefinition(columnName);
         assert c != null : "Cannot find column " + columnName;
-        assert c.isStatic() || update.metadata().comparator.size() == 0 || hasSetClustering : "Cannot set non static column " + c + " since no clustering hasn't been provided";
+        assert c.isStatic() || update.metadata().comparator.size() == 0 || regularWriter != null : "Cannot set non static column " + c + " since no clustering hasn't been provided";
         assert c.type.isCollection() && c.type.isMultiCell();
         writer(c).writeComplexDeletion(c, new SimpleDeletionTime(defaultLiveness.timestamp() - 1, deletionTime.localDeletionTime()));
         return this;
@@ -250,7 +260,7 @@ public class RowUpdateBuilder
 
     public RowUpdateBuilder add(ColumnDefinition columnDefinition, Object value)
     {
-        assert columnDefinition.isStatic() || update.metadata().comparator.size() == 0 || hasSetClustering : "Cannot set non static column " + columnDefinition + " since no clustering hasn't been provided";
+        assert columnDefinition.isStatic() || update.metadata().comparator.size() == 0 || regularWriter != null : "Cannot set non static column " + columnDefinition + " since no clustering hasn't been provided";
         if (value == null)
             writer(columnDefinition).writeCell(columnDefinition, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, deletionLiveness, null);
         else
@@ -287,7 +297,7 @@ public class RowUpdateBuilder
     public RowUpdateBuilder addMapEntry(String columnName, Object key, Object value)
     {
         ColumnDefinition c = getDefinition(columnName);
-        assert c.isStatic() || update.metadata().comparator.size() == 0 || hasSetClustering : "Cannot set non static column " + c + " since no clustering hasn't been provided";
+        assert c.isStatic() || update.metadata().comparator.size() == 0 || regularWriter != null : "Cannot set non static column " + c + " since no clustering hasn't been provided";
         assert c.type instanceof MapType;
         MapType mt = (MapType)c.type;
         writer(c).writeCell(c, false, bb(value, mt.getValuesType()), defaultLiveness, CellPath.create(bb(key, mt.getKeysType())));
@@ -297,7 +307,7 @@ public class RowUpdateBuilder
     public RowUpdateBuilder addListEntry(String columnName, Object value)
     {
         ColumnDefinition c = getDefinition(columnName);
-        assert c.isStatic() || hasSetClustering : "Cannot set non static column " + c + " since no clustering hasn't been provided";
+        assert c.isStatic() || regularWriter != null : "Cannot set non static column " + c + " since no clustering hasn't been provided";
         assert c.type instanceof ListType;
         ListType lt = (ListType)c.type;
         writer(c).writeCell(c, false, bb(value, lt.getElementsType()), defaultLiveness, CellPath.create(ByteBuffer.wrap(UUIDGen.getTimeUUIDBytes())));

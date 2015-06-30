@@ -103,9 +103,40 @@ public class RangeTombstone
     {
         public static final Serializer serializer = new Serializer();
 
+        /** The smallest start bound, i.e. the one that starts before any row. */
+        public static final Bound BOTTOM = new Bound(Kind.INCL_START_BOUND, EMPTY_VALUES_ARRAY);
+        /** The biggest end bound, i.e. the one that ends after any row. */
+        public static final Bound TOP = new Bound(Kind.INCL_END_BOUND, EMPTY_VALUES_ARRAY);
+
         public Bound(Kind kind, ByteBuffer[] values)
         {
             super(kind, values);
+            assert values.length > 0 || !kind.isBoundary();
+        }
+
+        public boolean isBoundary()
+        {
+            return kind.isBoundary();
+        }
+
+        public boolean isOpen(boolean reversed)
+        {
+            return kind.isOpen(reversed);
+        }
+
+        public boolean isClose(boolean reversed)
+        {
+            return kind.isClose(reversed);
+        }
+
+        public static RangeTombstone.Bound exclusiveStart(ByteBuffer[] boundValues)
+        {
+            return new Bound(Kind.EXCL_START_BOUND, boundValues);
+        }
+
+        public static RangeTombstone.Bound inclusiveEnd(ByteBuffer[] boundValues)
+        {
+            return new Bound(Kind.INCL_END_BOUND, boundValues);
         }
 
         public static RangeTombstone.Bound inclusiveOpen(boolean reversed, ByteBuffer[] boundValues)
@@ -138,6 +169,11 @@ public class RangeTombstone
             return new Bound(reversed ? Kind.INCL_END_EXCL_START_BOUNDARY : Kind.EXCL_END_INCL_START_BOUNDARY, boundValues);
         }
 
+        public static RangeTombstone.Bound fromSliceBound(Slice.Bound sliceBound)
+        {
+            return new RangeTombstone.Bound(sliceBound.kind(), sliceBound.getRawValues());
+        }
+
         @Override
         public Bound withNewKind(Kind kind)
         {
@@ -160,13 +196,15 @@ public class RangeTombstone
                      + ClusteringPrefix.serializer.valuesWithoutSizeSerializedSize(bound, version, types, sizes);
             }
 
-            public Kind deserialize(DataInput in, int version, List<AbstractType<?>> types, Writer writer) throws IOException
+            public RangeTombstone.Bound deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
             {
                 Kind kind = Kind.values()[in.readByte()];
-                writer.writeBoundKind(kind);
                 int size = in.readUnsignedShort();
-                ClusteringPrefix.serializer.deserializeValuesWithoutSize(in, size, version, types, writer);
-                return kind;
+                if (size == 0)
+                    return kind.isStart() ? BOTTOM : TOP;
+
+                ByteBuffer[] values = ClusteringPrefix.serializer.deserializeValuesWithoutSize(in, size, version, types);
+                return new RangeTombstone.Bound(kind, values);
             }
         }
     }

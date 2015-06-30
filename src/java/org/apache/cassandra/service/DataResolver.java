@@ -185,7 +185,7 @@ public class DataResolver extends ResponseResolver
                 if (row == null)
                 {
                     row = currentClustering == Clustering.STATIC_CLUSTERING ? update(i).staticWriter() : update(i).writer();
-                    currentClustering.writeTo(row);
+                    row.writeClustering(currentClustering);
                     currentRows[i] = row;
                 }
                 return row;

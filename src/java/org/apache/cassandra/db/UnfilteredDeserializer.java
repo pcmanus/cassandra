@@ -123,8 +123,8 @@ public abstract class UnfilteredDeserializer
             super(metadata, in, helper);
             this.header = header;
             this.clusteringDeserializer = new ClusteringPrefix.Deserializer(metadata.comparator, in, header);
-            this.row = new ReusableRow(metadata.clusteringColumns().size(), header.columns().regulars, true, metadata.isCounter());
-            this.markerBuilder = new RangeTombstoneMarker.Builder(metadata.clusteringColumns().size());
+            this.row = new ReusableRow(header.columns().regulars, true, metadata.isCounter());
+            this.markerBuilder = new RangeTombstoneMarker.Builder();
         }
 
         public boolean hasNext() throws IOException
@@ -182,15 +182,15 @@ public abstract class UnfilteredDeserializer
             isReady = false;
             if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
             {
-                markerBuilder.reset();
-                RangeTombstone.Bound.Kind kind = clusteringDeserializer.deserializeNextBound(markerBuilder);
-                UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, kind.isBoundary(), markerBuilder);
+                RangeTombstone.Bound bound = clusteringDeserializer.deserializeNextBound();
+                markerBuilder.writeRangeTombstoneBound(bound);
+                UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, bound.isBoundary(), markerBuilder);
                 return markerBuilder.build();
             }
             else
             {
                 Row.Writer writer = row.writer();
-                clusteringDeserializer.deserializeNextClustering(writer);
+                writer.writeClustering(clusteringDeserializer.deserializeNextClustering());
                 UnfilteredSerializer.serializer.deserializeRowBody(in, header, helper, nextFlags, writer);
                 return row;
             }

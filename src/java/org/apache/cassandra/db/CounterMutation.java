@@ -237,7 +237,7 @@ public class CounterMutation implements IMutation
         NavigableSet<Clustering> names = new TreeSet<>(cfs.metadata.comparator);
         for (PartitionUpdate.CounterMark mark : marks)
         {
-            names.add(mark.clustering().takeAlias());
+            names.add(mark.clustering());
             if (mark.path() == null)
                 builder.add(mark.column());
             else

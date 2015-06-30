@@ -50,11 +50,8 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
     protected int rows;
 
-    // The values for the clustering columns of the rows contained in this partition object. If
-    // clusteringSize is the size of the clustering comparator for this table, clusterings has size
-    // clusteringSize * rows where rows is the number of rows stored, and row i has it's clustering
-    // column values at indexes [clusteringSize * i, clusteringSize * (i + 1)).
-    protected ByteBuffer[] clusterings;
+    // The clusterings of the rows contained in this partition object.
+    protected Clustering[] clusterings;
 
     // The partition key column liveness infos for the rows of this partition (row i has its liveness info at index i).
     protected final LivenessInfoArray livenessInfos;
@@ -73,7 +70,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
     private AbstractPartitionData(CFMetaData metadata,
                                     DecoratedKey key,
                                     DeletionInfo deletionInfo,
-                                    ByteBuffer[] clusterings,
+                                    Clustering[] clusterings,
                                     LivenessInfoArray livenessInfos,
                                     DeletionTimeArray deletions,
                                     PartitionColumns columns,
@@ -104,7 +101,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
         this(metadata,
              key,
              deletionInfo,
-             new ByteBuffer[initialRowCapacity * metadata.clusteringColumns().size()],
+             new Clustering[initialRowCapacity],
              new LivenessInfoArray(initialRowCapacity),
              new DeletionTimeArray(initialRowCapacity),
              columns,
@@ -214,13 +211,9 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
      */
     public void swap(int i, int j)
     {
-        int cs = metadata.clusteringColumns().size();
-        for (int k = 0; k < cs; k++)
-        {
-            ByteBuffer tmp = clusterings[j * cs + k];
-            clusterings[j * cs + k] = clusterings[i * cs + k];
-            clusterings[i * cs + k] = tmp;
-        }
+        Clustering tmp = clusterings[j];
+        clusterings[j] = clusterings[i];
+        clusterings[i] = tmp;
 
         livenessInfos.swap(i, j);
         deletions.swap(i, j);
@@ -368,7 +361,6 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
      */
     private abstract class RowIterator extends UnmodifiableIterator<Row>
     {
-        protected final InternalReusableClustering clustering = new InternalReusableClustering();
         protected final InternalReusableRow reusableRow;
         protected final FilteringRow filter;
 
@@ -376,7 +368,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         protected RowIterator(final ColumnFilter columns)
         {
-            this.reusableRow = new InternalReusableRow(clustering);
+            this.reusableRow = new InternalReusableRow();
             this.filter = columns == null ? null : FilteringRow.columnsFilteringRow(columns);
         }
 
@@ -407,7 +399,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
             while (low <= high)
             {
                 mid = (low + high) >> 1;
-                if ((result = metadata.comparator.compare(name, clustering.setTo(mid))) > 0)
+                if ((result = metadata.comparator.compare(name, clusterings[mid])) > 0)
                     low = mid + 1;
                 else if (result == 0)
                     return mid;
@@ -535,58 +527,14 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
     }
 
     /**
-     * A reusable view over the clustering of this partition.
-     */
-    protected class InternalReusableClustering extends Clustering
-    {
-        final int size = metadata.clusteringColumns().size();
-        private int base;
-
-        public int size()
-        {
-            return size;
-        }
-
-        public Clustering setTo(int row)
-        {
-            base = row * size;
-            return this;
-        }
-
-        public ByteBuffer get(int i)
-        {
-            return clusterings[base + i];
-        }
-
-        public ByteBuffer[] getRawValues()
-        {
-            ByteBuffer[] values = new ByteBuffer[size];
-            for (int i = 0; i < size; i++)
-                values[i] = get(i);
-            return values;
-        }
-    };
-
-    /**
      * A reusable view over the rows of this partition.
      */
     protected class InternalReusableRow extends AbstractReusableRow
     {
         private final LivenessInfoArray.Cursor liveness = new LivenessInfoArray.Cursor();
         private final DeletionTimeArray.Cursor deletion = new DeletionTimeArray.Cursor();
-        private final InternalReusableClustering clustering;
 
         private int row;
-
-        public InternalReusableRow()
-        {
-            this(new InternalReusableClustering());
-        }
-
-        public InternalReusableRow(InternalReusableClustering clustering)
-        {
-            this.clustering = clustering;
-        }
 
         protected RowDataBlock data()
         {
@@ -595,7 +543,6 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         public Row setTo(int row)
         {
-            this.clustering.setTo(row);
             this.liveness.setTo(livenessInfos, row);
             this.deletion.setTo(deletions, row);
             this.row = row;
@@ -609,7 +556,8 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         public Clustering clustering()
         {
-            return clustering;
+            assert clusterings[row] != null;
+            return clusterings[row];
         }
 
         public LivenessInfo primaryKeyLivenessInfo()
@@ -636,8 +584,6 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
      */
     protected class Writer extends RowDataBlock.Writer
     {
-        private int clusteringBase;
-
         private int simpleColumnsSetInRow;
         private final Set<ColumnDefinition> complexColumnsSetInRow = new HashSet<>();
 
@@ -646,22 +592,22 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
             super(data, inOrderCells);
         }
 
-        public void writeClusteringValue(ByteBuffer value)
+        public void writeClustering(Clustering clustering)
         {
             ensureCapacity(row);
-            clusterings[clusteringBase++] = value;
+            clusterings[row] = clustering;
         }
 
         public void writePartitionKeyLivenessInfo(LivenessInfo info)
         {
-            ensureCapacity(row);
+            assert clusterings[row] != null : "Should call writeClustering() first";
             livenessInfos.set(row, info);
             collectStats(info);
         }
 
         public void writeRowDeletion(DeletionTime deletion)
         {
-            ensureCapacity(row);
+            assert clusterings[row] != null : "Should call writeClustering() first";
             if (!deletion.isLive())
                 deletions.set(row, deletion);
 
@@ -671,7 +617,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
         @Override
         public void writeCell(ColumnDefinition column, boolean isCounter, ByteBuffer value, LivenessInfo info, CellPath path)
         {
-            ensureCapacity(row);
+            assert clusterings[row] != null : "Should call writeClustering() first";
             collectStats(info);
 
             if (column.isComplex())
@@ -685,7 +631,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
         @Override
         public void writeComplexDeletion(ColumnDefinition c, DeletionTime complexDeletion)
         {
-            ensureCapacity(row);
+            assert clusterings[row] != null : "Should call writeClustering() first";
             collectStats(complexDeletion);
 
             super.writeComplexDeletion(c, complexDeletion);
@@ -694,6 +640,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
         @Override
         public void endOfRow()
         {
+            assert clusterings[row] != null : "Should call writeClustering() first";
             super.endOfRow();
             ++rows;
 
@@ -710,16 +657,13 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         private void ensureCapacity(int rowToSet)
         {
-            int originalCapacity = livenessInfos.size();
+            int originalCapacity = clusterings.length;
             if (rowToSet < originalCapacity)
                 return;
 
             int newCapacity = RowDataBlock.computeNewCapacity(originalCapacity, rowToSet);
 
-            int clusteringSize = metadata.clusteringColumns().size();
-
-            clusterings = Arrays.copyOf(clusterings, newCapacity * clusteringSize);
-
+            clusterings = Arrays.copyOf(clusterings, newCapacity);
             livenessInfos.resize(newCapacity);
             deletions.resize(newCapacity);
         }
@@ -728,7 +672,6 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
         public Writer reset()
         {
             super.reset();
-            clusteringBase = 0;
             simpleColumnsSetInRow = 0;
             complexColumnsSetInRow.clear();
             return this;
@@ -742,9 +685,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
     {
         private final boolean reversed;
 
-        private final ByteBuffer[] nextValues = new ByteBuffer[metadata().comparator.size()];
-        private int size;
-        private RangeTombstone.Bound.Kind nextKind;
+        private RangeTombstone.Bound nextBound;
 
         private Slice.Bound openBound;
         private DeletionTime openDeletion;
@@ -754,31 +695,21 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
             this.reversed = reversed;
         }
 
-        public void writeClusteringValue(ByteBuffer value)
+        public void writeRangeTombstoneBound(RangeTombstone.Bound bound)
         {
-            nextValues[size++] = value;
+            nextBound = bound;
         }
 
-        public void writeBoundKind(RangeTombstone.Bound.Kind kind)
+        private void open(RangeTombstone.Bound bound, DeletionTime deletion)
         {
-            nextKind = kind;
-        }
-
-        private ByteBuffer[] getValues()
-        {
-            return Arrays.copyOfRange(nextValues, 0, size);
-        }
-
-        private void open(RangeTombstone.Bound.Kind kind, DeletionTime deletion)
-        {
-            openBound = Slice.Bound.create(kind, getValues());
+            openBound = bound;
             openDeletion = deletion.takeAlias();
         }
 
-        private void close(RangeTombstone.Bound.Kind kind, DeletionTime deletion)
+        private void close(RangeTombstone.Bound bound, DeletionTime deletion)
         {
             assert deletion.equals(openDeletion) : "Expected " + openDeletion + " but was "  + deletion;
-            Slice.Bound closeBound = Slice.Bound.create(kind, getValues());
+            Slice.Bound closeBound = bound;
             Slice slice = reversed
                         ? Slice.make(closeBound, openBound)
                         : Slice.make(openBound, closeBound);
@@ -787,21 +718,21 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         public void writeBoundDeletion(DeletionTime deletion)
         {
-            assert !nextKind.isBoundary();
-            if (nextKind.isOpen(reversed))
-                open(nextKind, deletion);
+            assert !nextBound.isBoundary();
+            if (nextBound.isOpen(reversed))
+                open(nextBound, deletion);
             else
-                close(nextKind, deletion);
+                close(nextBound, deletion);
         }
 
         public void writeBoundaryDeletion(DeletionTime endDeletion, DeletionTime startDeletion)
         {
-            assert nextKind.isBoundary();
+            assert nextBound.isBoundary();
             DeletionTime closeTime = reversed ? startDeletion : endDeletion;
             DeletionTime openTime = reversed ? endDeletion : startDeletion;
 
-            close(nextKind.closeBoundOfBoundary(reversed), closeTime);
-            open(nextKind.openBoundOfBoundary(reversed), openTime);
+            close(nextBound.withNewKind(nextBound.kind().closeBoundOfBoundary(reversed)), closeTime);
+            open(nextBound.withNewKind(nextBound.kind().openBoundOfBoundary(reversed)), openTime);
         }
 
         public void endOfMarker()
@@ -816,9 +747,7 @@ public abstract class AbstractPartitionData implements Partition, Iterable<Row>
 
         private void clear()
         {
-            size = 0;
-            Arrays.fill(nextValues, null);
-            nextKind = null;
+            nextBound = null;
         }
 
         public void reset()

@@ -42,8 +42,9 @@ public interface RangeTombstoneMarker extends Unfiltered
     public DeletionTime openDeletionTime(boolean reversed);
     public DeletionTime closeDeletionTime(boolean reversed);
 
-    public interface Writer extends Slice.Bound.Writer
+    public interface Writer
     {
+        public void writeRangeTombstoneBound(RangeTombstone.Bound bound);
         public void writeBoundDeletion(DeletionTime deletion);
         public void writeBoundaryDeletion(DeletionTime endDeletion, DeletionTime startDeletion);
         public void endOfMarker();
@@ -51,26 +52,14 @@ public interface RangeTombstoneMarker extends Unfiltered
 
     public static class Builder implements Writer
     {
-        private final ByteBuffer[] values;
-        private int size;
+        private RangeTombstone.Bound bound;
 
-        private RangeTombstone.Bound.Kind kind;
         private DeletionTime firstDeletion;
         private DeletionTime secondDeletion;
 
-        public Builder(int maxClusteringSize)
+        public void writeRangeTombstoneBound(RangeTombstone.Bound bound)
         {
-            this.values = new ByteBuffer[maxClusteringSize];
-        }
-
-        public void writeClusteringValue(ByteBuffer value)
-        {
-            values[size++] = value;
-        }
-
-        public void writeBoundKind(RangeTombstone.Bound.Kind kind)
-        {
-            this.kind = kind;
+            this.bound = bound;
         }
 
         public void writeBoundDeletion(DeletionTime deletion)
@@ -90,19 +79,11 @@ public interface RangeTombstoneMarker extends Unfiltered
 
         public RangeTombstoneMarker build()
         {
-            assert kind != null : "Nothing has been written";
-            if (kind.isBoundary())
-                return new RangeTombstoneBoundaryMarker(new RangeTombstone.Bound(kind, Arrays.copyOfRange(values, 0, size)), firstDeletion, secondDeletion);
+            assert bound != null : "Nothing has been written";
+            if (bound.isBoundary())
+                return new RangeTombstoneBoundaryMarker(bound, firstDeletion, secondDeletion);
             else
-                return new RangeTombstoneBoundMarker(new RangeTombstone.Bound(kind, Arrays.copyOfRange(values, 0, size)), firstDeletion);
-        }
-
-        public Builder reset()
-        {
-            Arrays.fill(values, null);
-            size = 0;
-            kind = null;
-            return this;
+                return new RangeTombstoneBoundMarker(bound, firstDeletion);
         }
     }
 

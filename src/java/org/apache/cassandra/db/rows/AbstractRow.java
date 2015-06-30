@@ -89,7 +89,7 @@ public abstract class AbstractRow implements Row
      */
     public void copyTo(Row.Writer writer)
     {
-        Rows.writeClustering(clustering(), writer);
+        writer.writeClustering(clustering());
         writer.writePartitionKeyLivenessInfo(primaryKeyLivenessInfo());
         writer.writeRowDeletion(deletion());
 

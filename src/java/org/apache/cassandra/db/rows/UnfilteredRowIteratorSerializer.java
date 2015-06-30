@@ -219,14 +219,14 @@ public class UnfilteredRowIteratorSerializer
 
         return new AbstractUnfilteredRowIterator(h.metadata, h.key, h.partitionDeletion, h.sHeader.columns(), h.staticRow, h.isReversed, h.sHeader.stats())
         {
-            private final ReusableRow row = new ReusableRow(clusteringSize, h.sHeader.columns().regulars, true, h.metadata.isCounter());
-            private final RangeTombstoneMarker.Builder markerBuilder = new RangeTombstoneMarker.Builder(clusteringSize);
+            private final ReusableRow row = new ReusableRow(h.sHeader.columns().regulars, true, h.metadata.isCounter());
+            private final RangeTombstoneMarker.Builder markerBuilder = new RangeTombstoneMarker.Builder();
 
             protected Unfiltered computeNext()
             {
                 try
                 {
-                    Unfiltered.Kind kind = UnfilteredSerializer.serializer.deserialize(in, h.sHeader, helper, row.writer(), markerBuilder.reset());
+                    Unfiltered.Kind kind = UnfilteredSerializer.serializer.deserialize(in, h.sHeader, helper, row.writer(), markerBuilder);
                     if (kind == null)
                         return endOfData();
 

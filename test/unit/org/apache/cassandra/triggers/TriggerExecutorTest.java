@@ -273,18 +273,15 @@ public class TriggerExecutorTest
     {
         PartitionUpdate update = new PartitionUpdate(metadata, Util.dk(key), metadata.partitionColumns(), 1);
 
-        LivenessInfo info = SimpleLivenessInfo.forUpdate(FBUtilities.timestampMicros(), LivenessInfo.NO_TTL, FBUtilities.nowInSeconds(), metadata);
+        update.writer().writeClustering(Clustering.EMPTY);
 
+        LivenessInfo info = SimpleLivenessInfo.forUpdate(FBUtilities.timestampMicros(), LivenessInfo.NO_TTL, FBUtilities.nowInSeconds(), metadata);
         if (columnValue1 != null)
-        {
             update.writer().writeCell(metadata.getColumnDefinition(bytes("c1")), false, bytes(columnValue1), info, null);
-            update.writer().endOfRow();
-        }
         if (columnValue2 != null)
-        {
             update.writer().writeCell(metadata.getColumnDefinition(bytes("c2")), false, bytes(columnValue1), info, null);
-            update.writer().endOfRow();
-        }
+
+        update.writer().endOfRow();
 
         return update;
     }

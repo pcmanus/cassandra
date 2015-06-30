@@ -76,8 +76,8 @@ public abstract class SSTableSimpleIterator extends AbstractIterator<Unfiltered>
             int clusteringSize = metadata.comparator.size();
             Columns regularColumns = header == null ? metadata.partitionColumns().regulars : header.columns().regulars;
 
-            this.row = new ReusableRow(clusteringSize, regularColumns, true, metadata.isCounter());
-            this.markerBuilder = new RangeTombstoneMarker.Builder(clusteringSize);
+            this.row = new ReusableRow(regularColumns, true, metadata.isCounter());
+            this.markerBuilder = new RangeTombstoneMarker.Builder();
         }
 
         public Row readStaticRow() throws IOException
@@ -91,7 +91,7 @@ public abstract class SSTableSimpleIterator extends AbstractIterator<Unfiltered>
         {
             try
             {
-                Unfiltered.Kind kind = UnfilteredSerializer.serializer.deserialize(in, header, helper, row.writer(), markerBuilder.reset());
+                Unfiltered.Kind kind = UnfilteredSerializer.serializer.deserialize(in, header, helper, row.writer(), markerBuilder);
 
                 return kind == null
                      ? endOfData()

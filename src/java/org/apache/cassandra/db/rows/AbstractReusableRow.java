@@ -163,7 +163,7 @@ public abstract class AbstractReusableRow extends AbstractRow
 
     public Row takeAlias()
     {
-        final Clustering clustering = clustering().takeAlias();
+        final Clustering clustering = clustering();
         final LivenessInfo info = primaryKeyLivenessInfo().takeAlias();
         final DeletionTime deletion = deletion().takeAlias();
 

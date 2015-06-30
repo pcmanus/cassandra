@@ -137,11 +137,11 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         if (metadata.isCompound())
         {
             List<ByteBuffer> values = CompositeType.splitName(name);
-            return new SimpleClustering(values.toArray(new ByteBuffer[metadata.comparator.size()]));
+            return new Clustering(values.toArray(new ByteBuffer[metadata.comparator.size()]));
         }
         else
         {
-            return new SimpleClustering(name);
+            return new Clustering(name);
         }
     }
 

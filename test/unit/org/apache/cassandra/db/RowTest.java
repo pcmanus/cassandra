@@ -131,7 +131,7 @@ public class RowTest
         ColumnDefinition defB = cfm.getColumnDefinition(new ColumnIdentifier("b", true));
 
         PartitionUpdate update = new PartitionUpdate(cfm, dk, cfm.partitionColumns(), 1);
-        Rows.writeClustering(update.metadata().comparator.make("c1"), update.writer());
+        update.writer().writeClustering(update.metadata().comparator.make("c1"));
         writeSimpleCellValue(update.writer(), cfm, defA, "a1", 0, nowInSeconds);
         writeSimpleCellValue(update.writer(), cfm, defA, "a2", 1, nowInSeconds);
         writeSimpleCellValue(update.writer(), cfm, defB, "b1", 1, nowInSeconds);
@@ -151,7 +151,7 @@ public class RowTest
         int ttl = 1;
         ColumnDefinition def = cfm.getColumnDefinition(new ColumnIdentifier("a", true));
         PartitionUpdate update = new PartitionUpdate(cfm, dk, cfm.partitionColumns(), 1);
-        Rows.writeClustering(update.metadata().comparator.make("c1"), update.writer());
+        update.writer().writeClustering(update.metadata().comparator.make("c1"));
         update.writer().writeCell(def, false, ((AbstractType) def.cellValueType()).decompose("a1"),
                                   SimpleLivenessInfo.forUpdate(0, ttl, nowInSeconds, cfm),
                                   null);

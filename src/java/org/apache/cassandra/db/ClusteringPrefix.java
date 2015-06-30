@@ -42,7 +42,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *   2) {@code Slice.Bound} represents a bound (start or end) of a slice (of rows).
  * See those classes for more details.
  */
-public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurableMemory, Clusterable
+public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
 {
     public static final Serializer serializer = new Serializer();
 
@@ -165,11 +165,17 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
 
         public boolean isOpen(boolean reversed)
         {
+            if (isBoundary())
+                return true;
+
             return reversed ? isEnd() : isStart();
         }
 
         public boolean isClose(boolean reversed)
         {
+            if (isBoundary())
+                return true;
+
             return reversed ? isStart() : isEnd();
         }
 
@@ -217,8 +223,6 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
 
     public String toString(CFMetaData metadata);
 
-    public void writeTo(Writer writer);
-
     /**
      * The values of this prefix as an array.
      * <p>
@@ -229,21 +233,6 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
      * @return the values for this prefix as an array.
      */
     public ByteBuffer[] getRawValues();
-
-    /**
-     * Interface for writing a clustering prefix.
-     * <p>
-     * Each value for the prefix should simply be written in order.
-     */
-    public interface Writer
-    {
-        /**
-         * Write the next value to the writer.
-         *
-         * @param value the value to write.
-         */
-        public void writeClusteringValue(ByteBuffer value);
-    }
 
     public static class Serializer
     {
@@ -316,21 +305,20 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
             return size;
         }
 
-        void deserializeValuesWithoutSize(DataInput in, int size, int version, List<AbstractType<?>> types, ClusteringPrefix.Writer writer) throws IOException
+        ByteBuffer[] deserializeValuesWithoutSize(DataInput in, int size, int version, List<AbstractType<?>> types) throws IOException
         {
-            if (size == 0)
-                return;
+            // Callers of this method should handle the case where size = 0 (in all case we want to return a special value anyway).
+            assert size > 0;
 
+            ByteBuffer[] values = new ByteBuffer[size];
             int[] header = readHeader(size, in);
             for (int i = 0; i < size; i++)
             {
-                if (isNull(header, i))
-                    writer.writeClusteringValue(null);
-                else if (isEmpty(header, i))
-                    writer.writeClusteringValue(ByteBufferUtil.EMPTY_BYTE_BUFFER);
-                else
-                    writer.writeClusteringValue(types.get(i).readValue(in));
+                values[i] = isNull(header, i)
+                          ? null
+                          : (isEmpty(header, i) ? ByteBufferUtil.EMPTY_BYTE_BUFFER : types.get(i).readValue(in));
             }
+            return values;
         }
 
         private int headerBytesCount(int size)
@@ -413,14 +401,13 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
         private int nextSize;
         private ClusteringPrefix.Kind nextKind;
         private int deserializedSize;
-        private final ByteBuffer[] nextValues;
+        private ByteBuffer[] nextValues;
 
         public Deserializer(ClusteringComparator comparator, DataInput in, SerializationHeader header)
         {
             this.comparator = comparator;
             this.in = in;
             this.serializationHeader = header;
-            this.nextValues = new ByteBuffer[comparator.size()];
         }
 
         public void prepare(int flags) throws IOException
@@ -431,6 +418,14 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
             this.nextSize = nextIsRow ? comparator.size() : in.readUnsignedShort();
             this.nextHeader = serializer.readHeader(nextSize, in);
             this.deserializedSize = 0;
+
+            // The point of the deserializer is that some of the clustering prefix won't actually be used (because they are not
+            // within the bounds of the query), and we want to reduce allocation for them. So we only reuse the values array
+            // between elements if 1) we haven't returned the previous element (if we have, nextValues will be null) and 2)
+            // nextValues is of the proper size. Note that the 2nd condition may not hold for range tombstone bounds, but all
+            // rows have a fixed size clustering, so we'll still save in the common case.
+            if (nextValues == null || nextValues.length != nextSize)
+                this.nextValues = new ByteBuffer[nextSize];
         }
 
         public int compareNextTo(Slice.Bound bound) throws IOException
@@ -484,29 +479,31 @@ public interface ClusteringPrefix extends Aliasable<ClusteringPrefix>, IMeasurab
                 continue;
         }
 
-        public RangeTombstone.Bound.Kind deserializeNextBound(RangeTombstone.Bound.Writer writer) throws IOException
+        public RangeTombstone.Bound deserializeNextBound() throws IOException
         {
             assert !nextIsRow;
             deserializeAll();
-            for (int i = 0; i < nextSize; i++)
-                writer.writeClusteringValue(nextValues[i]);
-            writer.writeBoundKind(nextKind);
-            return nextKind;
+            RangeTombstone.Bound bound = new RangeTombstone.Bound(nextKind, nextValues);
+            nextValues = null;
+            return bound;
         }
 
-        public void deserializeNextClustering(Clustering.Writer writer) throws IOException
+        public Clustering deserializeNextClustering() throws IOException
         {
-            assert nextIsRow && nextSize == nextValues.length;
+            assert nextIsRow;
             deserializeAll();
-            for (int i = 0; i < nextSize; i++)
-                writer.writeClusteringValue(nextValues[i]);
+            Clustering clustering = new Clustering(nextValues);
+            nextValues = null;
+            return clustering;
         }
 
         public ClusteringPrefix.Kind skipNext() throws IOException
         {
             for (int i = deserializedSize; i < nextSize; i++)
+            {
                 if (!serializer.isNull(nextHeader, i) && !serializer.isEmpty(nextHeader, i))
                     serializationHeader.clusteringTypes().get(i).skipValue(in);
+            }
             return nextKind;
         }
     }

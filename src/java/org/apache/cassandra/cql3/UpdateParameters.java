@@ -101,7 +101,7 @@ public class UpdateParameters
                 throw new InvalidRequestException("Invalid empty or null value for column " + metadata.clusteringColumns().get(0).name);
         }
 
-        Rows.writeClustering(clustering, writer);
+        writer.writeClustering(clustering);
     }
 
     public void writePartitionKeyLivenessInfo(Row.Writer writer)

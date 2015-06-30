@@ -208,16 +208,23 @@ public interface Row extends Unfiltered, Iterable<Cell>, Aliasable<Row>
      * <p>
      * Clients of this interface should abid to the following assumptions:
      *   1) if the row has a non empty clustering (it's not a static one and it doesn't belong to a table without
-     *      clustering columns), then that clustering should be the first thing written (through
-     *      {@link ClusteringPrefix.Writer#writeClusteringValue})).
+     *      clustering columns), then that clustering should be the first thing written (through {@link #writeClustering})).
      *   2) for a given complex column, calls to {@link #writeCell} are performed consecutively (without
      *      any call to {@code writeCell} for another column intermingled) and in {@code CellPath} order.
+     *      Whether all cells are written is order is not mandatory, though some specific implementations may expect so.
      *   3) {@link #endOfRow} is always called to end the writing of a given row.
      */
-    public interface Writer extends ClusteringPrefix.Writer
+    public interface Writer
     {
         /**
-         * Writes the livness information for the partition key columns of this row.
+         * Writes the row clustering.
+         *
+         * @param clustering the row clustering.
+         */
+        public void writeClustering(Clustering clustering);
+
+        /**
+         * Writes the liveness information for the partition key columns of this row.
          *
          * This call is optional: skipping it is equivalent to calling {@code writePartitionKeyLivenessInfo(LivenessInfo.NONE)}.
          *
@@ -348,7 +355,7 @@ public interface Row extends Unfiltered, Iterable<Cell>, Aliasable<Row>
             }
 
             Row.Writer writer = getWriter();
-            Rows.writeClustering(clustering, writer);
+            writer.writeClustering(clustering);
 
             for (int i = 0; i < rows.length; i++)
             {
@@ -538,7 +545,7 @@ public interface Row extends Unfiltered, Iterable<Cell>, Aliasable<Row>
             private RegularMerger(CFMetaData metadata, int size, int nowInSec, Columns columns, UnfilteredRowIterators.MergeListener listener)
             {
                 super(metadata, size, nowInSec, columns, listener);
-                this.row = new ReusableRow(metadata.clusteringColumns().size(), columns, true, metadata.isCounter());
+                this.row = new ReusableRow(columns, true, metadata.isCounter());
             }
 
             protected Row.Writer getWriter()

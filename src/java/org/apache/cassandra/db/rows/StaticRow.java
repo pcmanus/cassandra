@@ -168,9 +168,9 @@ public class StaticRow extends AbstractRow
             updateWriter(data);
         }
 
-        public void writeClusteringValue(ByteBuffer buffer)
+        public void writeClustering(Clustering clustering)
         {
-            throw new UnsupportedOperationException();
+            assert clustering == Clustering.STATIC_CLUSTERING;
         }
 
         public void writePartitionKeyLivenessInfo(LivenessInfo info)
