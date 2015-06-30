@@ -116,7 +116,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey, clustering, cellValue, path));
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.NONE, 1);
         Row.Writer writer = upd.writer();
-        Rows.writeClustering(makeIndexClustering(rowKey, clustering, path), writer);
+        writer.writeClustering(makeIndexClustering(rowKey, clustering, path));
         writer.writeRowDeletion(deletion);
         writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
@@ -135,7 +135,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, valueKey, PartitionColumns.NONE, 1);
         Row.Writer writer = upd.writer();
-        Rows.writeClustering(makeIndexClustering(rowKey, clustering, cell), writer);
+        writer.writeClustering(makeIndexClustering(rowKey, clustering, cell));
         writer.writePartitionKeyLivenessInfo(info);
         writer.endOfRow();
         if (logger.isDebugEnabled())

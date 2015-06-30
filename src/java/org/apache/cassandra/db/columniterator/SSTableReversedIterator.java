@@ -329,12 +329,9 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             if (reader.openMarker != null)
             {
                 // If we have no start but still an openMarker, this means we're indexed and it's coming from the previous block
-                Slice.Bound markerStart = start;
-                if (start == null)
-                {
-                    ClusteringPrefix c = ((IndexedReader)reader).previousIndex().lastName;
-                    markerStart = Slice.Bound.exclusiveStartOf(c);
-                }
+                RangeTombstone.Bound markerStart = start == null
+                                                 ? RangeTombstone.Bound.exclusiveStart(((IndexedReader)reader).previousIndex().lastName.getRawValues())
+                                                 : RangeTombstone.Bound.fromSliceBound(start);
                 writeMarker(markerStart, reader.openMarker);
             }
 
@@ -360,19 +357,16 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             if (reader.openMarker != null)
             {
                 // If we no end and still an openMarker, this means we're indexed and the marker can be close using the blocks end
-                Slice.Bound markerEnd = end;
-                if (end == null)
-                {
-                    ClusteringPrefix c = ((IndexedReader)reader).currentIndex().lastName;
-                    markerEnd = Slice.Bound.inclusiveEndOf(c);
-                }
+                RangeTombstone.Bound markerEnd = end == null
+                                               ? markerEnd = RangeTombstone.Bound.inclusiveEnd(((IndexedReader)reader).currentIndex().lastName.getRawValues())
+                                               : RangeTombstone.Bound.fromSliceBound(end);
                 writeMarker(markerEnd, reader.getAndClearOpenMarker());
             }
         }
 
-        private void writeMarker(Slice.Bound bound, DeletionTime dt)
+        private void writeMarker(RangeTombstone.Bound bound, DeletionTime dt)
         {
-            bound.writeTo(markerWriter);
+            markerWriter.writeRangeTombstoneBound(bound);
             markerWriter.writeBoundDeletion(dt);
             markerWriter.endOfMarker();
         }

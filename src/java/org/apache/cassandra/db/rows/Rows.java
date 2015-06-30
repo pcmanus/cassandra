@@ -130,12 +130,6 @@ public abstract class Rows
         public void onUpdated(Cell existingCell, Cell updatedCell);
     }
 
-    public static void writeClustering(Clustering clustering, Row.Writer writer)
-    {
-        for (int i = 0; i < clustering.size(); i++)
-            writer.writeClusteringValue(clustering.get(i));
-    }
-
     public static void merge(Row row1, Row row2, Columns mergedColumns, Row.Writer writer, int nowInSec)
     {
         merge(row1, row2, mergedColumns, writer, nowInSec, SecondaryIndexManager.nullUpdater);
@@ -151,7 +145,7 @@ public abstract class Rows
                              SecondaryIndexManager.Updater indexUpdater)
     {
         Clustering clustering = existing.clustering();
-        writeClustering(clustering, writer);
+        writer.writeClustering(clustering);
 
         LivenessInfo existingInfo = existing.primaryKeyLivenessInfo();
         LivenessInfo updateInfo = update.primaryKeyLivenessInfo();

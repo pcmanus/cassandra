@@ -23,7 +23,7 @@ import org.apache.cassandra.db.*;
 
 public class ReusableRow extends AbstractReusableRow
 {
-    private final ReusableClustering clustering;
+    private Clustering clustering;
 
     private final ReusableLivenessInfo liveness = new ReusableLivenessInfo();
 
@@ -32,9 +32,8 @@ public class ReusableRow extends AbstractReusableRow
     private final RowDataBlock data;
     private final Writer writer;
 
-    public ReusableRow(int clusteringSize, Columns columns, boolean inOrderCells, boolean isCounter)
+    public ReusableRow(Columns columns, boolean inOrderCells, boolean isCounter)
     {
-        this.clustering = new ReusableClustering(clusteringSize);
         this.data = new RowDataBlock(columns, 1, false, isCounter);
         this.writer = new Writer(data, inOrderCells);
     }
@@ -76,9 +75,9 @@ public class ReusableRow extends AbstractReusableRow
             super(data, inOrderCells);
         }
 
-        public void writeClusteringValue(ByteBuffer buffer)
+        public void writeClustering(Clustering clustering)
         {
-            clustering.writer().writeClusteringValue(buffer);
+            ReusableRow.this.clustering = clustering;
         }
 
         public void writePartitionKeyLivenessInfo(LivenessInfo info)
@@ -95,7 +94,7 @@ public class ReusableRow extends AbstractReusableRow
         public Writer reset()
         {
             super.reset();
-            clustering.reset();
+            clustering = null;
             liveness.reset();
             deletion = DeletionTime.LIVE;
             return this;

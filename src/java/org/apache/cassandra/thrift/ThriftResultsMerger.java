@@ -133,7 +133,7 @@ public class ThriftResultsMerger extends WrappingUnfilteredPartitionIterator
 
         private ReusableRow createReusableRow()
         {
-            return new ReusableRow(metadata().clusteringColumns().size(), metadata().partitionColumns().regulars, true, metadata().isCounter());
+            return new ReusableRow(metadata().partitionColumns().regulars, true, metadata().isCounter());
         }
 
         @Override
@@ -202,7 +202,7 @@ public class ThriftResultsMerger extends WrappingUnfilteredPartitionIterator
                     // Given a static cell, the equivalent row uses the column name as clustering and the
                     // value as unique cell value.
                     Row.Writer writer = nextToMerge.writer();
-                    writer.writeClusteringValue(cell.column().name.bytes);
+                    writer.writeClustering(new Clustering(cell.column().name.bytes));
                     writer.writeCell(metadata().compactValueColumn(), cell.isCounterCell(), cell.value(), cell.livenessInfo(), cell.path());
                     writer.endOfRow();
                     return;
@@ -229,8 +229,7 @@ public class ThriftResultsMerger extends WrappingUnfilteredPartitionIterator
             this.superColumnMapColumn = results.metadata().compactValueColumn();
             assert superColumnMapColumn != null && superColumnMapColumn.type instanceof MapType;
 
-            this.reusableRow = new ReusableRow(results.metadata().clusteringColumns().size(),
-                                               Columns.of(superColumnMapColumn),
+            this.reusableRow = new ReusableRow(Columns.of(superColumnMapColumn),
                                                true,
                                                results.metadata().isCounter());
             this.columnComparator = ((MapType)superColumnMapColumn.type).nameComparator();
@@ -245,7 +244,7 @@ public class ThriftResultsMerger extends WrappingUnfilteredPartitionIterator
 
             Row row = (Row)next;
             Row.Writer writer = reusableRow.writer();
-            row.clustering().writeTo(writer);
+            writer.writeClustering(row.clustering());
 
             PeekingIterator<Cell> staticCells = Iterators.peekingIterator(makeStaticCellIterator(row));
             if (!staticCells.hasNext())

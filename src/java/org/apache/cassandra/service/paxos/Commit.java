@@ -128,7 +128,7 @@ public class Commit
 
     private static void copyWithUpdatedTimestamp(Row row, Row.Writer writer, long timestamp)
     {
-        Rows.writeClustering(row.clustering(), writer);
+        writer.writeClustering(row.clustering());
         writer.writePartitionKeyLivenessInfo(row.primaryKeyLivenessInfo().withUpdatedTimestamp(timestamp));
         writer.writeRowDeletion(row.deletion());
 

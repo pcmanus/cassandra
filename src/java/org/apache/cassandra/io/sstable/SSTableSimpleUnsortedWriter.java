@@ -160,10 +160,10 @@ class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
                 return new RegularWriter()
                 {
                     @Override
-                    public void writeClusteringValue(ByteBuffer value)
+                    public void writeClustering(Clustering clustering)
                     {
-                        super.writeClusteringValue(value);
-                        count(2 + value.remaining());
+                        super.writeClustering(clustering);
+                        count(clustering.dataSize());
                     }
 
                     @Override

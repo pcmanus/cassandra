@@ -74,11 +74,6 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
 
     private final Writer writer;
 
-    // Used by compare for the sake of implementing the Sorting.Sortable interface (which is in turn used
-    // to sort the rows of this update).
-    private final InternalReusableClustering p1 = new InternalReusableClustering();
-    private final InternalReusableClustering p2 = new InternalReusableClustering();
-
     private PartitionUpdate(CFMetaData metadata,
                             DecoratedKey key,
                             DeletionInfo delInfo,
@@ -303,7 +298,6 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
      */
     public int dataSize()
     {
-        int clusteringSize = metadata().comparator.size();
         int size = 0;
         for (Row row : this)
         {
@@ -395,14 +389,13 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
     {
         assert metadata().isCounter();
 
-        InternalReusableClustering clustering = new InternalReusableClustering();
         List<CounterMark> l = new ArrayList<>();
         int i = 0;
         for (Row row : this)
         {
             for (Cell cell : row)
                 if (cell.isCounterCell())
-                    l.add(new CounterMark(clustering, i, cell.column(), cell.path()));
+                    l.add(new CounterMark(i, cell.column(), cell.path()));
             i++;
         }
         return l;
@@ -518,7 +511,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
      */
     public int compare(int i, int j)
     {
-        return metadata.comparator.compare(p1.setTo(i), p2.setTo(j));
+        return metadata.comparator.compare(clusterings[i], clusterings[j]);
     }
 
     protected class StaticWriter extends StaticRow.Builder
@@ -577,10 +570,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
                     endOfRow();
 
                     // Copy the clustering values from the previous row
-                    int clusteringSize = metadata.clusteringColumns().size();
-                    int base = (row - 1) * clusteringSize;
-                    for (int i = 0; i < clusteringSize; i++)
-                        writer.writeClusteringValue(clusterings[base + i]);
+                    writer.writeClustering(clusterings[row - 1]);
 
                     updatedComplex.clear();
                 }
@@ -731,14 +721,12 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
      */
     public class CounterMark
     {
-        private final InternalReusableClustering clustering;
         private final int row;
         private final ColumnDefinition column;
         private final CellPath path;
 
-        private CounterMark(InternalReusableClustering clustering, int row, ColumnDefinition column, CellPath path)
+        private CounterMark(int row, ColumnDefinition column, CellPath path)
         {
-            this.clustering = clustering;
             this.row = row;
             this.column = column;
             this.path = path;
@@ -746,7 +734,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
 
         public Clustering clustering()
         {
-            return clustering.setTo(row);
+            return clusterings[row];
         }
 
         public ColumnDefinition column()

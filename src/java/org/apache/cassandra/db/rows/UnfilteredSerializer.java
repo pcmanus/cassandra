@@ -350,14 +350,15 @@ public class UnfilteredSerializer
 
         if (kind(flags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
         {
-            RangeTombstone.Bound.Kind kind = RangeTombstone.Bound.serializer.deserialize(in, helper.version, header.clusteringTypes(), markerWriter);
-            deserializeMarkerBody(in, header, kind.isBoundary(), markerWriter);
+            RangeTombstone.Bound bound = RangeTombstone.Bound.serializer.deserialize(in, helper.version, header.clusteringTypes());
+            markerWriter.writeRangeTombstoneBound(bound);
+            deserializeMarkerBody(in, header, bound.isBoundary(), markerWriter);
             return Unfiltered.Kind.RANGE_TOMBSTONE_MARKER;
         }
         else
         {
             assert !isStatic(flags); // deserializeStaticRow should be used for that.
-            Clustering.serializer.deserialize(in, helper.version, header.clusteringTypes(), rowWriter);
+            rowWriter.writeClustering(Clustering.serializer.deserialize(in, helper.version, header.clusteringTypes()));
             deserializeRowBody(in, header, helper, flags, rowWriter);
             return Unfiltered.Kind.ROW;
         }
@@ -369,6 +370,7 @@ public class UnfilteredSerializer
         int flags = in.readUnsignedByte();
         assert !isEndOfPartition(flags) && kind(flags) == Unfiltered.Kind.ROW && isStatic(flags);
         StaticRow.Builder builder = StaticRow.builder(header.columns().statics, true, header.columns().statics.hasCounters());
+        builder.writeClustering(Clustering.STATIC_CLUSTERING);
         deserializeRowBody(in, header, helper, flags, builder);
         return builder.build();
     }

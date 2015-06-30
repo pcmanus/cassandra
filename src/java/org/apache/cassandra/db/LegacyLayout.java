@@ -96,7 +96,7 @@ public abstract class LegacyLayout
         if (metadata.isSuper())
         {
             assert superColumnName != null;
-            return decodeForSuperColumn(metadata, new SimpleClustering(superColumnName), cellname);
+            return decodeForSuperColumn(metadata, new Clustering(superColumnName), cellname);
         }
 
         assert superColumnName == null;
@@ -145,7 +145,7 @@ public abstract class LegacyLayout
         {
             // If it's a compact table, it means the column is in fact a "dynamic" one
             if (metadata.isCompactTable())
-                return new LegacyCellName(new SimpleClustering(column), metadata.compactValueColumn(), null);
+                return new LegacyCellName(new Clustering(column), metadata.compactValueColumn(), null);
 
             throw new UnknownColumnException(metadata, column);
         }
@@ -235,7 +235,7 @@ public abstract class LegacyLayout
                                     ? CompositeType.splitName(value)
                                     : Collections.singletonList(value);
 
-        return new SimpleClustering(components.subList(0, Math.min(csize, components.size())).toArray(new ByteBuffer[csize]));
+        return new Clustering(components.subList(0, Math.min(csize, components.size())).toArray(new ByteBuffer[csize]));
     }
 
     public static ByteBuffer encodeClustering(CFMetaData metadata, Clustering clustering)
@@ -753,7 +753,7 @@ public abstract class LegacyLayout
             this.metadata = metadata;
             this.isStatic = isStatic;
             this.helper = helper;
-            this.row = isStatic ? null : new ReusableRow(metadata.clusteringColumns().size(), metadata.partitionColumns().regulars, false, metadata.isCounter());
+            this.row = isStatic ? null : new ReusableRow(metadata.partitionColumns().regulars, false, metadata.isCounter());
 
             if (isStatic)
                 this.writer = StaticRow.builder(metadata.partitionColumns().statics, false, metadata.isCounter());
@@ -790,8 +790,7 @@ public abstract class LegacyLayout
             }
             else if (clustering == null)
             {
-                clustering = cell.name.clustering.takeAlias();
-                clustering.writeTo(writer);
+                writer.writeClustering(cell.name.clustering);
             }
             else if (!clustering.equals(cell.name.clustering))
             {
@@ -845,8 +844,7 @@ public abstract class LegacyLayout
                 if (clustering != null)
                     return false;
 
-                clustering = tombstone.start.getAsClustering(metadata).takeAlias();
-                clustering.writeTo(writer);
+                writer.writeClustering(tombstone.start.getAsClustering(metadata));
                 writer.writeRowDeletion(tombstone.deletionTime);
                 rowDeletion = tombstone;
                 return true;
@@ -856,8 +854,7 @@ public abstract class LegacyLayout
             {
                 if (clustering == null)
                 {
-                    clustering = tombstone.start.getAsClustering(metadata).takeAlias();
-                    clustering.writeTo(writer);
+                    writer.writeClustering(tombstone.start.getAsClustering(metadata));
                 }
                 else if (!clustering.equals(tombstone.start.getAsClustering(metadata)))
                 {
@@ -940,7 +937,7 @@ public abstract class LegacyLayout
             ByteBuffer[] values = new ByteBuffer[bound.size()];
             for (int i = 0; i < bound.size(); i++)
                 values[i] = bound.get(i);
-            return new SimpleClustering(values);
+            return new Clustering(values);
         }
 
         @Override

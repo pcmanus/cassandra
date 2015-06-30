@@ -39,7 +39,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
  * all of the following ones will be too because that's what thrift allows, but it's never assumed by the
  * code so we could start generally allowing nulls for clustering columns if we wanted to).
  */
-public abstract class Clustering extends AbstractClusteringPrefix
+public class Clustering extends AbstractClusteringPrefix
 {
     public static final Serializer serializer = new Serializer();
 
@@ -47,7 +47,7 @@ public abstract class Clustering extends AbstractClusteringPrefix
      * The special cased clustering used by all static rows. It is a special case in the
      * sense that it's always empty, no matter how many clustering columns the table has.
      */
-    public static final Clustering STATIC_CLUSTERING = new EmptyClustering()
+    public static final Clustering STATIC_CLUSTERING = new Clustering(EMPTY_VALUES_ARRAY)
     {
         @Override
         public Kind kind()
@@ -63,19 +63,23 @@ public abstract class Clustering extends AbstractClusteringPrefix
     };
 
     /** Empty clustering for tables having no clustering columns. */
-    public static final Clustering EMPTY = new EmptyClustering();
+    public static final Clustering EMPTY = new Clustering(EMPTY_VALUES_ARRAY)
+    {
+        @Override
+        public String toString(CFMetaData metadata)
+        {
+            return "EMPTY";
+        }
+    };
+
+    public Clustering(ByteBuffer... values)
+    {
+        super(Kind.CLUSTERING, values);
+    }
 
     public Kind kind()
     {
         return Kind.CLUSTERING;
-    }
-
-    public Clustering takeAlias()
-    {
-        ByteBuffer[] values = new ByteBuffer[size()];
-        for (int i = 0; i < size(); i++)
-            values[i] = get(i);
-        return new SimpleClustering(values);
     }
 
     public String toString(CFMetaData metadata)
@@ -100,44 +104,6 @@ public abstract class Clustering extends AbstractClusteringPrefix
         return sb.toString();
     }
 
-    private static class EmptyClustering extends Clustering
-    {
-        private static final ByteBuffer[] EMPTY_VALUES_ARRAY = new ByteBuffer[0];
-
-        public int size()
-        {
-            return 0;
-        }
-
-        public ByteBuffer get(int i)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        public ByteBuffer[] getRawValues()
-        {
-            return EMPTY_VALUES_ARRAY;
-        }
-
-        @Override
-        public Clustering takeAlias()
-        {
-            return this;
-        }
-
-        @Override
-        public long unsharedHeapSize()
-        {
-            return 0;
-        }
-
-        @Override
-        public String toString(CFMetaData metadata)
-        {
-            return "EMPTY";
-        }
-    }
-
     /**
      * Serializer for Clustering object.
      * <p>
@@ -148,6 +114,7 @@ public abstract class Clustering extends AbstractClusteringPrefix
     {
         public void serialize(Clustering clustering, DataOutputPlus out, int version, List<AbstractType<?>> types) throws IOException
         {
+            assert clustering != STATIC_CLUSTERING : "We should never serialize a static clustering";
             ClusteringPrefix.serializer.serializeValuesWithoutSize(clustering, out, version, types);
         }
 
@@ -156,16 +123,13 @@ public abstract class Clustering extends AbstractClusteringPrefix
             return ClusteringPrefix.serializer.valuesWithoutSizeSerializedSize(clustering, version, types);
         }
 
-        public void deserialize(DataInput in, int version, List<AbstractType<?>> types, Writer writer) throws IOException
-        {
-            ClusteringPrefix.serializer.deserializeValuesWithoutSize(in, types.size(), version, types, writer);
-        }
-
         public Clustering deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
         {
-            SimpleClustering.Builder builder = SimpleClustering.builder(types.size());
-            deserialize(in, version, types, builder);
-            return builder.build();
+            if (types.size() == 0)
+                return EMPTY;
+
+            ByteBuffer[] values = ClusteringPrefix.serializer.deserializeValuesWithoutSize(in, types.size(), version, types);
+            return new Clustering(values);
         }
     }
 }

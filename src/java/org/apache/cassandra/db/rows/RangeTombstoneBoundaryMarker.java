@@ -35,7 +35,7 @@ public class RangeTombstoneBoundaryMarker extends AbstractRangeTombstoneMarker
     public RangeTombstoneBoundaryMarker(RangeTombstone.Bound bound, DeletionTime endDeletion, DeletionTime startDeletion)
     {
         super(bound);
-        assert bound.kind().isBoundary();
+        assert bound.isBoundary();
         this.endDeletion = endDeletion;
         this.startDeletion = startDeletion;
     }
@@ -54,11 +54,6 @@ public class RangeTombstoneBoundaryMarker extends AbstractRangeTombstoneMarker
         DeletionTime endDeletion = reversed ? openDeletion : closeDeletion;
         DeletionTime startDeletion = reversed ? closeDeletion : openDeletion;
         return new RangeTombstoneBoundaryMarker(bound, endDeletion, startDeletion);
-    }
-
-    public boolean isBoundary()
-    {
-        return true;
     }
 
     /**
@@ -130,7 +125,7 @@ public class RangeTombstoneBoundaryMarker extends AbstractRangeTombstoneMarker
 
     public void copyTo(RangeTombstoneMarker.Writer writer)
     {
-        copyBoundTo(writer);
+        writer.writeRangeTombstoneBound(bound);
         writer.writeBoundaryDeletion(endDeletion, startDeletion);
         writer.endOfMarker();
     }

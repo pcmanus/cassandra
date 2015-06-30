@@ -233,7 +233,7 @@ public abstract class UnfilteredRowIterators
         return new WrappingUnfilteredRowIterator(iterator)
         {
             private final CloningRow cloningRow = new CloningRow();
-            private final RangeTombstoneMarker.Builder markerBuilder = new RangeTombstoneMarker.Builder(iterator.metadata().comparator.size());
+            private final RangeTombstoneMarker.Builder markerBuilder = new RangeTombstoneMarker.Builder();
 
             public Unfiltered next()
             {
@@ -245,12 +245,7 @@ public abstract class UnfilteredRowIterators
 
             private RangeTombstoneMarker clone(RangeTombstoneMarker marker)
             {
-                markerBuilder.reset();
-
-                RangeTombstone.Bound bound = marker.clustering();
-                for (int i = 0; i < bound.size(); i++)
-                    markerBuilder.writeClusteringValue(allocator.clone(bound.get(i)));
-                markerBuilder.writeBoundKind(bound.kind());
+                markerBuilder.writeRangeTombstoneBound(marker.clustering());
                 if (marker.isBoundary())
                 {
                     RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)marker;

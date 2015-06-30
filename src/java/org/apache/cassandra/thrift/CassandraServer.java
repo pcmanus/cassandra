@@ -359,7 +359,7 @@ public class CassandraServer implements Cassandra.Iface
     private ClusteringIndexFilter toInternalFilter(CFMetaData metadata, ColumnParent parent, SliceRange range)
     {
         if (metadata.isSuper() && parent.isSetSuper_column())
-            return new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new SimpleClustering(parent.bufferForSuper_column()), metadata.comparator), range.reversed);
+            return new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new Clustering(parent.bufferForSuper_column()), metadata.comparator), range.reversed);
         else
             return new ClusteringIndexSliceFilter(makeSlices(metadata, range), range.reversed);
     }
@@ -383,13 +383,13 @@ public class CassandraServer implements Cassandra.Iface
                 {
                     if (parent.isSetSuper_column())
                     {
-                        return new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new SimpleClustering(parent.bufferForSuper_column()), metadata.comparator), false);
+                        return new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new Clustering(parent.bufferForSuper_column()), metadata.comparator), false);
                     }
                     else
                     {
                         NavigableSet<Clustering> clusterings = new TreeSet<>(metadata.comparator);
                         for (ByteBuffer bb : predicate.column_names)
-                            clusterings.add(new SimpleClustering(bb));
+                            clusterings.add(new Clustering(bb));
                         return new ClusteringIndexNamesFilter(clusterings, false);
                     }
                 }
@@ -454,7 +454,7 @@ public class CassandraServer implements Cassandra.Iface
             // We only want to include the static columns that are selected by the slices
             for (ColumnDefinition def : columns.statics)
             {
-                if (slices.selects(new SimpleClustering(def.name.bytes)))
+                if (slices.selects(new Clustering(def.name.bytes)))
                     builder.add(def);
             }
             columns = builder.build();
@@ -607,7 +607,7 @@ public class CassandraServer implements Cassandra.Iface
                     builder.select(dynamicDef, CellPath.create(column_path.column));
                     columns = builder.build();
                 }
-                filter = new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new SimpleClustering(column_path.super_column), metadata.comparator),
+                filter = new ClusteringIndexNamesFilter(FBUtilities.<Clustering>singleton(new Clustering(column_path.super_column), metadata.comparator),
                                                   false);
             }
             else
@@ -817,7 +817,7 @@ public class CassandraServer implements Cassandra.Iface
             PartitionUpdate update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
 
             Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-            name.clustering.writeTo(writer);
+            writer.writeClustering(name.clustering);
             CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
             writer.writeCell(name.column, false, column.value, SimpleLivenessInfo.forUpdate(column.timestamp, column.ttl, FBUtilities.nowInSeconds(), metadata), path);
             writer.endOfRow();
@@ -1321,7 +1321,7 @@ public class CassandraServer implements Cassandra.Iface
         {
             update = new PartitionUpdate(metadata, dk, PartitionColumns.NONE, 1);
             Row.Writer writer = update.writer();
-            writer.writeClusteringValue(column_path.super_column);
+            writer.writeClustering(new Clustering(column_path.super_column));
             writer.writeRowDeletion(new SimpleDeletionTime(timestamp, nowInSec));
             writer.endOfRow();
         }
@@ -1332,7 +1332,7 @@ public class CassandraServer implements Cassandra.Iface
                 LegacyLayout.LegacyCellName name = LegacyLayout.decodeCellName(metadata, column_path.super_column, column_path.column);
                 update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
                 Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-                name.clustering.writeTo(writer);
+                writer.writeClustering(name.clustering);
                 CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
                 writer.writeCell(name.column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, SimpleLivenessInfo.forDeletion(timestamp, nowInSec), path);
                 writer.endOfRow();
@@ -1581,7 +1581,7 @@ public class CassandraServer implements Cassandra.Iface
                 ClusteringIndexFilter filter = new ClusteringIndexSliceFilter(Slices.ALL, false);
                 DataLimits limits = getLimits(range.count, true, Integer.MAX_VALUE);
                 Clustering pageFrom = metadata.isSuper()
-                                    ? new SimpleClustering(start_column)
+                                    ? new Clustering(start_column)
                                     : LegacyLayout.decodeCellName(metadata, start_column).clustering;
                 PartitionRangeReadCommand cmd = new PartitionRangeReadCommand(false,
                                                                               true,
@@ -2117,7 +2117,7 @@ public class CassandraServer implements Cassandra.Iface
                 PartitionUpdate update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
 
                 Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-                name.clustering.writeTo(writer);
+                writer.writeClustering(name.clustering);
                 CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
 
                 // See UpdateParameters.addCounter() for more details on this
@@ -2488,7 +2488,7 @@ public class CassandraServer implements Cassandra.Iface
             // Gather the clustering for the expected values and query those.
             NavigableSet<Clustering> clusterings = new TreeSet<>(metadata.comparator);
             for (Row row : expected)
-                clusterings.add(row.clustering().takeAlias());
+                clusterings.add(row.clustering());
             PartitionColumns columns = expected.staticRow().isEmpty()
                                      ? metadata.partitionColumns().withoutStatics()
                                      : metadata.partitionColumns();

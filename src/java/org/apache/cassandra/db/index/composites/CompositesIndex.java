@@ -114,7 +114,7 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
     {
         PartitionUpdate upd = new PartitionUpdate(indexCfs.metadata, entry.indexValue, PartitionColumns.NONE, 1);
         Row.Writer writer = upd.writer();
-        Rows.writeClustering(entry.indexClustering, writer);
+        writer.writeClustering(entry.indexClustering);
         writer.writeRowDeletion(new SimpleDeletionTime(entry.timestamp, nowInSec));
         writer.endOfRow();
         indexCfs.apply(upd, SecondaryIndexManager.nullUpdater, opGroup, null);
@@ -159,10 +159,10 @@ public abstract class CompositesIndex extends AbstractSimplePerColumnSecondaryIn
         public IndexedEntry(DecoratedKey indexValue, Clustering indexClustering, long timestamp, ByteBuffer indexedKey, Clustering indexedEntryClustering)
         {
             this.indexValue = indexValue;
-            this.indexClustering = indexClustering.takeAlias();
+            this.indexClustering = indexClustering;
             this.timestamp = timestamp;
             this.indexedKey = indexedKey;
-            this.indexedEntryClustering = indexedEntryClustering.takeAlias();
+            this.indexedEntryClustering = indexedEntryClustering;
         }
     }
 }
