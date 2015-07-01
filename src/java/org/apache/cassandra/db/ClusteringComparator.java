@@ -25,6 +25,7 @@ import java.util.Objects;
 
 import com.google.common.base.Joiner;
 
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -45,6 +46,8 @@ public class ClusteringComparator implements Comparator<Clusterable>
     private final Comparator<IndexInfo> indexComparator;
     private final Comparator<IndexInfo> indexReverseComparator;
     private final Comparator<Clusterable> reverseComparator;
+
+    private final Comparator<Row> rowComparator = (r1, r2) -> compare(r1.clustering(), r2.clustering());
 
     public ClusteringComparator(AbstractType<?>... clusteringTypes)
     {
@@ -231,6 +234,19 @@ public class ClusteringComparator implements Comparator<Clusterable>
             if (value != null)
                 subtype(i).validate(value);
         }
+    }
+
+    /**
+     * A comparator for rows.
+     *
+     * A {@code Row} is a {@code Clusterable} so {@code ClusteringComparator} can be used
+     * to compare rows directly, but when we know we deal with rows (and not {@code Clusterable} in
+     * general), this is a little faster because by knowing we compare {@code Clustering} objects,
+     * we know that 1) they all have the same size and 2) they all have the same kind.
+     */
+    public Comparator<Row> rowComparator()
+    {
+        return rowComparator;
     }
 
     public Comparator<IndexInfo> indexComparator(boolean reversed)

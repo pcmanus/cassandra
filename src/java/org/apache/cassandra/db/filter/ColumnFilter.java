@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.filter;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.*;
 
@@ -30,6 +29,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -113,6 +113,11 @@ public class ColumnFilter
     public PartitionColumns fetchedColumns()
     {
         return isFetchAll ? metadata.partitionColumns() : selection;
+    }
+
+    public boolean includesAllColumns()
+    {
+        return isFetchAll;
     }
 
     /**
@@ -317,6 +322,9 @@ public class ColumnFilter
         if (selection == null)
             return "*";
 
+        if (selection.isEmpty())
+            return "";
+
         Iterator<ColumnDefinition> defs = selection.selectOrderIterator();
         StringBuilder sb = new StringBuilder();
         appendColumnDef(sb, defs.next());
@@ -376,7 +384,7 @@ public class ColumnFilter
             }
         }
 
-        public ColumnFilter deserialize(DataInput in, int version, CFMetaData metadata) throws IOException
+        public ColumnFilter deserialize(DataInputPlus in, int version, CFMetaData metadata) throws IOException
         {
             int header = in.readUnsignedByte();
             boolean isFetchAll = (header & IS_FETCH_ALL_MASK) != 0;

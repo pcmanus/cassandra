@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db.filter;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Comparator;
@@ -29,6 +28,7 @@ import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -180,7 +180,7 @@ public abstract class ColumnSubselection
             throw new AssertionError();
         }
 
-        public ColumnSubselection deserialize(DataInput in, int version, CFMetaData metadata) throws IOException
+        public ColumnSubselection deserialize(DataInputPlus in, int version, CFMetaData metadata) throws IOException
         {
             ByteBuffer name = ByteBufferUtil.readWithShortLength(in);
             ColumnDefinition column = metadata.getColumnDefinition(name);

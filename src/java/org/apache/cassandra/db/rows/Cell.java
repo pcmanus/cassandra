@@ -17,40 +17,42 @@
  */
 package org.apache.cassandra.db.rows;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
+import java.util.Comparator;
 
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.Aliasable;
-import org.apache.cassandra.db.LivenessInfo;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
- * A cell holds a single "simple" value for a given column, as well as "liveness"
- * informations regarding that value.
+ * A cell is our atomic unit for a single value of a single column.
  * <p>
- * The is 2 kind of columns: simple ones and complex ones.
- * Simple columns have only a single associated cell, while complex ones,
- * the one corresponding to non-frozen collections and UDTs, are comprised
- * of multiple cells. For complex columns, the different cells are distinguished
- * by their cell path.
- * <p>
- * We can also distinguish different kind of cells based on the property of their
- * {@link #livenessInfo}:
- *  1) "Normal" cells: their liveness info has no ttl and no deletion time.
- *  2) Expiring cells: their liveness info has both a ttl and a deletion time (the latter
- *    deciding when the cell is actually expired).
- *  3) Tombstones/deleted cells: their liveness info has a deletion time but no ttl. Those
- *     cells don't really have a value but their {@link #value} method return an empty
- *     buffer by convention.
+ * A cell always holds at least a timestamp that gives us how the cell reconcile. We then
+ * have 3 main types of cells:
+ *   1) live regular cells: those will also have a value and, if for a complex column, a path.
+ *   2) expiring cells: on top of regular cells, those have a ttl and a local deletion time (when they are expired).
+ *   3) tombstone cells: those won't have value, but they have a local deletion time (when the tombstone was created).
  */
-public interface Cell extends Aliasable<Cell>
+public interface Cell extends ColumnData
 {
-    /**
-     * The column this cell belongs to.
-     *
-     * @return the column this cell belongs to.
-     */
-    public ColumnDefinition column();
+    public final Comparator<Cell> comparator = new Comparator<Cell>()
+    {
+        public int compare(Cell c1, Cell c2)
+        {
+            int cmp = c1.column().compareTo(c2.column());
+            if (cmp != 0)
+                return cmp;
+
+            Comparator<CellPath> pathComparator = c1.column().cellPathComparator();
+            return pathComparator == null ? 0 : pathComparator.compare(c1.path(), c2.path());
+        }
+    };
+
+    public final Serializer serializer = new BufferCell.Serializer();
 
     /**
      * Whether the cell is a counter cell or not.
@@ -73,6 +75,33 @@ public interface Cell extends Aliasable<Cell>
      * @return the cell {@link LivenessInfo}.
      */
     public LivenessInfo livenessInfo();
+
+    /**
+     * The cell timestamp.
+     * <p>
+     * This is a shortcut for {@code livenessInfo().timestamp()}.
+     *
+     * @return the cell timestamp.
+     */
+    public long timestamp();
+
+    /**
+     * The cell ttl.
+     * <p>
+     * This is a shortcut for {@code livenessInfo().ttl()}.
+     *
+     * @return the cell ttl.
+     */
+    public int ttl();
+
+    /**
+     * The cell local deletion time.
+     * <p>
+     * This is a shortcut for {@code livenessInfo().localDeletionTime()}.
+     *
+     * @return the cell local deletion time.
+     */
+    public int localDeletionTime();
 
     /**
      * Whether the cell is a tombstone or not.
@@ -110,33 +139,33 @@ public interface Cell extends Aliasable<Cell>
     public CellPath path();
 
     /**
-     * Write the cell to the provided writer.
+     * Returns a copy of this cell but with the updated provided timestamp.
      *
-     * @param writer the row writer to write the cell to.
+     * @return a copy of this cell but with {@code timestamp} as timestamp.
      */
-    public void writeTo(Row.Writer writer);
+    public Cell withUpdatedTimestamp(long timestamp);
 
-    /**
-     * Adds the cell to the provided digest.
-     *
-     * @param digest the {@code MessageDigest} to add the cell to.
-     */
-    public void digest(MessageDigest digest);
+    public Cell withUpdatedValue(ByteBuffer newValue);
 
-    /**
-     * Validate the cell value.
-     *
-     * @throws MarshalException if the cell value is not a valid value for
-     * the column type this is a cell of.
-     */
-    public void validate();
+    public Cell copy(AbstractAllocator allocator);
 
-    /**
-     * The size of the data hold by this cell.
-     *
-     * This is mainly used to verify if batches goes over a given size.
-     *
-     * @return the size used by the data of this cell.
-     */
-    public int dataSize();
+    @Override
+    // Overrides super type to provide a more precise return type.
+    public Cell markCounterLocalToBeCleared();
+
+    @Override
+    // Overrides super type to provide a more precise return type.
+    public Cell purge(DeletionPurger purger, int nowInSec);
+
+    public interface Serializer
+    {
+        public void serialize(Cell cell, DataOutputPlus out, LivenessInfo rowLiveness, SerializationHeader header) throws IOException;
+
+        public Cell deserialize(DataInputPlus in, LivenessInfo rowLiveness, ColumnDefinition column, SerializationHeader header, SerializationHelper helper) throws IOException;
+
+        public long serializedSize(Cell cell, LivenessInfo rowLiveness, SerializationHeader header);
+
+        // Returns if the skipped cell was an actual cell (i.e. it had its presence flag).
+        public boolean skip(DataInputPlus in, ColumnDefinition column, SerializationHeader header) throws IOException;
+    }
 }

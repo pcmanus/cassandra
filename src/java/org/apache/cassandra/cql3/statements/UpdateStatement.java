@@ -54,16 +54,13 @@ public class UpdateStatement extends ModificationStatement
 
         if (updatesRegularRows())
         {
-            Clustering clustering = cbuilder.build();
-            Row.Writer writer = update.writer();
-            params.writeClustering(clustering, writer);
-
+            params.newRow(cbuilder.build());
 
             // We update the row timestamp (ex-row marker) only on INSERT (#6782)
             // Further, COMPACT tables semantic differs from "CQL3" ones in that a row exists only if it has
             // a non-null column, so we don't want to set the row timestamp for them.
             if (type == StatementType.INSERT && cfm.isCQLTable())
-                params.writePartitionKeyLivenessInfo(writer);
+                params.writePrimaryKeyLivenessInfo();
 
             List<Operation> updates = getRegularOperations();
 
@@ -82,17 +79,17 @@ public class UpdateStatement extends ModificationStatement
             }
 
             for (Operation op : updates)
-                op.execute(update.partitionKey(), clustering, writer, params);
+                op.execute(update.partitionKey(), params);
 
-            writer.endOfRow();
+            update.add(params.buildRow());
         }
 
         if (updatesStaticRow())
         {
-            Row.Writer writer = update.staticWriter();
+            params.newRow(Clustering.STATIC_CLUSTERING);
             for (Operation op : getStaticOperations())
-                op.execute(update.partitionKey(), Clustering.STATIC_CLUSTERING, writer, params);
-            writer.endOfRow();
+                op.execute(update.partitionKey(), params);
+            update.add(params.buildRow());
         }
     }
 

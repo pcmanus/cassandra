@@ -145,7 +145,7 @@ public class SinglePartitionNamesCommand extends SinglePartitionReadCommand<Clus
 
             try (UnfilteredRowIterator iter = result.unfilteredIterator(columnFilter(), Slices.ALL, false))
             {
-                final Mutation mutation = new Mutation(UnfilteredRowIterators.toUpdate(iter));
+                final Mutation mutation = new Mutation(PartitionUpdate.fromIterator(iter));
                 StageManager.getStage(Stage.MUTATION).execute(new Runnable()
                 {
                     public void run()
@@ -241,7 +241,7 @@ public class SinglePartitionNamesCommand extends SinglePartitionReadCommand<Clus
                 return false;
 
             Cell cell = row.getCell(column);
-            if (cell == null || cell.livenessInfo().timestamp() <= sstableTimestamp)
+            if (cell == null || cell.timestamp() <= sstableTimestamp)
                 return false;
         }
         return true;

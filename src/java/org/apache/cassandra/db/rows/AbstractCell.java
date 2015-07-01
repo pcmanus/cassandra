@@ -34,26 +34,6 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public abstract class AbstractCell implements Cell
 {
-    public boolean isLive(int nowInSec)
-    {
-        return livenessInfo().isLive(nowInSec);
-    }
-
-    public boolean isTombstone()
-    {
-        return livenessInfo().hasLocalDeletionTime() && !livenessInfo().hasTTL();
-    }
-
-    public boolean isExpiring()
-    {
-        return livenessInfo().hasTTL();
-    }
-
-    public void writeTo(Row.Writer writer)
-    {
-        writer.writeCell(column(), isCounterCell(), value(), livenessInfo(), path());
-    }
-
     public void digest(MessageDigest digest)
     {
         digest.update(value().duplicate());
@@ -83,20 +63,24 @@ public abstract class AbstractCell implements Cell
         if (path() != null)
             size += path().dataSize();
         return size;
-
     }
 
     @Override
     public boolean equals(Object other)
     {
+        if (this == other)
+            return true;
+
         if(!(other instanceof Cell))
             return false;
 
         Cell that = (Cell)other;
         return this.column().equals(that.column())
             && this.isCounterCell() == that.isCounterCell()
+            && this.timestamp() == that.timestamp()
+            && this.ttl() == that.ttl()
+            && this.localDeletionTime() == that.localDeletionTime()
             && Objects.equals(this.value(), that.value())
-            && Objects.equals(this.livenessInfo(), that.livenessInfo())
             && Objects.equals(this.path(), that.path());
     }
 
@@ -123,13 +107,5 @@ public abstract class AbstractCell implements Cell
                                  livenessInfo());
         }
         return String.format("[%s=%s info=%s]", column().name, type.getString(value()), livenessInfo());
-    }
-
-    public Cell takeAlias()
-    {
-        // Cell is always used as an Aliasable object but as the code currently
-        // never need to alias a cell outside of its valid scope, we don't yet
-        // need that.
-        throw new UnsupportedOperationException();
     }
 }

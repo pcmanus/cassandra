@@ -790,6 +790,14 @@ public class CassandraServer implements Cassandra.Iface
         }
     }
 
+    private Cell cellFromColumn(CFMetaData metadata, LegacyLayout.LegacyCellName name, Column column)
+    {
+        CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
+        return column.ttl == 0
+             ? BufferCell.live(metadata, name.column, column.timestamp, column.value, path)
+             : BufferCell.expiring(name.column, column.timestamp, column.ttl, FBUtilities.nowInSeconds(), column.value, path);
+    }
+
     private void internal_insert(ByteBuffer key, ColumnParent column_parent, Column column, ConsistencyLevel consistency_level)
     throws RequestValidationException, UnavailableException, TimedOutException
     {
@@ -811,16 +819,11 @@ public class CassandraServer implements Cassandra.Iface
         org.apache.cassandra.db.Mutation mutation;
         try
         {
-            LegacyLayout.LegacyCellName name = LegacyLayout.decodeCellName(metadata, column_parent.super_column, column.name);
-
             DecoratedKey dk = StorageService.getPartitioner().decorateKey(key);
-            PartitionUpdate update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
 
-            Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-            writer.writeClustering(name.clustering);
-            CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
-            writer.writeCell(name.column, false, column.value, SimpleLivenessInfo.forUpdate(column.timestamp, column.ttl, FBUtilities.nowInSeconds(), metadata), path);
-            writer.endOfRow();
+            LegacyLayout.LegacyCellName name = LegacyLayout.decodeCellName(metadata, column_parent.super_column, column.name);
+            Cell cell = cellFromColumn(metadata, name, column);
+            PartitionUpdate update = PartitionUpdate.singleRowUpdate(metadata, dk, ArrayBackedRow.singleCellRow(name.clustering, cell));
 
             mutation = new org.apache.cassandra.db.Mutation(update);
         }
@@ -911,7 +914,7 @@ public class CassandraServer implements Cassandra.Iface
             DecoratedKey dk = StorageService.getPartitioner().decorateKey(key);
             int nowInSec = FBUtilities.nowInSeconds();
 
-            PartitionUpdate partitionUpdates = RowIterators.toUpdate(LegacyLayout.toRowIterator(metadata, dk, toLegacyCells(metadata, updates, nowInSec).iterator(), nowInSec));
+            PartitionUpdate partitionUpdates = PartitionUpdate.fromIterator(LegacyLayout.toRowIterator(metadata, dk, toLegacyCells(metadata, updates, nowInSec).iterator(), nowInSec));
 
             FilteredPartition partitionExpected = null;
             if (!expected.isEmpty())
@@ -1095,7 +1098,7 @@ public class CassandraServer implements Cassandra.Iface
                 if (metadata.isCounter())
                     ThriftConversion.fromThrift(consistency_level).validateCounterForWrite(metadata);
 
-                DeletionInfo delInfo = DeletionInfo.live();
+                MutableDeletionInfo delInfo = MutableDeletionInfo.live();
                 List<LegacyLayout.LegacyCell> cells = new ArrayList<>();
                 for (Mutation m : muts)
                 {
@@ -1112,7 +1115,7 @@ public class CassandraServer implements Cassandra.Iface
                 }
 
                 sortAndMerge(metadata, cells, nowInSec);
-                PartitionUpdate update = UnfilteredRowIterators.toUpdate(LegacyLayout.toUnfilteredRowIterator(metadata, dk, delInfo, cells.iterator()));
+                PartitionUpdate update = PartitionUpdate.fromIterator(LegacyLayout.toUnfilteredRowIterator(metadata, dk, delInfo, cells.iterator()));
 
                 org.apache.cassandra.db.Mutation mutation;
                 if (metadata.isCounter())
@@ -1172,12 +1175,12 @@ public class CassandraServer implements Cassandra.Iface
         }
     }
 
-    private void addRange(CFMetaData cfm, DeletionInfo delInfo, Slice.Bound start, Slice.Bound end, long timestamp, int nowInSec)
+    private void addRange(CFMetaData cfm, MutableDeletionInfo delInfo, Slice.Bound start, Slice.Bound end, long timestamp, int nowInSec)
     {
-        delInfo.add(new RangeTombstone(Slice.make(start, end), new SimpleDeletionTime(timestamp, nowInSec)), cfm.comparator);
+        delInfo.add(new RangeTombstone(Slice.make(start, end), new DeletionTime(timestamp, nowInSec)), cfm.comparator);
     }
 
-    private void deleteColumnOrSuperColumn(DeletionInfo delInfo, List<LegacyLayout.LegacyCell> cells, CFMetaData cfm, Deletion del, int nowInSec)
+    private void deleteColumnOrSuperColumn(MutableDeletionInfo delInfo, List<LegacyLayout.LegacyCell> cells, CFMetaData cfm, Deletion del, int nowInSec)
     throws InvalidRequestException
     {
         if (del.predicate != null && del.predicate.column_names != null)
@@ -1226,7 +1229,7 @@ public class CassandraServer implements Cassandra.Iface
             if (del.super_column != null)
                 addRange(cfm, delInfo, Slice.Bound.inclusiveStartOf(del.super_column), Slice.Bound.inclusiveEndOf(del.super_column), del.timestamp, nowInSec);
             else
-                delInfo.add(new SimpleDeletionTime(del.timestamp, nowInSec));
+                delInfo.add(new DeletionTime(del.timestamp, nowInSec));
         }
     }
 
@@ -1319,23 +1322,17 @@ public class CassandraServer implements Cassandra.Iface
         }
         else if (column_path.super_column != null && column_path.column == null)
         {
-            update = new PartitionUpdate(metadata, dk, PartitionColumns.NONE, 1);
-            Row.Writer writer = update.writer();
-            writer.writeClustering(new Clustering(column_path.super_column));
-            writer.writeRowDeletion(new SimpleDeletionTime(timestamp, nowInSec));
-            writer.endOfRow();
+            Row row = ArrayBackedRow.emptyDeletedRow(new Clustering(column_path.super_column), new DeletionTime(timestamp, nowInSec));
+            update = PartitionUpdate.singleRowUpdate(metadata, dk, row);
         }
         else
         {
             try
             {
                 LegacyLayout.LegacyCellName name = LegacyLayout.decodeCellName(metadata, column_path.super_column, column_path.column);
-                update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
-                Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-                writer.writeClustering(name.clustering);
                 CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
-                writer.writeCell(name.column, false, ByteBufferUtil.EMPTY_BYTE_BUFFER, SimpleLivenessInfo.forDeletion(timestamp, nowInSec), path);
-                writer.endOfRow();
+                Cell cell = BufferCell.tombstone(name.column, timestamp, nowInSec, path);
+                update = PartitionUpdate.singleRowUpdate(metadata, dk, ArrayBackedRow.singleCellRow(name.clustering, cell));
             }
             catch (UnknownColumnException e)
             {
@@ -2114,17 +2111,13 @@ public class CassandraServer implements Cassandra.Iface
             {
                 LegacyLayout.LegacyCellName name = LegacyLayout.decodeCellName(metadata, column_parent.super_column, column.name);
                 DecoratedKey dk = StorageService.getPartitioner().decorateKey(key);
-                PartitionUpdate update = new PartitionUpdate(metadata, dk, PartitionColumns.of(name.column), 1);
-
-                Row.Writer writer = name.column.isStatic() ? update.staticWriter() : update.writer();
-                writer.writeClustering(name.clustering);
-                CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
 
                 // See UpdateParameters.addCounter() for more details on this
                 ByteBuffer value = CounterContext.instance().createLocal(column.value);
+                CellPath path = name.collectionElement == null ? null : CellPath.create(name.collectionElement);
+                Cell cell = BufferCell.live(metadata, name.column, FBUtilities.timestampMicros(), value, path);
 
-                writer.writeCell(name.column, true, value, SimpleLivenessInfo.forUpdate(FBUtilities.timestampMicros(), LivenessInfo.NO_TTL, FBUtilities.nowInSeconds(), metadata), path);
-                writer.endOfRow();
+                PartitionUpdate update = PartitionUpdate.singleRowUpdate(metadata, dk, ArrayBackedRow.singleCellRow(name.clustering, cell));
 
                 org.apache.cassandra.db.Mutation mutation = new org.apache.cassandra.db.Mutation(update);
                 doInsert(consistency_level, Arrays.asList(new CounterMutation(mutation, ThriftConversion.fromThrift(consistency_level))));
@@ -2510,11 +2503,29 @@ public class CassandraServer implements Cassandra.Iface
                 if (c == null)
                     return false;
 
-                for (Cell ce : e)
+                SearchIterator<ColumnDefinition, ColumnData> searchIter = c.searchIterator();
+                for (ColumnData expectedData : e)
                 {
-                    Cell cc = c.getCell(ce.column());
-                    if (cc == null || !cc.value().equals(ce.value()))
+                    ColumnDefinition column = expectedData.column();
+                    ColumnData currentData = searchIter.next(column);
+                    if (currentData == null)
                         return false;
+
+                    if (column.isSimple())
+                    {
+                        if (!((Cell)currentData).value().equals(((Cell)expectedData).value()))
+                            return false;
+                    }
+                    else
+                    {
+                        ComplexColumnData currentComplexData = (ComplexColumnData)currentData;
+                        for (Cell expectedCell : (ComplexColumnData)expectedData)
+                        {
+                            Cell currentCell = currentComplexData.getCell(expectedCell.path());
+                            if (currentCell == null || !currentCell.value().equals(expectedCell.value()))
+                                return false;
+                        }
+                    }
                 }
             }
             return true;

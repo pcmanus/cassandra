@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -25,7 +24,9 @@ import java.util.*;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * The clustering column values for a row.
@@ -82,6 +83,18 @@ public class Clustering extends AbstractClusteringPrefix
         return Kind.CLUSTERING;
     }
 
+    public Clustering copy(AbstractAllocator allocator)
+    {
+        // Important for STATIC_CLUSTERING (but no point in being wasteful in general).
+        if (size() == 0)
+            return this;
+
+        ByteBuffer[] newValues = new ByteBuffer[size()];
+        for (int i = 0; i < size(); i++)
+            newValues[i] = values[i] == null ? null : allocator.clone(values[i]);
+        return new Clustering(newValues);
+    }
+
     public String toString(CFMetaData metadata)
     {
         StringBuilder sb = new StringBuilder();
@@ -123,7 +136,7 @@ public class Clustering extends AbstractClusteringPrefix
             return ClusteringPrefix.serializer.valuesWithoutSizeSerializedSize(clustering, version, types);
         }
 
-        public Clustering deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
+        public Clustering deserialize(DataInputPlus in, int version, List<AbstractType<?>> types) throws IOException
         {
             if (types.size() == 0)
                 return EMPTY;

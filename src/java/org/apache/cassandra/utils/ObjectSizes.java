@@ -23,6 +23,8 @@ package org.apache.cassandra.utils;
 
 import java.nio.ByteBuffer;
 
+import java.util.ArrayList;
+
 import org.github.jamm.MemoryLayoutSpecification;
 import org.github.jamm.MemoryMeter;
 
@@ -38,6 +40,8 @@ public class ObjectSizes
 
     private static final long BUFFER_EMPTY_SIZE = measure(ByteBufferUtil.EMPTY_BYTE_BUFFER);
     private static final long STRING_EMPTY_SIZE = measure("");
+
+    private static final long ARRAYLIST_EMPTY_SIZE = measure(new ArrayList<Object>(0));
 
     /**
      * Memory a byte array consumes
@@ -111,6 +115,7 @@ public class ObjectSizes
     {
         return BUFFER_EMPTY_SIZE * array.length + sizeOfArray(array);
     }
+
     /**
      * Memory a byte buffer consumes
      * @param buffer ByteBuffer to calculate in memory size
@@ -160,5 +165,13 @@ public class ObjectSizes
     public static long measure(Object pojo)
     {
         return meter.measure(pojo);
+    }
+
+    public static long shallowSizeOnHeap(ArrayList<?> list)
+    {
+        // TODO: this is incorrent if only because the capacity can be greater than the size, but said capacity
+        // is not exposed. We could switch to arrays but I'm lazy because for the places where we do currently use
+        // that, I think we'll almost always have capacity == size anyway.
+        return ARRAYLIST_EMPTY_SIZE + sizeOfReferenceArray(list.size());
     }
 }

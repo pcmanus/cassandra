@@ -17,17 +17,18 @@
  */
 package org.apache.cassandra.db.partitions;
 
-import java.io.DataInput;
 import java.io.IOError;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.function.Function;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.MergeIterator;
@@ -241,28 +242,6 @@ public abstract class UnfilteredPartitionIterators
         };
     }
 
-    /**
-     * Convert all expired cells to equivalent tombstones.
-     * <p>
-     * See {@link UnfilteredRowIterators#convertExpiredCellsToTombstones} for details.
-     *
-     * @param iterator the iterator in which to conver expired cells.
-     * @param nowInSec the current time to use to decide if a cell is expired.
-     * @return an iterator that returns the same data than {@code iterator} but with all expired cells converted
-     * to equivalent tombstones.
-     */
-    public static UnfilteredPartitionIterator convertExpiredCellsToTombstones(UnfilteredPartitionIterator iterator, final int nowInSec)
-    {
-        return new WrappingUnfilteredPartitionIterator(iterator)
-        {
-            @Override
-            protected UnfilteredRowIterator computeNext(UnfilteredRowIterator iter)
-            {
-                return UnfilteredRowIterators.convertExpiredCellsToTombstones(iter, nowInSec);
-            }
-        };
-    }
-
     public static UnfilteredPartitionIterator mergeLazily(final List<? extends UnfilteredPartitionIterator> iterators, final int nowInSec)
     {
         assert !iterators.isEmpty();
@@ -329,52 +308,6 @@ public abstract class UnfilteredPartitionIterators
         };
     }
 
-    public static UnfilteredPartitionIterator removeDroppedColumns(UnfilteredPartitionIterator iterator, final Map<ColumnIdentifier, CFMetaData.DroppedColumn> droppedColumns)
-    {
-        return new FilteringPartitionIterator(iterator)
-        {
-            @Override
-            protected FilteringRow makeRowFilter()
-            {
-                return new FilteringRow()
-                {
-                    @Override
-                    protected boolean include(Cell cell)
-                    {
-                        return include(cell.column(), cell.livenessInfo().timestamp());
-                    }
-
-                    @Override
-                    protected boolean include(ColumnDefinition c, DeletionTime dt)
-                    {
-                        return include(c, dt.markedForDeleteAt());
-                    }
-
-                    private boolean include(ColumnDefinition column, long timestamp)
-                    {
-                        CFMetaData.DroppedColumn dropped = droppedColumns.get(column.name);
-                        return dropped == null || timestamp > dropped.droppedTime;
-                    }
-                };
-            }
-
-            @Override
-            protected boolean shouldFilter(UnfilteredRowIterator iterator)
-            {
-                // TODO: We could have row iterators return the smallest timestamp they might return
-                // (which we can get from sstable stats), and ignore any dropping if that smallest
-                // timestamp is bigger that the biggest droppedColumns timestamp.
-
-                // If none of the dropped columns is part of the columns that the iterator actually returns, there is nothing to do;
-                for (ColumnDefinition c : iterator.columns())
-                    if (droppedColumns.containsKey(c.name))
-                        return true;
-
-                return false;
-            }
-        };
-    }
-
     public static void digest(UnfilteredPartitionIterator iterator, MessageDigest digest)
     {
         try (UnfilteredPartitionIterator iter = iterator)
@@ -434,7 +367,7 @@ public abstract class UnfilteredPartitionIterators
             out.writeBoolean(false);
         }
 
-        public UnfilteredPartitionIterator deserialize(final DataInput in, final int version, final SerializationHelper.Flag flag) throws IOException
+        public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final SerializationHelper.Flag flag) throws IOException
         {
             if (version < MessagingService.VERSION_30)
                 throw new UnsupportedOperationException();

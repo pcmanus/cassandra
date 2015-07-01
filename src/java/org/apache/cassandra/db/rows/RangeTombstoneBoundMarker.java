@@ -23,6 +23,7 @@ import java.util.Objects;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * A range tombstone marker that indicates the bound of a range tombstone (start or end).
@@ -118,11 +119,19 @@ public class RangeTombstoneBoundMarker extends AbstractRangeTombstoneMarker
         return bound.isInclusive();
     }
 
-    public void copyTo(RangeTombstoneMarker.Writer writer)
+    public RangeTombstone.Bound openBound(boolean reversed)
     {
-        writer.writeRangeTombstoneBound(bound);
-        writer.writeBoundDeletion(deletion);
-        writer.endOfMarker();
+        return isOpen(reversed) ? clustering() : null;
+    }
+
+    public RangeTombstone.Bound closeBound(boolean reversed)
+    {
+        return isClose(reversed) ? clustering() : null;
+    }
+
+    public RangeTombstoneBoundMarker copy(AbstractAllocator allocator)
+    {
+        return new RangeTombstoneBoundMarker(clustering().copy(allocator), deletion);
     }
 
     public void digest(MessageDigest digest)

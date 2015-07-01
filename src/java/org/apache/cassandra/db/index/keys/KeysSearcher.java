@@ -176,7 +176,7 @@ public class KeysSearcher extends SecondaryIndexSearcher
                          new Clustering(index.indexedColumn().name.bytes),
                          indexedValue,
                          null,
-                         new SimpleDeletionTime(indexHit.primaryKeyLivenessInfo().timestamp(), nowInSec),
+                         new DeletionTime(indexHit.primaryKeyLivenessInfo().timestamp(), nowInSec),
                          writeOp);
             return true;
         }

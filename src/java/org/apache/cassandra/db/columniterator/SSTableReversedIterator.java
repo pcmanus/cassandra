@@ -28,7 +28,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.db.partitions.AbstractPartitionData;
+import org.apache.cassandra.db.partitions.AbstractThreadUnsafePartition;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.IndexHelper;
@@ -96,7 +96,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 // shouldn't happen, it's not worth taking the risk of letting the exception bubble up.
             }
         }
-        return new ReusablePartitionData(metadata(), partitionKey(), DeletionTime.LIVE, columns(), estimatedRowCount);
+        return new ReusablePartitionData(metadata(), partitionKey(), columns(), estimatedRowCount);
     }
 
     private class ReverseReader extends Reader
@@ -165,32 +165,22 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
 
         public boolean hasNext() throws IOException
         {
-            // If it's called before we've created the file, create it. This then mean
-            // we're reading from the end of the partition.
-            if (!isInit)
-            {
-                seekToPosition(indexEntry.position);
-                ByteBufferUtil.skipShortLength(file); // partition key
-                DeletionTime.serializer.skip(file);   // partition deletion
-                if (sstable.header.hasStatic())
-                    UnfilteredSerializer.serializer.skipStaticRow(file, sstable.header, helper);
-                isInit = true;
-            }
+            // If we still have data in the current block, we'll return that
+            if (iterator != null && iterator.hasNext())
+                return true;
 
-            if (partition == null)
+            // Otherwise, grab the previous block (not that because we're not necessarily selecting all
+            // columns, we may have nothing in a particular block, so don't assume we have)
+            do
             {
-                partition = createBuffer(indexes.size());
-                partition.populateFrom(this, null, null, new Tester()
-                {
-                    public boolean isDone()
-                    {
-                        return false;
-                    }
-                });
+                if (currentIndexIdx <= 0)
+                    return false;
+
+                prepareBlock(currentIndexIdx - 1, null, null);
                 iterator = partition.unfilteredIterator(columns, Slices.ALL, true);
             }
-
-            return iterator.hasNext();
+            while (!iterator.hasNext());
+            return true;
         }
 
         public Unfiltered next() throws IOException
@@ -206,8 +196,6 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
 
             if (partition == null)
                 partition = createBuffer(indexes.size());
-            else
-                partition.clear();
 
             final FileMark fileMark = mark;
             final long width = currentIndex().width;
@@ -293,29 +281,45 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         public abstract boolean isDone();
     }
 
-    private class ReusablePartitionData extends AbstractPartitionData
+    private class ReusablePartitionData extends AbstractThreadUnsafePartition
     {
-        private final Writer rowWriter;
-        private final RangeTombstoneCollector markerWriter;
+        private MutableDeletionInfo deletionInfo;
 
         private ReusablePartitionData(CFMetaData metadata,
                                       DecoratedKey partitionKey,
-                                      DeletionTime deletionTime,
                                       PartitionColumns columns,
                                       int initialRowCapacity)
         {
-            super(metadata, partitionKey, deletionTime, columns, initialRowCapacity, false);
+            super(metadata, partitionKey, columns, new ArrayList<>(initialRowCapacity));
+        }
 
-            this.rowWriter = new Writer(true);
-            // Note that even though the iterator handles the reverse case, this object holds the data for a single index bock, and we read index blocks in
-            // forward clustering order.
-            this.markerWriter = new RangeTombstoneCollector(false);
+        public DeletionInfo deletionInfo()
+        {
+            return deletionInfo;
+        }
+
+        protected boolean canHaveShadowedData()
+        {
+            return false;
+        }
+
+        public Row staticRow()
+        {
+            return Rows.EMPTY_STATIC_ROW; // we don't actually use that
+        }
+
+        public RowStats stats()
+        {
+            return RowStats.NO_STATS; // we don't actually use that
         }
 
         // Note that this method is here rather than in the readers because we want to use it for both readers and they
         // don't extend one another
         private void populateFrom(Reader reader, Slice.Bound start, Slice.Bound end, Tester tester) throws IOException
         {
+            rows.clear();
+            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(partitionLevelDeletion, metadata().comparator, false);
+
             // If we have a start bound, skip everything that comes before it.
             while (reader.deserializer.hasNext() && start != null && reader.deserializer.compareNextTo(start) <= 0 && !tester.isDone())
             {
@@ -332,7 +336,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 RangeTombstone.Bound markerStart = start == null
                                                  ? RangeTombstone.Bound.exclusiveStart(((IndexedReader)reader).previousIndex().lastName.getRawValues())
                                                  : RangeTombstone.Bound.fromSliceBound(start);
-                writeMarker(markerStart, reader.openMarker);
+                deletionBuilder.add(new RangeTombstoneBoundMarker(markerStart, reader.openMarker));
             }
 
             // Now deserialize everything until we reach our requested end (if we have one)
@@ -343,13 +347,13 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 Unfiltered unfiltered = reader.deserializer.readNext();
                 if (unfiltered.kind() == Unfiltered.Kind.ROW)
                 {
-                    ((Row) unfiltered).copyTo(rowWriter);
+                    rows.add((Row) unfiltered);
                 }
                 else
                 {
                     RangeTombstoneMarker marker = (RangeTombstoneMarker) unfiltered;
                     reader.updateOpenMarker(marker);
-                    marker.copyTo(markerWriter);
+                    deletionBuilder.add(marker);
                 }
             }
 
@@ -360,23 +364,10 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 RangeTombstone.Bound markerEnd = end == null
                                                ? markerEnd = RangeTombstone.Bound.inclusiveEnd(((IndexedReader)reader).currentIndex().lastName.getRawValues())
                                                : RangeTombstone.Bound.fromSliceBound(end);
-                writeMarker(markerEnd, reader.getAndClearOpenMarker());
+                deletionBuilder.add(new RangeTombstoneBoundMarker(markerEnd, reader.getAndClearOpenMarker()));
             }
-        }
 
-        private void writeMarker(RangeTombstone.Bound bound, DeletionTime dt)
-        {
-            markerWriter.writeRangeTombstoneBound(bound);
-            markerWriter.writeBoundDeletion(dt);
-            markerWriter.endOfMarker();
-        }
-
-        @Override
-        public void clear()
-        {
-            super.clear();
-            rowWriter.reset();
-            markerWriter.reset();
+            deletionInfo = deletionBuilder.build();
         }
     }
 }

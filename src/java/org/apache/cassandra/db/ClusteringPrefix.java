@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -27,6 +26,7 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -269,7 +269,7 @@ public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
             }
         }
 
-        public ClusteringPrefix deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
+        public ClusteringPrefix deserialize(DataInputPlus in, int version, List<AbstractType<?>> types) throws IOException
         {
             Kind kind = Kind.values()[in.readByte()];
             // We shouldn't serialize static clusterings
@@ -323,7 +323,7 @@ public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
             return size;
         }
 
-        ByteBuffer[] deserializeValuesWithoutSize(DataInput in, int size, int version, List<AbstractType<?>> types) throws IOException
+        ByteBuffer[] deserializeValuesWithoutSize(DataInputPlus in, int size, int version, List<AbstractType<?>> types) throws IOException
         {
             // Callers of this method should handle the case where size = 0 (in all case we want to return a special value anyway).
             assert size > 0;
@@ -374,7 +374,7 @@ public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
             }
         }
 
-        private int[] readHeader(int size, DataInput in) throws IOException
+        private int[] readHeader(int size, DataInputPlus in) throws IOException
         {
             int nbBytes = headerBytesCount(size);
             int[] header = new int[nbBytes];
@@ -410,7 +410,7 @@ public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
     public static class Deserializer
     {
         private final ClusteringComparator comparator;
-        private final DataInput in;
+        private final DataInputPlus in;
         private final SerializationHeader serializationHeader;
 
         private boolean nextIsRow;
@@ -421,7 +421,7 @@ public interface ClusteringPrefix extends IMeasurableMemory, Clusterable
         private int deserializedSize;
         private ByteBuffer[] nextValues;
 
-        public Deserializer(ClusteringComparator comparator, DataInput in, SerializationHeader header)
+        public Deserializer(ClusteringComparator comparator, DataInputPlus in, SerializationHeader header)
         {
             this.comparator = comparator;
             this.in = in;

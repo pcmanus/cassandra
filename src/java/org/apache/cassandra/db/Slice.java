@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -25,6 +24,7 @@ import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -331,7 +331,7 @@ public class Slice
                  + Bound.serializer.serializedSize(slice.end, version, types);
         }
 
-        public Slice deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
+        public Slice deserialize(DataInputPlus in, int version, List<AbstractType<?>> types) throws IOException
         {
             Bound start = Bound.serializer.deserialize(in, version, types);
             Bound end = Bound.serializer.deserialize(in, version, types);
@@ -515,13 +515,13 @@ public class Slice
                      + ClusteringPrefix.serializer.valuesWithoutSizeSerializedSize(bound, version, types);
             }
 
-            public Slice.Bound deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
+            public Slice.Bound deserialize(DataInputPlus in, int version, List<AbstractType<?>> types) throws IOException
             {
                 Kind kind = Kind.values()[in.readByte()];
                 return deserializeValues(in, kind, version, types);
             }
 
-            public Slice.Bound deserializeValues(DataInput in, Kind kind, int version, List<AbstractType<?>> types) throws IOException
+            public Slice.Bound deserializeValues(DataInputPlus in, Kind kind, int version, List<AbstractType<?>> types) throws IOException
             {
                 int size = in.readUnsignedShort();
                 if (size == 0)

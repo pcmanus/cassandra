@@ -32,7 +32,7 @@ public class SimpleLivenessInfo extends AbstractLivenessInfo
 
     // Note that while some code use this ctor, the two following static creation methods
     // are usually less error prone.
-    SimpleLivenessInfo(long timestamp, int ttl, int localDeletionTime)
+    public SimpleLivenessInfo(long timestamp, int ttl, int localDeletionTime)
     {
         this.timestamp = timestamp;
         this.ttl = ttl;
@@ -65,11 +65,5 @@ public class SimpleLivenessInfo extends AbstractLivenessInfo
     public int localDeletionTime()
     {
         return localDeletionTime;
-    }
-
-    @Override
-    public LivenessInfo takeAlias()
-    {
-        return this;
     }
 }

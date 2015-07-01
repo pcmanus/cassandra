@@ -19,7 +19,6 @@ package org.apache.cassandra.utils;
 
 public interface SearchIterator<K, V>
 {
-
     public boolean hasNext();
     public V next(K key);
 

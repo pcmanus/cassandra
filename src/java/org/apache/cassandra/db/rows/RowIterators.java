@@ -37,19 +37,6 @@ public abstract class RowIterators
 
     private RowIterators() {}
 
-    public static PartitionUpdate toUpdate(RowIterator iterator)
-    {
-        PartitionUpdate update = new PartitionUpdate(iterator.metadata(), iterator.partitionKey(), iterator.columns(), 1);
-
-        if (iterator.staticRow() != Rows.EMPTY_STATIC_ROW)
-            iterator.staticRow().copyTo(update.staticWriter());
-
-        while (iterator.hasNext())
-            iterator.next().copyTo(update.writer());
-
-        return update;
-    }
-
     public static void digest(RowIterator iterator, MessageDigest digest)
     {
         // TODO: we're not computing digest the same way that old nodes so we'll need

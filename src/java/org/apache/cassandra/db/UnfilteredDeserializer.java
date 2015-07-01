@@ -111,8 +111,7 @@ public abstract class UnfilteredDeserializer
         private boolean isReady;
         private boolean isDone;
 
-        private final ReusableRow row;
-        private final RangeTombstoneMarker.Builder markerBuilder;
+        private final Row.Builder builder;
 
         private CurrentDeserializer(CFMetaData metadata,
                                     DataInputPlus in,
@@ -122,8 +121,7 @@ public abstract class UnfilteredDeserializer
             super(metadata, in, helper);
             this.header = header;
             this.clusteringDeserializer = new ClusteringPrefix.Deserializer(metadata.comparator, in, header);
-            this.row = new ReusableRow(header.columns().regulars, true, metadata.isCounter());
-            this.markerBuilder = new RangeTombstoneMarker.Builder();
+            this.builder = ArrayBackedRow.sortedBuilder(helper.fetchedRegularColumns(header));
         }
 
         public boolean hasNext() throws IOException
@@ -182,16 +180,12 @@ public abstract class UnfilteredDeserializer
             if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
             {
                 RangeTombstone.Bound bound = clusteringDeserializer.deserializeNextBound();
-                markerBuilder.writeRangeTombstoneBound(bound);
-                UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, bound.isBoundary(), markerBuilder);
-                return markerBuilder.build();
+                return UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, bound);
             }
             else
             {
-                Row.Writer writer = row.writer();
-                writer.writeClustering(clusteringDeserializer.deserializeNextClustering());
-                UnfilteredSerializer.serializer.deserializeRowBody(in, header, helper, nextFlags, writer);
-                return row;
+                builder.newRow(clusteringDeserializer.deserializeNextClustering());
+                return UnfilteredSerializer.serializer.deserializeRowBody(in, header, helper, nextFlags, builder);
             }
         }
 

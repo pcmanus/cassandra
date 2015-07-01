@@ -101,8 +101,8 @@ public class BigTableWriter extends SSTableWriter
     private long beforeAppend(DecoratedKey decoratedKey)
     {
         assert decoratedKey != null : "Keys must not be null"; // empty keys ARE allowed b/c of indexed column values
-        if (lastWrittenKey != null && lastWrittenKey.compareTo(decoratedKey) >= 0)
-            throw new RuntimeException("Last written key " + lastWrittenKey + " >= current key " + decoratedKey + " writing into " + getFilename());
+        //if (lastWrittenKey != null && lastWrittenKey.compareTo(decoratedKey) >= 0)
+        //    throw new RuntimeException("Last written key " + lastWrittenKey + " >= current key " + decoratedKey + " writing into " + getFilename());
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
@@ -172,11 +172,10 @@ public class BigTableWriter extends SSTableWriter
         }
     }
 
-    private static class StatsCollector extends WrappingUnfilteredRowIterator
+    private static class StatsCollector extends AlteringUnfilteredRowIterator
     {
         private int cellCount;
         private final MetadataCollector collector;
-        private final Set<ColumnDefinition> complexColumnsSetInRow = new HashSet<>();
 
         StatsCollector(UnfilteredRowIterator iter, MetadataCollector collector)
         {
@@ -185,56 +184,46 @@ public class BigTableWriter extends SSTableWriter
             collector.update(iter.partitionLevelDeletion());
         }
 
-        @Override
-        public Unfiltered next()
+        private void collectStatsOn(Cell cell)
         {
-            Unfiltered unfiltered = super.next();
-            collector.updateClusteringValues(unfiltered.clustering());
+            ++cellCount;
+            collector.update(cell.livenessInfo());
 
-            switch (unfiltered.kind())
+            if (cell.isCounterCell())
+                collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));
+        }
+
+        @Override
+        protected Row computeNextStatic(Row row)
+        {
+            if (!row.isEmpty())
+                Rows.collectStats(row, collector);
+            return row;
+        }
+
+        @Override
+        protected Row computeNext(Row row)
+        {
+            collector.updateClusteringValues(row.clustering());
+            Rows.collectStats(row, collector);
+            return row;
+        }
+
+        @Override
+        protected RangeTombstoneMarker computeNext(RangeTombstoneMarker marker)
+        {
+            collector.updateClusteringValues(marker.clustering());
+            if (marker.isBoundary())
             {
-                case ROW:
-                    Row row = (Row) unfiltered;
-                    collector.update(row.primaryKeyLivenessInfo());
-                    collector.update(row.deletion());
-
-                    int simpleColumnsSet = 0;
-                    complexColumnsSetInRow.clear();
-
-                    for (Cell cell : row)
-                    {
-                        if (cell.column().isComplex())
-                            complexColumnsSetInRow.add(cell.column());
-                        else
-                            ++simpleColumnsSet;
-
-                        ++cellCount;
-                        collector.update(cell.livenessInfo());
-
-                        if (cell.isCounterCell())
-                            collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));
-                    }
-
-                    for (int i = 0; i < row.columns().complexColumnCount(); i++)
-                        collector.update(row.getDeletion(row.columns().getComplex(i)));
-
-                    collector.updateColumnSetPerRow(simpleColumnsSet + complexColumnsSetInRow.size());
-
-                    break;
-                case RANGE_TOMBSTONE_MARKER:
-                    if (((RangeTombstoneMarker) unfiltered).isBoundary())
-                    {
-                        RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)unfiltered;
-                        collector.update(bm.endDeletionTime());
-                        collector.update(bm.startDeletionTime());
-                    }
-                    else
-                    {
-                        collector.update(((RangeTombstoneBoundMarker)unfiltered).deletionTime());
-                    }
-                    break;
+                RangeTombstoneBoundaryMarker bm = (RangeTombstoneBoundaryMarker)marker;
+                collector.update(bm.endDeletionTime());
+                collector.update(bm.startDeletionTime());
             }
-            return unfiltered;
+            else
+            {
+                collector.update(((RangeTombstoneBoundMarker)marker).deletionTime());
+            }
+            return marker;
         }
 
         @Override

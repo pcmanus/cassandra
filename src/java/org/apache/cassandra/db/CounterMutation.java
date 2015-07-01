@@ -154,7 +154,7 @@ public class CounterMutation implements IMutation
     /**
      * Returns a wrapper for the Striped#bulkGet() call (via Keyspace#counterLocksFor())
      * Striped#bulkGet() depends on Object#hashCode(), so here we make sure that the cf id and the partition key
-     * all get to be part of the hashCode() calculation, not just the cell name.
+     * all get to be part of the hashCode() calculation.
      */
     private Iterable<Object> getCounterLockKeys()
     {
@@ -166,11 +166,11 @@ public class CounterMutation implements IMutation
                 {
                     public Iterable<Object> apply(final Row row)
                     {
-                        return Iterables.concat(Iterables.transform(row, new Function<Cell, Object>()
+                        return Iterables.concat(Iterables.transform(row, new Function<ColumnData, Object>()
                         {
-                            public Object apply(final Cell cell)
+                            public Object apply(final ColumnData data)
                             {
-                                return Objects.hashCode(update.metadata().cfId, key(), row.clustering(), cell.column(), cell.path());
+                                return Objects.hashCode(update.metadata().cfId, key(), row.clustering(), data.column());
                             }
                         }));
                     }

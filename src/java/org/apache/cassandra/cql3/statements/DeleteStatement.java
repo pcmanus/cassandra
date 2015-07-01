@@ -62,16 +62,14 @@ public class DeleteStatement extends ModificationStatement
             // ... or a row deletion ...
             else if (cbuilder.remainingCount() == 0)
             {
-                Clustering clustering = cbuilder.build();
-                Row.Writer writer = update.writer();
-                params.writeClustering(clustering, writer);
-                params.writeRowDeletion(writer);
-                writer.endOfRow();
+                params.newRow(cbuilder.build());
+                params.writeRowDeletion();
+                update.add(params.buildRow());
             }
             // ... or a range of rows deletion.
             else
             {
-                update.addRangeTombstone(params.makeRangeTombstone(cbuilder));
+                update.add(params.makeRangeTombstone(cbuilder));
             }
         }
         else
@@ -82,20 +80,18 @@ public class DeleteStatement extends ModificationStatement
                 if (cbuilder.remainingCount() > 0)
                     throw new InvalidRequestException(String.format("Primary key column '%s' must be specified in order to delete column '%s'", getFirstEmptyKey().name, regularDeletions.get(0).column.name));
 
-                Clustering clustering = cbuilder.build();
-                Row.Writer writer = update.writer();
-                params.writeClustering(clustering, writer);
+                params.newRow(cbuilder.build());
                 for (Operation op : regularDeletions)
-                    op.execute(update.partitionKey(), clustering, writer, params);
-                writer.endOfRow();
+                    op.execute(update.partitionKey(), params);
+                update.add(params.buildRow());
             }
 
             if (!staticDeletions.isEmpty())
             {
-                Row.Writer writer = update.staticWriter();
+                params.newRow(Clustering.STATIC_CLUSTERING);
                 for (Operation op : staticDeletions)
-                    op.execute(update.partitionKey(), Clustering.STATIC_CLUSTERING, writer, params);
-                writer.endOfRow();
+                    op.execute(update.partitionKey(), params);
+                update.add(params.buildRow());
             }
         }
     }

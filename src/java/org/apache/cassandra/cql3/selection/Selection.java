@@ -307,7 +307,7 @@ public abstract class Selection
             current.add(value(c));
 
             if (timestamps != null)
-                timestamps[current.size() - 1] = c.livenessInfo().timestamp();
+                timestamps[current.size() - 1] = c.timestamp();
 
             if (ttls != null)
                 ttls[current.size() - 1] = c.livenessInfo().remainingTTL(nowInSec);

@@ -117,11 +117,6 @@ public abstract class AbstractLivenessInfo implements LivenessInfo
         return new SimpleLivenessInfo(newTimestamp, ttl(), localDeletionTime());
     }
 
-    public boolean isPurgeable(long maxPurgeableTimestamp, int gcBefore)
-    {
-        return timestamp() < maxPurgeableTimestamp && localDeletionTime() < gcBefore;
-    }
-
     @Override
     public String toString()
     {

@@ -487,9 +487,10 @@ public class CommitLogStressTest
                     if (!(UTF8Type.instance.compose(row.clustering().get(0)).startsWith("name")))
                         continue;
 
-                    for (Cell cell : row)
+                    Iterator<Cell> iter = row.cellIterator();
+                    while (iter.hasNext())
                     {
-                        hash = hash(hash, cell.value());
+                        hash = hash(hash, iter.next().value());
                         ++cells;
                     }
                 }

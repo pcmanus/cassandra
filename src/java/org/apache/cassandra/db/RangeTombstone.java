@@ -17,20 +17,14 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
 import java.util.*;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.io.ISSTableSerializer;
-import org.apache.cassandra.io.sstable.format.Version;
-import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.utils.Interval;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * A range tombstone is a tombstone that covers a slice/range of rows.
@@ -48,7 +42,7 @@ public class RangeTombstone
     public RangeTombstone(Slice slice, DeletionTime deletion)
     {
         this.slice = slice;
-        this.deletion = deletion.takeAlias();
+        this.deletion = deletion;
     }
 
     /**
@@ -179,6 +173,14 @@ public class RangeTombstone
             return new RangeTombstone.Bound(sliceBound.kind(), sliceBound.getRawValues());
         }
 
+        public RangeTombstone.Bound copy(AbstractAllocator allocator)
+        {
+            ByteBuffer[] newValues = new ByteBuffer[size()];
+            for (int i = 0; i < size(); i++)
+                newValues[i] = allocator.clone(get(i));
+            return new Bound(kind(), newValues);
+        }
+
         @Override
         public Bound withNewKind(Kind kind)
         {
@@ -201,7 +203,7 @@ public class RangeTombstone
                      + ClusteringPrefix.serializer.valuesWithoutSizeSerializedSize(bound, version, types);
             }
 
-            public RangeTombstone.Bound deserialize(DataInput in, int version, List<AbstractType<?>> types) throws IOException
+            public RangeTombstone.Bound deserialize(DataInputPlus in, int version, List<AbstractType<?>> types) throws IOException
             {
                 Kind kind = Kind.values()[in.readByte()];
                 int size = in.readUnsignedShort();

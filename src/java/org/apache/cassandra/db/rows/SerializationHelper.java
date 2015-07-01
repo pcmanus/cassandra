@@ -18,8 +18,11 @@
 package org.apache.cassandra.db.rows;
 
 import java.nio.ByteBuffer;
+import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.ColumnFilter;
@@ -46,51 +49,34 @@ public class SerializationHelper
     private final Flag flag;
     public final int version;
 
-    private final ReusableLivenessInfo livenessInfo = new ReusableLivenessInfo();
-
-    // The currently read row liveness infos (timestamp, ttl and localDeletionTime).
-    private long rowTimestamp;
-    private int rowTTL;
-    private int rowLocalDeletionTime;
-
     private final ColumnFilter columnsToFetch;
     private ColumnFilter.Tester tester;
 
-    public SerializationHelper(int version, Flag flag, ColumnFilter columnsToFetch)
+    private final Map<ColumnIdentifier, CFMetaData.DroppedColumn> droppedColumns;
+    private CFMetaData.DroppedColumn currentDroppedComplex;
+
+
+    public SerializationHelper(CFMetaData metadata, int version, Flag flag, ColumnFilter columnsToFetch)
     {
         this.flag = flag;
         this.version = version;
         this.columnsToFetch = columnsToFetch;
+        this.droppedColumns = metadata.getDroppedColumns();
     }
 
-    public SerializationHelper(int version, Flag flag)
+    public SerializationHelper(CFMetaData metadata, int version, Flag flag)
     {
-        this(version, flag, null);
+        this(metadata, version, flag, null);
     }
 
-    public void writePartitionKeyLivenessInfo(Row.Writer writer, long timestamp, int ttl, int localDeletionTime)
+    public Columns fetchedStaticColumns(SerializationHeader header)
     {
-        livenessInfo.setTo(timestamp, ttl, localDeletionTime);
-        writer.writePartitionKeyLivenessInfo(livenessInfo);
-
-        rowTimestamp = timestamp;
-        rowTTL = ttl;
-        rowLocalDeletionTime = localDeletionTime;
+        return columnsToFetch == null ? header.columns().statics : columnsToFetch.fetchedColumns().statics;
     }
 
-    public long getRowTimestamp()
+    public Columns fetchedRegularColumns(SerializationHeader header)
     {
-        return rowTimestamp;
-    }
-
-    public int getRowTTL()
-    {
-        return rowTTL;
-    }
-
-    public int getRowLocalDeletionTime()
-    {
-        return rowLocalDeletionTime;
+        return columnsToFetch == null ? header.columns().regulars : columnsToFetch.fetchedColumns().regulars;
     }
 
     public boolean includes(ColumnDefinition column)
@@ -98,14 +84,25 @@ public class SerializationHelper
         return columnsToFetch == null || columnsToFetch.includes(column);
     }
 
+    public boolean includes(CellPath path)
+    {
+        return path == null || tester == null || tester.includes(path);
+    }
+
     public boolean canSkipValue(ColumnDefinition column)
     {
         return columnsToFetch != null && columnsToFetch.canSkipValue(column);
     }
 
+    public boolean canSkipValue(CellPath path)
+    {
+        return path != null && tester != null && tester.canSkipValue(path);
+    }
+
     public void startOfComplexColumn(ColumnDefinition column)
     {
         this.tester = columnsToFetch == null ? null : columnsToFetch.newTester(column);
+        this.currentDroppedComplex = droppedColumns.get(column.name);
     }
 
     public void endOfComplexColumn(ColumnDefinition column)
@@ -113,25 +110,21 @@ public class SerializationHelper
         this.tester = null;
     }
 
-    public void writeCell(Row.Writer writer,
-                          ColumnDefinition column,
-                          boolean isCounter,
-                          ByteBuffer value,
-                          long timestamp,
-                          int localDelTime,
-                          int ttl,
-                          CellPath path)
+    public boolean isDropped(Cell cell, boolean isComplex)
     {
-        livenessInfo.setTo(timestamp, ttl, localDelTime);
+        CFMetaData.DroppedColumn dropped = isComplex ? currentDroppedComplex : droppedColumns.get(cell.column().name);
+        return dropped != null && cell.timestamp() <= dropped.droppedTime;
+    }
 
-        if (isCounter && ((flag == Flag.FROM_REMOTE || (flag == Flag.LOCAL && CounterContext.instance().shouldClearLocal(value)))))
-            value = CounterContext.instance().clearAllLocal(value);
+    public boolean isDroppedComplexDeletion(DeletionTime complexDeletion)
+    {
+        return currentDroppedComplex != null && complexDeletion.markedForDeleteAt() <= currentDroppedComplex.droppedTime;
+    }
 
-        if (!column.isComplex() || tester == null || tester.includes(path))
-        {
-            if (tester != null && tester.canSkipValue(path))
-                value = ByteBufferUtil.EMPTY_BYTE_BUFFER;
-            writer.writeCell(column, isCounter, value, livenessInfo, path);
-        }
+    public ByteBuffer maybeClearCounterValue(ByteBuffer value)
+    {
+        return flag == Flag.FROM_REMOTE || (flag == Flag.LOCAL && CounterContext.instance().shouldClearLocal(value))
+             ? CounterContext.instance().clearAllLocal(value)
+             : value;
     }
 }

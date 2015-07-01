@@ -22,6 +22,7 @@ import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.utils.memory.AbstractAllocator;
 
 /**
  * A marker for a range tombstone bound.
@@ -35,24 +36,20 @@ public interface RangeTombstoneMarker extends Unfiltered
 
     public boolean isBoundary();
 
-    public void copyTo(RangeTombstoneMarker.Writer writer);
-
     public boolean isOpen(boolean reversed);
     public boolean isClose(boolean reversed);
+
     public DeletionTime openDeletionTime(boolean reversed);
     public DeletionTime closeDeletionTime(boolean reversed);
     public boolean openIsInclusive(boolean reversed);
     public boolean closeIsInclusive(boolean reversed);
 
-    public interface Writer
-    {
-        public void writeRangeTombstoneBound(RangeTombstone.Bound bound);
-        public void writeBoundDeletion(DeletionTime deletion);
-        public void writeBoundaryDeletion(DeletionTime endDeletion, DeletionTime startDeletion);
-        public void endOfMarker();
-    }
+    public RangeTombstone.Bound openBound(boolean reversed);
+    public RangeTombstone.Bound closeBound(boolean reversed);
 
-    public static class Builder implements Writer
+    public RangeTombstoneMarker copy(AbstractAllocator allocator);
+
+    public static class Builder
     {
         private RangeTombstone.Bound bound;
 
@@ -73,10 +70,6 @@ public interface RangeTombstoneMarker extends Unfiltered
         {
             firstDeletion = endDeletion;
             secondDeletion = startDeletion;
-        }
-
-        public void endOfMarker()
-        {
         }
 
         public RangeTombstoneMarker build()
@@ -104,8 +97,6 @@ public interface RangeTombstoneMarker extends Unfiltered
      */
     public static class Merger
     {
-        private final CFMetaData metadata;
-        private final UnfilteredRowIterators.MergeListener listener;
         private final DeletionTime partitionDeletion;
         private final boolean reversed;
 
@@ -118,10 +109,8 @@ public interface RangeTombstoneMarker extends Unfiltered
         // marker on any iterator.
         private int biggestOpenMarker = -1;
 
-        public Merger(CFMetaData metadata, int size, DeletionTime partitionDeletion, boolean reversed, UnfilteredRowIterators.MergeListener listener)
+        public Merger(int size, DeletionTime partitionDeletion, boolean reversed)
         {
-            this.metadata = metadata;
-            this.listener = listener;
             this.partitionDeletion = partitionDeletion;
             this.reversed = reversed;
 
@@ -183,10 +172,12 @@ public interface RangeTombstoneMarker extends Unfiltered
                        : RangeTombstoneBoundaryMarker.inclusiveCloseExclusiveOpen(reversed, values, previousDeletionTimeInMerged, newDeletionTimeInMerged);
             }
 
-            if (listener != null)
-                listener.onMergedRangeTombstoneMarkers(merged, markers);
-
             return merged;
+        }
+
+        public RangeTombstoneMarker[] mergedMarkers()
+        {
+            return markers;
         }
 
         private DeletionTime currentOpenDeletionTimeInMerged()
@@ -196,7 +187,7 @@ public interface RangeTombstoneMarker extends Unfiltered
 
             DeletionTime biggestDeletionTime = openMarkers[biggestOpenMarker];
             // it's only open in the merged iterator if it's not shadowed by the partition level deletion
-            return partitionDeletion.supersedes(biggestDeletionTime) ? DeletionTime.LIVE : biggestDeletionTime.takeAlias();
+            return partitionDeletion.supersedes(biggestDeletionTime) ? DeletionTime.LIVE : biggestDeletionTime;
         }
 
         private void updateOpenMarkers()
@@ -210,7 +201,7 @@ public interface RangeTombstoneMarker extends Unfiltered
                 // Note that we can have boundaries that are both open and close, but in that case all we care about
                 // is what it the open deletion after the marker, so we favor the opening part in this case.
                 if (marker.isOpen(reversed))
-                    openMarkers[i] = marker.openDeletionTime(reversed).takeAlias();
+                    openMarkers[i] = marker.openDeletionTime(reversed);
                 else
                     openMarkers[i] = null;
             }

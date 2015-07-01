@@ -20,6 +20,7 @@ package org.apache.cassandra.db.filter;
 import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
@@ -572,8 +573,10 @@ public abstract class DataLimits
 
             public void newRow(Row row)
             {
-                for (Cell cell : row)
+                Iterator<Cell> cells = row.cellIterator();
+                while (cells.hasNext())
                 {
+                    Cell cell = cells.next();
                     if (assumeLiveData || cell.isLive(nowInSec))
                     {
                         ++cellsCounted;

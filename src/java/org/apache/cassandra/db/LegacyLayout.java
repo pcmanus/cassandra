@@ -31,15 +31,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.thrift.ColumnDef;
 import org.apache.cassandra.utils.*;
-import org.apache.hadoop.io.serializer.Serialization;
 
 /**
  * Functions to deal with the old format.
@@ -269,7 +268,7 @@ public abstract class LegacyLayout
                                                                 DeletionInfo delInfo,
                                                                 Iterator<LegacyCell> cells)
     {
-        SerializationHelper helper = new SerializationHelper(0, SerializationHelper.Flag.LOCAL);
+        SerializationHelper helper = new SerializationHelper(metadata, 0, SerializationHelper.Flag.LOCAL);
         return toUnfilteredRowIterator(metadata, key, LegacyDeletionInfo.from(delInfo), cells, false, helper);
     }
 
@@ -313,22 +312,16 @@ public abstract class LegacyLayout
 
         Iterator<Row> rows = convertToRows(new CellGrouper(metadata, helper), iter, delInfo);
         Iterator<RangeTombstone> ranges = delInfo.deletionInfo.rangeIterator(reversed);
-        final Iterator<Unfiltered> atoms = new RowAndTombstoneMergeIterator(metadata.comparator, reversed)
-                                     .setTo(rows, ranges);
-
-        return new AbstractUnfilteredRowIterator(metadata,
-                                        key,
-                                        delInfo.deletionInfo.getPartitionDeletion(),
-                                        metadata.partitionColumns(),
-                                        staticRow,
-                                        reversed,
-                                        RowStats.NO_STATS)
-        {
-            protected Unfiltered computeNext()
-            {
-                return atoms.hasNext() ? atoms.next() : endOfData();
-            }
-        };
+        return new RowAndDeletionMergeIterator(metadata,
+                                               key,
+                                               delInfo.deletionInfo.getPartitionDeletion(),
+                                               ColumnFilter.all(metadata),
+                                               staticRow,
+                                               reversed,
+                                               RowStats.NO_STATS,
+                                               rows,
+                                               ranges,
+                                               true);
     }
 
     public static Row extractStaticColumns(CFMetaData metadata, DataInputPlus in, Columns statics) throws IOException
@@ -344,7 +337,7 @@ public abstract class LegacyLayout
         for (ColumnDefinition column : statics)
             columnsToFetch.add(column.name.bytes);
 
-        StaticRow.Builder builder = StaticRow.builder(statics, false, metadata.isCounter());
+        Row.Builder builder = ArrayBackedRow.unsortedBuilder(statics, FBUtilities.nowInSeconds());
 
         boolean foundOne = false;
         LegacyAtom atom;
@@ -357,7 +350,7 @@ public abstract class LegacyLayout
                     continue;
 
                 foundOne = true;
-                builder.writeCell(cell.name.column, cell.isCounter(), cell.value, livenessInfo(metadata, cell), null);
+                builder.addCell(new BufferCell(cell.name.column, cell.timestamp, cell.ttl, cell.localDeletionTime, cell.value, null));
             }
             else
             {
@@ -462,7 +455,7 @@ public abstract class LegacyLayout
     {
         return new AbstractIterator<LegacyCell>()
         {
-            private final Iterator<Cell> cells = row.iterator();
+            private final Iterator<Cell> cells = row.cellIterator();
             // we don't have (and shouldn't have) row markers for compact tables.
             private boolean hasReturnedRowMarker = metadata.isCompactTable();
 
@@ -509,7 +502,7 @@ public abstract class LegacyLayout
                                             final Iterator<LegacyCell> cells,
                                             final int nowInSec)
     {
-        SerializationHelper helper = new SerializationHelper(0, SerializationHelper.Flag.LOCAL);
+        SerializationHelper helper = new SerializationHelper(metadata, 0, SerializationHelper.Flag.LOCAL);
         return UnfilteredRowIterators.filter(toUnfilteredRowIterator(metadata, key, LegacyDeletionInfo.live(), cells, false, helper), nowInSec);
     }
 
@@ -734,10 +727,9 @@ public abstract class LegacyLayout
     public static class CellGrouper
     {
         public final CFMetaData metadata;
-        private final ReusableRow row;
         private final boolean isStatic;
         private final SerializationHelper helper;
-        private Row.Writer writer;
+        private Row.Builder builder;
         private Clustering clustering;
 
         private LegacyRangeTombstone rowDeletion;
@@ -753,10 +745,7 @@ public abstract class LegacyLayout
             this.metadata = metadata;
             this.isStatic = isStatic;
             this.helper = helper;
-            this.row = isStatic ? null : new ReusableRow(metadata.partitionColumns().regulars, false, metadata.isCounter());
-
-            if (isStatic)
-                this.writer = StaticRow.builder(metadata.partitionColumns().statics, false, metadata.isCounter());
+            this.builder = ArrayBackedRow.sortedBuilder(isStatic ? metadata.partitionColumns().statics : metadata.partitionColumns().regulars);
         }
 
         public static CellGrouper staticGrouper(CFMetaData metadata, SerializationHelper helper)
@@ -769,9 +758,6 @@ public abstract class LegacyLayout
             this.clustering = null;
             this.rowDeletion = null;
             this.collectionDeletion = null;
-
-            if (!isStatic)
-                this.writer = row.writer();
         }
 
         public boolean addAtom(LegacyAtom atom)
@@ -790,7 +776,7 @@ public abstract class LegacyLayout
             }
             else if (clustering == null)
             {
-                writer.writeClustering(cell.name.clustering);
+                builder.newRow(cell.name.clustering);
             }
             else if (!clustering.equals(cell.name.clustering))
             {
@@ -801,14 +787,12 @@ public abstract class LegacyLayout
             if (rowDeletion != null && rowDeletion.deletionTime.deletes(cell.timestamp))
                 return true;
 
-            LivenessInfo info = livenessInfo(metadata, cell);
-
             ColumnDefinition column = cell.name.column;
             if (column == null)
             {
                 // It's the row marker
                 assert !cell.value.hasRemaining();
-                helper.writePartitionKeyLivenessInfo(writer, info.timestamp(), info.ttl(), info.localDeletionTime());
+                builder.addPrimaryKeyLivenessInfo(new SimpleLivenessInfo(cell.timestamp, cell.ttl, cell.localDeletionTime));
             }
             else
             {
@@ -825,8 +809,12 @@ public abstract class LegacyLayout
                         // practice and 2) is only used during upgrade, it's probably worth keeping things simple.
                         helper.startOfComplexColumn(column);
                         path = cell.name.collectionElement == null ? null : CellPath.create(cell.name.collectionElement);
+                        if (!helper.includes(path))
+                            return true;
                     }
-                    helper.writeCell(writer, column, cell.isCounter(), cell.value, info.timestamp(), info.localDeletionTime(), info.ttl(), path);
+                    Cell c = new BufferCell(column, cell.timestamp, cell.ttl, cell.localDeletionTime, cell.value, path);
+                    if (!helper.isDropped(c, column.isComplex()))
+                        builder.addCell(c);
                     if (column.isComplex())
                     {
                         helper.endOfComplexColumn(column);
@@ -844,8 +832,8 @@ public abstract class LegacyLayout
                 if (clustering != null)
                     return false;
 
-                writer.writeClustering(tombstone.start.getAsClustering(metadata));
-                writer.writeRowDeletion(tombstone.deletionTime);
+                builder.newRow(tombstone.start.getAsClustering(metadata));
+                builder.addRowDeletion(tombstone.deletionTime);
                 rowDeletion = tombstone;
                 return true;
             }
@@ -854,14 +842,14 @@ public abstract class LegacyLayout
             {
                 if (clustering == null)
                 {
-                    writer.writeClustering(tombstone.start.getAsClustering(metadata));
+                    builder.newRow(tombstone.start.getAsClustering(metadata));
                 }
                 else if (!clustering.equals(tombstone.start.getAsClustering(metadata)))
                 {
                     return false;
                 }
 
-                writer.writeComplexDeletion(tombstone.start.collectionName, tombstone.deletionTime);
+                builder.addComplexDeletion(tombstone.start.collectionName, tombstone.deletionTime);
                 if (rowDeletion == null || tombstone.deletionTime.supersedes(rowDeletion.deletionTime))
                     collectionDeletion = tombstone;
                 return true;
@@ -871,8 +859,7 @@ public abstract class LegacyLayout
 
         public Row getRow()
         {
-            writer.endOfRow();
-            return isStatic ? ((StaticRow.Builder)writer).build() : row;
+            return builder.build();
         }
     }
 
@@ -1195,7 +1182,7 @@ public abstract class LegacyLayout
 
         public static LegacyDeletionInfo live()
         {
-            return from(DeletionInfo.live());
+            return from(DeletionInfo.LIVE);
         }
 
         public Iterator<LegacyRangeTombstone> inRowRangeTombstones()
@@ -1218,7 +1205,7 @@ public abstract class LegacyLayout
 
                 int rangeCount = in.readInt();
                 if (rangeCount == 0)
-                    return from(new DeletionInfo(topLevel));
+                    return from(new MutableDeletionInfo(topLevel));
 
                 RangeTombstoneList ranges = new RangeTombstoneList(metadata.comparator, rangeCount);
                 List<LegacyRangeTombstone> inRowTombsones = new ArrayList<>();
@@ -1229,13 +1216,13 @@ public abstract class LegacyLayout
                     int delTime =  in.readInt();
                     long markedAt = in.readLong();
 
-                    LegacyRangeTombstone tombstone = new LegacyRangeTombstone(start, end, new SimpleDeletionTime(markedAt, delTime));
+                    LegacyRangeTombstone tombstone = new LegacyRangeTombstone(start, end, new DeletionTime(markedAt, delTime));
                     if (tombstone.isCollectionTombstone() || tombstone.isRowDeletion(metadata))
                         inRowTombsones.add(tombstone);
                     else
                         ranges.add(start.bound, end.bound, markedAt, delTime);
                 }
-                return new LegacyDeletionInfo(new DeletionInfo(topLevel, ranges), inRowTombsones);
+                return new LegacyDeletionInfo(new MutableDeletionInfo(topLevel, ranges), inRowTombsones);
             }
 
             public long serializedSize(CFMetaData metadata, LegacyDeletionInfo info, TypeSizes typeSizes, int version)

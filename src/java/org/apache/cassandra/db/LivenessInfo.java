@@ -32,7 +32,7 @@ import org.apache.cassandra.db.*;
  *   2) the data ttl if relevant.
  *   2) the data local deletion time if relevant (that is, if either the data has a ttl or is deleted).
  */
-public interface LivenessInfo extends Aliasable<LivenessInfo>
+public interface LivenessInfo
 {
     public static final long NO_TIMESTAMP = Long.MIN_VALUE;
     public static final int NO_TTL = 0;
@@ -156,23 +156,6 @@ public interface LivenessInfo extends Aliasable<LivenessInfo>
      * otherwise).
      */
     public LivenessInfo mergeWith(LivenessInfo other);
-
-    /**
-     * Whether this liveness information can be purged.
-     * <p>
-     * A liveness info can be purged if it is not live and hasn't been so
-     * for longer than gcGrace (or more precisely, it's local deletion time
-     * is smaller than gcBefore, which is itself "now - gcGrace").
-     *
-     * @param maxPurgeableTimestamp the biggest timestamp that can be purged.
-     * A liveness info will not be considered purgeable if its timestamp is
-     * greater than this value, even if it mets the other criteria for purging.
-     * @param gcBefore the local deletion time before which deleted/expired
-     * liveness info can be purged.
-     *
-     * @return whether this liveness information can be purged.
-     */
-    public boolean isPurgeable(long maxPurgeableTimestamp, int gcBefore);
 
     /**
      * Returns a copy of this liveness info updated with the provided timestamp.
