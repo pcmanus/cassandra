@@ -41,7 +41,7 @@ public abstract class Cells
      */
     public static void collectStats(Cell cell, PartitionStatisticsCollector collector)
     {
-        collector.update(cell.livenessInfo());
+        collector.update(cell);
 
         if (cell.isCounterCell())
             collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));
@@ -174,7 +174,7 @@ public abstract class Cells
                     else if (merged == c2.value() && timestamp == c2.timestamp())
                         return c2;
                     else // merge clocks and timestamps.
-                        return new BufferCell(c1.column(), timestamp, LivenessInfo.NO_TTL, LivenessInfo.NO_DELETION_TIME, merged, c1.path());
+                        return new BufferCell(c1.column(), timestamp, Cell.NO_TTL, Cell.NO_DELETION_TIME, merged, c1.path());
             }
         }
 

@@ -134,12 +134,12 @@ public abstract class Rows
     public static void diff(Row merged, Columns columns, Row[] inputs, RowDiffListener diffListener)
     {
         Clustering clustering = merged.clustering();
-        LivenessInfo mergedInfo = merged.primaryKeyLivenessInfo().hasTimestamp() ? merged.primaryKeyLivenessInfo() : null;
+        LivenessInfo mergedInfo = merged.primaryKeyLivenessInfo().isEmpty() ? null : merged.primaryKeyLivenessInfo();
         DeletionTime mergedDeletion = merged.deletion().isLive() ? null : merged.deletion();
         for (int i = 0; i < inputs.length; i++)
         {
             Row input = inputs[i];
-            LivenessInfo inputInfo = input == null || !input.primaryKeyLivenessInfo().hasTimestamp() ? null : input.primaryKeyLivenessInfo();
+            LivenessInfo inputInfo = input == null || input.primaryKeyLivenessInfo().isEmpty() ? null : input.primaryKeyLivenessInfo();
             DeletionTime inputDeletion = input == null || input.deletion().isLive() ? null : input.deletion();
 
             if (mergedInfo != null || inputInfo != null)
@@ -245,14 +245,14 @@ public abstract class Rows
 
         LivenessInfo existingInfo = existing.primaryKeyLivenessInfo();
         LivenessInfo updateInfo = update.primaryKeyLivenessInfo();
-        LivenessInfo mergedInfo = existingInfo.mergeWith(updateInfo);
+        LivenessInfo mergedInfo = existingInfo.supersedes(updateInfo) ? existingInfo : updateInfo;
 
         long timeDelta = Math.abs(existingInfo.timestamp() - mergedInfo.timestamp());
 
         DeletionTime deletion = existing.deletion().supersedes(update.deletion()) ? existing.deletion() : update.deletion();
 
         if (deletion.deletes(mergedInfo))
-            mergedInfo = LivenessInfo.NONE;
+            mergedInfo = LivenessInfo.EMPTY;
 
         builder.addPrimaryKeyLivenessInfo(mergedInfo);
         builder.addRowDeletion(deletion);

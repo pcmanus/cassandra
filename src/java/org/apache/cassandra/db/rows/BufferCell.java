@@ -63,10 +63,10 @@ public class BufferCell extends AbstractCell
 
     public static BufferCell live(CFMetaData metadata, ColumnDefinition column, long timestamp, ByteBuffer value, CellPath path)
     {
-        if (metadata.getDefaultTimeToLive() != LivenessInfo.NO_TTL)
+        if (metadata.getDefaultTimeToLive() != NO_TTL)
             return expiring(column, timestamp, metadata.getDefaultTimeToLive(), FBUtilities.nowInSeconds(), value, path);
 
-        return new BufferCell(column, timestamp, LivenessInfo.NO_TTL, LivenessInfo.NO_DELETION_TIME, value, path);
+        return new BufferCell(column, timestamp, NO_TTL, NO_DELETION_TIME, value, path);
     }
 
     public static BufferCell expiring(ColumnDefinition column, long timestamp, int ttl, int nowInSec, ByteBuffer value)
@@ -76,7 +76,7 @@ public class BufferCell extends AbstractCell
 
     public static BufferCell expiring(ColumnDefinition column, long timestamp, int ttl, int nowInSec, ByteBuffer value, CellPath path)
     {
-        assert ttl != LivenessInfo.NO_TTL;
+        assert ttl != NO_TTL;
         return new BufferCell(column, timestamp, ttl, nowInSec + ttl, value, path);
     }
 
@@ -87,7 +87,7 @@ public class BufferCell extends AbstractCell
 
     public static BufferCell tombstone(ColumnDefinition column, long timestamp, int nowInSec, CellPath path)
     {
-        return new BufferCell(column, timestamp, LivenessInfo.NO_TTL, nowInSec, ByteBufferUtil.EMPTY_BYTE_BUFFER, path);
+        return new BufferCell(column, timestamp, NO_TTL, nowInSec, ByteBufferUtil.EMPTY_BYTE_BUFFER, path);
     }
 
     public ColumnDefinition column()
@@ -102,17 +102,17 @@ public class BufferCell extends AbstractCell
 
     public boolean isLive(int nowInSec)
     {
-        return localDeletionTime == LivenessInfo.NO_DELETION_TIME || (ttl != LivenessInfo.NO_TTL && nowInSec < localDeletionTime);
+        return localDeletionTime == NO_DELETION_TIME || (ttl != NO_TTL && nowInSec < localDeletionTime);
     }
 
     public boolean isTombstone()
     {
-        return localDeletionTime != LivenessInfo.NO_DELETION_TIME && ttl == LivenessInfo.NO_TTL;
+        return localDeletionTime != NO_DELETION_TIME && ttl == NO_TTL;
     }
 
     public boolean isExpiring()
     {
-        return ttl != LivenessInfo.NO_TTL;
+        return ttl != NO_TTL;
     }
 
     public long timestamp()
@@ -128,11 +128,6 @@ public class BufferCell extends AbstractCell
     public int localDeletionTime()
     {
         return localDeletionTime;
-    }
-
-    public LivenessInfo livenessInfo()
-    {
-        return new SimpleLivenessInfo(timestamp, ttl, localDeletionTime);
     }
 
     public ByteBuffer value()
@@ -254,8 +249,8 @@ public class BufferCell extends AbstractCell
             boolean hasValue = cell.value().hasRemaining();
             boolean isDeleted = cell.isTombstone();
             boolean isExpiring = cell.isExpiring();
-            boolean useRowTimestamp = rowLiveness.hasTimestamp() && cell.timestamp() == rowLiveness.timestamp();
-            boolean useRowTTL = isExpiring && rowLiveness.hasTTL() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localDeletionTime();
+            boolean useRowTimestamp = !rowLiveness.isEmpty() && cell.timestamp() == rowLiveness.timestamp();
+            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localExpirationTime();
             int flags = PRESENCE_MASK;
             if (!hasValue)
                 flags |= HAS_EMPTY_VALUE_MASK;
@@ -302,18 +297,18 @@ public class BufferCell extends AbstractCell
             long timestamp = useRowTimestamp ? rowLiveness.timestamp() : header.decodeTimestamp(in.readVInt());
 
             int localDeletionTime = useRowTTL
-                                  ? rowLiveness.localDeletionTime()
-                                  : (isDeleted || isExpiring ? header.decodeDeletionTime((int)in.readVInt()) : LivenessInfo.NO_DELETION_TIME);
+                                  ? rowLiveness.localExpirationTime()
+                                  : (isDeleted || isExpiring ? header.decodeDeletionTime((int)in.readVInt()) : NO_DELETION_TIME);
 
             int ttl = useRowTTL
                     ? rowLiveness.ttl()
-                    : (isExpiring ? header.decodeTTL((int)in.readVInt()) : LivenessInfo.NO_TTL);
+                    : (isExpiring ? header.decodeTTL((int)in.readVInt()) : NO_TTL);
 
             CellPath path = column.isComplex()
                           ? column.cellPathSerializer().deserialize(in)
                           : null;
 
-            boolean isCounter = localDeletionTime == LivenessInfo.NO_DELETION_TIME && column.type.isCounter();
+            boolean isCounter = localDeletionTime == NO_DELETION_TIME && column.type.isCounter();
 
             ByteBuffer value = ByteBufferUtil.EMPTY_BYTE_BUFFER;
             if (hasValue)
@@ -343,8 +338,8 @@ public class BufferCell extends AbstractCell
             boolean hasValue = cell.value().hasRemaining();
             boolean isDeleted = cell.isTombstone();
             boolean isExpiring = cell.isExpiring();
-            boolean useRowTimestamp = rowLiveness.hasTimestamp() && cell.timestamp() == rowLiveness.timestamp();
-            boolean useRowTTL = isExpiring && rowLiveness.hasTTL() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localDeletionTime();
+            boolean useRowTimestamp = !rowLiveness.isEmpty() && cell.timestamp() == rowLiveness.timestamp();
+            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localExpirationTime();
 
             if (!useRowTimestamp)
                 size += TypeSizes.sizeofVInt(header.encodeTimestamp(cell.timestamp()));

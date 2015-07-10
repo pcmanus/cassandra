@@ -373,7 +373,7 @@ public class UnfilteredRowIteratorsMergeTest
     static Row emptyRowAt(int pos, Function<Integer, Integer> timeGenerator)
     {
         final Clustering clustering = clusteringFor(pos);
-        final LivenessInfo live = SimpleLivenessInfo.forUpdate(timeGenerator.apply(pos), 0, nowInSec, metadata);
+        final LivenessInfo live = LivenessInfo.create(metadata, timeGenerator.apply(pos), nowInSec);
         return ArrayBackedRow.noCellLiveRow(clustering, live);
     }
 

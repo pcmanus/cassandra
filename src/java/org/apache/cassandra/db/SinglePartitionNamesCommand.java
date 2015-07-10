@@ -231,7 +231,7 @@ public class SinglePartitionNamesCommand extends SinglePartitionReadCommand<Clus
         // We can remove a row if it has data that is more recent that the next sstable to consider for the data that the query
         // cares about. And the data we care about is 1) the row timestamp (since every query cares if the row exists or not)
         // and 2) the requested columns.
-        if (!row.primaryKeyLivenessInfo().hasTimestamp() || row.primaryKeyLivenessInfo().timestamp() <= sstableTimestamp)
+        if (row.primaryKeyLivenessInfo().isEmpty() || row.primaryKeyLivenessInfo().timestamp() <= sstableTimestamp)
             return false;
 
         for (ColumnDefinition column : requestedColumns)

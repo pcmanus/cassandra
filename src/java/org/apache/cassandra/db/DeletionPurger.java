@@ -30,6 +30,6 @@ public interface DeletionPurger
 
     public default boolean shouldPurge(LivenessInfo liveness, int nowInSec)
     {
-        return !liveness.isLive(nowInSec) && shouldPurge(liveness.timestamp(), liveness.localDeletionTime());
+        return !liveness.isLive(nowInSec) && shouldPurge(liveness.timestamp(), liveness.localExpirationTime());
     }
 }

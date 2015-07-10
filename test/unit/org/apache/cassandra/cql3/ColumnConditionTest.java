@@ -60,7 +60,7 @@ public class ColumnConditionTest
 
     private static Cell testCell(ColumnDefinition column, ByteBuffer value, CellPath path)
     {
-        return new BufferCell(column, 0L, LivenessInfo.NO_TTL, LivenessInfo.NO_DELETION_TIME, value, path);
+        return new BufferCell(column, 0L, Cell.NO_TTL, Cell.NO_DELETION_TIME, value, path);
     }
 
     private static void assertThrowsIRE(ColumnCondition.Bound bound, ByteBuffer conditionValue, ByteBuffer columnValue)

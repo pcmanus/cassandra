@@ -60,7 +60,7 @@ public abstract class AbstractRow implements Row
 
     public boolean isEmpty()
     {
-        return !primaryKeyLivenessInfo().hasTimestamp()
+        return primaryKeyLivenessInfo().isEmpty()
             && deletion().isLive()
             && !iterator().hasNext();
     }

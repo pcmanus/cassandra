@@ -140,7 +140,7 @@ public class UpdateParameters
 
     public void writePrimaryKeyLivenessInfo()
     {
-        builder.addPrimaryKeyLivenessInfo(SimpleLivenessInfo.forUpdate(timestamp, ttl, nowInSec, metadata));
+        builder.addPrimaryKeyLivenessInfo(LivenessInfo.create(metadata, timestamp, ttl, nowInSec));
     }
 
     public void writeRowDeletion()

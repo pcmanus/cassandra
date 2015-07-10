@@ -116,9 +116,9 @@ public class UnfilteredSerializer
 
         if (isStatic)
             flags |= IS_STATIC;
-        if (pkLiveness.hasTimestamp())
+        if (!pkLiveness.isEmpty())
             flags |= HAS_TIMESTAMP;
-        if (pkLiveness.hasTTL())
+        if (pkLiveness.isExpiring())
             flags |= HAS_TTL;
         if (!deletion.isLive())
             flags |= HAS_DELETION;
@@ -134,7 +134,7 @@ public class UnfilteredSerializer
         if ((flags & HAS_TTL) != 0)
         {
             out.writeInt(header.encodeTTL(pkLiveness.ttl()));
-            out.writeInt(header.encodeDeletionTime(pkLiveness.localDeletionTime()));
+            out.writeInt(header.encodeDeletionTime(pkLiveness.localExpirationTime()));
         }
         if ((flags & HAS_DELETION) != 0)
             UnfilteredRowIteratorSerializer.writeDelTime(deletion, header, out);
@@ -227,12 +227,12 @@ public class UnfilteredSerializer
         if (!isStatic)
             size += Clustering.serializer.serializedSize(row.clustering(), version, header.clusteringTypes());
 
-        if (pkLiveness.hasTimestamp())
+        if (!pkLiveness.isEmpty())
             size += TypeSizes.sizeof(header.encodeTimestamp(pkLiveness.timestamp()));
-        if (pkLiveness.hasTTL())
+        if (pkLiveness.isExpiring())
         {
             size += TypeSizes.sizeof(header.encodeTTL(pkLiveness.ttl()));
-            size += TypeSizes.sizeof(header.encodeDeletionTime(pkLiveness.localDeletionTime()));
+            size += TypeSizes.sizeof(header.encodeDeletionTime(pkLiveness.localExpirationTime()));
         }
         if (!deletion.isLive())
             size += UnfilteredRowIteratorSerializer.delTimeSerializedSize(deletion, header);
@@ -373,10 +373,14 @@ public class UnfilteredSerializer
         boolean hasDeletion = (flags & HAS_DELETION) != 0;
         boolean hasComplexDeletion = (flags & HAS_COMPLEX_DELETION) != 0;
 
-        long timestamp = hasTimestamp ? header.decodeTimestamp(in.readLong()) : LivenessInfo.NO_TIMESTAMP;
-        int ttl = hasTTL ? header.decodeTTL(in.readInt()) : LivenessInfo.NO_TTL;
-        int localDeletionTime = hasTTL ? header.decodeDeletionTime(in.readInt()) : LivenessInfo.NO_DELETION_TIME;
-        LivenessInfo rowLiveness = new SimpleLivenessInfo(timestamp, ttl, localDeletionTime);
+        LivenessInfo rowLiveness = LivenessInfo.EMPTY;
+        if (hasTimestamp)
+        {
+            long timestamp = hasTimestamp ? header.decodeTimestamp(in.readLong()) : LivenessInfo.NO_TIMESTAMP;
+            int ttl = hasTTL ? header.decodeTTL(in.readInt()) : LivenessInfo.NO_TTL;
+            int localDeletionTime = hasTTL ? header.decodeDeletionTime(in.readInt()) : LivenessInfo.NO_EXPIRATION_TIME;
+            rowLiveness = LivenessInfo.create(timestamp, ttl, localDeletionTime);
+        }
 
         builder.addPrimaryKeyLivenessInfo(rowLiveness);
         builder.addRowDeletion(hasDeletion ? UnfilteredRowIteratorSerializer.readDelTime(in, header) : DeletionTime.LIVE);

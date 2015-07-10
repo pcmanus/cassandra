@@ -310,7 +310,16 @@ public abstract class Selection
                 timestamps[current.size() - 1] = c.timestamp();
 
             if (ttls != null)
-                ttls[current.size() - 1] = c.livenessInfo().remainingTTL(nowInSec);
+                ttls[current.size() - 1] = remainingTTL(c, nowInSec);
+        }
+
+        private int remainingTTL(Cell c, int nowInSec)
+        {
+            if (!c.isExpiring())
+                return -1;
+
+            int remaining = c.localDeletionTime() - nowInSec;
+            return remaining >= 0 ? remaining : -1;
         }
 
         private ByteBuffer value(Cell c)

@@ -34,6 +34,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.partitions.PartitionStatisticsCollector;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -90,8 +91,8 @@ public class MetadataCollector implements PartitionStatisticsCollector
     protected EstimatedHistogram estimatedCellPerPartitionCount = defaultCellPerPartitionCountHistogram();
     protected ReplayPosition replayPosition = ReplayPosition.NONE;
     protected final MinMaxLongTracker timestampTracker = new MinMaxLongTracker();
-    protected final MinMaxIntTracker localDeletionTimeTracker = new MinMaxIntTracker(LivenessInfo.NO_DELETION_TIME, LivenessInfo.NO_DELETION_TIME);
-    protected final MinMaxIntTracker ttlTracker = new MinMaxIntTracker(LivenessInfo.NO_TTL, LivenessInfo.NO_TTL);
+    protected final MinMaxIntTracker localDeletionTimeTracker = new MinMaxIntTracker(Cell.NO_DELETION_TIME, Cell.NO_DELETION_TIME);
+    protected final MinMaxIntTracker ttlTracker = new MinMaxIntTracker(Cell.NO_TTL, Cell.NO_TTL);
     protected double compressionRatio = NO_COMPRESSION_RATIO;
     protected Set<Integer> ancestors = new HashSet<>();
     protected StreamingHistogram estimatedTombstoneDropTime = defaultTombstoneDropTimeHistogram();
@@ -181,14 +182,22 @@ public class MetadataCollector implements PartitionStatisticsCollector
 
     public void update(LivenessInfo newInfo)
     {
-        // If the info doesn't have a timestamp, this means the info is basically irrelevant (it's a row
-        // update whose only info we care are the cells info basically).
-        if (newInfo.hasTimestamp())
+        if (newInfo.isEmpty())
+            return;
+
+        updateTimestamp(newInfo.timestamp());
+        if (newInfo.isExpiring())
         {
-            updateTimestamp(newInfo.timestamp());
             updateTTL(newInfo.ttl());
-            updateLocalDeletionTime(newInfo.localDeletionTime());
+            updateLocalDeletionTime(newInfo.localExpirationTime());
         }
+    }
+
+    public void update(Cell cell)
+    {
+        updateTimestamp(cell.timestamp());
+        updateTTL(cell.ttl());
+        updateLocalDeletionTime(cell.localDeletionTime());
     }
 
     public void update(DeletionTime dt)

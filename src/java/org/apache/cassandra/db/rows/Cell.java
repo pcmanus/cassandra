@@ -39,6 +39,9 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  */
 public interface Cell extends ColumnData
 {
+    public static final int NO_TTL = 0;
+    public static final int NO_DELETION_TIME = Integer.MAX_VALUE;
+
     public final Comparator<Cell> comparator = new Comparator<Cell>()
     {
         public int compare(Cell c1, Cell c2)
@@ -69,37 +72,24 @@ public interface Cell extends ColumnData
     public ByteBuffer value();
 
     /**
-     * The liveness info of the cell, that is its timestamp and whether it is
-     * expiring, deleted or none of the above.
-     *
-     * @return the cell {@link LivenessInfo}.
-     */
-    public LivenessInfo livenessInfo();
-
-    /**
      * The cell timestamp.
      * <p>
-     * This is a shortcut for {@code livenessInfo().timestamp()}.
-     *
      * @return the cell timestamp.
      */
     public long timestamp();
 
     /**
      * The cell ttl.
-     * <p>
-     * This is a shortcut for {@code livenessInfo().ttl()}.
      *
-     * @return the cell ttl.
+     * @return the cell ttl, or {@code NO_TTL} if the cell isn't an expiring one.
      */
     public int ttl();
 
     /**
      * The cell local deletion time.
-     * <p>
-     * This is a shortcut for {@code livenessInfo().localDeletionTime()}.
      *
-     * @return the cell local deletion time.
+     * @return the cell local deletion time, or {@code NO_DELETION_TIME} if the cell is neither
+     * a tombstone nor an expiring one.
      */
     public int localDeletionTime();
 

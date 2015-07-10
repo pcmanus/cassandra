@@ -345,14 +345,15 @@ public interface Row extends Unfiltered, Iterable<ColumnData>
                 return row;
             }
 
-            LivenessInfo rowInfo = LivenessInfo.NONE;
+            LivenessInfo rowInfo = LivenessInfo.EMPTY;
             DeletionTime rowDeletion = DeletionTime.LIVE;
             for (int i = 0; i < rows.length; i++)
             {
                 if (rows[i] == null)
                     continue;
 
-                rowInfo = rowInfo.mergeWith(rows[i].primaryKeyLivenessInfo());
+                if (rows[i].primaryKeyLivenessInfo().supersedes(rowInfo))
+                    rowInfo = rows[i].primaryKeyLivenessInfo();
                 if (rows[i].deletion().supersedes(rowDeletion))
                     rowDeletion = rows[i].deletion();
             }
@@ -363,7 +364,7 @@ public interface Row extends Unfiltered, Iterable<ColumnData>
                 activeDeletion = rowDeletion;
 
             if (activeDeletion.deletes(rowInfo))
-                rowInfo = LivenessInfo.NONE;
+                rowInfo = LivenessInfo.EMPTY;
 
             for (int i = 0; i < rows.length; i++)
                 columnDataIterators.add(rows[i] == null ? Collections.emptyIterator() : rows[i].iterator());
@@ -378,7 +379,7 @@ public interface Row extends Unfiltered, Iterable<ColumnData>
             }
 
             // Because some data might have been shadowed by the 'activeDeletion', we could have an empty row
-            return !rowInfo.hasTimestamp() && rowDeletion.isLive() && dataBuffer.isEmpty()
+            return rowInfo.isEmpty() && rowDeletion.isLive() && dataBuffer.isEmpty()
                  ? null
                  : ArrayBackedRow.create(clustering, columns, rowInfo, rowDeletion, new ArrayList<>(dataBuffer));
         }

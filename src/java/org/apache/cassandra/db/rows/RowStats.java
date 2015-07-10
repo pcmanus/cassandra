@@ -27,7 +27,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 
 import static org.apache.cassandra.db.LivenessInfo.NO_TIMESTAMP;
 import static org.apache.cassandra.db.LivenessInfo.NO_TTL;
-import static org.apache.cassandra.db.LivenessInfo.NO_DELETION_TIME;
+import static org.apache.cassandra.db.LivenessInfo.NO_EXPIRATION_TIME;
 
 /**
  * General statistics on rows (and and tombstones) for a given source.
@@ -45,7 +45,7 @@ import static org.apache.cassandra.db.LivenessInfo.NO_DELETION_TIME;
 public class RowStats
 {
     // We should use this sparingly obviously
-    public static final RowStats NO_STATS = new RowStats(NO_TIMESTAMP, NO_DELETION_TIME, NO_TTL, -1);
+    public static final RowStats NO_STATS = new RowStats(NO_TIMESTAMP, NO_EXPIRATION_TIME, NO_TTL, -1);
 
     public static final Serializer serializer = new Serializer();
 
@@ -74,7 +74,7 @@ public class RowStats
 
     public boolean hasMinLocalDeletionTime()
     {
-        return minLocalDeletionTime != NO_DELETION_TIME;
+        return minLocalDeletionTime != NO_EXPIRATION_TIME;
     }
 
     /**
@@ -89,9 +89,9 @@ public class RowStats
                           ? that.minTimestamp
                           : (that.minTimestamp == NO_TIMESTAMP ? this.minTimestamp : Math.min(this.minTimestamp, that.minTimestamp));
 
-        int minDelTime = this.minLocalDeletionTime == NO_DELETION_TIME
+        int minDelTime = this.minLocalDeletionTime == NO_EXPIRATION_TIME
                        ? that.minLocalDeletionTime
-                       : (that.minLocalDeletionTime == NO_DELETION_TIME ? this.minLocalDeletionTime : Math.min(this.minLocalDeletionTime, that.minLocalDeletionTime));
+                       : (that.minLocalDeletionTime == NO_EXPIRATION_TIME ? this.minLocalDeletionTime : Math.min(this.minLocalDeletionTime, that.minLocalDeletionTime));
 
         int minTTL = this.minTTL == NO_TTL
                    ? that.minTTL
@@ -149,14 +149,23 @@ public class RowStats
 
         public void update(LivenessInfo info)
         {
-            // If the info doesn't have a timestamp, this means the info is basically irrelevant (it's a row
-            // update whose only info we care are the cells info basically).
-            if (info.hasTimestamp())
+            if (info.isEmpty())
+                return;
+
+            updateTimestamp(info.timestamp());
+
+            if (info.isExpiring())
             {
-                updateTimestamp(info.timestamp());
                 updateTTL(info.ttl());
-                updateLocalDeletionTime(info.localDeletionTime());
+                updateLocalDeletionTime(info.localExpirationTime());
+            }
         }
+
+        public void update(Cell cell)
+        {
+            updateTimestamp(cell.timestamp());
+            updateTTL(cell.ttl());
+            updateLocalDeletionTime(cell.localDeletionTime());
         }
 
         public void updateTimestamp(long timestamp)
@@ -170,7 +179,7 @@ public class RowStats
 
         public void updateLocalDeletionTime(int deletionTime)
         {
-            if (deletionTime == NO_DELETION_TIME)
+            if (deletionTime == NO_EXPIRATION_TIME)
                 return;
 
             isDelTimeSet = true;
@@ -218,7 +227,7 @@ public class RowStats
         public RowStats get()
         {
             return new RowStats(isTimestampSet ? minTimestamp : NO_TIMESTAMP,
-                                isDelTimeSet ? minDeletionTime : NO_DELETION_TIME,
+                                isDelTimeSet ? minDeletionTime : NO_EXPIRATION_TIME,
                                 isTTLSet ? minTTL : NO_TTL,
                                 isColumnSetPerRowSet ? (rows == 0 ? 0 : (int)(totalColumnsSet / rows)) : -1);
         }

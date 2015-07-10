@@ -187,7 +187,7 @@ public class BigTableWriter extends SSTableWriter
         private void collectStatsOn(Cell cell)
         {
             ++cellCount;
-            collector.update(cell.livenessInfo());
+            collector.update(cell);
 
             if (cell.isCounterCell())
                 collector.updateHasLegacyCounterShards(CounterCells.hasLegacyShards(cell));

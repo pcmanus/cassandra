@@ -37,7 +37,9 @@ public abstract class AbstractCell implements Cell
     public void digest(MessageDigest digest)
     {
         digest.update(value().duplicate());
-        livenessInfo().digest(digest);
+        FBUtilities.updateWithLong(digest, timestamp());
+        FBUtilities.updateWithInt(digest, localDeletionTime());
+        FBUtilities.updateWithInt(digest, ttl());
         FBUtilities.updateWithBoolean(digest, isCounterCell());
         if (path() != null)
             path().digest(digest);
@@ -47,7 +49,12 @@ public abstract class AbstractCell implements Cell
     {
         column().validateCellValue(value());
 
-        livenessInfo().validate();
+        if (ttl() < 0)
+            throw new MarshalException("A TTL should not be negative");
+        if (localDeletionTime() < 0)
+            throw new MarshalException("A local deletion time should not be negative");
+        if (isExpiring() && localDeletionTime() == NO_DELETION_TIME)
+            throw new MarshalException("Shoud not have a TTL without an associated local deletion time");
 
         // If cell is a tombstone, it shouldn't have a value.
         if (isTombstone() && value().hasRemaining())
@@ -55,14 +62,6 @@ public abstract class AbstractCell implements Cell
 
         if (path() != null)
             column().validateCellPath(path());
-    }
-
-    public int dataSize()
-    {
-        int size = value().remaining() + livenessInfo().dataSize();
-        if (path() != null)
-            size += path().dataSize();
-        return size;
     }
 
     @Override
@@ -87,25 +86,36 @@ public abstract class AbstractCell implements Cell
     @Override
     public int hashCode()
     {
-        return Objects.hash(column(), isCounterCell(), value(), livenessInfo(), path());
+        return Objects.hash(column(), isCounterCell(), timestamp(), ttl(), localDeletionTime(), value(), path());
     }
 
     @Override
     public String toString()
     {
         if (isCounterCell())
-            return String.format("[%s=%d ts=%d]", column().name, CounterContext.instance().total(value()), livenessInfo().timestamp());
+            return String.format("[%s=%d ts=%d]", column().name, CounterContext.instance().total(value()), timestamp());
 
         AbstractType<?> type = column().type;
         if (type instanceof CollectionType && type.isMultiCell())
         {
             CollectionType ct = (CollectionType)type;
-            return String.format("[%s[%s]=%s info=%s]",
+            return String.format("[%s[%s]=%s %s]",
                                  column().name,
                                  ct.nameComparator().getString(path().get(0)),
                                  ct.valueComparator().getString(value()),
-                                 livenessInfo());
+                                 livenessInfoString());
         }
-        return String.format("[%s=%s info=%s]", column().name, type.getString(value()), livenessInfo());
+        return String.format("[%s=%s %s]", column().name, type.getString(value()), livenessInfoString());
     }
+
+    private String livenessInfoString()
+    {
+        if (isExpiring())
+            return String.format("ts=%d ttl=%d ldt=%d", timestamp(), ttl(), localDeletionTime());
+        else if (isTombstone())
+            return String.format("ts=%d ldt=%d", timestamp(), localDeletionTime());
+        else
+            return String.format("ts=%d", timestamp());
+    }
+
 }

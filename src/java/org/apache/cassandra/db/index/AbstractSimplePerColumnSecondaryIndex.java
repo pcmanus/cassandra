@@ -125,7 +125,7 @@ public abstract class AbstractSimplePerColumnSecondaryIndex extends PerColumnSec
 
     public void insert(ByteBuffer rowKey, Clustering clustering, Cell cell, OpOrder.Group opGroup)
     {
-        insert(rowKey, clustering, cell, cell.livenessInfo(), opGroup);
+        insert(rowKey, clustering, cell, LivenessInfo.create(cell.timestamp(), cell.ttl(), cell.localDeletionTime()), opGroup);
     }
 
     public void insert(ByteBuffer rowKey, Clustering clustering, Cell cell, LivenessInfo info, OpOrder.Group opGroup)

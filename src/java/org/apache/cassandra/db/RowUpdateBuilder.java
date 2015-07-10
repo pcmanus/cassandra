@@ -82,7 +82,7 @@ public class RowUpdateBuilder
 
         // If a CQL table, add the "row marker"
         if (update.metadata().isCQLTable() && useRowMarker)
-            regularBuilder.addPrimaryKeyLivenessInfo(SimpleLivenessInfo.forUpdate(timestamp, ttl, localDeletionTime, update.metadata()));
+            regularBuilder.addPrimaryKeyLivenessInfo(LivenessInfo.create(update.metadata(), timestamp, ttl, localDeletionTime));
     }
 
     private Row.Builder builder()

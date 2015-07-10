@@ -37,7 +37,7 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  */
 public class ArrayBackedRow extends AbstractRow
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new ArrayBackedRow(Clustering.EMPTY, Columns.NONE, LivenessInfo.NONE, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new ArrayBackedRow(Clustering.EMPTY, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE));
 
     private final Clustering clustering;
     private final Columns columns;
@@ -81,27 +81,27 @@ public class ArrayBackedRow extends AbstractRow
 
     public static ArrayBackedRow emptyRow(Clustering clustering)
     {
-        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.NONE, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE);
+        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE);
     }
 
     public static ArrayBackedRow singleCellRow(Clustering clustering, Cell cell)
     {
         if (cell.column().isSimple())
-            return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.NONE, DeletionTime.LIVE, Collections.singletonList(cell), minDeletionTime(cell));
+            return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.singletonList(cell), minDeletionTime(cell));
 
         ComplexColumnData complexData = new ComplexColumnData(cell.column(), Collections.singletonList(cell), DeletionTime.LIVE);
-        return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.NONE, DeletionTime.LIVE, Collections.singletonList(complexData), minDeletionTime(cell));
+        return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.singletonList(complexData), minDeletionTime(cell));
     }
 
     public static ArrayBackedRow emptyDeletedRow(Clustering clustering, DeletionTime deletion)
     {
         assert !deletion.isLive();
-        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.NONE, deletion, Collections.emptyList(), Integer.MIN_VALUE);
+        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, deletion, Collections.emptyList(), Integer.MIN_VALUE);
     }
 
     public static ArrayBackedRow noCellLiveRow(Clustering clustering, LivenessInfo primaryKeyLivenessInfo)
     {
-        assert primaryKeyLivenessInfo.hasTimestamp();
+        assert !primaryKeyLivenessInfo.isEmpty();
         return new ArrayBackedRow(clustering, Columns.NONE, primaryKeyLivenessInfo, DeletionTime.LIVE, Collections.emptyList(), minDeletionTime(primaryKeyLivenessInfo));
     }
 
@@ -112,7 +112,7 @@ public class ArrayBackedRow extends AbstractRow
 
     private static int minDeletionTime(LivenessInfo info)
     {
-        return info.hasTTL() ? info.localDeletionTime() : Integer.MAX_VALUE;
+        return info.isExpiring() ? info.localExpirationTime() : Integer.MAX_VALUE;
     }
 
     private static int minDeletionTime(DeletionTime dt)
@@ -224,7 +224,7 @@ public class ArrayBackedRow extends AbstractRow
         if (mayHaveShadowed)
         {
             if (activeDeletion.deletes(newInfo.timestamp()))
-                newInfo = LivenessInfo.NONE;
+                newInfo = LivenessInfo.EMPTY;
             // note that mayHaveShadowed means the activeDeletion shadows the row deletion. So if don't have setActiveDeletionToRow,
             // the row deletion is shadowed and we shouldn't return it.
             newDeletion = setActiveDeletionToRow ? activeDeletion : DeletionTime.LIVE;
@@ -262,7 +262,7 @@ public class ArrayBackedRow extends AbstractRow
             }
         }
 
-        if (!newInfo.hasTimestamp() && newDeletion.isLive() && newData.isEmpty())
+        if (newInfo.isEmpty() && newDeletion.isLive() && newData.isEmpty())
             return null;
 
         return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newData, newMinDeletionTime);
@@ -318,7 +318,7 @@ public class ArrayBackedRow extends AbstractRow
      */
     public Row updateAllTimestamp(long newTimestamp)
     {
-        LivenessInfo newInfo = primaryKeyLivenessInfo.hasTimestamp() ? primaryKeyLivenessInfo.withUpdatedTimestamp(newTimestamp) : primaryKeyLivenessInfo;
+        LivenessInfo newInfo = primaryKeyLivenessInfo.isEmpty() ? primaryKeyLivenessInfo : primaryKeyLivenessInfo.withUpdatedTimestamp(newTimestamp);
         DeletionTime newDeletion = deletion.isLive() ? deletion : new DeletionTime(newTimestamp - 1, deletion.localDeletionTime());
 
         List<ColumnData> newData = new ArrayList<>(data.size());
@@ -333,7 +333,7 @@ public class ArrayBackedRow extends AbstractRow
         if (!hasDeletion(nowInSec))
             return this;
 
-        LivenessInfo newInfo = purger.shouldPurge(primaryKeyLivenessInfo, nowInSec) ? LivenessInfo.NONE : primaryKeyLivenessInfo;
+        LivenessInfo newInfo = purger.shouldPurge(primaryKeyLivenessInfo, nowInSec) ? LivenessInfo.EMPTY : primaryKeyLivenessInfo;
         DeletionTime newDeletion = purger.shouldPurge(deletion) ? DeletionTime.LIVE : deletion;
 
         int newMinDeletionTime = Math.min(minDeletionTime(newInfo), minDeletionTime(newDeletion));
@@ -348,7 +348,7 @@ public class ArrayBackedRow extends AbstractRow
             }
         }
 
-        if (!newInfo.hasTimestamp() && newDeletion.isLive() && newData.isEmpty())
+        if (newInfo.isEmpty() && newDeletion.isLive() && newData.isEmpty())
             return null;
 
         return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newData, newMinDeletionTime);
@@ -524,7 +524,7 @@ public class ArrayBackedRow extends AbstractRow
         protected void reset()
         {
             this.clustering = null;
-            this.primaryKeyLivenessInfo = LivenessInfo.NONE;
+            this.primaryKeyLivenessInfo = LivenessInfo.EMPTY;
             this.deletion = DeletionTime.LIVE;
             this.cells.clear();
             Arrays.fill(this.complexDeletions, null);
