@@ -166,12 +166,4 @@ public class ObjectSizes
     {
         return meter.measure(pojo);
     }
-
-    public static long shallowSizeOnHeap(ArrayList<?> list)
-    {
-        // TODO: this is incorrent if only because the capacity can be greater than the size, but said capacity
-        // is not exposed. We could switch to arrays but I'm lazy because for the places where we do currently use
-        // that, I think we'll almost always have capacity == size anyway.
-        return ARRAYLIST_EMPTY_SIZE + sizeOfReferenceArray(list.size());
-    }
 }

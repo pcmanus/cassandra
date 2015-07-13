@@ -37,7 +37,9 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  */
 public class ArrayBackedRow extends AbstractRow
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new ArrayBackedRow(Clustering.EMPTY, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE));
+    private static final ColumnData[] NO_DATA = new ColumnData[0];
+
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new ArrayBackedRow(Clustering.EMPTY, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, 0, NO_DATA, Integer.MAX_VALUE));
 
     private final Clustering clustering;
     private final Columns columns;
@@ -45,7 +47,8 @@ public class ArrayBackedRow extends AbstractRow
     private final DeletionTime deletion;
 
     // The data for each columns present in this row in column sorted order.
-    private final List<ColumnData> data;
+    private int size;
+    private final ColumnData[] data;
 
     // We need to filter the tombstones of a row on every read (twice in fact: first to remove purgeable tombstone, and then after reconciliation to remove
     // all tombstone since we don't return them to the client) as well as on compaction. But it's likely that many rows won't have any tombstone at all, so
@@ -56,53 +59,54 @@ public class ArrayBackedRow extends AbstractRow
     // no expiring cells, this will be Integer.MAX_VALUE;
     private final int minLocalDeletionTime;
 
-    private ArrayBackedRow(Clustering clustering, Columns columns, LivenessInfo primaryKeyLivenessInfo, DeletionTime deletion, List<ColumnData> data, int minLocalDeletionTime)
+    private ArrayBackedRow(Clustering clustering, Columns columns, LivenessInfo primaryKeyLivenessInfo, DeletionTime deletion, int size, ColumnData[] data, int minLocalDeletionTime)
     {
         this.clustering = clustering;
         this.columns = columns;
         this.primaryKeyLivenessInfo = primaryKeyLivenessInfo;
         this.deletion = deletion;
+        this.size = size;
         this.data = data;
         this.minLocalDeletionTime = minLocalDeletionTime;
     }
 
     // Note that it's often easier/safer to use the sortedBuilder/unsortedBuilder or one of the static creation method below. Only directly useful in a small amount of cases.
-    public static ArrayBackedRow create(Clustering clustering, Columns columns, LivenessInfo primaryKeyLivenessInfo, DeletionTime deletion, List<ColumnData> data)
+    public static ArrayBackedRow create(Clustering clustering, Columns columns, LivenessInfo primaryKeyLivenessInfo, DeletionTime deletion, int size, ColumnData[] data)
     {
         int minDeletionTime = Math.min(minDeletionTime(primaryKeyLivenessInfo), minDeletionTime(deletion));
         if (minDeletionTime != Integer.MIN_VALUE)
         {
-            for (ColumnData cd : data)
-                minDeletionTime = Math.min(minDeletionTime, minDeletionTime(cd));
+            for (int i = 0; i < size; i++)
+                minDeletionTime = Math.min(minDeletionTime, minDeletionTime(data[i]));
         }
 
-        return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, data, minDeletionTime);
+        return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, size, data, minDeletionTime);
     }
 
     public static ArrayBackedRow emptyRow(Clustering clustering)
     {
-        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.emptyList(), Integer.MAX_VALUE);
+        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, DeletionTime.LIVE, 0, NO_DATA, Integer.MAX_VALUE);
     }
 
     public static ArrayBackedRow singleCellRow(Clustering clustering, Cell cell)
     {
         if (cell.column().isSimple())
-            return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.singletonList(cell), minDeletionTime(cell));
+            return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, 1, new ColumnData[]{ cell }, minDeletionTime(cell));
 
-        ComplexColumnData complexData = new ComplexColumnData(cell.column(), Collections.singletonList(cell), DeletionTime.LIVE);
-        return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, Collections.singletonList(complexData), minDeletionTime(cell));
+        ComplexColumnData complexData = new ComplexColumnData(cell.column(), new Cell[]{ cell }, DeletionTime.LIVE);
+        return new ArrayBackedRow(clustering, Columns.of(cell.column()), LivenessInfo.EMPTY, DeletionTime.LIVE, 1, new ColumnData[]{ complexData }, minDeletionTime(cell));
     }
 
     public static ArrayBackedRow emptyDeletedRow(Clustering clustering, DeletionTime deletion)
     {
         assert !deletion.isLive();
-        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, deletion, Collections.emptyList(), Integer.MIN_VALUE);
+        return new ArrayBackedRow(clustering, Columns.NONE, LivenessInfo.EMPTY, deletion, 0, NO_DATA, Integer.MIN_VALUE);
     }
 
     public static ArrayBackedRow noCellLiveRow(Clustering clustering, LivenessInfo primaryKeyLivenessInfo)
     {
         assert !primaryKeyLivenessInfo.isEmpty();
-        return new ArrayBackedRow(clustering, Columns.NONE, primaryKeyLivenessInfo, DeletionTime.LIVE, Collections.emptyList(), minDeletionTime(primaryKeyLivenessInfo));
+        return new ArrayBackedRow(clustering, Columns.NONE, primaryKeyLivenessInfo, DeletionTime.LIVE, 0, NO_DATA, minDeletionTime(primaryKeyLivenessInfo));
     }
 
     private static int minDeletionTime(Cell cell)
@@ -157,7 +161,7 @@ public class ArrayBackedRow extends AbstractRow
     {
         assert !c.isComplex();
         int idx = binarySearch(c);
-        return idx < 0 ? null : (Cell)data.get(idx);
+        return idx < 0 ? null : (Cell)data[idx];
     }
 
     public Cell getCell(ColumnDefinition c, CellPath path)
@@ -167,19 +171,19 @@ public class ArrayBackedRow extends AbstractRow
         if (idx < 0)
             return null;
 
-        return ((ComplexColumnData)data.get(idx)).getCell(path);
+        return ((ComplexColumnData)data[idx]).getCell(path);
     }
 
     public ComplexColumnData getComplexColumnData(ColumnDefinition c)
     {
         assert c.isComplex();
         int idx = binarySearch(c);
-        return idx < 0 ? null : (ComplexColumnData)data.get(idx);
+        return idx < 0 ? null : (ComplexColumnData)data[idx];
     }
 
     public Iterator<ColumnData> iterator()
     {
-        return data.iterator();
+        return new ColumnDataIterator();
     }
 
     public Iterator<Cell> cellIterator()
@@ -206,19 +210,6 @@ public class ArrayBackedRow extends AbstractRow
 
         boolean mayHaveShadowed = activeDeletion.supersedes(deletion);
 
-        Columns columns = filter.fetchedColumns().columns(isStatic());
-
-        int newSize = 0;
-        Predicate<ColumnDefinition> inclusionTester = columns.inOrderInclusionTester();
-        for (ColumnData cd : data)
-        {
-            if (inclusionTester.test(cd.column()))
-                ++newSize;
-        }
-
-        if (newSize == data.size() && !mayHaveShadowed && droppedColumns.isEmpty())
-            return this;
-
         LivenessInfo newInfo = primaryKeyLivenessInfo;
         DeletionTime newDeletion = deletion;
         if (mayHaveShadowed)
@@ -230,22 +221,25 @@ public class ArrayBackedRow extends AbstractRow
             newDeletion = setActiveDeletionToRow ? activeDeletion : DeletionTime.LIVE;
         }
 
+        ColumnData[] newData = new ColumnData[size];
         int newMinDeletionTime = Math.min(minDeletionTime(newInfo), minDeletionTime(newDeletion));
-
-        List<ColumnData> newData = new ArrayList<>(newSize);
-        inclusionTester = columns.inOrderInclusionTester();
-        for (ColumnData cd : data)
+        Columns columns = filter.fetchedColumns().columns(isStatic());
+        Predicate<ColumnDefinition> inclusionTester = columns.inOrderInclusionTester();
+        int newSize = 0;
+        for (int i = 0; i < size; i++)
         {
-            if (!inclusionTester.test(cd.column()))
+            ColumnData cd = data[i];
+            ColumnDefinition column = cd.column();
+            if (!inclusionTester.test(column))
                 continue;
 
-            CFMetaData.DroppedColumn dropped = droppedColumns.get(cd.column().name);
-            if (cd.column().isSimple())
+            CFMetaData.DroppedColumn dropped = droppedColumns.get(column.name);
+            if (column.isSimple())
             {
                 Cell cell = (Cell)cd;
-                if ((dropped == null || cell.timestamp() > dropped.droppedTime) && !(mayHaveShadowed &&activeDeletion.deletes(cell)))
+                if ((dropped == null || cell.timestamp() > dropped.droppedTime) && !(mayHaveShadowed && activeDeletion.deletes(cell)))
                 {
-                    newData.add(cell);
+                    newData[newSize++] = cell;
                     newMinDeletionTime = Math.min(newMinDeletionTime, minDeletionTime(cell));
                 }
             }
@@ -256,24 +250,24 @@ public class ArrayBackedRow extends AbstractRow
                                  : ((ComplexColumnData)cd).filter(mayHaveShadowed ? activeDeletion : DeletionTime.LIVE, dropped);
                 if (newCd != null)
                 {
-                    newData.add(newCd);
+                    newData[newSize++] = newCd;
                     newMinDeletionTime = Math.min(newMinDeletionTime, minDeletionTime(newCd));
                 }
             }
         }
 
-        if (newInfo.isEmpty() && newDeletion.isLive() && newData.isEmpty())
+        if (newSize == 0 && newInfo.isEmpty() && newDeletion.isLive())
             return null;
 
-        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newData, newMinDeletionTime);
+        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newSize, newData, newMinDeletionTime);
     }
 
     public boolean hasComplexDeletion()
     {
         // We start by the end cause we know complex columns sort before simple ones
-        for (int i = data.size() - 1; i >= 0; i--)
+        for (int i = size - 1; i >= 0; i--)
         {
-            ColumnData cd = data.get(i);
+            ColumnData cd = data[i];
             if (cd.column().isSimple())
                 return false;
 
@@ -285,24 +279,24 @@ public class ArrayBackedRow extends AbstractRow
 
     public Row markCounterLocalToBeCleared()
     {
-        List<ColumnData> newData = null;
-        for (int i = 0; i < data.size(); i++)
+        ColumnData[] newData = null;
+        for (int i = 0; i < size; i++)
         {
-            ColumnData cd = data.get(i);
+            ColumnData cd = data[i];
             ColumnData newCd = cd.column().cellValueType().isCounter()
                              ? cd.markCounterLocalToBeCleared()
                              : cd;
             if (newCd != cd)
             {
                 if (newData == null)
-                    newData = new ArrayList<>(data);
-                newData.set(i, newCd);
+                    newData = Arrays.copyOf(data, size);
+                newData[i] = newCd;
             }
         }
 
         return newData == null
              ? this
-             : new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, newData, minLocalDeletionTime);
+             : new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, size, newData, minLocalDeletionTime);
     }
 
     public boolean hasDeletion(int nowInSec)
@@ -321,11 +315,11 @@ public class ArrayBackedRow extends AbstractRow
         LivenessInfo newInfo = primaryKeyLivenessInfo.isEmpty() ? primaryKeyLivenessInfo : primaryKeyLivenessInfo.withUpdatedTimestamp(newTimestamp);
         DeletionTime newDeletion = deletion.isLive() ? deletion : new DeletionTime(newTimestamp - 1, deletion.localDeletionTime());
 
-        List<ColumnData> newData = new ArrayList<>(data.size());
-        for (ColumnData cd : data)
-            newData.add(cd.updateAllTimestamp(newTimestamp));
+        ColumnData[] newData = new ColumnData[size];
+        for (int i = 0; i < size; i++)
+            newData[i] = data[i].updateAllTimestamp(newTimestamp);
 
-        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newData, minLocalDeletionTime);
+        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, size, newData, minLocalDeletionTime);
     }
 
     public Row purge(DeletionPurger purger, int nowInSec)
@@ -337,21 +331,22 @@ public class ArrayBackedRow extends AbstractRow
         DeletionTime newDeletion = purger.shouldPurge(deletion) ? DeletionTime.LIVE : deletion;
 
         int newMinDeletionTime = Math.min(minDeletionTime(newInfo), minDeletionTime(newDeletion));
-        List<ColumnData> newData = new ArrayList<>(data.size());
-        for (ColumnData cd : data)
+        ColumnData[] newData = new ColumnData[size];
+        int newSize = 0;
+        for (int i = 0; i < size; i++)
         {
-            ColumnData purged = cd.purge(purger, nowInSec);
+            ColumnData purged = data[i].purge(purger, nowInSec);
             if (purged != null)
             {
-                newData.add(purged);
+                newData[newSize++] = purged;
                 newMinDeletionTime = Math.min(newMinDeletionTime, minDeletionTime(purged));
             }
         }
 
-        if (newInfo.isEmpty() && newDeletion.isLive() && newData.isEmpty())
+        if (newSize == 0 && newInfo.isEmpty() && newDeletion.isLive())
             return null;
 
-        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newData, newMinDeletionTime);
+        return new ArrayBackedRow(clustering, columns, newInfo, newDeletion, newSize, newData, newMinDeletionTime);
     }
 
     public int dataSize()
@@ -360,21 +355,19 @@ public class ArrayBackedRow extends AbstractRow
                      + primaryKeyLivenessInfo.dataSize()
                      + deletion.dataSize();
 
-        for (ColumnData cd : data)
-            dataSize += cd.dataSize();
+        for (int i = 0; i < size; i++)
+            dataSize += data[i].dataSize();
         return dataSize;
     }
 
     public long unsharedHeapSizeExcludingData()
     {
-        long heapSize = EMPTY_SIZE + clustering.unsharedHeapSizeExcludingData();
+        long heapSize = EMPTY_SIZE
+                      + clustering.unsharedHeapSizeExcludingData()
+                      + ObjectSizes.sizeOfArray(data);
 
-        if (data.isEmpty())
-            return heapSize;
-
-        heapSize += ObjectSizes.shallowSizeOnHeap((ArrayList)data);
-        for (ColumnData cd : data)
-            heapSize += cd.unsharedHeapSizeExcludingData();
+        for (int i = 0; i < size; i++)
+            heapSize += data[i].unsharedHeapSizeExcludingData();
         return heapSize;
     }
 
@@ -397,14 +390,14 @@ public class ArrayBackedRow extends AbstractRow
         int idx = binarySearch(column);
         assert idx >= 0;
         if (column.isSimple())
-            data.set(idx, ((Cell)data.get(idx)).withUpdatedValue(value));
+            data[idx] = ((Cell)data[idx]).withUpdatedValue(value);
         else
-            ((ComplexColumnData)data.get(idx)).setValue(path, value);
+            ((ComplexColumnData)data[idx]).setValue(path, value);
     }
 
     private int binarySearch(ColumnDefinition column)
     {
-        return binarySearch(column, 0, data.size());
+        return binarySearch(column, 0, size);
     }
 
     /**
@@ -422,7 +415,7 @@ public class ArrayBackedRow extends AbstractRow
         while (low <= high)
         {
             mid = (low + high) >> 1;
-            if ((result = column.compareTo(data.get(mid).column())) > 0)
+            if ((result = column.compareTo(data[mid].column())) > 0)
                 low = mid + 1;
             else if (result == 0)
                 return mid;
@@ -430,6 +423,16 @@ public class ArrayBackedRow extends AbstractRow
                 high = mid - 1;
         }
         return -mid - (result < 0 ? 1 : 2);
+    }
+
+    private class ColumnDataIterator extends AbstractIterator<ColumnData>
+    {
+        private int i;
+
+        protected ColumnData computeNext()
+        {
+            return i < size ? data[i++] : endOfData();
+        }
     }
 
     private class CellIterator extends AbstractIterator<Cell>
@@ -449,10 +452,10 @@ public class ArrayBackedRow extends AbstractRow
                     complexCells = null;
                 }
 
-                if (i >= data.size())
+                if (i >= size)
                     return endOfData();
 
-                ColumnData cd = data.get(i++);
+                ColumnData cd = data[i++];
                 if (cd.column().isComplex())
                     complexCells = ((ComplexColumnData)cd).iterator();
                 else
@@ -468,12 +471,12 @@ public class ArrayBackedRow extends AbstractRow
 
         public boolean hasNext()
         {
-            return searchFrom < data.size();
+            return searchFrom < size;
         }
 
         public ColumnData next(ColumnDefinition column)
         {
-            int idx = binarySearch(column, searchFrom, data.size());
+            int idx = binarySearch(column, searchFrom, size);
             if (idx < 0)
             {
                 searchFrom = -idx - 1;
@@ -483,16 +486,13 @@ public class ArrayBackedRow extends AbstractRow
             {
                 // We've found it. We'll start after it next time.
                 searchFrom = idx + 1;
-                return data.get(idx);
+                return data[idx];
             }
         }
     }
 
     private static abstract class AbstractBuilder implements Row.Builder
     {
-        protected static final List<ColumnData> NO_DATA = Collections.emptyList();
-        protected static final List<Cell> NO_CELLS = Collections.emptyList();
-
         protected final Columns columns;
 
         protected Clustering clustering;
@@ -561,20 +561,21 @@ public class ArrayBackedRow extends AbstractRow
             assert cells.isEmpty();
             int minDeletionTime = Math.min(minDeletionTime(primaryKeyLivenessInfo), minDeletionTime(deletion));
             if (columnsWithComplexDeletion == 0)
-                return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, NO_DATA, minDeletionTime);
+                return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, 0, NO_DATA, minDeletionTime);
 
-            List<ColumnData> data = new ArrayList(columnsWithComplexDeletion);
+            ColumnData[] data = new ColumnData[columnsWithComplexDeletion];
+            int size = 0;
             for (int i = 0; i < complexDeletions.length; i++)
             {
                 DeletionTime complexDeletion = complexDeletions[i];
                 if (complexDeletion != null)
                 {
                     assert !complexDeletion.isLive();
-                    data.add(new ComplexColumnData(columns.getComplex(i), NO_CELLS, complexDeletion));
+                    data[size++] = new ComplexColumnData(columns.getComplex(i), ComplexColumnData.NO_CELLS, complexDeletion);
                     minDeletionTime = Integer.MIN_VALUE;
                 }
             }
-            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, data, minDeletionTime);
+            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, size, data, minDeletionTime);
         }
     }
 
@@ -653,16 +654,17 @@ public class ArrayBackedRow extends AbstractRow
 
             int minDeletionTime = Math.min(minDeletionTime(primaryKeyLivenessInfo), minDeletionTime(deletion));
 
-            List<ColumnData> data = new ArrayList<>(columnCount);
+            ColumnData[] data = new ColumnData[columnCount];
             int complexIdx = 0;
             int i = 0;
+            int size = 0;
             while (i < cells.size())
             {
                 Cell cell = cells.get(i);
                 ColumnDefinition column = cell.column();
                 if (column.isSimple())
                 {
-                    data.add(cell);
+                    data[size++] = cell;
                     minDeletionTime = Math.min(minDeletionTime, minDeletionTime(cell));
                     ++i;
                 }
@@ -672,7 +674,7 @@ public class ArrayBackedRow extends AbstractRow
                     {
                         if (complexDeletions[complexIdx] != null)
                         {
-                            data.add(new ComplexColumnData(columns.getComplex(complexIdx), NO_CELLS, complexDeletions[complexIdx]));
+                            data[size++] = new ComplexColumnData(columns.getComplex(complexIdx), ComplexColumnData.NO_CELLS, complexDeletions[complexIdx]);
                             minDeletionTime = Integer.MIN_VALUE;
                         }
                         ++complexIdx;
@@ -682,18 +684,16 @@ public class ArrayBackedRow extends AbstractRow
                     if (complexDeletion != null)
                         minDeletionTime = Integer.MIN_VALUE;
                     int cellCount = complexColumnCellsCount[complexIdx];
-
-                    List<Cell> complexCells = new ArrayList<>(cellCount);
-                    int endOfComplex = i + cellCount;
-                    for (int j = i; j < endOfComplex; j++)
+                    Cell[] complexCells = new Cell[cellCount];
+                    for (int j = 0; j < cellCount; j++)
                     {
-                        Cell complexCell = cells.get(j);
-                        complexCells.add(complexCell);
+                        Cell complexCell = cells.get(i + j);
+                        complexCells[j] = complexCell;
                         minDeletionTime = Math.min(minDeletionTime, minDeletionTime(complexCell));
                     }
-                    i = endOfComplex;
+                    i += cellCount;
 
-                    data.add(new ComplexColumnData(column, complexCells, complexDeletion == null ? DeletionTime.LIVE : complexDeletion));
+                    data[size++] = new ComplexColumnData(column, complexCells, complexDeletion == null ? DeletionTime.LIVE : complexDeletion);
                     ++complexIdx;
                 }
             }
@@ -701,11 +701,12 @@ public class ArrayBackedRow extends AbstractRow
             {
                 if (complexDeletions[j] != null)
                 {
-                    data.add(new ComplexColumnData(columns.getComplex(j), NO_CELLS, complexDeletions[j]));
+                    data[size++] = new ComplexColumnData(columns.getComplex(j), ComplexColumnData.NO_CELLS, complexDeletions[j]);
                     minDeletionTime = Integer.MIN_VALUE;
                 }
             }
-            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, data, minDeletionTime);
+            assert size == data.length;
+            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, size, data, minDeletionTime);
         }
     }
 
@@ -759,7 +760,7 @@ public class ArrayBackedRow extends AbstractRow
             //     And this without forgetting that some complex columns may have a complex deletion but not cells.
 
             int addedColumns = countAddedColumns();
-            List<ColumnData> data = new ArrayList<>(addedColumns);
+            ColumnData[] data = new ColumnData[addedColumns];
 
             int nextComplexWithDeletion = findNextComplexWithDeletion(0);
             ColumnDefinition previousColumn = null;
@@ -767,6 +768,7 @@ public class ArrayBackedRow extends AbstractRow
             int minDeletionTime = Math.min(minDeletionTime(primaryKeyLivenessInfo), minDeletionTime(deletion));
 
             int i = 0;
+            int size = 0;
             while (i < cells.size())
             {
                 Cell cell = cells.get(i++);
@@ -775,14 +777,9 @@ public class ArrayBackedRow extends AbstractRow
                 {
                     // Either it's a cell for the same column than our previous cell and we merge them together, or it's a new column
                     if (previousColumn != null && previousColumn.compareTo(column) == 0)
-                    {
-                        assert !data.isEmpty();
-                        data.set(data.size() - 1, Cells.reconcile((Cell)data.get(data.size() - 1), cell, nowInSec));
-                    }
+                        data[size - 1] = Cells.reconcile((Cell)data[size - 1], cell, nowInSec);
                     else
-                    {
-                        data.add(cell);
-                    }
+                        data[size++] = cell;
                 }
                 else
                 {
@@ -800,7 +797,7 @@ public class ArrayBackedRow extends AbstractRow
                         else if (cmp > 0)
                         {
                             // We have a column that only has a complex deletion and no column. Add its data first
-                            data.add(new ComplexColumnData(columns.getComplex(nextComplexWithDeletion), NO_CELLS, complexDeletions[nextComplexWithDeletion]));
+                            data[size++] = new ComplexColumnData(columns.getComplex(nextComplexWithDeletion), ComplexColumnData.NO_CELLS, complexDeletions[nextComplexWithDeletion]);
                             minDeletionTime = Integer.MIN_VALUE;
                             nextComplexWithDeletion = findNextComplexWithDeletion(nextComplexWithDeletion + 1);
                         }
@@ -829,33 +826,34 @@ public class ArrayBackedRow extends AbstractRow
                             ++cellCount;
                         previousCell = newCell;
                     }
-                    List<Cell> columnCells = new ArrayList(cellCount);
-                    columnCells.add(cell);
+                    Cell[] columnCells = new Cell[cellCount];
+                    int complexSize = 0;
+                    columnCells[complexSize++] = cell;
                     previousCell = cell;
                     for (int j = i; j < nextColumnIdx; j++)
                     {
                         Cell newCell = cells.get(j);
                         // Either it's a cell for the same path than our previous cell and we merge them together, or it's a new path
                         if (column.cellPathComparator().compare(previousCell.path(), newCell.path()) == 0)
-                            columnCells.set(columnCells.size() - 1, Cells.reconcile(previousCell, newCell, nowInSec));
+                            columnCells[complexSize - 1] = Cells.reconcile(previousCell, newCell, nowInSec);
                         else
-                            columnCells.add(newCell);
+                            columnCells[complexSize++] = newCell;
                         previousCell = newCell;
                     }
                     i = nextColumnIdx;
 
-                    data.add(new ComplexColumnData(column, columnCells, complexDeletion));
+                    data[size++] = new ComplexColumnData(column, columnCells, complexDeletion);
                 }
                 previousColumn = column;
             }
             // We may still have some complex columns with only a complex deletion
             while (nextComplexWithDeletion >= 0)
             {
-                data.add(new ComplexColumnData(columns.getComplex(nextComplexWithDeletion), NO_CELLS, complexDeletions[nextComplexWithDeletion]));
+                data[size++] = new ComplexColumnData(columns.getComplex(nextComplexWithDeletion), ComplexColumnData.NO_CELLS, complexDeletions[nextComplexWithDeletion]);
                 nextComplexWithDeletion = findNextComplexWithDeletion(nextComplexWithDeletion + 1);
                 minDeletionTime = Integer.MIN_VALUE;
             }
-            assert data.size() == addedColumns;
+            assert size == addedColumns;
 
             // Reconciliation made it harder to compute minDeletionTime for cells in the loop above, so just do it now if we need to.
             if (minDeletionTime != Integer.MIN_VALUE)
@@ -864,7 +862,7 @@ public class ArrayBackedRow extends AbstractRow
                     minDeletionTime = Math.min(minDeletionTime, minDeletionTime(cd));
             }
 
-            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, data, minDeletionTime);
+            return new ArrayBackedRow(clustering, columns, primaryKeyLivenessInfo, deletion, size, data, minDeletionTime);
         }
 
         private int findNextComplexWithDeletion(int from)

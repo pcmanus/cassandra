@@ -37,20 +37,22 @@ import org.apache.cassandra.utils.ObjectSizes;
  */
 public class ComplexColumnData implements ColumnData, Iterable<Cell>
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new ComplexColumnData(ColumnDefinition.regularDef("", "", "", SetType.getInstance(ByteType.instance, true)), Collections.emptyList(), new DeletionTime(0, 0)));
+    static final Cell[] NO_CELLS = new Cell[0];
+
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new ComplexColumnData(ColumnDefinition.regularDef("", "", "", SetType.getInstance(ByteType.instance, true)), NO_CELLS, new DeletionTime(0, 0)));
 
     private final ColumnDefinition column;
 
     // The cells for 'column' sorted by cell path.
-    private final List<Cell> cells;
+    private final Cell[] cells;
 
     private final DeletionTime complexDeletion;
 
     // Only ArrayBackedRow should call this.
-    ComplexColumnData(ColumnDefinition column, List<Cell> cells, DeletionTime complexDeletion)
+    ComplexColumnData(ColumnDefinition column, Cell[] cells, DeletionTime complexDeletion)
     {
         assert column.isComplex();
-        assert !cells.isEmpty() || !complexDeletion.isLive();
+        assert cells.length > 0 || !complexDeletion.isLive();
         this.column = column;
         this.cells = cells;
         this.complexDeletion = complexDeletion;
@@ -58,12 +60,12 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public boolean hasCells()
     {
-        return !cells.isEmpty();
+        return cellsCount() > 0;
     }
 
     public int cellsCount()
     {
-        return cells.size();
+        return cells.length;
     }
 
     public ColumnDefinition column()
@@ -74,13 +76,13 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
     public Cell getCell(CellPath path)
     {
         int idx = binarySearch(path);
-        return idx < 0 ? null : cells.get(idx);
+        return idx < 0 ? null : cells[idx];
     }
 
     public Cell getCellByIndex(int i)
     {
-        assert 0 <= i && i < cells.size();
-        return cells.get(i);
+        assert 0 <= i && i < cells.length;
+        return cells[i];
     }
 
     /**
@@ -101,7 +103,7 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public Iterator<Cell> iterator()
     {
-        return cells.iterator();
+        return Iterators.forArray(cells);
     }
 
     public int dataSize()
@@ -114,7 +116,7 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public long unsharedHeapSizeExcludingData()
     {
-        long heapSize = EMPTY_SIZE;
+        long heapSize = EMPTY_SIZE + ObjectSizes.sizeOfArray(cells);
         for (Cell cell : cells)
             heapSize += cell.unsharedHeapSizeExcludingData();
         return heapSize;
@@ -128,17 +130,32 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public ComplexColumnData filter(DeletionTime activeDeletion, CFMetaData.DroppedColumn dropped)
     {
-        List<Cell> newCells = new ArrayList<>(cells.size());
+        DeletionTime newComplexDeletion = activeDeletion.supersedes(complexDeletion) ? DeletionTime.LIVE : complexDeletion;
+
+        int newSize = 0;
         for (Cell cell : cells)
         {
             if (!activeDeletion.deletes(cell) && (dropped == null || cell.timestamp() > dropped.droppedTime))
-                newCells.add(cell);
+                ++newSize;
         }
 
-        DeletionTime newComplexDeletion = activeDeletion.supersedes(complexDeletion) ? DeletionTime.LIVE : complexDeletion;
-        return newCells.isEmpty() && newComplexDeletion.isLive()
-             ? null
-             : new ComplexColumnData(column, newCells, newComplexDeletion);
+        if (newSize == 0)
+            return newComplexDeletion.isLive() ? null : new ComplexColumnData(column, NO_CELLS, newComplexDeletion);
+
+        if (newSize == cells.length && newComplexDeletion == complexDeletion)
+            return this;
+
+        Cell[] newCells = new Cell[newSize];
+        int j = 0;
+        for (int i = 0; i < cells.length; i++)
+        {
+            Cell cell = cells[i];
+            if (!activeDeletion.deletes(cell) && (dropped == null || cell.timestamp() > dropped.droppedTime))
+                newCells[j++] = cell;
+        }
+        assert j == newSize;
+
+        return new ComplexColumnData(column, newCells, newComplexDeletion);
     }
 
     public void digest(MessageDigest digest)
@@ -152,16 +169,16 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public ComplexColumnData markCounterLocalToBeCleared()
     {
-        List<Cell> newCells = null;
-        for (int i = 0; i < cells.size(); i++)
+        Cell[] newCells = null;
+        for (int i = 0; i < cells.length; i++)
         {
-            Cell cell = cells.get(i);
+            Cell cell = cells[i];
             Cell marked = cell.markCounterLocalToBeCleared();
             if (marked != cell)
             {
                 if (newCells == null)
-                    newCells = new ArrayList<>(cells);
-                newCells.set(i, marked);
+                    newCells = Arrays.copyOf(cells, cells.length);
+                newCells[i] = marked;
             }
         }
 
@@ -172,26 +189,41 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
 
     public ComplexColumnData purge(DeletionPurger purger, int nowInSec)
     {
-        List<Cell> newCells = new ArrayList<>(cells.size());
+        DeletionTime newDeletion = complexDeletion.isLive() || purger.shouldPurge(complexDeletion) ? DeletionTime.LIVE : complexDeletion;
+
+        int newSize = 0;
         for (Cell cell : cells)
         {
             Cell purged = cell.purge(purger, nowInSec);
             if (purged != null)
-                newCells.add(purged);
+                ++newSize;
         }
 
-        DeletionTime newDeletion = complexDeletion.isLive() || purger.shouldPurge(complexDeletion) ? null : complexDeletion;
-        return newDeletion == null && newCells.isEmpty()
-             ? null
-             : new ComplexColumnData(column, newCells, newDeletion == null ? DeletionTime.LIVE : newDeletion);
+        if (newSize == 0)
+            return newDeletion.isLive() ? null : new ComplexColumnData(column, NO_CELLS, newDeletion);
+
+        if (newDeletion == complexDeletion && newSize == cells.length)
+            return this;
+
+        Cell[] newCells = new Cell[newSize];
+        int j = 0;
+        for (int i = 0; i < cells.length; i++)
+        {
+            Cell purged = cells[i].purge(purger, nowInSec);
+            if (purged != null)
+                newCells[j++] = purged;
+        }
+        assert j == newSize;
+
+        return new ComplexColumnData(column, newCells, newDeletion);
     }
 
     public ComplexColumnData updateAllTimestamp(long newTimestamp)
     {
         DeletionTime newDeletion = complexDeletion.isLive() ? complexDeletion : new DeletionTime(newTimestamp - 1, complexDeletion.localDeletionTime());
-        List<Cell> newCells = new ArrayList<>(cells.size());
-        for (Cell cell : cells)
-            newCells.add((Cell)cell.updateAllTimestamp(newTimestamp));
+        Cell[] newCells = new Cell[cells.length];
+        for (int i = 0; i < cells.length; i++)
+            newCells[i] = (Cell)cells[i].updateAllTimestamp(newTimestamp);
 
         return new ComplexColumnData(column, newCells, newDeletion);
     }
@@ -202,16 +234,16 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
     {
         int idx = binarySearch(path);
         assert idx >= 0;
-        cells.set(idx, cells.get(idx).withUpdatedValue(value));
+        cells[idx] = cells[idx].withUpdatedValue(value);
     }
 
     private int binarySearch(CellPath path)
     {
-        return binarySearch(path, 0, cells.size());
+        return binarySearch(path, 0, cells.length);
     }
 
     /**
-     * Simple binary search for a given cell (in the cells list).
+     * Simple binary search for a given cell (in the cells array).
      *
      * The return value has the exact same meaning that the one of Collections.binarySearch() but
      * we don't use the later because we're searching for a 'CellPath' in an array of 'Cell'.
@@ -225,7 +257,7 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
         while (low <= high)
         {
             mid = (low + high) >> 1;
-            if ((result = column.cellPathComparator().compare(path, cells.get(mid).path())) > 0)
+            if ((result = column.cellPathComparator().compare(path, cells[mid].path())) > 0)
                 low = mid + 1;
             else if (result == 0)
                 return mid;
@@ -247,7 +279,7 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
         ComplexColumnData that = (ComplexColumnData)other;
         return this.column().equals(that.column())
             && this.complexDeletion().equals(that.complexDeletion)
-            && this.cells.equals(that.cells);
+            && Arrays.equals(this.cells, that.cells);
     }
 
     @Override
@@ -291,7 +323,7 @@ public class ComplexColumnData implements ColumnData, Iterable<Cell>
             if (complexDeletion.isLive() && cells.isEmpty())
                 return null;
 
-            return new ComplexColumnData(column, new ArrayList<>(cells), complexDeletion);
+            return new ComplexColumnData(column, cells.toArray(new Cell[cells.size()]), complexDeletion);
         }
     }
 }
