@@ -17,24 +17,17 @@
  */
 package org.apache.cassandra.db.partitions;
 
-import java.io.DataInput;
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.io.ISerializer;
-import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.net.MessagingService;
 
 public class ArrayBackedPartition extends AbstractThreadUnsafePartition
 {
     private final Row staticRow;
     private final DeletionInfo deletionInfo;
-    private final RowStats stats;
+    private final EncodingStats stats;
 
     protected ArrayBackedPartition(CFMetaData metadata,
                                    DecoratedKey partitionKey,
@@ -42,7 +35,7 @@ public class ArrayBackedPartition extends AbstractThreadUnsafePartition
                                    Row staticRow,
                                    List<Row> rows,
                                    DeletionInfo deletionInfo,
-                                   RowStats stats)
+                                   EncodingStats stats)
     {
         super(metadata, partitionKey, columns, rows);
         this.staticRow = staticRow;
@@ -114,7 +107,7 @@ public class ArrayBackedPartition extends AbstractThreadUnsafePartition
         return deletionInfo;
     }
 
-    public RowStats stats()
+    public EncodingStats stats()
     {
         return stats;
     }

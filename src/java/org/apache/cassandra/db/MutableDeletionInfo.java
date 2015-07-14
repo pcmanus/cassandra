@@ -22,9 +22,8 @@ import java.util.Iterator;
 import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
 
-import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.db.rows.RowStats;
+import org.apache.cassandra.db.rows.EncodingStats;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.memory.AbstractAllocator;
 
@@ -257,7 +256,7 @@ public class MutableDeletionInfo implements DeletionInfo
         return EMPTY_SIZE + partitionDeletion.unsharedHeapSize() + (ranges == null ? 0 : ranges.unsharedHeapSize());
     }
 
-    public void collectStats(RowStats.Collector collector)
+    public void collectStats(EncodingStats.Collector collector)
     {
         collector.update(partitionDeletion);
         if (ranges != null)

@@ -318,7 +318,7 @@ public abstract class LegacyLayout
                                                ColumnFilter.all(metadata),
                                                staticRow,
                                                reversed,
-                                               RowStats.NO_STATS,
+                                               EncodingStats.NO_STATS,
                                                rows,
                                                ranges,
                                                true);

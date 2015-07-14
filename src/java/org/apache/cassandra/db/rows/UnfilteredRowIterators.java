@@ -17,9 +17,7 @@
  */
 package org.apache.cassandra.db.rows;
 
-import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.function.Function;
 import java.security.MessageDigest;
 
 import org.slf4j.Logger;
@@ -27,13 +25,10 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.AbstractIterator;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.serializers.MarshalException;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.IMergeIterator;
 import org.apache.cassandra.utils.MergeIterator;
@@ -131,9 +126,9 @@ public abstract class UnfilteredRowIterators
                 return Rows.EMPTY_STATIC_ROW;
             }
 
-            public RowStats stats()
+            public EncodingStats stats()
             {
-                return RowStats.NO_STATS;
+                return EncodingStats.NO_STATS;
             }
 
             public boolean hasNext()
@@ -483,9 +478,9 @@ public abstract class UnfilteredRowIterators
                  : new PartitionColumns(statics, regulars);
         }
 
-        private static RowStats mergeStats(List<UnfilteredRowIterator> iterators)
+        private static EncodingStats mergeStats(List<UnfilteredRowIterator> iterators)
         {
-            RowStats stats = RowStats.NO_STATS;
+            EncodingStats stats = EncodingStats.NO_STATS;
             for (UnfilteredRowIterator iter : iterators)
                 stats = stats.mergeWith(iter.stats());
             return stats;

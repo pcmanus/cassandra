@@ -26,8 +26,8 @@ import java.util.Arrays;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.db.rows.EncodingStats;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
-import org.apache.cassandra.db.rows.RowStats;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.*;
@@ -166,7 +166,7 @@ public class PartitionTest
 
         RowUpdateBuilder.deleteRow(cfs.metadata, 10, "key1", "c").applyUnsafe();
         ArrayBackedPartition partition = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key1").build());
-        RowStats stats = partition.stats();
+        EncodingStats stats = partition.stats();
         assertEquals(localDeletionTime, stats.minLocalDeletionTime);
     }
 }

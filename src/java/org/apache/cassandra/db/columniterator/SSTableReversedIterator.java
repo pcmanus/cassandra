@@ -34,7 +34,6 @@ import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  *  A Cell Iterator in reversed clustering order over SSTable
@@ -308,9 +307,9 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             return Rows.EMPTY_STATIC_ROW; // we don't actually use that
         }
 
-        public RowStats stats()
+        public EncodingStats stats()
         {
-            return RowStats.NO_STATS; // we don't actually use that
+            return EncodingStats.NO_STATS; // we don't actually use that
         }
 
         // Note that this method is here rather than in the readers because we want to use it for both readers and they

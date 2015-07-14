@@ -18,11 +18,9 @@
 package org.apache.cassandra.db.partitions;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.ISerializer;
@@ -46,7 +44,7 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
                                        Row staticRow,
                                        List<Row> rows,
                                        DeletionInfo deletionInfo,
-                                       RowStats stats,
+                                       EncodingStats stats,
                                        int createdAtInSec,
                                        int cachedLiveRows,
                                        int rowsWithNonExpiringCells,

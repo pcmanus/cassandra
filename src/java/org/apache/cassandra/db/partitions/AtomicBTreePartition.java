@@ -26,11 +26,8 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.google.common.collect.AbstractIterator;
-import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
@@ -89,7 +86,7 @@ public class AtomicBTreePartition implements Partition
 
     private static final AtomicIntegerFieldUpdater<AtomicBTreePartition> wasteTrackerUpdater = AtomicIntegerFieldUpdater.newUpdater(AtomicBTreePartition.class, "wasteTracker");
 
-    private static final Holder EMPTY = new Holder(BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, RowStats.NO_STATS);
+    private static final Holder EMPTY = new Holder(BTree.empty(), DeletionInfo.LIVE, Rows.EMPTY_STATIC_ROW, EncodingStats.NO_STATS);
 
     private final CFMetaData metadata;
     private final DecoratedKey partitionKey;
@@ -138,7 +135,7 @@ public class AtomicBTreePartition implements Partition
         return !BTree.isEmpty(ref.tree);
     }
 
-    public RowStats stats()
+    public EncodingStats stats()
     {
         return ref.stats;
     }
@@ -341,7 +338,7 @@ public class AtomicBTreePartition implements Partition
                               ? current.staticRow
                               : (current.staticRow.isEmpty() ? updater.apply(newStatic) : updater.apply(current.staticRow, newStatic));
                 Object[] tree = BTree.<Clusterable, Row, Row>update(current.tree, update.metadata().comparator, update, update.rowCount(), updater);
-                RowStats newStats = current.stats.mergeWith(update.stats());
+                EncodingStats newStats = current.stats.mergeWith(update.stats());
 
                 if (tree != null && refUpdater.compareAndSet(this, current, new Holder(tree, deletionInfo, staticRow, newStats)))
                 {
@@ -425,9 +422,9 @@ public class AtomicBTreePartition implements Partition
         // the btree of rows
         final Object[] tree;
         final Row staticRow;
-        final RowStats stats;
+        final EncodingStats stats;
 
-        Holder(Object[] tree, DeletionInfo deletionInfo, Row staticRow, RowStats stats)
+        Holder(Object[] tree, DeletionInfo deletionInfo, Row staticRow, EncodingStats stats)
         {
             this.tree = tree;
             this.deletionInfo = deletionInfo;

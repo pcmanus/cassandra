@@ -51,7 +51,7 @@ public class SerializationHeader
     private final List<AbstractType<?>> clusteringTypes;
 
     private final PartitionColumns columns;
-    private final RowStats stats;
+    private final EncodingStats stats;
 
     private final Map<ByteBuffer, AbstractType<?>> typeMap;
 
@@ -65,7 +65,7 @@ public class SerializationHeader
     private SerializationHeader(AbstractType<?> keyType,
                                 List<AbstractType<?>> clusteringTypes,
                                 PartitionColumns columns,
-                                RowStats stats,
+                                EncodingStats stats,
                                 Map<ByteBuffer, AbstractType<?>> typeMap)
     {
         this.keyType = keyType;
@@ -113,7 +113,7 @@ public class SerializationHeader
         return new SerializationHeader(BytesType.instance,
                                        clusteringTypes,
                                        PartitionColumns.NONE,
-                                       RowStats.NO_STATS,
+                                       EncodingStats.NO_STATS,
                                        Collections.<ByteBuffer, AbstractType<?>>emptyMap());
     }
 
@@ -121,7 +121,7 @@ public class SerializationHeader
     {
         // The serialization header has to be computed before the start of compaction (since it's used to write)
         // the result. This means that when compacting multiple sources, we won't have perfectly accurate stats
-        // (for RowStats) since compaction may delete, purge and generally merge rows in unknown ways. This is
+        // (for EncodingStats) since compaction may delete, purge and generally merge rows in unknown ways. This is
         // kind of ok because those stats are only used for optimizing the underlying storage format and so we
         // just have to strive for as good as possible. Currently, we stick to a relatively naive merge of existing
         // global stats because it's simple and probably good enough in most situation but we could probably
@@ -129,7 +129,7 @@ public class SerializationHeader
         // Note however that to avoid seeing our accuracy degrade through successive compactions, we don't base
         // our stats merging on the compacted files headers, which as we just said can be somewhat inaccurate,
         // but rather on their stats stored in StatsMetadata that are fully accurate.
-        RowStats.Collector stats = new RowStats.Collector();
+        EncodingStats.Collector stats = new EncodingStats.Collector();
         PartitionColumns.Builder columns = PartitionColumns.builder();
         for (SSTableReader sstable : sstables)
         {
@@ -147,7 +147,7 @@ public class SerializationHeader
 
     public SerializationHeader(CFMetaData metadata,
                                PartitionColumns columns,
-                               RowStats stats)
+                               EncodingStats stats)
     {
         this(metadata.getKeyValidator(),
              typesOf(metadata.clusteringColumns()),
@@ -193,7 +193,7 @@ public class SerializationHeader
         return (int)(c.getTimeInMillis() / 1000);
     }
 
-    public RowStats stats()
+    public EncodingStats stats()
     {
         return stats;
     }
@@ -276,13 +276,13 @@ public class SerializationHeader
         private final List<AbstractType<?>> clusteringTypes;
         private final Map<ByteBuffer, AbstractType<?>> staticColumns;
         private final Map<ByteBuffer, AbstractType<?>> regularColumns;
-        private final RowStats stats;
+        private final EncodingStats stats;
 
         private Component(AbstractType<?> keyType,
                           List<AbstractType<?>> clusteringTypes,
                           Map<ByteBuffer, AbstractType<?>> staticColumns,
                           Map<ByteBuffer, AbstractType<?>> regularColumns,
-                          RowStats stats)
+                          EncodingStats stats)
         {
             this.keyType = keyType;
             this.clusteringTypes = clusteringTypes;
@@ -357,7 +357,7 @@ public class SerializationHeader
     {
         public void serializeForMessaging(SerializationHeader header, DataOutputPlus out, boolean hasStatic) throws IOException
         {
-            RowStats.serializer.serialize(header.stats, out);
+            EncodingStats.serializer.serialize(header.stats, out);
 
             if (hasStatic)
                 Columns.serializer.serialize(header.columns.statics, out);
@@ -366,7 +366,7 @@ public class SerializationHeader
 
         public SerializationHeader deserializeForMessaging(DataInputPlus in, CFMetaData metadata, boolean hasStatic) throws IOException
         {
-            RowStats stats = RowStats.serializer.deserialize(in);
+            EncodingStats stats = EncodingStats.serializer.deserialize(in);
 
             AbstractType<?> keyType = metadata.getKeyValidator();
             List<AbstractType<?>> clusteringTypes = typesOf(metadata.clusteringColumns());
@@ -379,7 +379,7 @@ public class SerializationHeader
 
         public long serializedSizeForMessaging(SerializationHeader header, boolean hasStatic)
         {
-            long size = RowStats.serializer.serializedSize(header.stats);
+            long size = EncodingStats.serializer.serializedSize(header.stats);
 
             if (hasStatic)
                 size += Columns.serializer.serializedSize(header.columns.statics);
@@ -390,7 +390,7 @@ public class SerializationHeader
         // For SSTables
         public void serialize(Component header, DataOutputPlus out) throws IOException
         {
-            RowStats.serializer.serialize(header.stats, out);
+            EncodingStats.serializer.serialize(header.stats, out);
 
             writeType(header.keyType, out);
             out.writeShort(header.clusteringTypes.size());
@@ -404,7 +404,7 @@ public class SerializationHeader
         // For SSTables
         public Component deserialize(Version version, DataInputPlus in) throws IOException
         {
-            RowStats stats = RowStats.serializer.deserialize(in);
+            EncodingStats stats = EncodingStats.serializer.deserialize(in);
 
             AbstractType<?> keyType = readType(in);
             int size = in.readUnsignedShort();
@@ -424,7 +424,7 @@ public class SerializationHeader
         // For SSTables
         public int serializedSize(Component header)
         {
-            int size = RowStats.serializer.serializedSize(header.stats);
+            int size = EncodingStats.serializer.serializedSize(header.stats);
 
             size += sizeofType(header.keyType);
             size += TypeSizes.sizeof((short)header.clusteringTypes.size());
