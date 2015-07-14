@@ -43,8 +43,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class SerializationHeader
 {
-    private static final int DEFAULT_BASE_DELETION = computeDefaultBaseDeletion();
-
     public static final Serializer serializer = new Serializer();
 
     private final AbstractType<?> keyType;
@@ -54,10 +52,6 @@ public class SerializationHeader
     private final EncodingStats stats;
 
     private final Map<ByteBuffer, AbstractType<?>> typeMap;
-
-    private final long baseTimestamp;
-    public final int baseDeletionTime;
-    private final int baseTTL;
 
     // Whether or not to store cell in a sparse or dense way. See UnfilteredSerializer for details.
     private final boolean useSparseColumnLayout;
@@ -73,15 +67,6 @@ public class SerializationHeader
         this.columns = columns;
         this.stats = stats;
         this.typeMap = typeMap;
-
-        // Not that if a given stats is unset, it means that either it's unused (there is
-        // no tombstone whatsoever for instance) or that we have no information on it. In
-        // that former case, it doesn't matter which base we use but in the former, we use
-        // bases that are more likely to provide small encoded values than the default
-        // "unset" value.
-        this.baseTimestamp = stats.hasMinTimestamp() ? stats.minTimestamp : 0;
-        this.baseDeletionTime = stats.hasMinLocalDeletionTime() ? stats.minLocalDeletionTime : DEFAULT_BASE_DELETION;
-        this.baseTTL = stats.minTTL;
 
         // For the dense layout, we have a 1 byte overhead for absent columns. For the sparse layout, it's a 1
         // overhead for present columns (in fact we use a 2 byte id, but assuming vint encoding, we'll pay 2 bytes
@@ -177,22 +162,6 @@ public class SerializationHeader
         return !columns.statics.isEmpty();
     }
 
-    private static int computeDefaultBaseDeletion()
-    {
-        // We need a fixed default, but one that is likely to provide small values (close to 0) when
-        // substracted to deletion times. Since deletion times are 'the current time in seconds', we
-        // use as base Jan 1, 2015 (in seconds).
-        Calendar c = Calendar.getInstance(TimeZone.getTimeZone("GMT-0"), Locale.US);
-        c.set(Calendar.YEAR, 2015);
-        c.set(Calendar.MONTH, Calendar.JANUARY);
-        c.set(Calendar.DAY_OF_MONTH, 1);
-        c.set(Calendar.HOUR_OF_DAY, 0);
-        c.set(Calendar.MINUTE, 0);
-        c.set(Calendar.SECOND, 0);
-        c.set(Calendar.MILLISECOND, 0);
-        return (int)(c.getTimeInMillis() / 1000);
-    }
-
     public EncodingStats stats()
     {
         return stats;
@@ -220,32 +189,32 @@ public class SerializationHeader
 
     public long encodeTimestamp(long timestamp)
     {
-        return timestamp - baseTimestamp;
+        return timestamp - stats.minTimestamp;
     }
 
     public long decodeTimestamp(long timestamp)
     {
-        return baseTimestamp + timestamp;
+        return stats.minTimestamp + timestamp;
     }
 
     public int encodeDeletionTime(int deletionTime)
     {
-        return deletionTime - baseDeletionTime;
+        return deletionTime - stats.minLocalDeletionTime;
     }
 
     public int decodeDeletionTime(int deletionTime)
     {
-        return baseDeletionTime + deletionTime;
+        return stats.minLocalDeletionTime + deletionTime;
     }
 
     public int encodeTTL(int ttl)
     {
-        return ttl - baseTTL;
+        return ttl - stats.minTTL;
     }
 
     public int decodeTTL(int ttl)
     {
-        return baseTTL + ttl;
+        return stats.minTTL + ttl;
     }
 
     public Component toComponent()
@@ -262,8 +231,7 @@ public class SerializationHeader
     @Override
     public String toString()
     {
-        return String.format("SerializationHeader[key=%s, cks=%s, columns=%s, stats=%s, typeMap=%s, baseTs=%d, baseDt=%s, baseTTL=%s]",
-                             keyType, clusteringTypes, columns, stats, typeMap, baseTimestamp, baseDeletionTime, baseTTL);
+        return String.format("SerializationHeader[key=%s, cks=%s, columns=%s, stats=%s, typeMap=%s]", keyType, clusteringTypes, columns, stats, typeMap);
     }
 
     /**
