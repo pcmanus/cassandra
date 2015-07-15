@@ -676,7 +676,9 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
                 else
                 {
                     CFMetaData.serializer.serialize(update.metadata(), out, version);
-                    UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, update.rows.size());
+                    SerializationHeader header = new SerializationHeader(update.metadata(), iter.columns(), iter.stats());
+                    SerializationHeader.serializer.serializeForMessaging(header, out, version);
+                    UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, header, update.rows.size());
                 }
             }
         }
@@ -697,17 +699,19 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
             assert key == null; // key is only there for the old format
 
             CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
+            SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(metadata, in, version);
             UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, metadata, flag);
             if (header.isEmpty)
                 return emptyUpdate(metadata, header.key);
 
-            assert !header.isReversed;
-            assert header.rowEstimate >= 0;
+            UnfilteredRowIteratorSerializer.Header partitionHeader = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, flag, header);
+            if (partitionHeader.isEmpty)
+                return emptyUpdate(metadata, partitionHeader.key);
 
-            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(header.partitionDeletion, metadata.comparator, false);
-            List<Row> rows = new ArrayList<>(header.rowEstimate);
+            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(partitionHeader.partitionDeletion, metadata.comparator, false);
+            List<Row> rows = new ArrayList<>(partitionHeader.rowEstimate);
 
-            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, flag, header))
+            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, flag, header, partitionHeader))
             {
                 while (partition.hasNext())
                 {
@@ -720,12 +724,12 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
             }
 
             return new PartitionUpdate(metadata,
-                                       header.key,
-                                       header.sHeader.columns(),
-                                       header.staticRow,
+                                       partitionHeader.key,
+                                       header.columns(),
+                                       partitionHeader.staticRow,
                                        rows,
                                        deletionBuilder.build(),
-                                       header.sHeader.stats(),
+                                       header.stats(),
                                        true,
                                        false);
         }
@@ -738,7 +742,9 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
                 if (version < MessagingService.VERSION_30)
                     return LegacyLayout.serializedSizeAsLegacyPartition(iter, version);
 
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
                 return CFMetaData.serializer.serializedSize(update.metadata(), version)
+                     + SerializationHeader.serializer.serializedSizeForMessaging(header, version)
                      + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, update.rows.size());
             }
         }

@@ -356,8 +356,7 @@ public abstract class UnfilteredPartitionIterators
     }
 
     /**
-     * Serialize each UnfilteredSerializer one after the other, with an initial byte that indicates whether
-     * we're done or not.
+     * Writes the serialization header first, and then each partition in the iterator one after the other.
      */
     public static class Serializer
     {
@@ -365,32 +364,41 @@ public abstract class UnfilteredPartitionIterators
         {
             assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
 
-            out.writeBoolean(iter.isForThrift());
+            if (!iter.hasNext())
+            {
+                SerializationHeader.serializer.writeEmptyMessage(out);
+                return;
+            }
+
+            SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats(), iter.isForThrift());
+            SerializationHeader.serializer.serializeForMessaging(header, out, version);
+
             while (iter.hasNext())
             {
-                out.writeBoolean(true);
                 try (UnfilteredRowIterator partition = iter.next())
                 {
-                    UnfilteredRowIteratorSerializer.serializer.serialize(partition, out, version);
+                    UnfilteredRowIteratorSerializer.serializer.serialize(partition, out, version, header);
                 }
             }
-            out.writeBoolean(false);
+            UnfilteredRowIteratorSerializer.serializer.writeEndOfMessage(out);
         }
 
-        public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final CFMetaData metadata, final SerializationHelper.Flag flag) throws IOException
+        public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final CFMetaData metadata, final SerializationHelper.Flag flag, final boolean isForThrift) throws IOException
         {
             assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
-            final boolean isForThrift = in.readBoolean();
+
+            final SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(metadata, in, version);
+            if (header == null)
+                return empty();
 
             return new AbstractUnfilteredPartitionIterator()
             {
                 private UnfilteredRowIterator next;
-                private boolean hasNext;
                 private boolean nextReturned = true;
 
                 public boolean isForThrift()
                 {
-                    return isForThrift;
+                    return header.isForThrift();
                 }
 
                 public CFMetaData metadata()
@@ -401,7 +409,7 @@ public abstract class UnfilteredPartitionIterators
                 public boolean hasNext()
                 {
                     if (!nextReturned)
-                        return hasNext;
+                        return next != null;
 
                     // We can't answer this until the previously returned iterator has been fully consumed,
                     // so complain if that's not the case.
@@ -410,9 +418,9 @@ public abstract class UnfilteredPartitionIterators
 
                     try
                     {
-                        hasNext = in.readBoolean();
+                        next = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, flag, header);
                         nextReturned = false;
-                        return hasNext;
+                        return next != null;
                     }
                     catch (IOException e)
                     {
@@ -428,7 +436,6 @@ public abstract class UnfilteredPartitionIterators
                     try
                     {
                         nextReturned = true;
-                        next = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, flag);
                         return next;
                     }
                     catch (IOException e)

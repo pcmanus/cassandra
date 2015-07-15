@@ -36,20 +36,11 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * The serialization is composed of a header, follows by the rows and range tombstones of the iterator serialized
  * until we read the end of the partition (see UnfilteredSerializer for details). The header itself
  * is:
- *     <cfid><key><flags><s_header>[<partition_deletion>][<static_row>][<row_estimate>]
+ *     <flags><key>[<partition_deletion>][<static_row>][<row_estimate>]
  * where:
- *     <cfid> is the table cfid.
+ *     <flags> contains bit flags. Each flag is set if it's corresponding bit is set. The description of each
+ *             can be find on the constants below.
  *     <key> is the partition key.
- *     <flags> contains bit flags. Each flag is set if it's corresponding bit is set. From rightmost
- *         bit to leftmost one, the flags are:
- *         - is empty: whether the iterator is empty. If so, nothing follows the <flags>
- *         - is reversed: whether the iterator is in reversed clustering order
- *         - has partition deletion: whether or not there is a <partition_deletion> following
- *         - has static row: whether or not there is a <static_row> following
- *         - has row estimate: whether or not there is a <row_estimate> following
- *     <s_header> is the {@code SerializationHeader}. It contains in particular the columns contains in the serialized
- *         iterator as well as other information necessary to decoding the serialized rows
- *         (see {@code SerializationHeader.Serializer for details}).
  *     <partition_deletion> is the deletion time for the partition (delta-encoded)
  *     <static_row> is the static row for this partition as serialized by UnfilteredSerializer.
  *     <row_estimate> is the (potentially estimated) number of rows serialized. This is only used for
@@ -63,34 +54,25 @@ public class UnfilteredRowIteratorSerializer
 {
     protected static final Logger logger = LoggerFactory.getLogger(UnfilteredRowIteratorSerializer.class);
 
-    private static final int IS_EMPTY               = 0x01;
-    private static final int IS_REVERSED            = 0x02;
-    private static final int HAS_PARTITION_DELETION = 0x04;
-    private static final int HAS_STATIC_ROW         = 0x08;
-    private static final int HAS_ROW_ESTIMATE       = 0x10;
+    private static final int END_OF_MESSAGE         = 0x01; // Indicates the end of a list of partitions. Only used when encoding multiple partitions
+                                                            // on wire to detect the end. Shouldn't be set otherwise.
+    private static final int IS_EMPTY               = 0x02; // Whether the encoded partition is empty. If so, nothing follows the <key> field.
+    private static final int IS_REVERSED            = 0x04; // Whether the encoded partition is in reverse clustering order or not.
+    private static final int HAS_PARTITION_DELETION = 0x08; // Whether the encoded partition has a (non-live) partition level deletion.
+    private static final int HAS_STATIC_ROW         = 0x10; // Whether the encoded partition has a (non-empty) static row.
+    private static final int HAS_ROW_ESTIMATE       = 0x20; // Indicates the presence of estimate for the number of rows contained in the encoded partition.
 
     public static final UnfilteredRowIteratorSerializer serializer = new UnfilteredRowIteratorSerializer();
 
     // Should only be used for the on-wire format.
-    public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, int version) throws IOException
+    public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, int version, SerializationHeader header) throws IOException
     {
-        serialize(iterator, out, version, -1);
+        serialize(iterator, out, version, header, -1);
     }
 
     // Should only be used for the on-wire format.
-    public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, int version, int rowEstimate) throws IOException
+    public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, int version, SerializationHeader header, int rowEstimate) throws IOException
     {
-        SerializationHeader header = new SerializationHeader(iterator.metadata(),
-                                                             iterator.columns(),
-                                                             iterator.stats());
-        serialize(iterator, out, header, version, rowEstimate);
-    }
-
-    // Should only be used for the on-wire format.
-    public void serialize(UnfilteredRowIterator iterator, DataOutputPlus out, SerializationHeader header, int version, int rowEstimate) throws IOException
-    {
-        ByteBufferUtil.writeWithLength(iterator.partitionKey().getKey(), out);
-
         int flags = 0;
         if (iterator.isReverseOrder())
             flags |= IS_REVERSED;
@@ -98,6 +80,7 @@ public class UnfilteredRowIteratorSerializer
         if (iterator.isEmpty())
         {
             out.writeByte((byte)(flags | IS_EMPTY));
+            header.keyType().writeValue(iterator.partitionKey().getKey(), out);
             return;
         }
 
@@ -113,8 +96,7 @@ public class UnfilteredRowIteratorSerializer
             flags |= HAS_ROW_ESTIMATE;
 
         out.writeByte((byte)flags);
-
-        SerializationHeader.serializer.serializeForMessaging(header, out, hasStatic);
+        header.keyType().writeValue(iterator.partitionKey().getKey(), out);
 
         if (!partitionDeletion.isLive())
             header.writeDeletionTime(partitionDeletion, out);
@@ -130,18 +112,19 @@ public class UnfilteredRowIteratorSerializer
         UnfilteredSerializer.serializer.writeEndOfPartition(out);
     }
 
+    public void writeEndOfMessage(DataOutputPlus out)
+    {
+        out.writeByte(END_OF_MESSAGE);
+    }
+
     // Please note that this consume the iterator, and as such should not be called unless we have a simple way to
     // recreate an iterator for both serialize and serializedSize, which is mostly only PartitionUpdate/ArrayBackedCachedPartition.
-    public long serializedSize(UnfilteredRowIterator iterator, int version, int rowEstimate)
+    public long serializedSize(UnfilteredRowIterator iterator,  int version, SerializationHeader header, int rowEstimate)
     {
-        SerializationHeader header = new SerializationHeader(iterator.metadata(),
-                                                             iterator.columns(),
-                                                             iterator.stats());
-
         assert rowEstimate >= 0;
 
-        long size = TypeSizes.sizeofWithLength(iterator.partitionKey().getKey())
-                  + 1; // flags
+        long size = 1 // flags
+                  + header.keyType().writtenLength(iterator.partitionKey().getKey());
 
         if (iterator.isEmpty())
             return size;
@@ -149,8 +132,6 @@ public class UnfilteredRowIteratorSerializer
         DeletionTime partitionDeletion = iterator.partitionLevelDeletion();
         Row staticRow = iterator.staticRow();
         boolean hasStatic = staticRow != Rows.EMPTY_STATIC_ROW;
-
-        size += SerializationHeader.serializer.serializedSizeForMessaging(header, hasStatic);
 
         if (!partitionDeletion.isLive())
             size += header.deletionTimeSerializedSize(partitionDeletion);
@@ -168,49 +149,49 @@ public class UnfilteredRowIteratorSerializer
         return size;
     }
 
-    public Header deserializeHeader(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag) throws IOException
+    public Header deserializeHeader(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag, SerializationHeader header) throws IOException
     {
-        DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithLength(in));
         int flags = in.readUnsignedByte();
+        if ((flags & END_OF_MESSAGE) != 0)
+            return null;
+
+        DecoratedKey key = StorageService.getPartitioner().decorateKey(header.keyType().readValue(in));
         boolean isReversed = (flags & IS_REVERSED) != 0;
         if ((flags & IS_EMPTY) != 0)
-        {
-            SerializationHeader sh = new SerializationHeader(metadata, PartitionColumns.NONE, EncodingStats.NO_STATS);
-            return new Header(sh, key, isReversed, true, null, null, 0);
-        }
+            return new Header(key, isReversed, true, null, null, 0);
 
         boolean hasPartitionDeletion = (flags & HAS_PARTITION_DELETION) != 0;
         boolean hasStatic = (flags & HAS_STATIC_ROW) != 0;
         boolean hasRowEstimate = (flags & HAS_ROW_ESTIMATE) != 0;
 
-        SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(in, metadata, hasStatic);
-
         DeletionTime partitionDeletion = hasPartitionDeletion ? header.readDeletionTime(in) : DeletionTime.LIVE;
 
         Row staticRow = Rows.EMPTY_STATIC_ROW;
         if (hasStatic)
-            staticRow = UnfilteredSerializer.serializer.deserializeStaticRow(in, header, new SerializationHelper(metadata, version, flag));
+            staticRow = UnfilteredSerializer.serializer.deserializeStaticRow(in, header, new SerializationHelper(header.metadata(), version, flag));
 
         int rowEstimate = hasRowEstimate ? (int)in.readVInt() : -1;
-        return new Header(header, key, isReversed, false, partitionDeletion, staticRow, rowEstimate);
+        return new Header(key, isReversed, false, partitionDeletion, staticRow, rowEstimate);
     }
 
-    public UnfilteredRowIterator deserialize(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag, Header header) throws IOException
+    public UnfilteredRowIterator deserialize(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag, SerializationHeader header, Header partitionHeader) throws IOException
     {
-        if (header.isEmpty)
-            return UnfilteredRowIterators.emptyIterator(metadata, header.key, header.isReversed);
+        assert header != null;
+
+        CFMetaData metadata = header.metadata();
+        if (partitionHeader.isEmpty)
+            return UnfilteredRowIterators.emptyIterator(metadata, partitionHeader.key, partitionHeader.isReversed);
 
         final SerializationHelper helper = new SerializationHelper(metadata, version, flag);
-        final SerializationHeader sHeader = header.sHeader;
-        return new AbstractUnfilteredRowIterator(metadata, header.key, header.partitionDeletion, sHeader.columns(), header.staticRow, header.isReversed, sHeader.stats())
+        return new AbstractUnfilteredRowIterator(metadata, partitionHeader.key, partitionHeader.partitionDeletion, header.columns(), partitionHeader.staticRow, partitionHeader.isReversed, header.stats())
         {
-            private final Row.Builder builder = ArrayBackedRow.sortedBuilder(sHeader.columns().regulars);
+            private final Row.Builder builder = ArrayBackedRow.sortedBuilder(header.columns().regulars);
 
             protected Unfiltered computeNext()
             {
                 try
                 {
-                    Unfiltered unfiltered = UnfilteredSerializer.serializer.deserialize(in, sHeader, helper, builder);
+                    Unfiltered unfiltered = UnfilteredSerializer.serializer.deserialize(in, header, helper, builder);
                     return unfiltered == null ? endOfData() : unfiltered;
                 }
                 catch (IOException e)
@@ -221,14 +202,17 @@ public class UnfilteredRowIteratorSerializer
         };
     }
 
-    public UnfilteredRowIterator deserialize(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag) throws IOException
+    public UnfilteredRowIterator deserialize(DataInputPlus in, int version, CFMetaData metadata, SerializationHelper.Flag flag, SerializationHeader header) throws IOException
     {
-        return deserialize(in, version, metadata, flag, deserializeHeader(in, version, metadata, flag));
+        Header partitionHeader = deserializeHeader(in, version, flag, header);
+        if (partitionHeader == null)
+            return null;
+
+        return deserialize(in, version, flag, header, partitionHeader);
     }
 
     public static class Header
     {
-        public final SerializationHeader sHeader;
         public final DecoratedKey key;
         public final boolean isReversed;
         public final boolean isEmpty;
@@ -236,15 +220,13 @@ public class UnfilteredRowIteratorSerializer
         public final Row staticRow;
         public final int rowEstimate; // -1 if no estimate
 
-        private Header(SerializationHeader sHeader,
-                       DecoratedKey key,
+        private Header(DecoratedKey key,
                        boolean isReversed,
                        boolean isEmpty,
                        DeletionTime partitionDeletion,
                        Row staticRow,
                        int rowEstimate)
         {
-            this.sHeader = sHeader;
             this.key = key;
             this.isReversed = isReversed;
             this.isEmpty = isEmpty;
@@ -256,8 +238,8 @@ public class UnfilteredRowIteratorSerializer
         @Override
         public String toString()
         {
-            return String.format("{header=%s, key=%s, isReversed=%b, isEmpty=%b, del=%s, staticRow=%s, rowEstimate=%d}",
-                                 sHeader, key, isReversed, isEmpty, partitionDeletion, staticRow, rowEstimate);
+            return String.format("{key=%s, isReversed=%b, isEmpty=%b, del=%s, staticRow=%s, rowEstimate=%d}",
+                                   key, isReversed, isEmpty, partitionDeletion, staticRow, rowEstimate);
         }
     }
 }

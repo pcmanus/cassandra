@@ -108,6 +108,18 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
         return controller.cfs.metadata;
     }
 
+    public PartitionColumns columns()
+    {
+        return metadata().partitionColumns();
+    }
+
+    public EncodingStats stats()
+    {
+        // TODO: we could implement that and we should, but it's currently only used when serializing the resulting UnfilteredPartitionIterator
+        // and we don't do that currently with a CompactionIterator, so this is is not urgent
+        throw new UnsupportedOperationException();
+    }
+
     public CompactionInfo getCompactionInfo()
     {
         return new CompactionInfo(controller.cfs.metadata,

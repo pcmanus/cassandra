@@ -216,7 +216,9 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             CFMetaData.serializer.serialize(partition.metadata(), out, version);
             try (UnfilteredRowIterator iter = p.sliceableUnfilteredIterator())
             {
-                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, p.rowCount());
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
+                SerializationHeader.serializer.serializeForMessaging(header, out, version);
+                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, header, p.rowCount());
             }
         }
 
@@ -238,13 +240,15 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             int nonExpiringLiveCells = in.readInt();
 
             CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
-            UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, metadata, SerializationHelper.Flag.LOCAL);
-            assert !header.isReversed && header.rowEstimate >= 0;
+            SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(metadata, in, version);
 
-            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(header.partitionDeletion, metadata.comparator, false);
-            List<Row> rows = new ArrayList<>(header.rowEstimate);
+            UnfilteredRowIteratorSerializer.Header partitionHeader = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, metadata, SerializationHelper.Flag.LOCAL);
+            assert !partitionHeader.isReversed && partitionHeader.rowEstimate >= 0;
 
-            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, SerializationHelper.Flag.LOCAL, header))
+            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(partitionHeader.partitionDeletion, metadata.comparator, false);
+            List<Row> rows = new ArrayList<>(partitionHeader.rowEstimate);
+
+            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, SerializationHelper.Flag.LOCAL, header, partitionHeader))
             {
                 while (partition.hasNext())
                 {
@@ -257,12 +261,12 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             }
 
             return new ArrayBackedCachedPartition(metadata,
-                                                  header.key,
-                                                  header.sHeader.columns(),
-                                                  header.staticRow,
+                                                  partitionHeader.key,
+                                                  header.columns(),
+                                                  partitionHeader.staticRow,
                                                   rows,
                                                   deletionBuilder.build(),
-                                                  header.sHeader.stats(),
+                                                  header.stats(),
                                                   createdAtInSec,
                                                   cachedLiveRows,
                                                   rowsWithNonExpiringCells,
@@ -280,12 +284,14 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
 
             try (UnfilteredRowIterator iter = p.sliceableUnfilteredIterator())
             {
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
                 return TypeSizes.sizeof(p.createdAtInSec)
                      + TypeSizes.sizeof(p.cachedLiveRows)
                      + TypeSizes.sizeof(p.rowsWithNonExpiringCells)
                      + TypeSizes.sizeof(p.nonTombstoneCellCount)
                      + TypeSizes.sizeof(p.nonExpiringLiveCells)
                      + CFMetaData.serializer.serializedSize(partition.metadata(), version)
+                     + SerializationHeader.serializer.serializedSizeForMessaging(header, version)
                      + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, MessagingService.current_version, p.rowCount());
             }
         }

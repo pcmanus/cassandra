@@ -20,6 +20,8 @@ package org.apache.cassandra.db.partitions;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.PartitionColumns;
+import org.apache.cassandra.db.rows.EncodingStats;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 
 /**
@@ -43,7 +45,26 @@ public interface UnfilteredPartitionIterator extends Iterator<UnfilteredRowItera
      */
     public boolean isForThrift();
 
+    /**
+     * The metadata for the table this is an iterator over.
+     *
+     * @return the table metadata.
+     */
     public CFMetaData metadata();
+
+    /**
+     * A superset of all the columns contained by the partitions of this iterator.
+     *
+     * @return a superset of all the columns contained by the partitions of this iterator.
+     */
+    public PartitionColumns columns();
+
+    /**
+     * Encoding stats for all the partitions of this iterator.
+     *
+     * @return the encoding stats for all the partitions of this iterator.
+     */
+    public EncodingStats stats();
 
     public void close();
 }
