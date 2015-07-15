@@ -118,7 +118,7 @@ public class UnfilteredRowIteratorSerializer
         SerializationHeader.serializer.serializeForMessaging(header, out, hasStatic);
 
         if (!partitionDeletion.isLive())
-            writeDelTime(partitionDeletion, header, out);
+            header.writeDeletionTime(partitionDeletion, out);
 
         if (hasStatic)
             UnfilteredSerializer.serializer.serialize(staticRow, header, out, version);
@@ -155,7 +155,7 @@ public class UnfilteredRowIteratorSerializer
         size += SerializationHeader.serializer.serializedSizeForMessaging(header, hasStatic);
 
         if (!partitionDeletion.isLive())
-            size += delTimeSerializedSize(partitionDeletion, header);
+            size += header.deletionTimeSerializedSize(partitionDeletion);
 
         if (hasStatic)
             size += UnfilteredSerializer.serializer.serializedSize(staticRow, header, version);
@@ -188,7 +188,7 @@ public class UnfilteredRowIteratorSerializer
 
         SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(in, metadata, hasStatic);
 
-        DeletionTime partitionDeletion = hasPartitionDeletion ? readDelTime(in, header) : DeletionTime.LIVE;
+        DeletionTime partitionDeletion = hasPartitionDeletion ? header.readDeletionTime(in) : DeletionTime.LIVE;
 
         Row staticRow = Rows.EMPTY_STATIC_ROW;
         if (hasStatic)
@@ -227,31 +227,6 @@ public class UnfilteredRowIteratorSerializer
     public UnfilteredRowIterator deserialize(DataInputPlus in, int version, SerializationHelper.Flag flag) throws IOException
     {
         return deserialize(in, version, flag,  deserializeHeader(in, version, flag));
-    }
-
-    public static void writeDelTime(DeletionTime dt, SerializationHeader header, DataOutputPlus out) throws IOException
-    {
-        out.writeVInt(header.encodeTimestamp(dt.markedForDeleteAt()));
-        out.writeVInt(header.encodeDeletionTime(dt.localDeletionTime()));
-    }
-
-    public static long delTimeSerializedSize(DeletionTime dt, SerializationHeader header)
-    {
-        return TypeSizes.sizeofVInt(header.encodeTimestamp(dt.markedForDeleteAt()))
-             + TypeSizes.sizeofVInt(header.encodeDeletionTime(dt.localDeletionTime()));
-    }
-
-    public static DeletionTime readDelTime(DataInputPlus in, SerializationHeader header) throws IOException
-    {
-        long markedAt = header.decodeTimestamp(in.readVInt());
-        int localDelTime = header.decodeDeletionTime((int)in.readVInt());
-        return new DeletionTime(markedAt, localDelTime);
-    }
-
-    public static void skipDelTime(DataInputPlus in, SerializationHeader header) throws IOException
-    {
-        in.readVInt();
-        in.readVInt();
     }
 
     public static class Header

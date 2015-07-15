@@ -187,34 +187,89 @@ public class SerializationHeader
         return typeMap == null ? column.type : typeMap.get(column.name.bytes);
     }
 
-    public long encodeTimestamp(long timestamp)
+    public void writeTimestamp(long timestamp, DataOutputPlus out) throws IOException
     {
-        return timestamp - stats.minTimestamp;
+        out.writeVInt(timestamp - stats.minTimestamp);
     }
 
-    public long decodeTimestamp(long timestamp)
+    public void writeLocalDeletionTime(int localDeletionTime, DataOutputPlus out) throws IOException
     {
-        return stats.minTimestamp + timestamp;
+        out.writeVInt(localDeletionTime - stats.minLocalDeletionTime);
     }
 
-    public int encodeDeletionTime(int deletionTime)
+    public void writeTTL(int ttl, DataOutputPlus out) throws IOException
     {
-        return deletionTime - stats.minLocalDeletionTime;
+        out.writeVInt(ttl - stats.minTTL);
     }
 
-    public int decodeDeletionTime(int deletionTime)
+    public void writeDeletionTime(DeletionTime dt, DataOutputPlus out) throws IOException
     {
-        return stats.minLocalDeletionTime + deletionTime;
+        writeTimestamp(dt.markedForDeleteAt(), out);
+        writeLocalDeletionTime(dt.localDeletionTime(), out);
     }
 
-    public int encodeTTL(int ttl)
+    public long readTimestamp(DataInputPlus in) throws IOException
     {
-        return ttl - stats.minTTL;
+        return in.readVInt() + stats.minTimestamp;
     }
 
-    public int decodeTTL(int ttl)
+    public int readLocalDeletionTime(DataInputPlus in) throws IOException
     {
-        return stats.minTTL + ttl;
+        return (int)in.readVInt() + stats.minLocalDeletionTime;
+    }
+
+    public int readTTL(DataInputPlus in) throws IOException
+    {
+        return (int)in.readVInt() + stats.minTTL;
+    }
+
+    public DeletionTime readDeletionTime(DataInputPlus in) throws IOException
+    {
+        long markedAt = readTimestamp(in);
+        int localDeletionTime = readLocalDeletionTime(in);
+        return new DeletionTime(markedAt, localDeletionTime);
+    }
+
+    public long timestampSerializedSize(long timestamp)
+    {
+        return TypeSizes.sizeofVInt(timestamp - stats.minTimestamp);
+    }
+
+    public long localDeletionTimeSerializedSize(int localDeletionTime)
+    {
+        return TypeSizes.sizeofVInt(localDeletionTime - stats.minLocalDeletionTime);
+    }
+
+    public long ttlSerializedSize(int ttl)
+    {
+        return TypeSizes.sizeofVInt(ttl - stats.minTTL);
+    }
+
+    public long deletionTimeSerializedSize(DeletionTime dt)
+    {
+        return timestampSerializedSize(dt.markedForDeleteAt())
+             + localDeletionTimeSerializedSize(dt.localDeletionTime());
+    }
+
+    public void skipTimestamp(DataInputPlus in) throws IOException
+    {
+        in.readVInt();
+    }
+
+    public void skipLocalDeletionTime(DataInputPlus in) throws IOException
+    {
+        in.readVInt();
+    }
+
+    public void skipTTL(DataInputPlus in) throws IOException
+    {
+        in.readVInt();
+    }
+
+    public void skipDeletionTime(DataInputPlus in) throws IOException
+    {
+        skipTimestamp(in);
+        skipLocalDeletionTime(in);
     }
 
     public Component toComponent()
