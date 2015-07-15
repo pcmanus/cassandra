@@ -23,12 +23,15 @@ import java.util.*;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.util.DataInputBuffer;
@@ -36,9 +39,10 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.serializers.MarshalException;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MergeIterator;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Stores updates made on a partition.
@@ -454,7 +458,7 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
     }
 
     @Override
-    protected SliceableUnfilteredRowIterator sliceableUnfilteredIterator(ColumnFilter columns, boolean reversed)
+    public SliceableUnfilteredRowIterator sliceableUnfilteredIterator(ColumnFilter columns, boolean reversed)
     {
         maybeBuild();
         return super.sliceableUnfilteredIterator(columns, reversed);
@@ -463,7 +467,7 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
     /**
      * Validates the data contained in this update.
      *
-     * @throws MarshalException if some of the data contained in this update is corrupted.
+     * @throws org.apache.cassandra.serializers.MarshalException if some of the data contained in this update is corrupted.
      */
     public void validate()
     {
@@ -661,37 +665,19 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
         {
-            if (version < MessagingService.VERSION_30)
-            {
-                // TODO
-                throw new UnsupportedOperationException();
-
-                // if (cf == null)
-                // {
-                //     out.writeBoolean(false);
-                //     return;
-                // }
-
-                // out.writeBoolean(true);
-                // serializeCfId(cf.id(), out, version);
-                // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
-                // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-                // int count = cf.getColumnCount();
-                // out.writeInt(count);
-                // int written = 0;
-                // for (Cell cell : cf)
-                // {
-                //     columnSerializer.serialize(cell, out);
-                //     written++;
-                // }
-                // assert count == written: "Table had " + count + " columns, but " + written + " written";
-            }
-
-            CFMetaData.serializer.serialize(update.metadata(), out, version);
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
             {
                 assert !iter.isReverseOrder();
-                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, update.rows.size());
+
+                if (version < MessagingService.VERSION_30)
+                {
+                    LegacyLayout.serializeAsLegacyPartition(iter, out, version);
+                }
+                else
+                {
+                    CFMetaData.serializer.serialize(update.metadata(), out, version);
+                    UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, update.rows.size());
+                }
             }
         }
 
@@ -701,17 +687,9 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
             {
                 assert key != null;
 
-                // This is only used in mutation, and mutation have never allowed "null" column families
-                boolean present = in.readBoolean();
-                assert present;
-
-                CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
-                LegacyLayout.LegacyDeletionInfo info = LegacyLayout.LegacyDeletionInfo.serializer.deserialize(metadata, in, version);
-                int size = in.readInt();
-                Iterator<LegacyLayout.LegacyCell> cells = LegacyLayout.deserializeCells(metadata, in, flag, size);
-                SerializationHelper helper = new SerializationHelper(metadata, version, flag);
-                try (UnfilteredRowIterator iterator = LegacyLayout.onWireCellstoUnfilteredRowIterator(metadata, key, info, cells, false, helper))
+                try (UnfilteredRowIterator iterator = LegacyLayout.deserializeLegacyPartition(in, version, flag, key))
                 {
+                    assert iterator != null; // This is only used in mutation, and mutation have never allowed "null" column families
                     return PartitionUpdate.fromIterator(iterator);
                 }
             }
@@ -754,24 +732,12 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
 
         public long serializedSize(PartitionUpdate update, int version)
         {
-            if (version < MessagingService.VERSION_30)
-            {
-                // TODO
-                throw new UnsupportedOperationException("Version is " + version);
-                //if (cf == null)
-                //{
-                //    return TypeSizes.sizeof(false);
-                //}
-                //else
-                //{
-                //    return TypeSizes.sizeof(true)  /* nullness bool */
-                //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
-                //        + contentSerializedSize(cf, typeSizes, version);
-                //}
-            }
 
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
             {
+                if (version < MessagingService.VERSION_30)
+                    return LegacyLayout.serializedSizeAsLegacyPartition(iter, version);
+
                 return CFMetaData.serializer.serializedSize(update.metadata(), version)
                      + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, update.rows.size());
             }

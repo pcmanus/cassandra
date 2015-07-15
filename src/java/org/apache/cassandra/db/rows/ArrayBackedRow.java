@@ -22,11 +22,13 @@ import java.util.*;
 import java.util.function.Predicate;
 
 import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.utils.SearchIterator;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -188,6 +190,11 @@ public class ArrayBackedRow extends AbstractRow
     public Iterable<Cell> cells()
     {
         return CellIterator::new;
+    }
+
+    public Iterable<Cell> cellsInLegacyOrder(CFMetaData metadata)
+    {
+        return () -> new CellInLegacyOrderIterator(metadata);
     }
 
     public SearchIterator<ColumnDefinition, ColumnData> searchIterator()
@@ -457,6 +464,55 @@ public class ArrayBackedRow extends AbstractRow
                     complexCells = ((ComplexColumnData)cd).iterator();
                 else
                     return (Cell)cd;
+            }
+        }
+    }
+
+    private class CellInLegacyOrderIterator extends AbstractIterator<Cell>
+    {
+        private final AbstractType<?> comparator;
+        private final int firstComplexIdx;
+        private int simpleIdx;
+        private int complexIdx;
+        private Iterator<Cell> complexCells;
+
+        private CellInLegacyOrderIterator(CFMetaData metadata)
+        {
+            this.comparator = metadata.getColumnDefinitionNameComparator(isStatic() ? ColumnDefinition.Kind.STATIC : ColumnDefinition.Kind.REGULAR);
+            int idx = Iterators.indexOf(Iterators.forArray(data), cd -> cd.column().isComplex());
+            this.firstComplexIdx = idx < 0 ? data.length : idx;
+            this.complexIdx = firstComplexIdx;
+        }
+
+        protected Cell computeNext()
+        {
+            while (true)
+            {
+                if (complexCells != null)
+                {
+                    if (complexCells.hasNext())
+                        return complexCells.next();
+
+                    complexCells = null;
+                }
+
+                if (simpleIdx >= firstComplexIdx)
+                {
+                    if (complexIdx >= data.length)
+                        return endOfData();
+
+                    complexCells = ((ComplexColumnData)data[complexIdx++]).iterator();
+                }
+                else
+                {
+                    if (complexIdx >= data.length)
+                        return (Cell)data[simpleIdx++];
+
+                    if (comparator.compare(data[simpleIdx].column().name.bytes, data[complexIdx].column().name.bytes) < 0)
+                        return (Cell)data[simpleIdx++];
+                    else
+                        complexCells = ((ComplexColumnData)data[complexIdx++]).iterator();
+                }
             }
         }
     }

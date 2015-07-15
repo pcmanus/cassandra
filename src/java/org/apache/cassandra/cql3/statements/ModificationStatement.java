@@ -521,7 +521,7 @@ public abstract class ModificationStatement implements CQLStatement
                                                          StorageService.getPartitioner().decorateKey(key),
                                                          new ClusteringIndexNamesFilter(clusterings, false)));
 
-        Map<DecoratedKey, Partition> map = new HashMap();
+        Map<DecoratedKey, Partition> map = new HashMap<>();
 
         SinglePartitionReadCommand.Group group = new SinglePartitionReadCommand.Group(commands, DataLimits.NONE);
 
