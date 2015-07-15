@@ -204,6 +204,8 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
     {
         public void serialize(CachedPartition partition, DataOutputPlus out) throws IOException
         {
+            int version = MessagingService.current_version;
+
             assert partition instanceof ArrayBackedCachedPartition;
             ArrayBackedCachedPartition p = (ArrayBackedCachedPartition)partition;
 
@@ -214,12 +216,16 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             out.writeVInt(p.nonExpiringLiveCells);
             try (UnfilteredRowIterator iter = p.sliceableUnfilteredIterator())
             {
-                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, MessagingService.current_version, p.rowCount());
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
+                SerializationHeader.serializer.serializeForMessaging(header, out, version);
+                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, header, p.rowCount());
             }
         }
 
         public CachedPartition deserialize(DataInputPlus in) throws IOException
         {
+            int version = MessagingService.current_version;
+
             // Note that it would be slightly simpler to just do
             //   ArrayBackedCachedPiartition.create(UnfilteredRowIteratorSerializer.serializer.deserialize(...));
             // However deserializing the header separatly is not a lot harder and allows us to:
@@ -233,13 +239,16 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             int nonTombstoneCellCount = (int)in.readVInt();
             int nonExpiringLiveCells = (int)in.readVInt();
 
-            UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, MessagingService.current_version, SerializationHelper.Flag.LOCAL);
-            assert !header.isReversed && header.rowEstimate >= 0;
+            SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(in, version);
+            CFMetaData metadata = header.metadata();
 
-            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(header.partitionDeletion, header.metadata.comparator, false);
-            List<Row> rows = new ArrayList<>(header.rowEstimate);
+            UnfilteredRowIteratorSerializer.Header partitionHeader = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, MessagingService.current_version, SerializationHelper.Flag.LOCAL, header);
+            assert !partitionHeader.isReversed && partitionHeader.rowEstimate >= 0;
 
-            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, MessagingService.current_version, SerializationHelper.Flag.LOCAL, header))
+            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(partitionHeader.partitionDeletion, metadata.comparator, false);
+            List<Row> rows = new ArrayList<>(partitionHeader.rowEstimate);
+
+            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, SerializationHelper.Flag.LOCAL, header, partitionHeader))
             {
                 while (partition.hasNext())
                 {
@@ -251,13 +260,13 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
                 }
             }
 
-            return new ArrayBackedCachedPartition(header.metadata,
-                                                  header.key,
-                                                  header.sHeader.columns(),
-                                                  header.staticRow,
+            return new ArrayBackedCachedPartition(metadata,
+                                                  partitionHeader.key,
+                                                  header.columns(),
+                                                  partitionHeader.staticRow,
                                                   rows,
                                                   deletionBuilder.build(),
-                                                  header.sHeader.stats(),
+                                                  header.stats(),
                                                   createdAtInSec,
                                                   cachedLiveRows,
                                                   rowsWithNonExpiringCells,
@@ -268,17 +277,21 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
 
         public long serializedSize(CachedPartition partition)
         {
+            int version = MessagingService.current_version;
+
             assert partition instanceof ArrayBackedCachedPartition;
             ArrayBackedCachedPartition p = (ArrayBackedCachedPartition)partition;
 
             try (UnfilteredRowIterator iter = p.sliceableUnfilteredIterator())
             {
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
                 return TypeSizes.sizeofVInt(p.createdAtInSec)
                      + TypeSizes.sizeofVInt(p.cachedLiveRows)
                      + TypeSizes.sizeofVInt(p.rowsWithNonExpiringCells)
                      + TypeSizes.sizeofVInt(p.nonTombstoneCellCount)
                      + TypeSizes.sizeofVInt(p.nonExpiringLiveCells)
-                     + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, MessagingService.current_version, p.rowCount());
+                     + SerializationHeader.serializer.serializedSizeForMessaging(header, version)
+                     + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, header, p.rowCount());
             }
         }
     }

@@ -345,8 +345,7 @@ public abstract class UnfilteredPartitionIterators
     }
 
     /**
-     * Serialize each UnfilteredSerializer one after the other, with an initial byte that indicates whether
-     * we're done or not.
+     * Writes the serialization header first, and then each partition in the iterator one after the other.
      */
     public static class Serializer
     {
@@ -355,40 +354,48 @@ public abstract class UnfilteredPartitionIterators
             if (version < MessagingService.VERSION_30)
                 throw new UnsupportedOperationException();
 
-            out.writeBoolean(iter.isForThrift());
+            if (!iter.hasNext())
+            {
+                SerializationHeader.serializer.writeEmptyMessage(out);
+                return;
+            }
+
+            SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats(), iter.isForThrift());
+            SerializationHeader.serializer.serializeForMessaging(header, out, version);
+
             while (iter.hasNext())
             {
-                out.writeBoolean(true);
                 try (UnfilteredRowIterator partition = iter.next())
                 {
-                    UnfilteredRowIteratorSerializer.serializer.serialize(partition, out, version);
+                    UnfilteredRowIteratorSerializer.serializer.serialize(partition, out, version, header);
                 }
             }
-            out.writeBoolean(false);
+            UnfilteredRowIteratorSerializer.serializer.writeEndOfMessage(out);
         }
 
-        public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final SerializationHelper.Flag flag) throws IOException
+        public UnfilteredPartitionIterator deserialize(final CFMetaData metadata, final DataInputPlus in, final int version, final SerializationHelper.Flag flag, final boolean isForThrift) throws IOException
         {
             if (version < MessagingService.VERSION_30)
                 throw new UnsupportedOperationException();
 
-            final boolean isForThrift = in.readBoolean();
+            final SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(metadata, in, version);
+            if (header == null)
+                return empty();
 
             return new AbstractUnfilteredPartitionIterator()
             {
                 private UnfilteredRowIterator next;
-                private boolean hasNext;
                 private boolean nextReturned = true;
 
                 public boolean isForThrift()
                 {
-                    return isForThrift;
+                    return header.isForThrift();
                 }
 
                 public boolean hasNext()
                 {
                     if (!nextReturned)
-                        return hasNext;
+                        return next != null;
 
                     // We can't answer this until the previously returned iterator has been fully consumed,
                     // so complain if that's not the case.
@@ -397,9 +404,9 @@ public abstract class UnfilteredPartitionIterators
 
                     try
                     {
-                        hasNext = in.readBoolean();
+                        next = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, flag, header);
                         nextReturned = false;
-                        return hasNext;
+                        return next != null;
                     }
                     catch (IOException e)
                     {
@@ -415,7 +422,6 @@ public abstract class UnfilteredPartitionIterators
                     try
                     {
                         nextReturned = true;
-                        next = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, flag);
                         return next;
                     }
                     catch (IOException e)

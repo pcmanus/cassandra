@@ -17,8 +17,9 @@
  */
 package org.apache.cassandra.db.partitions;
 
-import org.apache.cassandra.db.rows.UnfilteredRowIterator;
-import org.apache.cassandra.db.rows.UnfilteredRowIterators;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.db.PartitionColumns;
+import org.apache.cassandra.db.rows.*;
 
 /**
  * A utility class for writing partition iterators that filter/modify other
@@ -42,6 +43,21 @@ public abstract class WrappingUnfilteredPartitionIterator extends AbstractUnfilt
     public boolean isForThrift()
     {
         return wrapped.isForThrift();
+    }
+
+    public CFMetaData metadata()
+    {
+        return wrapped.metadata();
+    }
+
+    public PartitionColumns columns()
+    {
+        return wrapped.columns();
+    }
+
+    public EncodingStats stats()
+    {
+        return wrapped.stats();
     }
 
     public boolean hasNext()

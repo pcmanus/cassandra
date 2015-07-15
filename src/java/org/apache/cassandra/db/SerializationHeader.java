@@ -41,31 +41,48 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+/**
+ * Informations necessary to encoding and decoding of a partitions.
+ * 
+ * This is serialized:
+ *   - for sstables as one of the component of the sstable metadata.
+ *   - at the beginning of the response message for read request responses.
+ */
 public class SerializationHeader
 {
     public static final Serializer serializer = new Serializer();
 
-    private final AbstractType<?> keyType;
-    private final List<AbstractType<?>> clusteringTypes;
+    private final CFMetaData metadata;
 
+    // The columns that are encoded.
     private final PartitionColumns columns;
+
+    // Stats for the encoding
     private final EncodingStats stats;
 
-    private final Map<ByteBuffer, AbstractType<?>> typeMap;
+    // The types used for the partition key, clustering columns and other columns during serialization. This ensures
+    // that data is deserialized with the same types it was serialized with, even if said type changes between the
+    // serialization and deserialization.
+    private final AbstractType<?> keyType;
+    private final List<AbstractType<?>> clusteringTypes;
+    private final Map<ByteBuffer, AbstractType<?>> typeMap; // might be null if we're fine relying on the metadata
 
     // Whether or not to store cell in a sparse or dense way. See UnfilteredSerializer for details.
     private final boolean useSparseColumnLayout;
 
-    private SerializationHeader(AbstractType<?> keyType,
-                                List<AbstractType<?>> clusteringTypes,
+    private SerializationHeader(CFMetaData metadata,
                                 PartitionColumns columns,
                                 EncodingStats stats,
+                                AbstractType<?> keyType,
+                                List<AbstractType<?>> clusteringTypes,
                                 Map<ByteBuffer, AbstractType<?>> typeMap)
     {
-        this.keyType = keyType;
-        this.clusteringTypes = clusteringTypes;
+        this.metadata = metadata;
         this.columns = columns;
         this.stats = stats;
+
+        this.keyType = keyType;
+        this.clusteringTypes = clusteringTypes;
         this.typeMap = typeMap;
 
         // For the dense layout, we have a 1 byte overhead for absent columns. For the sparse layout, it's a 1
@@ -74,6 +91,21 @@ public class SerializationHeader
         // you'll tend towards a clearly dense or clearly sparse case so that the heurstic above shouldn't still be
         // too inapropriate). So if on average more than half of our columns are set per row, we better go for sparse.
         this.useSparseColumnLayout = stats.avgColumnSetPerRow <= (columns.regulars.columnCount()/ 2);
+    }
+
+    public SerializationHeader(CFMetaData metadata, PartitionColumns columns, EncodingStats stats)
+    {
+        this(metadata,
+             columns,
+             stats,
+             metadata.getKeyValidator(),
+             typesOf(metadata.clusteringColumns()),
+             null);
+    }
+
+    public CFMetaData metadata()
+    {
+        return metadata;
     }
 
     public boolean useSparseColumnLayout(boolean isStatic)
@@ -86,20 +118,14 @@ public class SerializationHeader
 
     public static SerializationHeader forKeyCache(CFMetaData metadata)
     {
-        // We don't save type information in the key cache (we could change
-        // that but it's easier right now), so instead we simply use BytesType
-        // for both serialization and deserialization. Note that we also only
-        // serializer clustering prefixes in the key cache, so only the clusteringTypes
-        // really matter.
+        // We don't save type information in the key cache (we could change that but it's easier right now), so instead we
+        // simply use BytesType for both serialization and deserialization. Note that we also only serializer clustering
+        // prefixes in the key cache, so only the clusteringTypes really matter.
         int size = metadata.clusteringColumns().size();
         List<AbstractType<?>> clusteringTypes = new ArrayList<>(size);
         for (int i = 0; i < size; i++)
             clusteringTypes.add(BytesType.instance);
-        return new SerializationHeader(BytesType.instance,
-                                       clusteringTypes,
-                                       PartitionColumns.NONE,
-                                       EncodingStats.NO_STATS,
-                                       Collections.<ByteBuffer, AbstractType<?>>emptyMap());
+        return new SerializationHeader(metadata, PartitionColumns.NONE, EncodingStats.NO_STATS, BytesType.instance, clusteringTypes, null);
     }
 
     public static SerializationHeader make(CFMetaData metadata, Collection<SSTableReader> sstables)
@@ -130,17 +156,6 @@ public class SerializationHeader
         return new SerializationHeader(metadata, columns.build(), stats.get());
     }
 
-    public SerializationHeader(CFMetaData metadata,
-                               PartitionColumns columns,
-                               EncodingStats stats)
-    {
-        this(metadata.getKeyValidator(),
-             typesOf(metadata.clusteringColumns()),
-             columns,
-             stats,
-             null);
-    }
-
     private static List<AbstractType<?>> typesOf(List<ColumnDefinition> columns)
     {
         return ImmutableList.copyOf(Lists.transform(columns, new Function<ColumnDefinition, AbstractType<?>>()
@@ -155,6 +170,11 @@ public class SerializationHeader
     public PartitionColumns columns()
     {
         return columns;
+    }
+
+    public Columns columns(boolean isStatic)
+    {
+        return isStatic ? columns.statics : columns.regulars;
     }
 
     public boolean hasStatic()
@@ -175,11 +195,6 @@ public class SerializationHeader
     public List<AbstractType<?>> clusteringTypes()
     {
         return clusteringTypes;
-    }
-
-    public Columns columns(boolean isStatic)
-    {
-        return isStatic ? columns.statics : columns.regulars;
     }
 
     public AbstractType<?> getType(ColumnDefinition column)
@@ -345,7 +360,7 @@ public class SerializationHeader
                 }
                 builder.add(column);
             }
-            return new SerializationHeader(keyType, clusteringTypes, builder.build(), stats, typeMap);
+            return new SerializationHeader(metadata, builder.build(), stats, keyType, clusteringTypes, typeMap);
         }
 
         @Override
@@ -378,35 +393,68 @@ public class SerializationHeader
 
     public static class Serializer implements IMetadataComponentSerializer<Component>
     {
-        public void serializeForMessaging(SerializationHeader header, DataOutputPlus out, boolean hasStatic) throws IOException
+        // Flags for the messaging protocol serialization. The EMPTY_HEADER flag exists to make the encoding
+        // of an empty result as small as possible (see UnfilteredPartitionIterators.Serializer). HAS_STATICS
+        // and HAS_REGULARS indicate the presence of static and regular columns (at least for static, their
+        // absence should be pretty common, so having a flag save us one byte from writting a 0 length).
+        private static final int EMPTY_HEADER = 0x01;
+        private static final int HAS_STATICS  = 0x02;
+        private static final int HAS_REGULARS = 0x03;
+
+        public void serializeForMessaging(SerializationHeader header, DataOutputPlus out, int version) throws IOException
         {
+            int flags = 0;
+            if (!header.columns.statics.isEmpty())
+                flags |= HAS_STATICS;
+            if (!header.columns.regulars.isEmpty())
+                flags |= HAS_REGULARS;
+
+            out.writeByte(flags);
+
             EncodingStats.serializer.serialize(header.stats, out);
 
-            if (hasStatic)
+            if (!header.columns.statics.isEmpty())
                 Columns.serializer.serialize(header.columns.statics, out);
-            Columns.serializer.serialize(header.columns.regulars, out);
+            if (!header.columns.regulars.isEmpty())
+                Columns.serializer.serialize(header.columns.regulars, out);
         }
 
-        public SerializationHeader deserializeForMessaging(DataInputPlus in, CFMetaData metadata, boolean hasStatic) throws IOException
+        public void writeEndOfMessage(DataOutputPlus out)
         {
+            out.writeByte(EMPTY_HEADER);
+        }
+
+        public SerializationHeader deserializeForMessaging(CFMetaData metadata, DataInputPlus in, int version) throws IOException
+        {
+            int flags = in.readUnsignedByte();
+            if ((flags & EMPTY_HEADER) != 0)
+                return null;
+
             EncodingStats stats = EncodingStats.serializer.deserialize(in);
 
             AbstractType<?> keyType = metadata.getKeyValidator();
             List<AbstractType<?>> clusteringTypes = typesOf(metadata.clusteringColumns());
 
-            Columns statics = hasStatic ? Columns.serializer.deserialize(in, metadata) : Columns.NONE;
-            Columns regulars = Columns.serializer.deserialize(in, metadata);
+            Columns statics = Columns.NONE;
+            Columns regulars = Columns.NONE;
 
-            return new SerializationHeader(keyType, clusteringTypes, new PartitionColumns(statics, regulars), stats, null);
+            if ((flags & HAS_STATICS) != 0)
+                statics = Columns.serializer.deserialize(in, metadata);
+            if ((flags & HAS_REGULARS) != 0)
+                regulars = Columns.serializer.deserialize(in, metadata);
+
+            return new SerializationHeader(metadata, new PartitionColumns(statics, regulars), stats, keyType, clusteringTypes, null);
         }
 
-        public long serializedSizeForMessaging(SerializationHeader header, boolean hasStatic)
+        public long serializedSizeForMessaging(SerializationHeader header, int version)
         {
-            long size = EncodingStats.serializer.serializedSize(header.stats);
+            long size = 1 // flags
+                      + EncodingStats.serializer.serializedSize(header.stats);
 
-            if (hasStatic)
+            if (!header.columns.statics.isEmpty())
                 size += Columns.serializer.serializedSize(header.columns.statics);
-            size += Columns.serializer.serializedSize(header.columns.regulars);
+            if (!header.columns.regulars.isEmpty())
+                size += Columns.serializer.serializedSize(header.columns.regulars);
             return size;
         }
 

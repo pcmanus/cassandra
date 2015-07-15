@@ -684,7 +684,9 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
             {
                 assert !iter.isReverseOrder();
-                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, update.rows.size());
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
+                SerializationHeader.serializer.serializeForMessaging(header, out, version);
+                UnfilteredRowIteratorSerializer.serializer.serialize(iter, out, version, header, update.rows.size());
             }
         }
 
@@ -711,17 +713,20 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
 
             assert key == null; // key is only there for the old format
 
-            UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, flag);
-            if (header.isEmpty)
-                return emptyUpdate(header.metadata, header.key);
+            SerializationHeader header = SerializationHeader.serializer.deserializeForMessaging(in, version);
+            CFMetaData metadata = header.metadata();
 
-            assert !header.isReversed;
-            assert header.rowEstimate >= 0;
+            UnfilteredRowIteratorSerializer.Header partitionHeader = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(in, version, flag, header);
+            if (partitionHeader.isEmpty)
+                return emptyUpdate(metadata, partitionHeader.key);
 
-            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(header.partitionDeletion, header.metadata.comparator, false);
-            List<Row> rows = new ArrayList<>(header.rowEstimate);
+            assert !partitionHeader.isReversed;
+            assert partitionHeader.rowEstimate >= 0;
 
-            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, flag, header))
+            MutableDeletionInfo.Builder deletionBuilder = MutableDeletionInfo.builder(partitionHeader.partitionDeletion, metadata.comparator, false);
+            List<Row> rows = new ArrayList<>(partitionHeader.rowEstimate);
+
+            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, flag, header, partitionHeader))
             {
                 while (partition.hasNext())
                 {
@@ -733,13 +738,13 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
                 }
             }
 
-            return new PartitionUpdate(header.metadata,
-                                       header.key,
-                                       header.sHeader.columns(),
-                                       header.staticRow,
+            return new PartitionUpdate(metadata,
+                                       partitionHeader.key,
+                                       header.columns(),
+                                       partitionHeader.staticRow,
                                        rows,
                                        deletionBuilder.build(),
-                                       header.sHeader.stats(),
+                                       header.stats(),
                                        true,
                                        false);
         }
@@ -764,7 +769,9 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
 
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
             {
-                return UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, update.rows.size());
+                SerializationHeader header = new SerializationHeader(iter.metadata(), iter.columns(), iter.stats());
+                return SerializationHeader.serializer.serializedSizeForMessaging(header, version)
+                     + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, header, update.rows.size());
             }
         }
     }

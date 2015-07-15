@@ -21,6 +21,7 @@ import java.util.UUID;
 import java.util.List;
 import java.util.function.Function;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.index.SecondaryIndexManager;
@@ -105,6 +106,23 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
     public boolean isForThrift()
     {
         return false;
+    }
+
+    public CFMetaData metadata()
+    {
+        return controller.cfs.metadata;
+    }
+
+    public PartitionColumns columns()
+    {
+        return metadata().partitionColumns();
+    }
+
+    public EncodingStats stats()
+    {
+        // TODO: we could implement that and we should, but it's currently only used when serializing the resulting UnfilteredPartitionIterator
+        // and we don't do that currently with a CompactionIterator, so this is is not urgent
+        throw new UnsupportedOperationException();
     }
 
     public CompactionInfo getCompactionInfo()
