@@ -1450,9 +1450,9 @@ public class StorageProxy implements StorageProxyMBean
                                                  keyspace,
                                                  executor.handler.endpoints);
 
-                MessageOut<ReadCommand> message = command.createMessage();
                 for (InetAddress endpoint : executor.getContactedReplicas())
                 {
+                    MessageOut<ReadCommand> message = command.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing full data read to {}", endpoint);
                     MessagingService.instance().sendRRWithFailure(message, endpoint, repairHandler);
                 }
@@ -1803,9 +1803,9 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
-                MessageOut<ReadCommand> message = rangeCommand.createMessage();
                 for (InetAddress endpoint : toQuery.filteredEndpoints)
                 {
+                    MessageOut<ReadCommand> message = rangeCommand.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing request to {}", endpoint);
                     MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
                 }

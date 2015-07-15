@@ -23,12 +23,15 @@ import java.util.*;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.util.DataInputBuffer;
@@ -36,9 +39,10 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.serializers.MarshalException;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MergeIterator;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Stores updates made on a partition.
@@ -463,7 +467,7 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
     /**
      * Validates the data contained in this update.
      *
-     * @throws MarshalException if some of the data contained in this update is corrupted.
+     * @throws org.apache.cassandra.serializers.MarshalException if some of the data contained in this update is corrupted.
      */
     public void validate()
     {
@@ -663,28 +667,88 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
         {
             if (version < MessagingService.VERSION_30)
             {
-                // TODO
-                throw new UnsupportedOperationException();
+                out.writeBoolean(true);
+                CFMetaData.serializer.serialize(update.metadata, out, version);
 
-                // if (cf == null)
-                // {
-                //     out.writeBoolean(false);
-                //     return;
-                // }
+                Pair<LegacyLayout.LegacyRangeTombstoneList, Iterator<LegacyLayout.LegacyCell>> results = LegacyLayout.fromRowIterator(update.metadata, update.iterator(), update.staticRow);
+                LegacyLayout.LegacyRangeTombstoneList rtl = results.left;
+                ArrayList<LegacyLayout.LegacyCell> cells = Lists.newArrayList(results.right);
 
-                // out.writeBoolean(true);
-                // serializeCfId(cf.id(), out, version);
-                // cf.getComparator().deletionInfoSerializer().serialize(cf.deletionInfo(), out, version);
-                // ColumnSerializer columnSerializer = cf.getComparator().columnSerializer();
-                // int count = cf.getColumnCount();
-                // out.writeInt(count);
-                // int written = 0;
-                // for (Cell cell : cf)
-                // {
-                //     columnSerializer.serialize(cell, out);
-                //     written++;
-                // }
-                // assert count == written: "Table had " + count + " columns, but " + written + " written";
+                // It's inefficient to pull everything into a list first, but it's the only way to get an accurate
+                // cell count and merge single-row tombstones with normal range tombstones
+                DeletionTime.serializer.serialize(update.deletionInfo.getPartitionDeletion(), out);
+
+                // convert single-row deletions into RangeTombstones and merge them into the list
+                MutableDeletionInfo deletionInfo = update.deletionInfo.mutableCopy();
+                for (Row row : update)
+                {
+                    if (!row.deletion().isLive())
+                    {
+                        RangeTombstone rt = new RangeTombstone(Slice.make(row.clustering()), row.deletion());
+                        deletionInfo.add(rt, update.metadata.comparator);
+                    }
+                }
+
+                if (deletionInfo.hasRanges())
+                {
+                    Iterator<RangeTombstone> rangeTombstoneIterator = deletionInfo.rangeIterator(false);
+                    while (rangeTombstoneIterator.hasNext())
+                    {
+                        RangeTombstone rt = rangeTombstoneIterator.next();
+                        Slice slice = rt.deletedSlice();
+                        LegacyLayout.LegacyBound start = new LegacyLayout.LegacyBound(slice.start(), false, null);
+                        LegacyLayout.LegacyBound end = new LegacyLayout.LegacyBound(slice.end(), false, null);
+                        rtl.add(start, end, rt.deletionTime().markedForDeleteAt(), rt.deletionTime().localDeletionTime());
+                    }
+                }
+
+                rtl.serialize(out, update.metadata);
+
+                out.writeInt(cells.size());
+                for (LegacyLayout.LegacyCell cell : cells)
+                {
+                    ByteBufferUtil.writeWithShortLength(cell.name.encode(update.metadata), out);
+
+                    if (cell.kind == LegacyLayout.LegacyCell.Kind.COUNTER)
+                    {
+                        out.writeByte(LegacyLayout.COUNTER_UPDATE_MASK);
+                        out.writeLong(cell.timestamp);
+                        CounterContext.ContextState state = CounterContext.ContextState.wrap(cell.value);
+                        if (state.isLocal())
+                        {
+                            out.writeInt(TypeSizes.sizeof(state.getCount()));
+                            out.writeLong(state.getCount());
+                        }
+                        else
+                        {
+                            assert state.isGlobal();
+                            ByteBufferUtil.writeWithLength(cell.value, out);
+                        }
+                        continue;
+                    }
+                    else if (cell.kind == LegacyLayout.LegacyCell.Kind.DELETED)
+                    {
+                        out.writeByte(LegacyLayout.DELETION_MASK);
+                        out.writeLong(cell.timestamp);
+                        out.writeInt(TypeSizes.sizeof(cell.localDeletionTime));
+                        out.writeInt(cell.localDeletionTime);
+                        continue;
+                    }
+                    else if (cell.kind == LegacyLayout.LegacyCell.Kind.EXPIRING)
+                    {
+                        out.writeByte(LegacyLayout.EXPIRATION_MASK);
+                        out.writeInt(cell.ttl);
+                        out.writeInt(cell.localDeletionTime);
+                    }
+                    else
+                    {
+                        out.writeByte(0);  // serialization flags
+                    }
+
+                    out.writeLong(cell.timestamp);
+                    ByteBufferUtil.writeWithLength(cell.value, out);
+                }
+                return;
             }
 
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
@@ -705,7 +769,7 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
                 assert present;
 
                 CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
-                LegacyLayout.LegacyDeletionInfo info = LegacyLayout.LegacyDeletionInfo.serializer.deserialize(metadata, in, version);
+                LegacyLayout.LegacyDeletionInfo info = LegacyLayout.LegacyDeletionInfo.deserialize(metadata, in);
                 int size = in.readInt();
                 Iterator<LegacyLayout.LegacyCell> cells = LegacyLayout.deserializeCells(metadata, in, flag, size);
                 SerializationHelper helper = new SerializationHelper(metadata, version, flag);
@@ -754,18 +818,84 @@ public class PartitionUpdate extends AbstractThreadUnsafePartition
         {
             if (version < MessagingService.VERSION_30)
             {
-                // TODO
-                throw new UnsupportedOperationException("Version is " + version);
-                //if (cf == null)
-                //{
-                //    return TypeSizes.sizeof(false);
-                //}
-                //else
-                //{
-                //    return TypeSizes.sizeof(true)  /* nullness bool */
-                //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
-                //        + contentSerializedSize(cf, typeSizes, version);
-                //}
+                if (update.isEmpty())
+                    return TypeSizes.sizeof(false);
+
+                long size = TypeSizes.sizeof(true);
+                size += CFMetaData.serializer.serializedSize(update.metadata, version);
+
+                size += DeletionTime.serializer.serializedSize(update.deletionInfo.getPartitionDeletion());
+
+                Pair<LegacyLayout.LegacyRangeTombstoneList, Iterator<LegacyLayout.LegacyCell>> results = LegacyLayout.fromRowIterator(update.metadata, update.iterator(), update.staticRow);
+                LegacyLayout.LegacyRangeTombstoneList rtl = results.left;
+                ArrayList<LegacyLayout.LegacyCell> cells = Lists.newArrayList(results.right);
+
+                // convert single-row deletions into RangeTombstones and merge them into the list
+                MutableDeletionInfo deletionInfo = update.deletionInfo.mutableCopy();
+                for (Row row : update)
+                {
+                    if (!row.deletion().isLive())
+                    {
+                        RangeTombstone rt = new RangeTombstone(Slice.make(row.clustering()), row.deletion());
+                        deletionInfo.add(rt, update.metadata.comparator);
+                    }
+                }
+
+                if (deletionInfo.hasRanges())
+                {
+                    Iterator<RangeTombstone> rangeTombstoneIterator = deletionInfo.rangeIterator(false);
+                    while (rangeTombstoneIterator.hasNext())
+                    {
+                        RangeTombstone rt = rangeTombstoneIterator.next();
+                        Slice slice = rt.deletedSlice();
+                        LegacyLayout.LegacyBound start = new LegacyLayout.LegacyBound(slice.start(), false, null);
+                        LegacyLayout.LegacyBound end = new LegacyLayout.LegacyBound(slice.end(), false, null);
+                        rtl.add(start, end, rt.deletionTime().markedForDeleteAt(), rt.deletionTime().localDeletionTime());
+                    }
+                }
+
+                size += rtl.serializedSize(update.metadata);
+
+                size += TypeSizes.sizeof(cells.size());
+                for (LegacyLayout.LegacyCell cell : cells)
+                {
+                    size += ByteBufferUtil.serializedSizeWithShortLength(cell.name.encode(update.metadata));
+
+                    size += 1; // serialization flags
+                    if (cell.kind == LegacyLayout.LegacyCell.Kind.COUNTER)
+                    {
+                        size += TypeSizes.sizeof(cell.timestamp);
+                        CounterContext.ContextState state = CounterContext.ContextState.wrap(cell.value);
+                        if (state.isLocal())
+                        {
+                            // counter count (extracted from cell value)
+                            size += TypeSizes.sizeof(8);
+                            size += TypeSizes.sizeof(state.getCount());
+                        }
+                        else
+                        {
+                            assert state.isGlobal();
+                            size += ByteBufferUtil.serializedSizeWithLength(cell.value);
+                        }
+                        continue;
+                    }
+                    else if (cell.kind == LegacyLayout.LegacyCell.Kind.DELETED)
+                    {
+                        size += TypeSizes.sizeof(cell.timestamp);
+                        size += TypeSizes.sizeof(4);
+                        size += TypeSizes.sizeof(cell.localDeletionTime);
+                        continue;
+                    }
+                    else if (cell.kind == LegacyLayout.LegacyCell.Kind.EXPIRING)
+                    {
+                        size += TypeSizes.sizeof(cell.ttl);
+                        size += TypeSizes.sizeof(cell.localDeletionTime);
+                    }
+
+                    size += TypeSizes.sizeof(cell.timestamp);
+                    size += ByteBufferUtil.serializedSizeWithLength(cell.value);
+                }
+                return size;
             }
 
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())

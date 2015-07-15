@@ -51,6 +51,7 @@ public abstract class ResponseResolver
 
     public void preprocess(MessageIn<ReadResponse> message)
     {
+        message.payload.preprocessLegacyResults(command);
         responses.add(message);
     }
 

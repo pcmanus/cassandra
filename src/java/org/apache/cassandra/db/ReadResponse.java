@@ -20,9 +20,9 @@ package org.apache.cassandra.db;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.List;
 
+import org.apache.cassandra.db.filter.ClusteringIndexFilter;
+import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -31,6 +31,7 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -50,7 +51,9 @@ public abstract class ReadResponse
     }
 
     public abstract UnfilteredPartitionIterator makeIterator();
+
     public abstract ByteBuffer digest();
+
     public abstract boolean isDigestQuery();
 
     protected static ByteBuffer makeDigest(UnfilteredPartitionIterator iterator)
@@ -58,6 +61,10 @@ public abstract class ReadResponse
         MessageDigest digest = FBUtilities.threadLocalMD5Digest();
         UnfilteredPartitionIterators.digest(iterator, digest);
         return ByteBuffer.wrap(digest.digest());
+    }
+
+    public void preprocessLegacyResults(ReadCommand command)
+    {
     }
 
     private static class DigestResponse extends ReadResponse
@@ -141,17 +148,163 @@ public abstract class ReadResponse
         }
     }
 
+    /**
+     * A remote response from a pre-3.0 node.  This needs a separate class in order to cleanly handle trimming and
+     * reversal of results when the read command calls for it.  Pre-3.0 nodes always return results in the normal
+     * sorted order, even if the query asks for reversed results.  Additionally,  pre-3.0 nodes do not have a notion of
+     * exclusive slices on non-composite tables, so extra rows may need to be trimmed.
+     */
+    private static class LegacyRemoteDataResponse extends ReadResponse
+    {
+        private UnfilteredPartitionIterator iterator;
+        private ByteBuffer data;
+
+        private LegacyRemoteDataResponse(UnfilteredPartitionIterator iterator)
+        {
+            this.iterator = iterator;
+            this.data = null;
+        }
+
+        private void buildDataBuffer()
+        {
+            DataOutputBuffer buffer = new DataOutputBuffer();
+            try
+            {
+                UnfilteredPartitionIterators.serializerForIntraNode().serialize(iterator, buffer, MessagingService.current_version);
+                this.data = buffer.buffer();
+            }
+            catch (IOException e)
+            {
+                // We're serializing in memory so this shouldn't happen
+                throw new RuntimeException(e);
+            }
+        }
+
+        public UnfilteredPartitionIterator makeIterator()
+        {
+            if (data == null)
+                buildDataBuffer();
+
+            try
+            {
+                DataInputPlus in = new DataInputPlus.DataInputStreamPlus(ByteBufferUtil.inputStream(data));
+                return UnfilteredPartitionIterators.serializerForIntraNode().deserialize(in, MessagingService.current_version, SerializationHelper.Flag.FROM_REMOTE);
+            }
+            catch (IOException e)
+            {
+                // We're deserializing in memory so this shouldn't happen
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Override
+        public void preprocessLegacyResults(ReadCommand command)
+        {
+            assert data == null : "Legacy results should have been processed before the data was used";
+
+            boolean needsReversal = command.rowsInPartitionAreReversed();
+
+            // Pre-3.0, we didn't have a way to express exclusivity for non-composite comparators, so all slices were
+            // inclusive on both ends.  If we have exclusive slice ends, we need to filter the results here.
+            boolean needsTrimming = !command.metadata().isCompound();
+
+            if (!needsReversal && !needsTrimming)
+                return;
+
+            final UnfilteredPartitionIterator originalIterator = iterator;
+
+            iterator = new UnfilteredPartitionIterator()
+            {
+                UnfilteredRowIterator next;
+
+                @Override
+                public boolean isForThrift()
+                {
+                    return originalIterator.isForThrift();
+                }
+
+                @Override
+                public boolean hasNext()
+                {
+                    return originalIterator.hasNext();
+                }
+
+                @Override
+                public UnfilteredRowIterator next()
+                {
+                    if (next != null && next.hasNext())
+                        throw new IllegalStateException("Cannot call hasNext() until the previous iterator has been fully consumed");
+
+                    next = originalIterator.next();
+
+                    boolean stillNeedToReverse = needsReversal;
+                    if (needsTrimming)
+                    {
+                        ClusteringIndexFilter filter = command.clusteringIndexFilter(next.partitionKey());
+                        if (filter.kind() == ClusteringIndexFilter.Kind.SLICE && !filter.selectsAllPartition())
+                        {
+                            // handle reversal here if we need to do it anyway
+                            boolean reversed = filter.isReversed() || needsReversal;
+                            stillNeedToReverse = false;
+
+                            ArrayBackedPartition partition = ArrayBackedPartition.create(next);
+                            next = partition.unfilteredIterator(
+                                    command.columnFilter(), ((ClusteringIndexSliceFilter) filter).requestedSlices(), reversed);
+                        }
+                    }
+
+                    if (stillNeedToReverse)
+                        next = ArrayBackedPartition.create(next).unfilteredIterator(command.columnFilter(), Slices.ALL, true);
+
+                    return next;
+                }
+
+                @Override
+                public void close()
+                {
+                    try
+                    {
+                        originalIterator.close();
+                    }
+                    finally
+                    {
+                        if (next != null)
+                            next.close();
+                    }
+                }
+            };
+        }
+
+        public ByteBuffer digest()
+        {
+            try (UnfilteredPartitionIterator iterator = makeIterator())
+            {
+                return makeDigest(iterator);
+            }
+        }
+
+        public boolean isDigestQuery()
+        {
+            return false;
+        }
+    }
+
     private static class Serializer implements IVersionedSerializer<ReadResponse>
     {
         public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
         {
+            boolean isDigest = response.isDigestQuery();
             if (version < MessagingService.VERSION_30)
             {
-                // TODO
-                throw new UnsupportedOperationException();
+                out.writeInt(isDigest ? response.digest().remaining() : 0);
+                ByteBuffer buffer = isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+                out.write(buffer);
+                out.writeBoolean(isDigest);
+                if (!isDigest)
+                    UnfilteredPartitionIterators.serializerForIntraNode().serialize(response.makeIterator(), out, version);
+                return;
             }
 
-            boolean isDigest = response.isDigestQuery();
             ByteBufferUtil.writeWithShortLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER, out);
             if (!isDigest)
             {
@@ -167,8 +320,32 @@ public abstract class ReadResponse
         {
             if (version < MessagingService.VERSION_30)
             {
-                // TODO
-                throw new UnsupportedOperationException();
+                byte[] digest = null;
+                int digestSize = in.readInt();
+                if (digestSize > 0)
+                {
+                    digest = new byte[digestSize];
+                    in.readFully(digest, 0, digestSize);
+                }
+                boolean isDigest = in.readBoolean();
+                assert isDigest == digestSize > 0;
+                if (isDigest)
+                {
+                    assert digest != null;
+                    return new DigestResponse(ByteBuffer.wrap(digest));
+                }
+
+                // ReadResponses from older versions are always single-partition (ranges are handled by RangeSliceReply)
+                DecoratedKey key = StorageService.getPartitioner().decorateKey(ByteBufferUtil.readWithShortLength(in));
+
+                UnfilteredRowIterator rowIterator;
+                boolean present = in.readBoolean();
+                if (!present)
+                    return new LegacyRemoteDataResponse(UnfilteredPartitionIterators.EMPTY);
+
+                rowIterator = UnfilteredPartitionIterators.serializerForIntraNode().deserializeLegacyPartition(in, key, version);
+                UnfilteredPartitionIterator iterator = new UnfilteredPartitionIterators.SingletonPartitionIterator(rowIterator, true);
+                return new LegacyRemoteDataResponse(iterator);
             }
 
             ByteBuffer digest = ByteBufferUtil.readWithShortLength(in);
@@ -182,14 +359,16 @@ public abstract class ReadResponse
 
         public long serializedSize(ReadResponse response, int version)
         {
+            boolean isDigest = response.isDigestQuery();
+            long size = ByteBufferUtil.serializedSizeWithLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER);
+
             if (version < MessagingService.VERSION_30)
             {
-                // TODO
-                throw new UnsupportedOperationException();
+                size += TypeSizes.sizeof(isDigest);
+                if (!isDigest)
+                    size += UnfilteredPartitionIterators.serializerForIntraNode().serializedSize(response.makeIterator(), version);
+                return size;
             }
-
-            boolean isDigest = response.isDigestQuery();
-            long size = ByteBufferUtil.serializedSizeWithShortLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER);
 
             if (!isDigest)
             {
@@ -207,32 +386,44 @@ public abstract class ReadResponse
     {
         public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
         {
-            // TODO
-            throw new UnsupportedOperationException();
-            //        out.writeInt(rsr.rows.size());
-            //        for (Row row : rsr.rows)
-            //            Row.serializer.serialize(row, out, version);
+            // determine the number of partitions upfront for serialization
+            int numPartitions = 0;
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
+            {
+                while (iterator.hasNext())
+                {
+                    try (UnfilteredRowIterator atomIterator = iterator.next())
+                    {
+                        numPartitions++;
+
+                        // we have to fully exhaust the subiterator
+                        while(atomIterator.hasNext())
+                            atomIterator.next();
+                    }
+                }
+            }
+            out.writeInt(numPartitions);
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
+            {
+                UnfilteredPartitionIterators.serializerForIntraNode().serialize(iterator, out, version);
+            }
         }
 
         public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
         {
-            // TODO
-            throw new UnsupportedOperationException();
-            //        int rowCount = in.readInt();
-            //        List<Row> rows = new ArrayList<Row>(rowCount);
-            //        for (int i = 0; i < rowCount; i++)
-            //            rows.add(Row.serializer.deserialize(in, version));
-            //        return new RangeSliceReply(rows);
+            UnfilteredPartitionIterator iterator = UnfilteredPartitionIterators.serializerForIntraNode().deserialize(
+                    in, version, SerializationHelper.Flag.FROM_REMOTE);
+            return new LegacyRemoteDataResponse(iterator);
         }
 
         public long serializedSize(ReadResponse response, int version)
         {
-            // TODO
-            throw new UnsupportedOperationException();
-            //        int size = TypeSizes.sizeof(rsr.rows.size());
-            //        for (Row row : rsr.rows)
-            //            size += Row.serializer.serializedSize(row, version);
-            //        return size;
+            int size = TypeSizes.sizeof(0);  // number of partitions
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
+            {
+                size += UnfilteredPartitionIterators.serializerForIntraNode().serializedSize(iterator, version);
+            }
+            return size;
         }
     }
 }
