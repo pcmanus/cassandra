@@ -786,9 +786,7 @@ public abstract class ReadCommand implements ReadQuery
                 return command;
 
             CFMetaData metadata = command.metadata();
-            PartitionColumns columns = command.columnFilter().fetchedColumns();
-
-            if (!LegacyReadCommandSerializer.shouldConvertNamesToSlice(metadata, columns))
+            if (!LegacyReadCommandSerializer.shouldConvertNamesToSlice(metadata, command.columnFilter().fetchedColumns()))
                 return command;
 
             ClusteringIndexNamesFilter filter = (ClusteringIndexNamesFilter) command.dataRange().clusteringIndexFilter;
@@ -796,7 +794,7 @@ public abstract class ReadCommand implements ReadQuery
             DataRange newRange = new DataRange(command.dataRange().keyRange(), sliceFilter);
             return new PartitionRangeReadCommand(
                     command.isDigestQuery(), command.isForThrift(), metadata, command.nowInSec(),
-                    ColumnFilter.selection(columns), command.rowFilter(), command.limits(), newRange);
+                    command.columnFilter(), command.rowFilter(), command.limits(), newRange);
         }
 
         static ColumnFilter getColumnSelectionForSlice(ClusteringIndexSliceFilter filter, int compositesToGroup, CFMetaData metadata)
@@ -1151,8 +1149,8 @@ public abstract class ReadCommand implements ReadQuery
             // The names filter could include either a) static columns or b) normal columns with the clustering columns
             // fully specified.  We need to handle those cases differently in 3.0.
             NavigableSet<Clustering> clusterings = new TreeSet<>(metadata.comparator);
-            Set<ColumnDefinition> staticColumns = new HashSet<>();
-            Set<ColumnDefinition> columns = new HashSet<>();
+
+            ColumnFilter.Builder selectionBuilder = new ColumnFilter.Builder(metadata);
             for (int i = 0; i < numCellNames; i++)
             {
                 ByteBuffer buffer = ByteBufferUtil.readWithShortLength(in);
@@ -1170,24 +1168,17 @@ public abstract class ReadCommand implements ReadQuery
                 }
 
                 if (!cellName.clustering.equals(Clustering.STATIC_CLUSTERING))
-                {
                     clusterings.add(cellName.clustering);
-                    columns.add(cellName.column);
-                }
-                else
-                {
-                    staticColumns.add(cellName.column);
-                }
+
+                selectionBuilder.add(cellName.column);
             }
 
             in.readBoolean();  // countCql3Rows
 
-            ColumnFilter selection = ColumnFilter.selection(new PartitionColumns(Columns.from(staticColumns), Columns.from(columns)));
-
-            // clusterings cannot include STATIC_CLUSTERINGS, so if the names filter is for static columns, clusterings
+            // clusterings cannot include STATIC_CLUSTERING, so if the names filter is for static columns, clusterings
             // will be empty.  However, by requesting the static columns in our ColumnFilter, this will still work.
             ClusteringIndexNamesFilter filter = new ClusteringIndexNamesFilter(clusterings, false);
-            return Pair.create(selection, filter);
+            return Pair.create(selectionBuilder.build(), filter);
         }
 
         private long serializedNamesCommandSize(SinglePartitionNamesCommand command)
@@ -1238,6 +1229,7 @@ public abstract class ReadCommand implements ReadQuery
             PartitionColumns columns = selectsStatics
                                      ? metadata.partitionColumns()
                                      : metadata.partitionColumns().withoutStatics();
+            ColumnFilter columnFilter = new ColumnFilter.Builder(metadata).addAll(columns).build();
 
             boolean isDistinct = compositesToGroup == -2 || (count == 1 && selectsStatics);
             DataLimits limits;
@@ -1249,7 +1241,7 @@ public abstract class ReadCommand implements ReadQuery
                 limits = DataLimits.cqlLimits(count);
 
             // messages from old nodes will expect the thrift format, so always use 'true' for isForThrift
-            return new SinglePartitionSliceCommand(isDigest, true, metadata, nowInSeconds, ColumnFilter.selection(columns), RowFilter.NONE, limits, key, filter);
+            return new SinglePartitionSliceCommand(isDigest, true, metadata, nowInSeconds, columnFilter, RowFilter.NONE, limits, key, filter);
         }
 
         private long serializedSliceCommandSize(SinglePartitionSliceCommand command)
@@ -1399,16 +1391,15 @@ public abstract class ReadCommand implements ReadQuery
                 return command;
 
             CFMetaData metadata = command.metadata();
-            PartitionColumns columns = command.columnFilter().fetchedColumns();
 
-            if (!shouldConvertNamesToSlice(metadata, columns))
+            if (!shouldConvertNamesToSlice(metadata, command.columnFilter().fetchedColumns()))
                 return command;
 
             ClusteringIndexNamesFilter filter = ((SinglePartitionNamesCommand) command).clusteringIndexFilter();
             ClusteringIndexSliceFilter sliceFilter = convertNamesFilterToSliceFilter(filter, metadata);
             return new SinglePartitionSliceCommand(
                     command.isDigestQuery(), command.isForThrift(), metadata, command.nowInSec(),
-                    ColumnFilter.selection(columns), command.rowFilter(), command.limits(), command.partitionKey(), sliceFilter);
+                    command.columnFilter(), command.rowFilter(), command.limits(), command.partitionKey(), sliceFilter);
         }
 
         /**
