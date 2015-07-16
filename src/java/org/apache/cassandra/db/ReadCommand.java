@@ -801,15 +801,17 @@ public abstract class ReadCommand implements ReadQuery
 
         static ColumnFilter getColumnSelectionForSlice(ClusteringIndexSliceFilter filter, int compositesToGroup, CFMetaData metadata)
         {
-            // A value of -2 indicates this is a DISTINCT query that doesn't select static columns, only partition keys
+            // A value of -2 indicates this is a DISTINCT query that doesn't select static columns, only partition keys.
+            // We use the Builder approach here to ensure that ColumnFilter.selectsAll is True, which doesn't happen
+            // if we just use ColumnFilter.selection(PartitionColumns.NONE).
             if (compositesToGroup == -2)
-                return ColumnFilter.selection(PartitionColumns.NONE);
+                return new ColumnFilter.Builder(metadata).build();
 
             // if a slice query from a pre-3.0 node doesn't cover statics, we shouldn't select them at all
             PartitionColumns columns = filter.selects(Clustering.STATIC_CLUSTERING)
                                      ? metadata.partitionColumns()
                                      : metadata.partitionColumns().withoutStatics();
-            return ColumnFilter.selection(columns);
+            return new ColumnFilter.Builder(metadata).addAll(columns).build();
         }
     }
 
