@@ -73,11 +73,13 @@ public abstract class ReadCommand implements ReadQuery
     private final DataLimits limits;
 
     private boolean isDigestQuery;
+    // if a digest query, the version for which the digest is expected. Ignored if not a digest.
+    private int digestVersion; 
     private final boolean isForThrift;
 
     protected static abstract class SelectionDeserializer
     {
-        public abstract ReadCommand deserialize(DataInputPlus in, int version, boolean isDigest, boolean isForThrift, CFMetaData metadata, int nowInSec, ColumnFilter columnFilter, RowFilter rowFilter, DataLimits limits) throws IOException;
+        public abstract ReadCommand deserialize(DataInputPlus in, int version, boolean isDigest, int digestVersion, boolean isForThrift, CFMetaData metadata, int nowInSec, ColumnFilter columnFilter, RowFilter rowFilter, DataLimits limits) throws IOException;
     }
 
     protected enum Kind
@@ -95,6 +97,7 @@ public abstract class ReadCommand implements ReadQuery
 
     protected ReadCommand(Kind kind,
                           boolean isDigestQuery,
+                          int digestVersion,
                           boolean isForThrift,
                           CFMetaData metadata,
                           int nowInSec,
@@ -104,6 +107,7 @@ public abstract class ReadCommand implements ReadQuery
     {
         this.kind = kind;
         this.isDigestQuery = isDigestQuery;
+        this.digestVersion = digestVersion;
         this.isForThrift = isForThrift;
         this.metadata = metadata;
         this.nowInSec = nowInSec;
@@ -194,6 +198,17 @@ public abstract class ReadCommand implements ReadQuery
     }
 
     /**
+     * If the query is a digest one, the requested digest version.
+     *
+     * @return the requested digest version if the query is a digest. Otherwise, this can return
+     * anything.
+     */
+    public int digestVersion()
+    {
+        return digestVersion;
+    }
+
+    /**
      * Sets whether this command should be a digest one or not.
      *
      * @param isDigestQuery whether the command should be set as a digest one or not.
@@ -202,6 +217,22 @@ public abstract class ReadCommand implements ReadQuery
     public ReadCommand setIsDigestQuery(boolean isDigestQuery)
     {
         this.isDigestQuery = isDigestQuery;
+        return this;
+    }
+
+    /**
+     * Sets the digest version, for when digest for that command is requested.
+     * <p>
+     * Note that we allow setting this independently of setting the command as a digest query as
+     * this allows us to use the command as a carrier of the digest version even if we only call
+     * setIsDigestQuery on some copy of it.
+     *
+     * @param digestVersion the version for the digest is this command is used for digest query..
+     * @return this read command.
+     */
+    public ReadCommand setDigestVersion(int digestVersion)
+    {
+        this.digestVersion = digestVersion;
         return this;
     }
 
@@ -254,7 +285,7 @@ public abstract class ReadCommand implements ReadQuery
     public ReadResponse createResponse(UnfilteredPartitionIterator iterator)
     {
         return isDigestQuery()
-             ? ReadResponse.createDigestResponse(iterator)
+             ? ReadResponse.createDigestResponse(iterator, digestVersion)
              : ReadResponse.createDataResponse(iterator);
     }
 
@@ -487,6 +518,8 @@ public abstract class ReadCommand implements ReadQuery
 
             out.writeByte(command.kind.ordinal());
             out.writeByte(digestFlag(command.isDigestQuery()) | thriftFlag(command.isForThrift()));
+            if (command.isDigestQuery())
+                out.writeVInt(command.digestVersion());
             CFMetaData.serializer.serialize(command.metadata(), out, version);
             out.writeInt(command.nowInSec());
             ColumnFilter.serializer.serialize(command.columnFilter(), out, version);
@@ -505,13 +538,14 @@ public abstract class ReadCommand implements ReadQuery
             int flags = in.readByte();
             boolean isDigest = isDigest(flags);
             boolean isForThrift = isForThrift(flags);
+            int digestVersion = isDigest ? (int)in.readVInt() : 0;
             CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
             int nowInSec = in.readInt();
             ColumnFilter columnFilter = ColumnFilter.serializer.deserialize(in, version, metadata);
             RowFilter rowFilter = RowFilter.serializer.deserialize(in, version, metadata);
             DataLimits limits = DataLimits.serializer.deserialize(in, version);
 
-            return kind.selectionDeserializer.deserialize(in, version, isDigest, isForThrift, metadata, nowInSec, columnFilter, rowFilter, limits);
+            return kind.selectionDeserializer.deserialize(in, version, isDigest, digestVersion, isForThrift, metadata, nowInSec, columnFilter, rowFilter, limits);
         }
 
         public long serializedSize(ReadCommand command, int version)
@@ -520,6 +554,7 @@ public abstract class ReadCommand implements ReadQuery
             assert version >= MessagingService.VERSION_30;
 
             return 2 // kind + flags
+                 + (command.isDigestQuery() ? TypeSizes.sizeofVInt(command.digestVersion()) : 0)
                  + CFMetaData.serializer.serializedSize(command.metadata(), version)
                  + TypeSizes.sizeof(command.nowInSec())
                  + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)

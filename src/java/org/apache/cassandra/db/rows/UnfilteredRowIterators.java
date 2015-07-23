@@ -151,7 +151,14 @@ public abstract class UnfilteredRowIterators
         };
     }
 
-    public static void digest(UnfilteredRowIterator iterator, MessageDigest digest)
+    /**
+     * Digests the partition represented by the provided iterator.
+     *
+     * @param iterator the iterator to digest.
+     * @param digest the {@code MessageDigest} to use for the digest.
+     * @param version the messaging protocol to use when producing the digest.
+     */
+    public static void digest(UnfilteredRowIterator iterator, MessageDigest digest, int version)
     {
         // TODO: we're not computing digest the same way that old nodes. This
         // means we'll have digest mismatches during upgrade. We should pass the messaging version of

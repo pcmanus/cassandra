@@ -1481,6 +1481,7 @@ public class CassandraServer implements Cassandra.Iface
                 ClusteringIndexFilter filter = toInternalFilter(metadata, column_parent, predicate);
                 DataLimits limits = getLimits(range.count, metadata.isSuper() && !column_parent.isSetSuper_column(), predicate);
                 PartitionRangeReadCommand cmd = new PartitionRangeReadCommand(false,
+                                                                              0,
                                                                               true,
                                                                               metadata,
                                                                               nowInSec,
@@ -1573,6 +1574,7 @@ public class CassandraServer implements Cassandra.Iface
                                     ? new Clustering(start_column)
                                     : LegacyLayout.decodeCellName(metadata, start_column).clustering;
                 PartitionRangeReadCommand cmd = new PartitionRangeReadCommand(false,
+                                                                              0,
                                                                               true,
                                                                               metadata,
                                                                               nowInSec,
@@ -1663,6 +1665,7 @@ public class CassandraServer implements Cassandra.Iface
             ClusteringIndexFilter filter = toInternalFilter(metadata, column_parent, column_predicate);
             DataLimits limits = getLimits(index_clause.count, metadata.isSuper() && !column_parent.isSetSuper_column(), column_predicate);
             PartitionRangeReadCommand cmd = new PartitionRangeReadCommand(false,
+                                                                          0,
                                                                           true,
                                                                           metadata,
                                                                           nowInSec,
@@ -2467,7 +2470,7 @@ public class CassandraServer implements Cassandra.Iface
                 // We want to know if the partition exists, so just fetch a single cell.
                 ClusteringIndexSliceFilter filter = new ClusteringIndexSliceFilter(Slices.ALL, false);
                 DataLimits limits = DataLimits.thriftLimits(1, 1);
-                return new SinglePartitionSliceCommand(false, true, metadata, nowInSec, ColumnFilter.all(metadata), RowFilter.NONE, limits, key, filter);
+                return new SinglePartitionSliceCommand(false, 0, true, metadata, nowInSec, ColumnFilter.all(metadata), RowFilter.NONE, limits, key, filter);
             }
 
             // Gather the clustering for the expected values and query those.

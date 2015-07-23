@@ -45,21 +45,19 @@ public abstract class ReadResponse
         return new DataResponse(data);
     }
 
-    public static ReadResponse createDigestResponse(UnfilteredPartitionIterator data)
+    public static ReadResponse createDigestResponse(UnfilteredPartitionIterator data, int version)
     {
-        return new DigestResponse(makeDigest(data));
+        return new DigestResponse(makeDigest(data, version));
     }
 
     public abstract UnfilteredPartitionIterator makeIterator();
+    public abstract ByteBuffer digest(int version);
+    public abstract boolean isDigestResponse();
 
-    public abstract ByteBuffer digest();
-
-    public abstract boolean isDigestQuery();
-
-    protected static ByteBuffer makeDigest(UnfilteredPartitionIterator iterator)
+    protected static ByteBuffer makeDigest(UnfilteredPartitionIterator iterator, int version)
     {
         MessageDigest digest = FBUtilities.threadLocalMD5Digest();
-        UnfilteredPartitionIterators.digest(iterator, digest);
+        UnfilteredPartitionIterators.digest(iterator, digest, version);
         return ByteBuffer.wrap(digest.digest());
     }
 
@@ -82,12 +80,16 @@ public abstract class ReadResponse
             throw new UnsupportedOperationException();
         }
 
-        public ByteBuffer digest()
+        public ByteBuffer digest(int version)
         {
+            // We assume that the digest is in the proper version, which bug excluded should be true since this is called with
+            // ReadCommand.digestVersion() as argument and that's also what we use to produce the digest in the first place.
+            // Validating it's the proper digest in this method would require sending back the digest version along with the
+            // digest which would wast bandwith for little gain.
             return digest;
         }
 
-        public boolean isDigestQuery()
+        public boolean isDigestResponse()
         {
             return true;
         }
@@ -134,15 +136,15 @@ public abstract class ReadResponse
             }
         }
 
-        public ByteBuffer digest()
+        public ByteBuffer digest(int version)
         {
             try (UnfilteredPartitionIterator iterator = makeIterator())
             {
-                return makeDigest(iterator);
+                return makeDigest(iterator, version);
             }
         }
 
-        public boolean isDigestQuery()
+        public boolean isDigestResponse()
         {
             return false;
         }
@@ -293,7 +295,7 @@ public abstract class ReadResponse
     {
         public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
         {
-            boolean isDigest = response.isDigestQuery();
+            boolean isDigest = response instanceof DigestResponse;
             if (version < MessagingService.VERSION_30)
             {
                 out.writeInt(isDigest ? response.digest().remaining() : 0);
@@ -305,12 +307,10 @@ public abstract class ReadResponse
                 return;
             }
 
-            ByteBufferUtil.writeWithShortLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER, out);
+            boolean isDigest = response instanceof DigestResponse;
+            ByteBufferUtil.writeWithShortLength(isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER, out);
             if (!isDigest)
             {
-                // Note that we can only get there if version == 3.0, which is the current_version. When we'll change the
-                // version, we'll have to deserialize/re-serialize the data to be in the proper version.
-                assert version == MessagingService.VERSION_30;
                 ByteBuffer data = ((DataResponse)response).data;
                 ByteBufferUtil.writeWithLength(data, out);
             }
@@ -352,15 +352,14 @@ public abstract class ReadResponse
             if (digest.hasRemaining())
                 return new DigestResponse(digest);
 
-            assert version == MessagingService.VERSION_30;
             ByteBuffer data = ByteBufferUtil.readWithLength(in);
             return new DataResponse(data);
         }
 
         public long serializedSize(ReadResponse response, int version)
         {
-            boolean isDigest = response.isDigestQuery();
-            long size = ByteBufferUtil.serializedSizeWithLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER);
+            boolean isDigest = response instanceof DigestResponse;
+            long size = ByteBufferUtil.serializedSizeWithShortLength(isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER);
 
             if (version < MessagingService.VERSION_30)
             {

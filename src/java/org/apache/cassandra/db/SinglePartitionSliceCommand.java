@@ -39,6 +39,7 @@ import org.apache.cassandra.utils.memory.HeapAllocator;
 public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<ClusteringIndexSliceFilter>
 {
     public SinglePartitionSliceCommand(boolean isDigest,
+                                       int digestVersion,
                                        boolean isForThrift,
                                        CFMetaData metadata,
                                        int nowInSec,
@@ -48,7 +49,7 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Clus
                                        DecoratedKey partitionKey,
                                        ClusteringIndexSliceFilter clusteringIndexFilter)
     {
-        super(isDigest, isForThrift, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter);
+        super(isDigest, digestVersion, isForThrift, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter);
     }
 
     public SinglePartitionSliceCommand(CFMetaData metadata,
@@ -59,7 +60,7 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Clus
                                        DecoratedKey partitionKey,
                                        ClusteringIndexSliceFilter clusteringIndexFilter)
     {
-        this(false, false, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter);
+        this(false, 0, false, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter);
     }
 
     /**
@@ -97,7 +98,7 @@ public class SinglePartitionSliceCommand extends SinglePartitionReadCommand<Clus
 
     public SinglePartitionSliceCommand copy()
     {
-        return new SinglePartitionSliceCommand(isDigestQuery(), isForThrift(), metadata(), nowInSec(), columnFilter(), rowFilter(), limits(), partitionKey(), clusteringIndexFilter());
+        return new SinglePartitionSliceCommand(isDigestQuery(), digestVersion(), isForThrift(), metadata(), nowInSec(), columnFilter(), rowFilter(), limits(), partitionKey(), clusteringIndexFilter());
     }
 
     protected UnfilteredRowIterator queryMemtableAndDiskInternal(ColumnFamilyStore cfs, boolean copyOnHeap)

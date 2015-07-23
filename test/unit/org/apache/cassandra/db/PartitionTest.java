@@ -117,6 +117,8 @@ public class PartitionTest
     @Test
     public void testDigest() throws NoSuchAlgorithmException
     {
+        int version = MessagingService.current_version;
+
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_TENCOL);
         RowUpdateBuilder builder = new RowUpdateBuilder(cfs.metadata, 5, "key1").clustering("c").add("val", "val1");
         for (int i = 0; i < 10; i++)
@@ -130,16 +132,16 @@ public class PartitionTest
 
         MessageDigest digest1 = MessageDigest.getInstance("MD5");
         MessageDigest digest2 = MessageDigest.getInstance("MD5");
-        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1);
-        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2);
+        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1, version);
+        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2, version);
         assertFalse(Arrays.equals(digest1.digest(), digest2.digest()));
 
         p1 = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key2").build());
         p2 = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key2").build());
         digest1 = MessageDigest.getInstance("MD5");
         digest2 = MessageDigest.getInstance("MD5");
-        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1);
-        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2);
+        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1, version);
+        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2, version);
         assertTrue(Arrays.equals(digest1.digest(), digest2.digest()));
 
         p1 = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key2").build());
@@ -147,8 +149,8 @@ public class PartitionTest
         p2 = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key2").build());
         digest1 = MessageDigest.getInstance("MD5");
         digest2 = MessageDigest.getInstance("MD5");
-        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1);
-        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2);
+        UnfilteredRowIterators.digest(p1.unfilteredIterator(), digest1, version);
+        UnfilteredRowIterators.digest(p2.unfilteredIterator(), digest2, version);
         assertFalse(Arrays.equals(digest1.digest(), digest2.digest()));
     }
 
