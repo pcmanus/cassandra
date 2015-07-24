@@ -27,15 +27,14 @@ import org.junit.BeforeClass;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.cql3.statements.IndexTarget;
+import org.apache.cassandra.db.RowUpdateBuilder;
 import org.apache.cassandra.db.commitlog.CommitLog;
-import org.apache.cassandra.db.index.PerRowSecondaryIndexTest;
-import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.Gossiper;
-import org.apache.cassandra.schema.*;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.schema.*;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
@@ -218,10 +217,6 @@ public class SchemaLoader
         schema.add(KeyspaceMetadata.create(ks_nocommit, KeyspaceParams.simpleTransient(1), Tables.of(
                 standardCFMD(ks_nocommit, "Standard1"))));
 
-        // PerRowSecondaryIndexTest
-        schema.add(KeyspaceMetadata.create(ks_prsi, KeyspaceParams.simple(1), Tables.of(
-                perRowIndexedCFMD(ks_prsi, "Indexed1"))));
-
         // CQLKeyspace
         schema.add(KeyspaceMetadata.create(ks_cql, KeyspaceParams.simple(1), Tables.of(
 
@@ -291,8 +286,8 @@ public class SchemaLoader
     public static CFMetaData perRowIndexedCFMD(String ksName, String cfName)
     {
         final Map<String, String> indexOptions = Collections.singletonMap(
-                                                      SecondaryIndex.CUSTOM_INDEX_OPTION_NAME,
-                                                      PerRowSecondaryIndexTest.TestIndex.class.getName());
+                                                      IndexTarget.CUSTOM_INDEX_OPTION_NAME,
+                                                      LegacySchemaMigratorTest.TestIndex.class.getName());
 
         CFMetaData cfm =  CFMetaData.Builder.create(ksName, cfName)
                 .addPartitionKey("key", AsciiType.instance)

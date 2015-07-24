@@ -29,8 +29,8 @@ import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.RowFilter;
-import org.apache.cassandra.db.index.SecondaryIndex;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.Index;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkNotNull;
@@ -113,23 +113,20 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
     @Override
     public final boolean hasSupportingIndex(SecondaryIndexManager indexManager)
     {
-        for (ColumnDefinition columnDef : columnDefs)
-        {
-            SecondaryIndex index = indexManager.getIndexForColumn(columnDef);
-            if (index != null && isSupportedBy(index))
-                return true;
-        }
+        for (Index index : indexManager.listIndexers())
+           if (isSupportedBy(index))
+               return true;
         return false;
     }
 
     /**
      * Check if this type of restriction is supported for by the specified index.
-     * @param index the Secondary index
+     * @param index the secondary index
      *
      * @return <code>true</code> this type of restriction is supported by the specified index,
      * <code>false</code> otherwise.
      */
-    protected abstract boolean isSupportedBy(SecondaryIndex index);
+    protected abstract boolean isSupportedBy(Index index);
 
     public static class EQRestriction extends MultiColumnRestriction
     {
@@ -161,9 +158,12 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
         }
 
         @Override
-        protected boolean isSupportedBy(SecondaryIndex index)
+        protected boolean isSupportedBy(Index index)
         {
-            return index.supportsOperator(Operator.EQ);
+            for(ColumnDefinition column : columnDefs)
+                if (index.supportsExpression(column, Operator.EQ))
+                    return true;
+            return false;
         }
 
         @Override
@@ -228,9 +228,12 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
         }
 
         @Override
-        protected boolean isSupportedBy(SecondaryIndex index)
+        protected boolean isSupportedBy(Index index)
         {
-            return index.supportsOperator(Operator.IN);
+            for (ColumnDefinition column: columnDefs)
+                if (index.supportsExpression(column, Operator.IN))
+                    return true;
+            return false;
         }
 
         @Override
@@ -368,9 +371,12 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
         }
 
         @Override
-        protected boolean isSupportedBy(SecondaryIndex index)
+        protected boolean isSupportedBy(Index index)
         {
-            return slice.isSupportedBy(index);
+            for(ColumnDefinition def : columnDefs)
+                if (slice.isSupportedBy(def, index))
+                    return true;
+            return false;
         }
 
         @Override

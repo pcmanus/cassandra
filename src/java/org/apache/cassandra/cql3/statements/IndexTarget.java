@@ -22,11 +22,27 @@ import java.util.Map;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.schema.IndexMetadata;
 
 public class IndexTarget
 {
+    public static final String CUSTOM_INDEX_OPTION_NAME = "class_name";
+
+    /**
+     * The name of the option used to specify that the index is on the collection keys.
+     */
+    public static final String INDEX_KEYS_OPTION_NAME = "index_keys";
+
+    /**
+     * The name of the option used to specify that the index is on the collection values.
+     */
+    public static final String INDEX_VALUES_OPTION_NAME = "index_values";
+
+    /**
+     * The name of the option used to specify that the index is on the collection (map) entries.
+     */
+    public static final String INDEX_ENTRIES_OPTION_NAME = "index_keys_and_values";
+
     public final ColumnIdentifier column;
     public final TargetType type;
 
@@ -92,9 +108,9 @@ public class IndexTarget
         {
             switch (this)
             {
-                case KEYS: return SecondaryIndex.INDEX_KEYS_OPTION_NAME;
-                case KEYS_AND_VALUES: return SecondaryIndex.INDEX_ENTRIES_OPTION_NAME;
-                case VALUES: return SecondaryIndex.INDEX_VALUES_OPTION_NAME;
+                case KEYS: return INDEX_KEYS_OPTION_NAME;
+                case KEYS_AND_VALUES: return INDEX_ENTRIES_OPTION_NAME;
+                case VALUES: return INDEX_VALUES_OPTION_NAME;
                 default: throw new AssertionError();
             }
         }
@@ -102,11 +118,11 @@ public class IndexTarget
         public static TargetType fromIndexMetadata(IndexMetadata index, CFMetaData cfm)
         {
             Map<String, String> options = index.options;
-            if (options.containsKey(SecondaryIndex.INDEX_KEYS_OPTION_NAME))
+            if (options.containsKey(INDEX_KEYS_OPTION_NAME))
             {
                 return KEYS;
             }
-            else if (options.containsKey(SecondaryIndex.INDEX_ENTRIES_OPTION_NAME))
+            else if (options.containsKey(INDEX_ENTRIES_OPTION_NAME))
             {
                 return KEYS_AND_VALUES;
             }

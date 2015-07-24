@@ -30,7 +30,7 @@ import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.RowFilter;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.service.StorageService;
@@ -47,6 +47,8 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  */
 public final class StatementRestrictions
 {
+    public static final String NO_INDEX_FOUND_MESSAGE =
+        "No supported secondary index found for the non primary key columns restrictions";
     /**
      * The Column Family meta data
      */
@@ -159,7 +161,7 @@ public final class StatementRestrictions
             if (hasQueriableIndex)
                 usesSecondaryIndexing = true;
             else if (!useFiltering)
-                throw new InvalidRequestException("No supported secondary index found for the non primary key columns restrictions");
+                throw new InvalidRequestException(NO_INDEX_FOUND_MESSAGE);
 
             indexRestrictions.add(nonPrimaryKeyRestrictions);
         }

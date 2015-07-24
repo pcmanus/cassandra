@@ -539,7 +539,7 @@ public class Schema
         assert cfs != null;
 
         // make sure all the indexes are dropped, or else.
-        cfs.indexManager.setIndexRemoved(new HashSet<>(cfs.indexManager.getBuiltIndexes()));
+        cfs.indexManager.markAllIndexesRemoved();
 
         // reinitialize the keyspace.
         CFMetaData cfm = oldKsm.tables.get(tableName).get();

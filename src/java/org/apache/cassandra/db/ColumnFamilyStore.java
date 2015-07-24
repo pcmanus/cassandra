@@ -17,7 +17,9 @@
  */
 package org.apache.cassandra.db;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -44,32 +46,35 @@ import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.*;
-import org.apache.cassandra.db.filter.*;
-import org.apache.cassandra.db.index.SecondaryIndex;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
-import org.apache.cassandra.db.view.MaterializedViewManager;
+import org.apache.cassandra.db.filter.ClusteringIndexFilter;
+import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.lifecycle.*;
-import org.apache.cassandra.db.partitions.*;
-import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.db.partitions.CachedPartition;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.rows.CellPath;
+import org.apache.cassandra.db.view.MaterializedViewManager;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.index.SecondaryIndexManager;
+import org.apache.cassandra.index.internal.ColumnIndexFunctions;
 import org.apache.cassandra.io.FSWriteError;
-import org.apache.cassandra.io.sstable.*;
+import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.*;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.metrics.TableMetrics.Sampler;
 import org.apache.cassandra.metrics.TableMetrics;
+import org.apache.cassandra.metrics.TableMetrics.Sampler;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.TopKSampler.SamplerResult;
-import org.apache.cassandra.utils.concurrent.*;
+import org.apache.cassandra.utils.concurrent.OpOrder;
+import org.apache.cassandra.utils.concurrent.Refs;
 import org.apache.cassandra.utils.memory.MemtableAllocator;
-import org.json.simple.*;
-
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
 
 import static org.apache.cassandra.utils.Throwables.maybeFail;
 
@@ -457,8 +462,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         data.dropSSTables();
         TransactionLog.waitForDeletions();
-
-        indexManager.invalidate();
+        indexManager.invalidateAllIndexesBlocking();
         materializedViewManager.invalidate();
 
         invalidateCaches();
@@ -568,9 +572,14 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
 
         // also clean out any index leftovers.
-        for (IndexMetadata def : metadata.getIndexes())
-            if (!def.isCustom())
-                scrubDataDirectories(SecondaryIndex.newIndexMetadata(metadata, def));
+        for (IndexMetadata index : metadata.getIndexes())
+            if (!index.isCustom())
+            {
+                ColumnDefinition indexedColumn = index.indexedColumn(metadata);
+                CFMetaData indexMetadata = ColumnIndexFunctions.getFunctions(indexedColumn)
+                                                               .indexCfsMetadata(metadata, indexedColumn);
+                scrubDataDirectories(indexMetadata);
+            }
     }
 
     // must be called after all sstables are loaded since row cache merges all row versions
@@ -699,7 +708,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         try (Refs<SSTableReader> refs = Refs.ref(newSSTables))
         {
             data.addSSTables(newSSTables);
-            indexManager.maybeBuildSecondaryIndexes(newSSTables, indexManager.allIndexesNames());
+            indexManager.buildAllIndexesBlocking(newSSTables);
         }
 
         logger.info("Done loading load new SSTables for {}/{}", keyspace.getName(), name);
@@ -719,10 +728,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         Iterable<SSTableReader> sstables = cfs.getSSTables(SSTableSet.CANONICAL);
         try (Refs<SSTableReader> refs = Refs.ref(sstables))
         {
-            cfs.indexManager.setIndexRemoved(indexes);
             logger.info(String.format("User Requested secondary index re-build for %s/%s indexes", ksName, cfName));
-            cfs.indexManager.maybeBuildSecondaryIndexes(refs, indexes);
-            cfs.indexManager.setIndexBuilt(indexes);
+            cfs.indexManager.rebuildIndexesBlocking(refs, indexes);
         }
     }
 
@@ -805,16 +812,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         onHeapTotal += memtable.getAllocator().onHeap().owns();
         offHeapTotal += memtable.getAllocator().offHeap().owns();
 
-        for (SecondaryIndex index : indexManager.getIndexes())
+        for (ColumnFamilyStore indexCfs : indexManager.getAllIndexStorageTables())
         {
-            if (index.getIndexCfs() != null)
-            {
-                MemtableAllocator allocator = index.getIndexCfs().getTracker().getView().getCurrentMemtable().getAllocator();
-                onHeapRatio += allocator.onHeap().ownershipRatio();
-                offHeapRatio += allocator.offHeap().ownershipRatio();
-                onHeapTotal += allocator.onHeap().owns();
-                offHeapTotal += allocator.offHeap().owns();
-            }
+            MemtableAllocator allocator = indexCfs.getTracker().getView().getCurrentMemtable().getAllocator();
+            onHeapRatio += allocator.onHeap().ownershipRatio();
+            offHeapRatio += allocator.offHeap().ownershipRatio();
+            onHeapTotal += allocator.onHeap().owns();
+            offHeapTotal += allocator.offHeap().owns();
         }
 
         logger.info("Enqueuing flush of {}: {}", name, String.format("%d (%.0f%%) on-heap, %d (%.0f%%) off-heap",
@@ -902,14 +906,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
              */
 
             if (flushSecondaryIndexes)
-            {
-                for (SecondaryIndex index : indexManager.getIndexesNotBackedByCfs())
-                {
-                    // flush any non-cfs backed indexes
-                    logger.info("Flushing SecondaryIndex {}", index);
-                    index.forceBlockingFlush();
-                }
-            }
+                indexManager.flushAllCustomIndexesBlocking();
 
             try
             {
@@ -1080,14 +1077,11 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 onHeap += current.getAllocator().onHeap().ownershipRatio();
                 offHeap += current.getAllocator().offHeap().ownershipRatio();
 
-                for (SecondaryIndex index : cfs.indexManager.getIndexes())
+                for (ColumnFamilyStore indexCfs : cfs.indexManager.getAllIndexStorageTables())
                 {
-                    if (index.getIndexCfs() != null)
-                    {
-                        MemtableAllocator allocator = index.getIndexCfs().getTracker().getView().getCurrentMemtable().getAllocator();
-                        onHeap += allocator.onHeap().ownershipRatio();
-                        offHeap += allocator.offHeap().ownershipRatio();
-                    }
+                    MemtableAllocator allocator = indexCfs.getTracker().getView().getCurrentMemtable().getAllocator();
+                    onHeap += allocator.onHeap().ownershipRatio();
+                    offHeap += allocator.offHeap().ownershipRatio();
                 }
 
                 float ratio = Math.max(onHeap, offHeap);
@@ -1138,7 +1132,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      * param @ key - key for update/insert
      * param @ columnFamily - columnFamily changes
      */
-    public void apply(PartitionUpdate update, SecondaryIndexManager.Updater indexer, OpOrder.Group opGroup, ReplayPosition replayPosition)
+    public void apply(PartitionUpdate update, SecondaryIndexManager.IndexTransaction indexer, OpOrder.Group opGroup, ReplayPosition replayPosition)
     {
         long start = System.nanoTime();
         Memtable mt = data.getMemtableFor(opGroup, replayPosition);
@@ -1343,22 +1337,25 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (!isIndex())
             return false;
 
-        SecondaryIndex index = null;
+        boolean validIndex = false;
+        ColumnFamilyStore parentCfs = null;
+        String indexName = null;
         if (metadata.cfName.contains(Directories.SECONDARY_INDEX_NAME_SEPARATOR))
         {
             String[] parts = metadata.cfName.split("\\" + Directories.SECONDARY_INDEX_NAME_SEPARATOR, 2);
-            ColumnFamilyStore parentCfs = keyspace.getColumnFamilyStore(parts[0]);
-            index = parentCfs.indexManager.getIndexByName(metadata.cfName);
-            assert index != null;
+            parentCfs = keyspace.getColumnFamilyStore(parts[0]);
+            assert parentCfs.indexManager.getAllIndexStorageTables().contains(this);
+            validIndex = true;
+            indexName = this.name;
         }
 
-        if (index == null)
+        if (! validIndex)
             return false;
 
         truncateBlocking();
 
         logger.warn("Rebuilding index for {} because of <{}>", name, failure.getMessage());
-        index.getBaseCfs().rebuildSecondaryIndex(index.getIndexName());
+        parentCfs.rebuildSecondaryIndex(indexName);
         return true;
     }
 
@@ -1899,8 +1896,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
                 ReplayPosition replayAfter = discardSSTables(truncatedAt);
 
-                for (SecondaryIndex index : indexManager.getIndexes())
-                    index.truncateBlocking(truncatedAt);
+                indexManager.truncateAllIndexesBlocking(truncatedAt);
 
                 materializedViewManager.truncateBlocking(truncatedAt);
 
@@ -2145,12 +2141,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     {
         // we return the main CFS first, which we rely on for simplicity in switchMemtable(), for getting the
         // latest replay position
-        return Iterables.concat(Collections.singleton(this), indexManager.getIndexesBackedByCfs());
+        return Iterables.concat(Collections.singleton(this), indexManager.getAllIndexStorageTables());
     }
 
     public List<String> getBuiltIndexes()
     {
-       return indexManager.getBuiltIndexes();
+       return indexManager.getBuiltIndexNames();
     }
 
     public int getUnleveledSSTables()

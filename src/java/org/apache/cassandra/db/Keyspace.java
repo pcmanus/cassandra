@@ -33,26 +33,26 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.*;
-import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.index.SecondaryIndex;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.view.MaterializedViewManager;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
-import org.apache.cassandra.db.lifecycle.SSTableSet;
+import org.apache.cassandra.index.Index;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.metrics.KeyspaceMetrics;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.concurrent.OpOrder;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.metrics.KeyspaceMetrics;
 
 /**
  * It represents a Keyspace.
@@ -464,9 +464,9 @@ public class Keyspace
                 }
 
                 Tracing.trace("Adding to {} memtable", upd.metadata().cfName);
-                SecondaryIndexManager.Updater updater = updateIndexes
-                                                      ? cfs.indexManager.updaterFor(upd, opGroup, nowInSec)
-                                                      : SecondaryIndexManager.nullUpdater;
+                SecondaryIndexManager.IndexTransaction updater = updateIndexes
+                                                      ? cfs.indexManager.newUpdateTransaction(upd, opGroup, nowInSec)
+                                                      : SecondaryIndexManager.IndexTransaction.NO_OP;
                 cfs.apply(upd, updater, opGroup, replayPosition);
             }
         }
@@ -485,20 +485,22 @@ public class Keyspace
     /**
      * @param key row to index
      * @param cfs ColumnFamily to index partition in
-     * @param idxNames columns to index, in comparator order
+     * @param indexers the indexers to submit the row to
      */
-    public static void indexPartition(DecoratedKey key, ColumnFamilyStore cfs, Set<String> idxNames)
+    public static void indexPartition(DecoratedKey key, ColumnFamilyStore cfs, Set<Index> indexers)
     {
         if (logger.isDebugEnabled())
             logger.debug("Indexing partition {} ", cfs.metadata.getKeyValidator().getString(key.getKey()));
 
-        Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
-        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(cfs.metadata, FBUtilities.nowInSeconds(), key);
+//        Set<SecondaryIndex> indexes = cfs.indexManager.getIndexesByNames(idxNames);
+        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(cfs.metadata,
+                                                                                      FBUtilities.nowInSeconds(),
+                                                                                      key);
 
         try (OpOrder.Group opGroup = cfs.keyspace.writeOrder.start();
              UnfilteredRowIterator partition = cmd.queryMemtableAndDisk(cfs, opGroup))
         {
-            cfs.indexManager.indexPartition(partition, opGroup, indexes, cmd.nowInSec());
+            cfs.indexManager.indexPartition(partition, opGroup, indexers, cmd.nowInSec());
         }
     }
 
@@ -522,14 +524,11 @@ public class Keyspace
                 valid.add(cfStore);
                 if (autoAddIndexes)
                 {
-                    for (SecondaryIndex si : cfStore.indexManager.getIndexes())
+                    for (ColumnFamilyStore indexCfs : cfStore.indexManager.getAllIndexStorageTables())
                     {
-                        if (si.getIndexCfs() != null) {
-                            logger.info("adding secondary index {} to operation", si.getIndexName());
-                            valid.add(si.getIndexCfs());
-                        }
+                        logger.info("adding secondary index {} to operation", indexCfs.metadata.cfName);
+                        valid.add(indexCfs);
                     }
-
                 }
             }
             return valid;
@@ -537,10 +536,9 @@ public class Keyspace
         // filter out interesting stores
         for (String cfName : cfNames)
         {
-            //if the CF name is an index, just flush the CF that owns the index
             String baseCfName = cfName;
             String idxName = null;
-            if (cfName.contains(".")) // secondary index
+            if (cfName.contains(Directories.SECONDARY_INDEX_NAME_SEPARATOR)) // secondary index
             {
                 if(!allowIndexes)
                 {
@@ -548,31 +546,36 @@ public class Keyspace
                     continue;
                 }
 
-                String[] parts = cfName.split("\\.", 2);
-                baseCfName = parts[0];
-                idxName = parts[1];
+                int separatorIndex = cfName.indexOf(Directories.SECONDARY_INDEX_NAME_SEPARATOR);
+                baseCfName = cfName.substring(0, separatorIndex);
+                idxName = cfName.substring(separatorIndex + Directories.SECONDARY_INDEX_NAME_SEPARATOR.length());
             }
 
             ColumnFamilyStore cfStore = getColumnFamilyStore(baseCfName);
             if (idxName != null)
             {
-                Collection< SecondaryIndex > indexes = cfStore.indexManager.getIndexesByNames(new HashSet<>(Arrays.asList(cfName)));
-                if (indexes.isEmpty())
+                boolean validIndex = false;
+                for (Index indexer : cfStore.indexManager.listIndexers())
+                {
+                    if (indexer.getIndexName().equals(cfName))
+                    {
+                        validIndex = true;
+                        indexer.getBackingTable().ifPresent(valid::add);
+                        break;
+                    }
+                }
+                if (! validIndex)
                     throw new IllegalArgumentException(String.format("Invalid index specified: %s/%s.", baseCfName, idxName));
-                else
-                    valid.add(Iterables.get(indexes, 0).getIndexCfs());
             }
             else
             {
                 valid.add(cfStore);
                 if(autoAddIndexes)
                 {
-                    for(SecondaryIndex si : cfStore.indexManager.getIndexes())
+                    for(ColumnFamilyStore indexCfs : cfStore.indexManager.getAllIndexStorageTables())
                     {
-                        if (si.getIndexCfs() != null) {
-                            logger.info("adding secondary index {} to operation", si.getIndexName());
-                            valid.add(si.getIndexCfs());
-                        }
+                        logger.info("adding secondary index table {} to operation", indexCfs.metadata.cfName);
+                        valid.add(indexCfs);
                     }
                 }
             }

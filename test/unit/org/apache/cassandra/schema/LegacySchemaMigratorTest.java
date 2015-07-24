@@ -20,19 +20,32 @@ package org.apache.cassandra.schema;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableList;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.config.*;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.ColumnIdentifier;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.rows.CellPath;
+import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.index.Index;
+import org.apache.cassandra.index.IndexRegistry;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.thrift.ThriftConversion;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 
 import static java.lang.String.format;
 import static junit.framework.Assert.assertEquals;
@@ -615,5 +628,35 @@ public class LegacySchemaMigratorTest
                .collect(Collectors.toList());
 
         return ListType.getInstance(UTF8Type.instance, false).decompose(arguments);
+    }
+
+    // temporary
+    public static class TestIndex implements Index
+    {
+        public void init(ColumnFamilyStore baseCfs) {}
+        public void register(IndexRegistry registry) {}
+        public void maybeUnregister(IndexRegistry registry) {}
+        public String getIndexName() { return null; }
+        public Optional<ColumnFamilyStore> getBackingTable() { return Optional.empty(); }
+        public Collection<ColumnDefinition> getIndexedColumns() { return null; }
+        public Callable<?> getBlockingFlushTask() { return null; }
+        public Callable<?> getTruncateTask(long truncatedAt) { return null; }
+        public Callable<?> getInvalidateTask() { return null; }
+        public Callable<?> getMetadataReloadTask() { return null; }
+        public Callable<?> addIndexedColumn(ColumnDefinition column) { return null; }
+        public Callable<?> removeIndexedColumn(ColumnDefinition column) { return null; }
+        public boolean indexes(PartitionColumns columns) { return false; }
+        public boolean supportsExpression(ColumnDefinition column, Operator operator) { return false; }
+        public Optional<RowFilter> getReducedFilter(RowFilter filter) { return Optional.empty(); }
+        public long getEstimatedResultRows() { return 0; }
+        public void validate(DecoratedKey partitionKey) throws InvalidRequestException {}
+        public void validate(Clustering clustering) throws InvalidRequestException {}
+        public void validate(ColumnDefinition column, ByteBuffer cellValue, CellPath path) {}
+        public Indexer indexerFor(DecoratedKey key,
+                                  int nowInSec,
+                                  OpOrder.Group opGroup,
+                                  SecondaryIndexManager.TransactionType transactionType) { return null; }
+        public Searcher searcherFor(ReadCommand command) { return null; }
+        public BiFunction<PartitionIterator, RowFilter, PartitionIterator> postProcessorFor(ReadCommand command) { return null; }
     }
 }

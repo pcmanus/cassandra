@@ -23,6 +23,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import javax.management.openmbean.OpenDataException;
 import javax.management.openmbean.TabularData;
 
@@ -515,7 +517,14 @@ public final class SystemKeyspace
         if (ksname.equals("system") && cfname.equals(COMPACTION_HISTORY))
             return;
         String req = "INSERT INTO system.%s (id, keyspace_name, columnfamily_name, compacted_at, bytes_in, bytes_out, rows_merged) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        executeInternal(String.format(req, COMPACTION_HISTORY), UUIDGen.getTimeUUID(), ksname, cfname, ByteBufferUtil.bytes(compactedAt), bytesIn, bytesOut, rowsMerged);
+        executeInternal(String.format(req, COMPACTION_HISTORY),
+                        UUIDGen.getTimeUUID(),
+                        ksname,
+                        cfname,
+                        ByteBufferUtil.bytes(compactedAt),
+                        bytesIn,
+                        bytesOut,
+                        rowsMerged);
     }
 
     public static TabularData getCompactionHistory() throws OpenDataException
@@ -1027,6 +1036,16 @@ public final class SystemKeyspace
         String req = "DELETE FROM %s.\"%s\" WHERE table_name = ? AND index_name = ?";
         executeInternal(String.format(req, NAME, BUILT_INDEXES), keyspaceName, indexName);
         forceBlockingFlush(BUILT_INDEXES);
+    }
+
+    public static List<String> getBuiltIndexes(String keyspaceName, Set<String> indexNames)
+    {
+        List<String> names = new ArrayList<>(indexNames);
+        String req = "SELECT index_name from %s.\"%s\" WHERE table_name=? AND index_name IN ?";
+        UntypedResultSet results = executeInternal(String.format(req, NAME, BUILT_INDEXES), keyspaceName, names);
+        return StreamSupport.stream(results.spliterator(), false)
+                            .map(r -> r.getString("index_name"))
+                            .collect(Collectors.toList());
     }
 
     /**

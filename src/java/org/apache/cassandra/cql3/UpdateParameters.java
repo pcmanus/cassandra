@@ -26,7 +26,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.context.CounterContext;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.FBUtilities;

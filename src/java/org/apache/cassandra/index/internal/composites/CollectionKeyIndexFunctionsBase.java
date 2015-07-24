@@ -15,11 +15,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db.index.composites;
+package org.apache.cassandra.index.internal.composites;
 
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.index.internal.ColumnIndexMetadata;
+import org.apache.cassandra.index.internal.ColumnIndexFunctions;
+import org.apache.cassandra.index.internal.IndexEntry;
 import org.apache.cassandra.db.rows.*;
 
 /**
@@ -37,24 +40,35 @@ import org.apache.cassandra.db.rows.*;
  *   - the row key is determined by subclasses of this type.
  *   - the cell name will be 'rk ck_0 ... ck_n' where rk is the row key of the initial cell.
  */
-public abstract class CompositesIndexIncludingCollectionKey extends CompositesIndex
+public abstract class CollectionKeyIndexFunctionsBase implements ColumnIndexFunctions
 {
-    protected CBuilder buildIndexClusteringPrefix(ByteBuffer rowKey, ClusteringPrefix prefix, CellPath path)
+    public CBuilder buildIndexClusteringPrefix(ColumnIndexMetadata metadata,
+                                               ByteBuffer partitionKey,
+                                               ClusteringPrefix prefix,
+                                               CellPath path)
     {
-        CBuilder builder = CBuilder.create(getIndexComparator());
-        builder.add(rowKey);
+        CBuilder builder = CBuilder.create(metadata.getIndexComparator());
+        builder.add(partitionKey);
         for (int i = 0; i < prefix.size(); i++)
             builder.add(prefix.get(i));
+
         return builder;
     }
 
-    public IndexedEntry decodeEntry(DecoratedKey indexedValue, Row indexEntry)
+    public IndexEntry decodeEntry(ColumnIndexMetadata metadata,
+                                        DecoratedKey indexedValue,
+                                        Row indexEntry)
     {
-        int count = 1 + baseCfs.metadata.clusteringColumns().size();
+        int count = 1 + metadata.baseCfs.metadata.clusteringColumns().size();
         Clustering clustering = indexEntry.clustering();
-        CBuilder builder = CBuilder.create(baseCfs.getComparator());
+        CBuilder builder = CBuilder.create(metadata.baseCfs.getComparator());
         for (int i = 0; i < count - 1; i++)
             builder.add(clustering.get(i + 1));
-        return new IndexedEntry(indexedValue, clustering, indexEntry.primaryKeyLivenessInfo().timestamp(), clustering.get(0), builder.build());
+
+        return new IndexEntry(indexedValue,
+                                    clustering,
+                                    indexEntry.primaryKeyLivenessInfo().timestamp(),
+                                    clustering.get(0),
+                                    builder.build());
     }
 }

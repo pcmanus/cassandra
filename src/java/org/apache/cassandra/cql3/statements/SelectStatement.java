@@ -38,7 +38,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.filter.*;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.db.marshal.Int32Type;
@@ -74,6 +74,10 @@ public class SelectStatement implements CQLStatement
     private static final Logger logger = LoggerFactory.getLogger(SelectStatement.class);
 
     private static final int DEFAULT_COUNT_PAGE_SIZE = 10000;
+    public static final String REQUIRES_ALLOW_FILTERING_MESSAGE =
+        "Cannot execute this query as it might involve data filtering and " +
+        "thus may have unpredictable performance. If you want to execute " +
+        "this query despite the performance unpredictability, use ALLOW FILTERING";
 
     private final int boundTerms;
     public final CFMetaData cfm;
@@ -581,7 +585,6 @@ public class SelectStatement implements CQLStatement
         ColumnFamilyStore cfs = Keyspace.open(keyspace()).getColumnFamilyStore(columnFamily());
         SecondaryIndexManager secondaryIndexManager = cfs.indexManager;
         RowFilter filter = restrictions.getRowFilter(secondaryIndexManager, options);
-        secondaryIndexManager.validateFilter(filter);
         return filter;
     }
 
@@ -937,10 +940,7 @@ public class SelectStatement implements CQLStatement
                 // We will potentially filter data if either:
                 //  - Have more than one IndexExpression
                 //  - Have no index expression and the row filter is not the identity
-                checkFalse(restrictions.needFiltering(),
-                           "Cannot execute this query as it might involve data filtering and " +
-                           "thus may have unpredictable performance. If you want to execute " +
-                           "this query despite the performance unpredictability, use ALLOW FILTERING");
+                checkFalse(restrictions.needFiltering(), REQUIRES_ALLOW_FILTERING_MESSAGE);
             }
         }
 

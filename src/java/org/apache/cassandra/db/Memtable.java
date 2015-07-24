@@ -40,7 +40,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.partitions.*;
@@ -209,7 +209,7 @@ public class Memtable implements Comparable<Memtable>
      *
      * replayPosition should only be null if this is a secondary index, in which case it is *expected* to be null
      */
-    long put(PartitionUpdate update, SecondaryIndexManager.Updater indexer, OpOrder.Group opGroup)
+    long put(PartitionUpdate update, SecondaryIndexManager.IndexTransaction indexer, OpOrder.Group opGroup)
     {
         AtomicBTreePartition previous = partitions.get(update.partitionKey());
 

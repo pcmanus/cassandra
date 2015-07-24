@@ -25,8 +25,10 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.Attributes;
+import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
+import org.apache.cassandra.index.Index;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
@@ -609,7 +611,8 @@ public class ThriftValidation
                                                                                   me.getMessage()));
             }
 
-            isIndexed |= (expression.op == IndexOperator.EQ) && idxManager.indexes(def);
+            for(Index index : idxManager.listIndexers())
+                isIndexed |= index.supportsExpression(def, Operator.valueOf(expression.op.name()));
         }
 
         return isIndexed;

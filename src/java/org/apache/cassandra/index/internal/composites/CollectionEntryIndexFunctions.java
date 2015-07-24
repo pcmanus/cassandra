@@ -15,11 +15,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db.index.composites;
+package org.apache.cassandra.index.internal.composites;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.index.internal.ColumnIndexMetadata;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.*;
 
@@ -29,26 +31,32 @@ import org.apache.cassandra.db.marshal.*;
  * The row keys for this index are a composite of the collection element
  * and value of indexed columns.
  */
-public class CompositesIndexOnCollectionKeyAndValue extends CompositesIndexIncludingCollectionKey
+public class CollectionEntryIndexFunctions extends CollectionKeyIndexFunctionsBase
 {
-    @Override
-    protected AbstractType<?> getIndexKeyComparator()
+    public AbstractType<?> getIndexValueType(ColumnDefinition indexedColumn)
     {
-        CollectionType colType = (CollectionType)columnDef.type;
+        CollectionType colType = (CollectionType)indexedColumn.type;
         return CompositeType.getInstance(colType.nameComparator(), colType.valueComparator());
     }
 
-    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, Clustering clustering, ByteBuffer cellValue, CellPath path)
+    public ByteBuffer getIndexedValue(ColumnIndexMetadata metadata,
+                                      ByteBuffer partitionKey,
+                                      Clustering clustering,
+                                      CellPath path, ByteBuffer cellValue)
     {
         return CompositeType.build(path.get(0), cellValue);
     }
 
-    public boolean isStale(Row data, ByteBuffer indexValue, int nowInSec)
+    public boolean isStale(ColumnIndexMetadata metadata,
+                           Row data,
+                           ByteBuffer indexValue,
+                           int nowInSec)
     {
-        ByteBuffer[] components = ((CompositeType)getIndexKeyComparator()).split(indexValue);
+        ByteBuffer[] components = ((CompositeType)getIndexValueType(metadata.indexedColumn)).split(indexValue);
         ByteBuffer mapKey = components[0];
         ByteBuffer mapValue = components[1];
 
+        ColumnDefinition columnDef = metadata.indexedColumn;
         Cell cell = data.getCell(columnDef, CellPath.create(mapKey));
         if (cell == null || !cell.isLive(nowInSec))
             return true;

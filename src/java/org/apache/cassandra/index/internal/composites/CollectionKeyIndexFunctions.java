@@ -15,12 +15,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db.index.composites;
+package org.apache.cassandra.index.internal.composites;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.index.internal.ColumnIndexMetadata;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.*;
 
@@ -30,29 +32,33 @@ import org.apache.cassandra.db.marshal.*;
  * The row keys for this index are given by the collection element for
  * indexed columns.
  */
-public class CompositesIndexOnCollectionKey extends CompositesIndexIncludingCollectionKey
+public class CollectionKeyIndexFunctions extends CollectionKeyIndexFunctionsBase
 {
-    @Override
-    protected AbstractType<?> getIndexKeyComparator()
+    public AbstractType<?> getIndexValueType(ColumnDefinition indexedColumn)
     {
-        return ((CollectionType)columnDef.type).nameComparator();
+        return ((CollectionType)indexedColumn.type).nameComparator();
     }
 
-    protected ByteBuffer getIndexedValue(ByteBuffer rowKey, Clustering clustering, ByteBuffer cellValue, CellPath path)
+    public ByteBuffer getIndexedValue(ColumnIndexMetadata metadata,
+                                      ByteBuffer partitionKey,
+                                      Clustering clustering,
+                                      CellPath path, ByteBuffer cellValue)
     {
         return path.get(0);
     }
 
-    @Override
-    public boolean supportsOperator(Operator operator)
+    public boolean isStale(ColumnIndexMetadata metadata,
+                           Row data,
+                           ByteBuffer indexValue,
+                           int nowInSec)
     {
-        return operator == Operator.CONTAINS_KEY ||
-               operator == Operator.CONTAINS && columnDef.type instanceof SetType;
+        Cell cell = data.getCell(metadata.indexedColumn, CellPath.create(indexValue));
+        return cell == null || !cell.isLive(nowInSec);
     }
 
-    public boolean isStale(Row data, ByteBuffer indexValue, int nowInSec)
+    public boolean supportsOperator(ColumnDefinition indexedColumn, Operator operator)
     {
-        Cell cell = data.getCell(columnDef, CellPath.create(indexValue));
-        return cell == null || !cell.isLive(nowInSec);
+        return operator == Operator.CONTAINS_KEY ||
+               operator == Operator.CONTAINS && indexedColumn.type instanceof SetType;
     }
 }

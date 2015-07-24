@@ -44,10 +44,12 @@ import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.lifecycle.TransactionLog;
-import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.dht.*;
+import org.apache.cassandra.db.rows.SliceableUnfilteredRowIterator;
+import org.apache.cassandra.dht.AbstractBounds;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.index.internal.ColumnIndexFunctions;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.*;
@@ -341,7 +343,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             IndexMetadata def = parent.getIndexes()
                                       .get(indexName)
                                       .orElseThrow(() -> new AssertionError("Could not find index metadata for index cf " + i));
-            metadata = SecondaryIndex.newIndexMetadata(parent, def);
+            ColumnDefinition indexedColumn = def.indexedColumn(parent);
+            metadata = ColumnIndexFunctions.getFunctions(indexedColumn)
+                                           .indexCfsMetadata(parent, indexedColumn);
         }
         else
         {

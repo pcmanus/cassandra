@@ -15,40 +15,44 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db.index.composites;
+package org.apache.cassandra.index.internal.composites;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.db.filter.*;
-import org.apache.cassandra.db.index.*;
+import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
+import org.apache.cassandra.db.filter.DataLimits;
+import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.index.internal.*;
 import org.apache.cassandra.utils.btree.BTreeSet;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 
-public class CompositesSearcher extends SecondaryIndexSearcher
+public class CompositesSearcher extends ColumnIndexSearcher
 {
     private static final Logger logger = LoggerFactory.getLogger(CompositesSearcher.class);
 
-    public CompositesSearcher(SecondaryIndexManager indexManager, Set<ColumnDefinition> columns)
+    public CompositesSearcher(ColumnIndexMetadata metadata,
+                              RowFilter.Expression expression,
+                              CassandraIndex indexer)
     {
-        super(indexManager, columns);
+        super(metadata, expression, indexer);
     }
 
-    private boolean isMatchingEntry(DecoratedKey partitionKey, CompositesIndex.IndexedEntry entry, ReadCommand command)
+    private boolean isMatchingEntry(DecoratedKey partitionKey, IndexEntry entry, ReadCommand command)
     {
         return command.selects(partitionKey, entry.indexedEntryClustering);
     }
 
-    protected UnfilteredPartitionIterator queryDataFromIndex(AbstractSimplePerColumnSecondaryIndex secondaryIdx,
+    protected UnfilteredPartitionIterator queryDataFromIndex(final ColumnIndexMetadata metadata,
                                                              final DecoratedKey indexKey,
                                                              final RowIterator indexHits,
                                                              final ReadCommand command,
@@ -56,12 +60,9 @@ public class CompositesSearcher extends SecondaryIndexSearcher
     {
         assert indexHits.staticRow() == Rows.EMPTY_STATIC_ROW;
 
-        assert secondaryIdx instanceof CompositesIndex;
-        final CompositesIndex index = (CompositesIndex)secondaryIdx;
-
         return new UnfilteredPartitionIterator()
         {
-            private CompositesIndex.IndexedEntry nextEntry;
+            private IndexEntry nextEntry;
 
             private UnfilteredRowIterator next;
 
@@ -100,7 +101,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                     if (!indexHits.hasNext())
                         return false;
 
-                    nextEntry = index.decodeEntry(indexKey, indexHits.next());
+                    nextEntry = metadata.functions.decodeEntry(metadata, indexKey, indexHits.next());
                 }
 
                 // Gather all index hits belonging to the same partition and query the data for those hits.
@@ -109,9 +110,9 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                 // in memory so we should consider adding some paging mechanism. However, index hits should
                 // be relatively small so it's much better than the previous code that was materializing all
                 // *data* for a given partition.
-                BTreeSet.Builder<Clustering> clusterings = BTreeSet.builder(baseCfs.getComparator());
-                List<CompositesIndex.IndexedEntry> entries = new ArrayList<>();
-                DecoratedKey partitionKey = baseCfs.decorateKey(nextEntry.indexedKey);
+                BTreeSet.Builder<Clustering> clusterings = BTreeSet.builder(metadata.baseCfs.getComparator());
+                List<IndexEntry> entries = new ArrayList<>();
+                DecoratedKey partitionKey = metadata.baseCfs.decorateKey(nextEntry.indexedKey);
 
                 while (nextEntry != null && partitionKey.getKey().equals(nextEntry.indexedKey))
                 {
@@ -122,7 +123,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                         entries.add(nextEntry);
                     }
 
-                    nextEntry = indexHits.hasNext() ? index.decodeEntry(indexKey, indexHits.next()) : null;
+                    nextEntry = indexHits.hasNext() ? metadata.functions.decodeEntry(metadata, indexKey, indexHits.next()) : null;
                 }
 
                 // Because we've eliminated entries that don't match the clustering columns, it's possible we added nothing
@@ -131,7 +132,7 @@ public class CompositesSearcher extends SecondaryIndexSearcher
 
                 // Query the gathered index hits. We still need to filter stale hits from the resulting query.
                 ClusteringIndexNamesFilter filter = new ClusteringIndexNamesFilter(clusterings.build(), false);
-                SinglePartitionReadCommand dataCmd = new SinglePartitionNamesCommand(metadata(),
+                SinglePartitionReadCommand dataCmd = new SinglePartitionNamesCommand(metadata.baseCfs.metadata,
                                                                                      command.nowInSec(),
                                                                                      command.columnFilter(),
                                                                                      command.rowFilter(),
@@ -140,8 +141,10 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                                                                                      filter);
                 @SuppressWarnings("resource") // We close right away if empty, and if it's assign to next it will be called either
                                               // by the next caller of next, or through closing this iterator is this come before.
-                UnfilteredRowIterator dataIter = filterStaleEntries(dataCmd.queryMemtableAndDisk(baseCfs, orderGroup.baseReadOpOrderGroup()),
-                                                                    index,
+                UnfilteredRowIterator dataIter = filterStaleEntries(dataCmd.queryMemtableAndDisk(metadata.baseCfs,
+                                                                                                 orderGroup.baseReadOpOrderGroup()),
+                                                                    metadata,
+                                                                    indexer,
                                                                     indexKey.getKey(),
                                                                     entries,
                                                                     orderGroup.writeOpOrderGroup(),
@@ -171,9 +174,10 @@ public class CompositesSearcher extends SecondaryIndexSearcher
     }
 
     private UnfilteredRowIterator filterStaleEntries(UnfilteredRowIterator dataIter,
-                                                     final CompositesIndex index,
+                                                     final ColumnIndexMetadata metadata,
+                                                     final CassandraIndex indexer,
                                                      final ByteBuffer indexValue,
-                                                     final List<CompositesIndex.IndexedEntry> entries,
+                                                     final List<IndexEntry> entries,
                                                      final OpOrder.Group writeOp,
                                                      final int nowInSec)
     {
@@ -184,21 +188,23 @@ public class CompositesSearcher extends SecondaryIndexSearcher
             @Override
             protected Row computeNext(Row row)
             {
-                CompositesIndex.IndexedEntry entry = findEntry(row.clustering(), writeOp, nowInSec);
-                if (!index.isStale(row, indexValue, nowInSec))
+                IndexEntry entry = findEntry(row.clustering(), writeOp, nowInSec);
+                if (!metadata.functions.isStale(metadata, row, indexValue, nowInSec))
                     return row;
 
-                // The entry is stale: delete the entry and ignore otherwise
-                index.delete(entry, writeOp, nowInSec);
+                indexer.deleteStaleEntry(entry.indexValue,
+                                         entry.indexClustering,
+                                         new DeletionTime(entry.timestamp, nowInSec),
+                                         writeOp);
                 return null;
             }
 
-            private CompositesIndex.IndexedEntry findEntry(Clustering clustering, OpOrder.Group writeOp, int nowInSec)
+            private IndexEntry findEntry(Clustering clustering, OpOrder.Group writeOp, int nowInSec)
             {
                 assert entriesIdx < entries.size();
                 while (entriesIdx < entries.size())
                 {
-                    CompositesIndex.IndexedEntry entry = entries.get(entriesIdx++);
+                    IndexEntry entry = entries.get(entriesIdx++);
                     // The entries are in clustering order. So that the requested entry should be the
                     // next entry, the one at 'entriesIdx'. However, we can have stale entries, entries
                     // that have no corresponding row in the base table typically because of a range
@@ -208,7 +214,10 @@ public class CompositesSearcher extends SecondaryIndexSearcher
                     if (cmp == 0)
                         return entry;
                     else
-                        index.delete(entry, writeOp, nowInSec);
+                        indexer.deleteStaleEntry(entry.indexValue,
+                                                 entry.indexClustering,
+                                                 new DeletionTime(entry.timestamp, nowInSec),
+                                                 writeOp);
                 }
                 // entries correspond to the rows we've queried, so we shouldn't have a row that has no corresponding entry.
                 throw new AssertionError();

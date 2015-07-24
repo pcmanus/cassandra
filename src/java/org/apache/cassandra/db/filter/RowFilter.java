@@ -91,6 +91,11 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         expressions.add(new ThriftExpression(metadata, name, op, value));
     }
 
+    public List<Expression> getExpressions()
+    {
+        return expressions;
+    }
+
     /**
      * Filters the provided iterator so that only the row satisfying the expression of this filter
      * are included in the resulting iterator.

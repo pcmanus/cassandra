@@ -17,15 +17,20 @@
  */
 package org.apache.cassandra.db.compaction;
 
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.index.SecondaryIndexManager;
-import org.apache.cassandra.db.partitions.*;
+import org.apache.cassandra.db.partitions.PurgingPartitionIterator;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.metrics.CompactionMetrics;
 
@@ -47,6 +52,7 @@ import org.apache.cassandra.metrics.CompactionMetrics;
  */
 public class CompactionIterator extends CompactionInfo.Holder implements UnfilteredPartitionIterator
 {
+    private static final Logger logger = LoggerFactory.getLogger(CompactionIterator.class);
     private static final long UNFILTERED_TO_UPDATE_PROGRESS = 100;
 
     private final OperationType type;
@@ -134,14 +140,21 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
         {
             public UnfilteredRowIterators.MergeListener getRowMergeListener(DecoratedKey partitionKey, List<UnfilteredRowIterator> versions)
             {
+                Columns statics = Columns.NONE;
+                Columns regulars = Columns.NONE;
                 int merged = 0;
                 for (UnfilteredRowIterator iter : versions)
                 {
                     if (iter != null)
+                    {
+                        statics = statics.mergeTo(iter.columns().statics);
+                        regulars = regulars.mergeTo(iter.columns().regulars);
                         merged++;
+                    }
                 }
-
                 assert merged > 0;
+
+                final PartitionColumns partitionColumns = new PartitionColumns(statics, regulars);
 
                 CompactionIterator.this.updateCounterFor(merged);
 
@@ -150,37 +163,24 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
 
                 // If we have a 2ndary index, we must update it with deleted/shadowed cells.
                 // TODO: this should probably be done asynchronously and batched.
-                final SecondaryIndexManager.Updater indexer = controller.cfs.indexManager.gcUpdaterFor(partitionKey, nowInSec);
-                final RowDiffListener diffListener = new RowDiffListener()
-                {
-                    public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
-                    {
-                    }
-
-                    public void onDeletion(int i, Clustering clustering, DeletionTime merged, DeletionTime original)
-                    {
-                    }
-
-                    public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
-                    {
-                    }
-
-                    public void onCell(int i, Clustering clustering, Cell merged, Cell original)
-                    {
-                        if (original != null && (merged == null || !merged.isLive(nowInSec)))
-                            indexer.remove(clustering, original);
-                    }
-                };
 
                 return new UnfilteredRowIterators.MergeListener()
                 {
                     public void onMergedPartitionLevelDeletion(DeletionTime mergedDeletion, DeletionTime[] versions)
                     {
+                        // todo call indexTransaction.partitionDeletion is !mergedDeletion.isLive() ?
                     }
 
                     public void onMergedRows(Row merged, Columns columns, Row[] versions)
                     {
-                        Rows.diff(merged, columns, versions, diffListener);
+                        final SecondaryIndexManager.CleanupTransaction indexTransaction =
+                            controller.cfs.indexManager.newCleanupTransaction(partitionKey,
+                                                                              partitionColumns,
+                                                                              versions.length,
+                                                                              nowInSec);
+                        indexTransaction.start();
+                        Rows.diff(merged, columns, versions, diffListener(indexTransaction));
+                        indexTransaction.commit();
                     }
 
                     public void onMergedRangeTombstoneMarkers(RangeTombstoneMarker mergedMarker, RangeTombstoneMarker[] versions)
@@ -197,6 +197,31 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             {
             }
         };
+    }
+
+    private RowDiffListener diffListener(SecondaryIndexManager.CleanupTransaction indexTransaction)
+    {
+        return new RowDiffListener()
+        {
+            public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
+            {
+            }
+
+            public void onDeletion(int i, Clustering clustering, DeletionTime merged, DeletionTime original)
+            {
+            }
+
+            public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+            {
+            }
+
+            public void onCell(int i, Clustering clustering, Cell merged, Cell original)
+            {
+                if (original != null && (merged == null || !merged.isLive(nowInSec)))
+                    indexTransaction.onRowUpdate(i, clustering, original);
+            }
+        };
+
     }
 
     private void updateBytesRead()
