@@ -277,15 +277,15 @@ public abstract class ReadResponse
             };
         }
 
-        public ByteBuffer digest()
+        public ByteBuffer digest(int version)
         {
             try (UnfilteredPartitionIterator iterator = makeIterator())
             {
-                return makeDigest(iterator);
+                return makeDigest(iterator, version);
             }
         }
 
-        public boolean isDigestQuery()
+        public boolean isDigestResponse()
         {
             return false;
         }
@@ -298,8 +298,8 @@ public abstract class ReadResponse
             boolean isDigest = response instanceof DigestResponse;
             if (version < MessagingService.VERSION_30)
             {
-                out.writeInt(isDigest ? response.digest().remaining() : 0);
-                ByteBuffer buffer = isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+                ByteBuffer buffer = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+                out.writeInt(buffer.remaining());
                 out.write(buffer);
                 out.writeBoolean(isDigest);
                 if (!isDigest)
@@ -307,7 +307,6 @@ public abstract class ReadResponse
                 return;
             }
 
-            boolean isDigest = response instanceof DigestResponse;
             ByteBufferUtil.writeWithShortLength(isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER, out);
             if (!isDigest)
             {
@@ -359,16 +358,20 @@ public abstract class ReadResponse
         public long serializedSize(ReadResponse response, int version)
         {
             boolean isDigest = response instanceof DigestResponse;
-            long size = ByteBufferUtil.serializedSizeWithShortLength(isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER);
+            long size = 0;
 
             if (version < MessagingService.VERSION_30)
             {
+                ByteBuffer buffer = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+                size += TypeSizes.sizeof(buffer.remaining());
+                size += buffer.remaining();
                 size += TypeSizes.sizeof(isDigest);
                 if (!isDigest)
                     size += UnfilteredPartitionIterators.serializerForIntraNode().serializedSize(response.makeIterator(), version);
                 return size;
             }
 
+            size += ByteBufferUtil.serializedSizeWithShortLength(isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER);
             if (!isDigest)
             {
                 // Note that we can only get there if version == 3.0, which is the current_version. When we'll change the

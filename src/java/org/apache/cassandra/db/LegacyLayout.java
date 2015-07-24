@@ -765,7 +765,6 @@ public abstract class LegacyLayout
         };
     }
 
-
     public static LegacyAtom readLegacyAtom(CFMetaData metadata, DataInputPlus in, boolean readAllAsDynamic) throws IOException
     {
         while (true)

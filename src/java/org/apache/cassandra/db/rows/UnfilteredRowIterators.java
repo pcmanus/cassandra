@@ -160,6 +160,10 @@ public abstract class UnfilteredRowIterators
      */
     public static void digest(UnfilteredRowIterator iterator, MessageDigest digest, int version)
     {
+        if (version < MessagingService.VERSION_30)
+        {
+        }
+
         // TODO: we're not computing digest the same way that old nodes. This
         // means we'll have digest mismatches during upgrade. We should pass the messaging version of
         // the node this is for (which might mean computing the digest last, and won't work

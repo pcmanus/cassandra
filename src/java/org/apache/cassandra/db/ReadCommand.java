@@ -718,7 +718,7 @@ public abstract class ReadCommand implements ReadQuery
             else
                 limits = DataLimits.cqlLimits(maxResults);
 
-            return new PartitionRangeReadCommand(false, true, metadata, nowInSec, selection, rowFilter, limits, new DataRange(keyRange, filter));
+            return new PartitionRangeReadCommand(false, 0, true, metadata, nowInSec, selection, rowFilter, limits, new DataRange(keyRange, filter));
         }
 
         static void serializeRowFilter(DataOutputPlus out, RowFilter rowFilter) throws IOException
@@ -828,7 +828,7 @@ public abstract class ReadCommand implements ReadQuery
             ClusteringIndexSliceFilter sliceFilter = LegacyReadCommandSerializer.convertNamesFilterToSliceFilter(filter, metadata);
             DataRange newRange = new DataRange(command.dataRange().keyRange(), sliceFilter);
             return new PartitionRangeReadCommand(
-                    command.isDigestQuery(), command.isForThrift(), metadata, command.nowInSec(),
+                    command.isDigestQuery(), command.digestVersion(), command.isForThrift(), metadata, command.nowInSec(),
                     command.columnFilter(), command.rowFilter(), command.limits(), newRange);
         }
 
@@ -977,7 +977,7 @@ public abstract class ReadCommand implements ReadQuery
             // pre-3.0 nodes normally expect pages to include the last cell from the previous page, but they handle it
             // missing without any problems, so we can safely always set "inclusive" to false in the data range
             DataRange dataRange = new DataRange(keyRange, filter).forPaging(keyRange, metadata.comparator, startClustering, false);
-            return new PartitionRangeReadCommand(false, true, metadata, nowInSec, selection, rowFilter, limits, dataRange);
+            return new PartitionRangeReadCommand(false, 0, true, metadata, nowInSec, selection, rowFilter, limits, dataRange);
         }
 
         public long serializedSize(ReadCommand command, int version)
@@ -1075,9 +1075,9 @@ public abstract class ReadCommand implements ReadQuery
             switch (msgType)
             {
                 case GET_BY_NAMES:
-                    return deserializeNamesCommand(in, isDigest, metadata, key, nowInSeconds);
+                    return deserializeNamesCommand(in, isDigest, metadata, key, nowInSeconds, version);
                 case GET_SLICES:
-                    return deserializeSliceCommand(in, isDigest, metadata, key, nowInSeconds);
+                    return deserializeSliceCommand(in, isDigest, metadata, key, nowInSeconds, version);
                 default:
                     throw new AssertionError();
             }
@@ -1167,13 +1167,13 @@ public abstract class ReadCommand implements ReadQuery
             return size + TypeSizes.sizeof(true);  // countCql3Rows
         }
 
-        private SinglePartitionNamesCommand deserializeNamesCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds) throws IOException
+        private SinglePartitionNamesCommand deserializeNamesCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
         {
             Pair<ColumnFilter, ClusteringIndexNamesFilter> selectionAndFilter = deserializeNamesSelectionAndFilter(in, metadata);
 
             // messages from old nodes will expect the thrift format, so always use 'true' for isForThrift
             return new SinglePartitionNamesCommand(
-                    isDigest, true, metadata, nowInSeconds, selectionAndFilter.left, RowFilter.NONE, DataLimits.NONE,
+                    isDigest, version, true, metadata, nowInSeconds, selectionAndFilter.left, RowFilter.NONE, DataLimits.NONE,
                     key, selectionAndFilter.right);
         }
 
@@ -1253,7 +1253,7 @@ public abstract class ReadCommand implements ReadQuery
             out.writeInt(compositesToGroup);
         }
 
-        private SinglePartitionSliceCommand deserializeSliceCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds) throws IOException
+        private SinglePartitionSliceCommand deserializeSliceCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
         {
             ClusteringIndexSliceFilter filter = deserializeSlicePartitionFilter(in, metadata);
             int count = in.readInt();
@@ -1276,7 +1276,7 @@ public abstract class ReadCommand implements ReadQuery
                 limits = DataLimits.cqlLimits(count);
 
             // messages from old nodes will expect the thrift format, so always use 'true' for isForThrift
-            return new SinglePartitionSliceCommand(isDigest, true, metadata, nowInSeconds, columnFilter, RowFilter.NONE, limits, key, filter);
+            return new SinglePartitionSliceCommand(isDigest, version, true, metadata, nowInSeconds, columnFilter, RowFilter.NONE, limits, key, filter);
         }
 
         private long serializedSliceCommandSize(SinglePartitionSliceCommand command)
@@ -1433,7 +1433,7 @@ public abstract class ReadCommand implements ReadQuery
             ClusteringIndexNamesFilter filter = ((SinglePartitionNamesCommand) command).clusteringIndexFilter();
             ClusteringIndexSliceFilter sliceFilter = convertNamesFilterToSliceFilter(filter, metadata);
             return new SinglePartitionSliceCommand(
-                    command.isDigestQuery(), command.isForThrift(), metadata, command.nowInSec(),
+                    command.isDigestQuery(), command.digestVersion(), command.isForThrift(), metadata, command.nowInSec(),
                     command.columnFilter(), command.rowFilter(), command.limits(), command.partitionKey(), sliceFilter);
         }
 
