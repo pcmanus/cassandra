@@ -97,7 +97,7 @@ public class SecondaryIndexManager implements IndexRegistry
      * Used to differentiate between type of index transaction when obtaining
      * a handler from Index implementations.
      */
-    public enum TransactionType { WRITE_TIME, CLEANUP }
+    public enum TransactionType { WRITE_TIME, COMPACTION, CLEANUP }
 
     private Set<Index> indexes = Sets.newConcurrentHashSet();
 
@@ -430,7 +430,8 @@ public class SecondaryIndexManager implements IndexRegistry
         CleanupTransaction indexTransaction = newCleanupTransaction(partition.partitionKey(),
                                                                     partition.columns(),
                                                                     1,
-                                                                    nowInSec);
+                                                                    nowInSec,
+                                                                    TransactionType.CLEANUP);
         indexTransaction.start();
         indexTransaction.onPartitionDeletion(partition.partitionLevelDeletion());
         indexTransaction.commit();
@@ -444,7 +445,8 @@ public class SecondaryIndexManager implements IndexRegistry
             indexTransaction = newCleanupTransaction(partition.partitionKey(),
                                                      partition.columns(),
                                                      1,
-                                                     nowInSec);
+                                                     nowInSec,
+                                                     TransactionType.CLEANUP);
             indexTransaction.start();
 
             Row row = (Row) unfiltered;
@@ -833,7 +835,8 @@ public class SecondaryIndexManager implements IndexRegistry
     public CleanupTransaction newCleanupTransaction(DecoratedKey key,
                                                     PartitionColumns partitionColumns,
                                                     int versions,
-                                                    int nowInSec)
+                                                    int nowInSec,
+                                                    TransactionType transactionType)
     {
         Index[] interestedIndexes = indexes.stream()
                                                .filter(i -> i.indexes(partitionColumns))
@@ -841,7 +844,7 @@ public class SecondaryIndexManager implements IndexRegistry
         if (interestedIndexes.length == 0)
             return CleanupTransaction.NO_OP;
 
-        return new IndexGCTransaction(key, partitionColumns, versions, nowInSec, interestedIndexes);
+        return new IndexGCTransaction(key, partitionColumns, versions, nowInSec, transactionType, interestedIndexes);
     }
 
     public interface CleanupTransaction
@@ -886,10 +889,16 @@ public class SecondaryIndexManager implements IndexRegistry
         private final int nowInSec;
         private final Index[] indexes;
         private final Row.Builder[] rows;
+        private final TransactionType transactionType;
 
         private DeletionTime partitionDelete;
 
-        private IndexGCTransaction(DecoratedKey key, PartitionColumns columns, int versions, int nowInSec, Index...indexes)
+        private IndexGCTransaction(DecoratedKey key,
+                                   PartitionColumns columns,
+                                   int versions,
+                                   int nowInSec,
+                                   TransactionType transactionType,
+                                   Index...indexes)
         {
             // don't allow null indexers, if we don't have any, use a noop transaction
             for (Index index : indexes) assert index != null;
@@ -899,6 +908,7 @@ public class SecondaryIndexManager implements IndexRegistry
             this.rows = new Row.Builder[versions];
             this.indexes = indexes;
             this.nowInSec = nowInSec;
+            this.transactionType = transactionType;
         }
 
         private Row.Builder currentRow(int i, Clustering clustering)
@@ -935,7 +945,7 @@ public class SecondaryIndexManager implements IndexRegistry
             try (OpOrder.Group opGroup = Keyspace.writeOrder.start())
             {
                 Index.Indexer[] indexers = Arrays.stream(indexes)
-                                                 .map(i -> i.indexerFor(key, nowInSec, opGroup, TransactionType.CLEANUP))
+                                                 .map(i -> i.indexerFor(key, nowInSec, opGroup, transactionType))
                                                  .toArray(Index.Indexer[]::new);
 
                 Arrays.stream(indexers).forEach(Index.Indexer::begin);

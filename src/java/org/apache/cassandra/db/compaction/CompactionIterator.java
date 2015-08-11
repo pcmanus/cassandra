@@ -177,7 +177,8 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                             controller.cfs.indexManager.newCleanupTransaction(partitionKey,
                                                                               partitionColumns,
                                                                               versions.length,
-                                                                              nowInSec);
+                                                                              nowInSec,
+                                                                              SecondaryIndexManager.TransactionType.COMPACTION);
                         indexTransaction.start();
                         Rows.diff(merged, columns, versions, diffListener(indexTransaction));
                         indexTransaction.commit();
