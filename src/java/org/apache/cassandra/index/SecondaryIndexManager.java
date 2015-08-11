@@ -418,6 +418,8 @@ public class SecondaryIndexManager implements IndexRegistry
                     indexers.forEach(handler -> handler.insertRow(row));
                 }
             }
+
+            indexers.forEach(Index.Indexer::finish);
         }
     }
 
