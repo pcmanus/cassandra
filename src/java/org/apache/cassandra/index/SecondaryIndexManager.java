@@ -408,14 +408,14 @@ public class SecondaryIndexManager implements IndexRegistry
             indexers.forEach(Index.Indexer::begin);
 
             if (!partition.staticRow().isEmpty())
-                indexers.forEach(handler -> handler.insertRow(partition.staticRow()));
+                indexers.forEach(indexer -> indexer.insertRow(partition.staticRow()));
 
             try (RowIterator filtered = UnfilteredRowIterators.filter(partition, nowInSec))
             {
                 while (filtered.hasNext())
                 {
                     Row row = filtered.next();
-                    indexers.forEach(handler -> handler.insertRow(row));
+                    indexers.forEach(indexer -> indexer.insertRow(row));
                 }
             }
 
@@ -656,16 +656,16 @@ public class SecondaryIndexManager implements IndexRegistry
         // todo : optimize lookup, we can probably cache quite a bit of stuff, rather than doing
         // a linear scan every time. Holding off that though until CASSANDRA-7771 to figure out
         // exactly how indexes are to be identified & associated with a given partition update
-        Index.Indexer[] handlers = indexes.stream()
+        Index.Indexer[] indexers = indexes.stream()
                                                    .filter(i -> i.indexes(update.columns()))
                                                    .map(i -> i.indexerFor(update.partitionKey(),
                                                                           nowInSec,
                                                                           opGroup,
                                                                           TransactionType.WRITE_TIME))
                                                    .toArray(Index.Indexer[]::new);
-        return handlers.length == 0
+        return indexers.length == 0
                ? IndexTransaction.NO_OP
-               : new WriteTimeTransaction(nowInSec, handlers);
+               : new WriteTimeTransaction(nowInSec, indexers);
     }
 
     /**
@@ -682,13 +682,13 @@ public class SecondaryIndexManager implements IndexRegistry
         // We make certain guarantees about the lifecycle of each IndexTransaction
         // instance. Namely that start() will be called before any other
         // method, and commit() will be called at the end of the update.
-        // Each instance is initialized with 1..many Indexer.UpdateHandler
-        // instances, one per registered Indexer. As with the updater itself, these
-        // are scoped to a specific partition update, so implementations
+        // Each instance is initialized with 1..many Index.Indexer
+        // instances, one per registered Index. As with the IndexTransaction itself,
+        // these are scoped to a specific partition update, so implementations
         // can be assured that all indexing events they receive relate to
         // the same single operation.
         //
-        // The UpdateHandler interface, and so really the write side of the secondary
+        // The Index.Indexer interface, and so really the write side of the secondary
         // index API, is row-centric but reconcilliation (both at write time &
         // during compaction) occurs on a per-Cell basis. In order to buffer these
         // per-cell operations into per-Row chunks for consumption by Indexers,
@@ -697,22 +697,22 @@ public class SecondaryIndexManager implements IndexRegistry
         // have been processed, finishRowUpdate() is called. We will never
         // interleave calls to these three methods with values for different
         // rows.
-        // Aside from this grouping, partitionDelete(), rangeTombstone() and
-        // insert() calls may arrive in any order, but this should have no
+        // Aside from this grouping, onPartitionDelete(), onRangeTombstone() and
+        // onInserted() calls may arrive in any order, but this should have no
         // impact for the underlying Indexers as any events delivered to a
-        // single EventHandler instance necessarily relate to a single partition
+        // single instance necessarily relate to a single partition
         //
         // The typical sequence of events during a Memtable update would be:
         // start()
-        // onPartitionDeletion()      -- if the PartitionUpdate implies one
-        // onRangeTombstone()*        -- for each in the PartitionUpdate, if any
+        // onPartitionDeletion(dt)    -- if the PartitionUpdate implies one
+        // onRangeTombstone(rt)*      -- for each in the PartitionUpdate, if any
         //
         // then:
         // onInserted(row)*           -- called for each Row not already present in the Memtable
         //
         // and for any Row in the update for which a version is already present in the Memtable the following cycle:
         // beginRowUpdate(columns, nowInSec, update, existing)
-        // updateCell(old, new)       -- called on every Cell reconcilliation for the current Row
+        // updateCell(old, new)*      -- called on every Cell reconcilliation for the current Row
         // finishRowUpdate()          -- called once all Cell reconcilliation is complete for the Row
         //
         // commit()                   -- finally, finish is called when the new Partition is swapped into the Memtable
@@ -857,7 +857,7 @@ public class SecondaryIndexManager implements IndexRegistry
         // comments of WriteTimeTransaction.
         //
         // When multiple versions of a row are compacted, the CleanupTransaction is
-        // notified of the versions being dropped, which is combines into Rows
+        // notified of the versions being dropped, which it combines into Rows
         // and forwards to the registered Index.EventHandler instances when the
         // 'onRowDone()' event is fired on the CompactionIterator's listener.
         // Any Cell versions which are retained are not passed to the CleanupTransaction
