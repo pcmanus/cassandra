@@ -22,9 +22,9 @@ import java.util.Comparator;
 import java.util.Iterator;
 
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.Conflicts;
+import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.partitions.PartitionStatisticsCollector;
-import org.apache.cassandra.index.SecondaryIndexManager;
 
 /**
  * Static methods to work on cells.
@@ -69,9 +69,6 @@ public abstract class Cells
      * @param nowInSec the current time in seconds (which plays a role during reconciliation
      * because deleted cells always have precedence on timestamp equality and deciding if a
      * cell is a live or not depends on the current time due to expiring cells).
-     * @param indexUpdater an index updater to which the result of the reconciliation is
-     * signaled (if relevant, that is if the update is not simply ignored by the reconciliation).
-     * This cannot be {@code null} but {@code SecondaryIndexManager.nullUpdater} can be passed.
      *
      * @return the timestamp delta between existing and update, or {@code Long.MAX_VALUE} if one
      * of them is {@code null} or deleted by {@code deletion}).
@@ -80,8 +77,7 @@ public abstract class Cells
                                  Cell update,
                                  DeletionTime deletion,
                                  Row.Builder builder,
-                                 int nowInSec,
-                                 SecondaryIndexManager.IndexTransaction indexUpdater)
+                                 int nowInSec)
     {
         existing = existing == null || deletion.deletes(existing) ? null : existing;
         update = update == null || deletion.deletes(update) ? null : update;
@@ -89,7 +85,6 @@ public abstract class Cells
         {
             if (update != null)
             {
-                indexUpdater.updateCell(null, update);
                 builder.addCell(update);
             }
             else if (existing != null)
@@ -102,11 +97,6 @@ public abstract class Cells
         Cell reconciled = reconcile(existing, update, nowInSec);
         builder.addCell(reconciled);
 
-        // Note that this test rely on reconcile returning either 'existing' or 'update'. That's not true for counters but we don't index them
-        if (reconciled == update)
-        {
-            indexUpdater.updateCell(existing, reconciled);
-        }
         return Math.abs(existing.timestamp() - update.timestamp());
     }
 
@@ -200,9 +190,6 @@ public abstract class Cells
      * @param nowInSec the current time in seconds (which plays a role during reconciliation
      * because deleted cells always have precedence on timestamp equality and deciding if a
      * cell is a live or not depends on the current time due to expiring cells).
-     * @param indexUpdater an index updater to which the result of the reconciliation is
-     * signaled (if relevant, that is if the updates are not simply ignored by the reconciliation).
-     * This cannot be {@code null} but {@code SecondaryIndexManager.nullUpdater} can be passed.
      *
      * @return the smallest timestamp delta between corresponding cells from existing and update. A
      * timestamp delta being computed as the difference between a cell from {@code update} and the
@@ -215,8 +202,7 @@ public abstract class Cells
                                         Iterator<Cell> update,
                                         DeletionTime deletion,
                                         Row.Builder builder,
-                                        int nowInSec,
-                                        SecondaryIndexManager.IndexTransaction indexUpdater)
+                                        int nowInSec)
     {
         Comparator<CellPath> comparator = column.cellPathComparator();
         Cell nextExisting = getNext(existing);
@@ -229,17 +215,17 @@ public abstract class Cells
                      : comparator.compare(nextExisting.path(), nextUpdate.path()));
             if (cmp < 0)
             {
-                reconcile(nextExisting, null, deletion, builder, nowInSec, indexUpdater);
+                reconcile(nextExisting, null, deletion, builder, nowInSec);
                 nextExisting = getNext(existing);
             }
             else if (cmp > 0)
             {
-                reconcile(null, nextUpdate, deletion, builder, nowInSec, indexUpdater);
+                reconcile(null, nextUpdate, deletion, builder, nowInSec);
                 nextUpdate = getNext(update);
             }
             else
             {
-                timeDelta = Math.min(timeDelta, reconcile(nextExisting, nextUpdate, deletion, builder, nowInSec, indexUpdater));
+                timeDelta = Math.min(timeDelta, reconcile(nextExisting, nextUpdate, deletion, builder, nowInSec));
                 nextExisting = getNext(existing);
                 nextUpdate = getNext(update);
             }

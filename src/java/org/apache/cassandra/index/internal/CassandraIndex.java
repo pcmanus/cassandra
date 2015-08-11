@@ -241,13 +241,9 @@ public class CassandraIndex implements Index
 
             public void removeRow(Row row)
             {
-                // We don't do anything with indexed primary key columns here because
-                // this is called only by the GCUpdater used in compaction. The cells
-                // of the supplied row are those that were merged away during compaction
-                // so we do delete them from the index. However, if there are indexes on
-                // the primary key columns then we don't want to delete from those
-                // because the row that the compaction produces will still have the same
-                // clustering and so the index entry should remain.
+                if (isPrimaryKeyIndex())
+                    indexPrimaryKey(row.clustering(), row.primaryKeyLivenessInfo(), row.deletion());
+
                 if (metadata.indexedColumn.isComplex())
                     removeCells(row.clustering(), row.getComplexColumnData(metadata.indexedColumn));
                 else
@@ -256,34 +252,20 @@ public class CassandraIndex implements Index
 
             public void updateRow(Row oldRow, Row newRow)
             {
-                // merge liveness info + deletion - unfortunately, this is duplicated from
-                // Rows.merge but we only do it if there are indexes on the primary key columns
                 if (isPrimaryKeyIndex())
+                    indexPrimaryKey(newRow.clustering(),
+                                    newRow.primaryKeyLivenessInfo(),
+                                    newRow.deletion());
+
+                if (metadata.indexedColumn.isComplex())
                 {
-                    LivenessInfo existingInfo = oldRow.primaryKeyLivenessInfo();
-                    LivenessInfo updateInfo = newRow.primaryKeyLivenessInfo();
-                    LivenessInfo mergedInfo = existingInfo.supersedes(updateInfo) ? existingInfo : updateInfo;
-
-                    DeletionTime deletion = oldRow.deletion().supersedes(newRow.deletion())
-                                            ? oldRow.deletion()
-                                            : newRow.deletion();
-                    if (deletion.deletes(mergedInfo))
-                        mergedInfo = LivenessInfo.EMPTY;
-
-                    indexPrimaryKey(newRow.clustering(), mergedInfo, deletion);
+                    indexCells(newRow.clustering(), newRow.getComplexColumnData(metadata.indexedColumn));
+                    removeCells(oldRow.clustering(), oldRow.getComplexColumnData(metadata.indexedColumn));
                 }
                 else
                 {
-                    if (metadata.indexedColumn.isComplex())
-                    {
-                        indexCells(newRow.clustering(), newRow.getComplexColumnData(metadata.indexedColumn));
-                        removeCells(oldRow.clustering(), oldRow.getComplexColumnData(metadata.indexedColumn));
-                    }
-                    else
-                    {
-                        indexCell(newRow.clustering(), newRow.getCell(metadata.indexedColumn));
-                        removeCell(oldRow.clustering(), oldRow.getCell(metadata.indexedColumn));
-                    }
+                    indexCell(newRow.clustering(), newRow.getCell(metadata.indexedColumn));
+                    removeCell(oldRow.clustering(), oldRow.getCell(metadata.indexedColumn));
                 }
             }
 
@@ -322,18 +304,13 @@ public class CassandraIndex implements Index
                 if (cell == null)
                     return;
 
-                delete(key.getKey(),
-                       clustering,
-                       cell,
-                       opGroup,
-                       nowInSec);
+                delete(key.getKey(), clustering, cell, opGroup, nowInSec);
             }
 
             private void indexPrimaryKey(final Clustering clustering,
                                          final LivenessInfo liveness,
                                          final DeletionTime deletion)
             {
-                // todo perhaps 2 separate loops would be more efficient
                 if (liveness.timestamp() != LivenessInfo.NO_TIMESTAMP)
                     insert(key.getKey(), clustering, null, liveness, opGroup);
 
@@ -394,6 +371,7 @@ public class CassandraIndex implements Index
         Row row = BTreeBackedRow.noCellLiveRow(buildIndexClustering(rowKey, clustering, cell), info);
         PartitionUpdate upd = partitionUpdate(valueKey, row);
         metadata.indexCfs.apply(upd, SecondaryIndexManager.IndexTransaction.NO_OP, opGroup, null);
+        logger.debug("Inserted entry into index for value {}", valueKey);
     }
 
     /**
@@ -412,8 +390,6 @@ public class CassandraIndex implements Index
                  buildIndexClustering(rowKey, clustering, cell),
                  new DeletionTime(cell.timestamp(), nowInSec),
                  opGroup);
-        if (logger.isDebugEnabled())
-            logger.debug("Removed index entry for cleaned-up value {}", valueKey);
     }
 
     /**
@@ -431,7 +407,6 @@ public class CassandraIndex implements Index
                  buildIndexClustering(rowKey, clustering, null),
                  deletion,
                  opGroup);
-        logger.debug("Removed index entry for cleaned-up value {}", valueKey);
     }
 
     private void doDelete(DecoratedKey indexKey,
@@ -442,6 +417,7 @@ public class CassandraIndex implements Index
         Row row = BTreeBackedRow.emptyDeletedRow(indexClustering, deletion);
         PartitionUpdate upd = partitionUpdate(indexKey, row);
         metadata.indexCfs.apply(upd, SecondaryIndexManager.IndexTransaction.NO_OP, opGroup, null);
+        logger.debug("Removed index entry for value {}", indexKey);
     }
 
     private void validateIndexedValue(ByteBuffer value)
@@ -527,8 +503,8 @@ public class CassandraIndex implements Index
     }
     private boolean isPrimaryKeyIndex()
     {
-        return metadata.indexedColumn.kind.equals(ColumnDefinition.Kind.PARTITION_KEY)
-               || metadata.indexedColumn.kind.equals(ColumnDefinition.Kind.CLUSTERING);
+        return metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY
+               || metadata.indexedColumn.kind == ColumnDefinition.Kind.CLUSTERING;
     }
 
     private Callable<?> getBuildIndexTask()
@@ -571,7 +547,7 @@ public class CassandraIndex implements Index
         logger.info("Index build of {} complete", metadata.getIndexName());
     }
 
-    private String getSSTableNames(Collection<SSTableReader> sstables)
+    private static String getSSTableNames(Collection<SSTableReader> sstables)
     {
         return StreamSupport.stream(sstables.spliterator(), false)
                             .map(SSTableReader::toString)

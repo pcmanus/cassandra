@@ -144,7 +144,6 @@ public class AtomicBTreePartition extends AbstractBTreePartition
                     deletionInfo = current.deletionInfo;
                 }
 
-                //todo partition level delete + RTs
                 if (!deletionInfo.isLive())
                     indexer.onPartitionDeletion(deletionInfo.getPartitionDeletion());
 
@@ -291,9 +290,11 @@ public class AtomicBTreePartition extends AbstractBTreePartition
             Columns mergedColumns = existing.columns().mergeTo(update.columns());
 
             Row.Builder builder = builder(existing.clustering());
-            colUpdateTimeDelta = Math.min(colUpdateTimeDelta, Rows.merge(existing, update, mergedColumns, builder, nowInSec, indexer));
+            colUpdateTimeDelta = Math.min(colUpdateTimeDelta, Rows.merge(existing, update, mergedColumns, builder, nowInSec));
 
             Row reconciled = builder.build();
+
+            indexer.onUpdated(existing, reconciled);
 
             dataSize += reconciled.dataSize() - existing.dataSize();
             heapSize += reconciled.unsharedHeapSizeExcludingData() - existing.unsharedHeapSizeExcludingData();

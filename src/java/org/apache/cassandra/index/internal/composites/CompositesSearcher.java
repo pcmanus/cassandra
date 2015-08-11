@@ -32,6 +32,7 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.index.internal.*;
+import org.apache.cassandra.thrift.Deletion;
 import org.apache.cassandra.utils.btree.BTreeSet;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
@@ -144,11 +145,12 @@ public class CompositesSearcher extends ColumnIndexSearcher
                 UnfilteredRowIterator dataIter = filterStaleEntries(dataCmd.queryMemtableAndDisk(metadata.baseCfs,
                                                                                                  orderGroup.baseReadOpOrderGroup()),
                                                                     metadata,
-                                                                    indexer,
                                                                     indexKey.getKey(),
                                                                     entries,
                                                                     orderGroup.writeOpOrderGroup(),
                                                                     command.nowInSec());
+
+
                 if (dataIter.isEmpty())
                 {
                     dataIter.close();
@@ -173,33 +175,58 @@ public class CompositesSearcher extends ColumnIndexSearcher
         };
     }
 
+    private void deleteAllEntries(final List<IndexEntry> entries, final OpOrder.Group writeOp, final int nowInSec)
+    {
+        entries.forEach(entry ->
+            indexer.deleteStaleEntry(entry.indexValue,
+                                     entry.indexClustering,
+                                     new DeletionTime(entry.timestamp, nowInSec),
+                                     writeOp));
+    }
+
     private UnfilteredRowIterator filterStaleEntries(UnfilteredRowIterator dataIter,
                                                      final ColumnIndexMetadata metadata,
-                                                     final CassandraIndex indexer,
                                                      final ByteBuffer indexValue,
                                                      final List<IndexEntry> entries,
                                                      final OpOrder.Group writeOp,
                                                      final int nowInSec)
     {
+        // collect stale index entries and delete them when we close this iterator
+        final List<IndexEntry> staleEntries = new ArrayList<>();
+
+        // if there is a partition level delete in the base table, we need to filter
+        // any index entries which would be shadowed by it
+        if (!dataIter.partitionLevelDeletion().isLive())
+        {
+            DeletionTime deletion = dataIter.partitionLevelDeletion();
+            entries.forEach(e -> {
+                if (deletion.deletes(e.timestamp))
+                    staleEntries.add(e);
+            });
+        }
+
         return new AlteringUnfilteredRowIterator(dataIter)
         {
             private int entriesIdx;
 
+            public void close()
+            {
+                deleteAllEntries(staleEntries, writeOp, nowInSec);
+                super.close();
+            }
+
             @Override
             protected Row computeNext(Row row)
             {
-                IndexEntry entry = findEntry(row.clustering(), writeOp, nowInSec);
+                IndexEntry entry = findEntry(row.clustering());
                 if (!metadata.functions.isStale(metadata, row, indexValue, nowInSec))
                     return row;
 
-                indexer.deleteStaleEntry(entry.indexValue,
-                                         entry.indexClustering,
-                                         new DeletionTime(entry.timestamp, nowInSec),
-                                         writeOp);
+                staleEntries.add(entry);
                 return null;
             }
 
-            private IndexEntry findEntry(Clustering clustering, OpOrder.Group writeOp, int nowInSec)
+            private IndexEntry findEntry(Clustering clustering)
             {
                 assert entriesIdx < entries.size();
                 while (entriesIdx < entries.size())
@@ -214,10 +241,7 @@ public class CompositesSearcher extends ColumnIndexSearcher
                     if (cmp == 0)
                         return entry;
                     else
-                        indexer.deleteStaleEntry(entry.indexValue,
-                                                 entry.indexClustering,
-                                                 new DeletionTime(entry.timestamp, nowInSec),
-                                                 writeOp);
+                        staleEntries.add(entry);
                 }
                 // entries correspond to the rows we've queried, so we shouldn't have a row that has no corresponding entry.
                 throw new AssertionError();

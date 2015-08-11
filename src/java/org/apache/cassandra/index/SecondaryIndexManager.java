@@ -70,7 +70,7 @@ import org.apache.cassandra.utils.concurrent.Refs;
  * Separating the task defintion from execution gives us greater flexibility though, so that in future, for example,
  * if the flush process allows it we leave open the possibility of executing more of these tasks asynchronously.
  *
- * The primary exception to the above is the Callable<?> returned from Index#addIndexedColumn. This may
+ * The primary exception to the above is the Callable returned from Index#addIndexedColumn. This may
  * involve a significant effort, building a new index over any existing data. We perform this task asynchronously;
  * as it is called as part of a schema update, which we do not want to block for a long period. Building non-custom
  * indexes is performed on the CompactionManager.
@@ -424,17 +424,18 @@ public class SecondaryIndexManager implements IndexRegistry
     }
 
     /**
-     * Delete all data from all indexes for this partition.  For when cleanup rips a partition out entirely.
-     * TODO : this can probably be improved
+     * Delete all data from all indexes for this partition.
+     * For when cleanup rips a partition out entirely.
+     *
+     * TODO : improve cleanup transaction to batch updates & perform them async
      */
     public void deletePartition(UnfilteredRowIterator partition, int nowInSec)
     {
         CleanupTransaction indexTransaction = newCleanupTransaction(partition.partitionKey(),
                                                                     partition.columns(),
-                                                                    1,
                                                                     nowInSec,
                                                                     TransactionType.CLEANUP);
-        indexTransaction.start();
+        indexTransaction.start(1);
         indexTransaction.onPartitionDeletion(partition.partitionLevelDeletion());
         indexTransaction.commit();
 
@@ -446,15 +447,10 @@ public class SecondaryIndexManager implements IndexRegistry
 
             indexTransaction = newCleanupTransaction(partition.partitionKey(),
                                                      partition.columns(),
-                                                     1,
                                                      nowInSec,
                                                      TransactionType.CLEANUP);
-            indexTransaction.start();
-
-            Row row = (Row) unfiltered;
-            for (Cell cell : row.cells())
-                indexTransaction.onRowUpdate(1, row.clustering(), cell);
-
+            indexTransaction.start(1);
+            indexTransaction.onRowDelete((Row)unfiltered);
             indexTransaction.commit();
         }
     }
@@ -657,15 +653,14 @@ public class SecondaryIndexManager implements IndexRegistry
         // a linear scan every time. Holding off that though until CASSANDRA-7771 to figure out
         // exactly how indexes are to be identified & associated with a given partition update
         Index.Indexer[] indexers = indexes.stream()
-                                                   .filter(i -> i.indexes(update.columns()))
-                                                   .map(i -> i.indexerFor(update.partitionKey(),
-                                                                          nowInSec,
-                                                                          opGroup,
-                                                                          TransactionType.WRITE_TIME))
-                                                   .toArray(Index.Indexer[]::new);
-        return indexers.length == 0
-               ? IndexTransaction.NO_OP
-               : new WriteTimeTransaction(nowInSec, indexers);
+                                          .filter(i -> i.indexes(update.columns()))
+                                          .map(i -> i.indexerFor(update.partitionKey(),
+                                                                 nowInSec,
+                                                                 opGroup,
+                                                                 TransactionType.WRITE_TIME))
+                                          .toArray(Index.Indexer[]::new);
+
+        return indexers.length == 0 ? IndexTransaction.NO_OP : new WriteTimeTransaction(indexers);
     }
 
     /**
@@ -673,11 +668,11 @@ public class SecondaryIndexManager implements IndexRegistry
      */
     public interface IndexTransaction
     {
-        // Instances of an IndexTransaction are tied to a single update of a single
-        // partition. A new instance is used for every write (obtained
-        // from the newUpdateTransaction(PartitionUpdate) method. Likewise, a single
+        // Instances of an IndexTransaction are scoped to a single partition update
+        // A new instance is used for every write, obtained from the
+        // newUpdateTransaction(PartitionUpdate) method. Likewise, a single
         // CleanupTransaction instance is used for each partition processed during a
-        // compaction.
+        // compaction or cleanup.
         //
         // We make certain guarantees about the lifecycle of each IndexTransaction
         // instance. Namely that start() will be called before any other
@@ -688,42 +683,30 @@ public class SecondaryIndexManager implements IndexRegistry
         // can be assured that all indexing events they receive relate to
         // the same single operation.
         //
-        // The Index.Indexer interface, and so really the write side of the secondary
-        // index API, is row-centric but reconcilliation (both at write time &
-        // during compaction) occurs on a per-Cell basis. In order to buffer these
-        // per-cell operations into per-Row chunks for consumption by Indexers,
-        // we guarantee that following a beginRowUpdateCall(), any updateCell()
-        // calls all relate to the same Row, and once all the cells in that row
-        // have been processed, finishRowUpdate() is called. We will never
-        // interleave calls to these three methods with values for different
-        // rows.
-        // Aside from this grouping, onPartitionDelete(), onRangeTombstone() and
-        // onInserted() calls may arrive in any order, but this should have no
-        // impact for the underlying Indexers as any events delivered to a
-        // single instance necessarily relate to a single partition
+        // onPartitionDelete(), onRangeTombstone(), onInserted() and onUpdated()
+        // calls may arrive in any order, but this should have no impact for the
+        // Indexers being notified as any events delivered to a single instance
+        // necessarily relate to a single partition.
         //
         // The typical sequence of events during a Memtable update would be:
-        // start()
-        // onPartitionDeletion(dt)    -- if the PartitionUpdate implies one
-        // onRangeTombstone(rt)*      -- for each in the PartitionUpdate, if any
+        // start()                       -- no-op, used to notify Indexers of the start of the transaction
+        // onPartitionDeletion(dt)       -- if the PartitionUpdate implies one
+        // onRangeTombstone(rt)*         -- for each in the PartitionUpdate, if any
         //
         // then:
-        // onInserted(row)*           -- called for each Row not already present in the Memtable
-        //
-        // and for any Row in the update for which a version is already present in the Memtable the following cycle:
-        // beginRowUpdate(columns, nowInSec, update, existing)
-        // updateCell(old, new)*      -- called on every Cell reconcilliation for the current Row
-        // finishRowUpdate()          -- called once all Cell reconcilliation is complete for the Row
-        //
-        // commit()                   -- finally, finish is called when the new Partition is swapped into the Memtable
+        // onInserted(row)*              -- called for each Row not already present in the Memtable
+        // onUpdated(existing, updated)* -- called for any Row in the update for where a version was already present
+        //                                  in the Memtable. It's important to note here that existing is the previous
+        //                                  row from the Memtable & updated is the final version replacing it. It is
+        //                                  *not* the incoming row, but the result of merging the incoming and existing
+        //                                  rows.
+        // commit()                      -- finally, finish is called when the new Partition is swapped into the Memtable
 
         void start();
         void onPartitionDeletion(DeletionTime deletionTime);
         void onRangeTombstone(RangeTombstone rangeTombstone);
         void onInserted(Row row);
-        void beginRowUpdate(Columns columns, Row update, Row existing);
-        void updateCell(Cell oldCell, Cell newCell);
-        void finishRowUpdate();
+        void onUpdated(Row existing, Row updated);
         void commit();
 
         IndexTransaction NO_OP = new IndexTransaction()
@@ -732,9 +715,7 @@ public class SecondaryIndexManager implements IndexRegistry
             public void onPartitionDeletion(DeletionTime deletionTime){}
             public void onRangeTombstone(RangeTombstone rangeTombstone){}
             public void onInserted(Row row){}
-            public void beginRowUpdate(Columns columns, Row update, Row existing){}
-            public void updateCell(Cell oldCell, Cell newCell){}
-            public void finishRowUpdate(){}
+            public void onUpdated(Row existing, Row updated){}
             public void commit(){}
         };
     }
@@ -745,16 +726,11 @@ public class SecondaryIndexManager implements IndexRegistry
     private static final class WriteTimeTransaction implements IndexTransaction
     {
         private final Index.Indexer[] indexers;
-        private final int nowInSec;
-        private Row.Builder newWriter;
-        private Row.Builder oldWriter;
 
-        private WriteTimeTransaction(int nowInSec, Index.Indexer...indexers)
+        private WriteTimeTransaction(Index.Indexer...indexers)
         {
             // don't allow null indexers, if we don't need any use a NullUpdater object
             for (Index.Indexer indexer : indexers) assert indexer != null;
-
-            this.nowInSec = nowInSec;
             this.indexers = indexers;
         }
 
@@ -778,37 +754,41 @@ public class SecondaryIndexManager implements IndexRegistry
             Arrays.stream(indexers).forEach(h -> h.insertRow(row));
         }
 
-        public void beginRowUpdate(Columns columns,
-                                   Row update,
-                                   Row existing)
+        public void onUpdated(Row existing, Row updated)
         {
-            newWriter = BTreeBackedRow.sortedBuilder(columns);
-            newWriter.newRow(update.clustering());
-            newWriter.addPrimaryKeyLivenessInfo(update.primaryKeyLivenessInfo());
-            newWriter.addRowDeletion(update.deletion());
-            oldWriter = BTreeBackedRow.sortedBuilder(columns);
-            oldWriter.newRow(existing.clustering());
-            oldWriter.addPrimaryKeyLivenessInfo(existing.primaryKeyLivenessInfo());
-            oldWriter.addRowDeletion(existing.deletion());
-        }
+            final Row.Builder toRemove = BTreeBackedRow.sortedBuilder(existing.columns());
+            toRemove.newRow(existing.clustering());
+            final Row.Builder toInsert = BTreeBackedRow.sortedBuilder(updated.columns());
+            toInsert.newRow(updated.clustering());
+            // diff listener collates the columns to be added & removed from the indexes
+            RowDiffListener diffListener = new RowDiffListener()
+            {
+                public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
+                {
+                }
 
-        public void updateCell(Cell oldCell, Cell newCell)
-        {
-            if (newCell != null && newCell.isLive(nowInSec))
-                newWriter.addCell(newCell);
+                public void onDeletion(int i, Clustering clustering, DeletionTime merged, DeletionTime original)
+                {
+                }
 
-            if (oldCell == null)
-                return;
+                public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+                {
+                }
 
-            if(newCell == null || shouldCleanupOldValue(oldCell, newCell))
-                oldWriter.addCell(oldCell);
-        }
+                public void onCell(int i, Clustering clustering, Cell merged, Cell original)
+                {
+                    if (merged != null && merged != original)
+                        toInsert.addCell(merged);
 
-        public void finishRowUpdate()
-        {
-            Row oldRow = oldWriter.build();
-            Row newRow = newWriter.build();
-            Arrays.stream(indexers).forEach(h -> h.updateRow(oldRow, newRow));
+                    if (merged == null || (original != null && shouldCleanupOldValue(original, merged)))
+                        toRemove.addCell(original);
+
+                }
+            };
+            Rows.diff(diffListener, updated, updated.columns().mergeTo(existing.columns()), existing);
+            Row oldRow = toRemove.build();
+            Row newRow = toInsert.build();
+            Arrays.stream(indexers).forEach(i -> i.updateRow(oldRow, newRow));
         }
 
         public void commit()
@@ -836,68 +816,59 @@ public class SecondaryIndexManager implements IndexRegistry
      */
     public CleanupTransaction newCleanupTransaction(DecoratedKey key,
                                                     PartitionColumns partitionColumns,
-                                                    int versions,
                                                     int nowInSec,
                                                     TransactionType transactionType)
     {
         Index[] interestedIndexes = indexes.stream()
-                                               .filter(i -> i.indexes(partitionColumns))
-                                               .toArray(Index[]::new);
-        if (interestedIndexes.length == 0)
-            return CleanupTransaction.NO_OP;
+                                           .filter(i -> i.indexes(partitionColumns))
+                                           .toArray(Index[]::new);
 
-        return new IndexGCTransaction(key, partitionColumns, versions, nowInSec, transactionType, interestedIndexes);
+        return interestedIndexes.length == 0
+               ? CleanupTransaction.NO_OP
+               : new IndexGCTransaction(key, nowInSec, transactionType, interestedIndexes);
     }
 
     public interface CleanupTransaction
     {
-        // Compaction is somewhat simpler than dealing with incoming writes,
-        // it being only concerned (for now) with cleaning up stale index entries.
-        // As such, it performs a variation on the Row buffering described in the
-        // comments of WriteTimeTransaction.
+        // Compaction & Cleanup are somewhat simpler than dealing with incoming writes,
+        // being only concerned with cleaning up stale index entries.
         //
         // When multiple versions of a row are compacted, the CleanupTransaction is
-        // notified of the versions being dropped, which it combines into Rows
-        // and forwards to the registered Index.EventHandler instances when the
-        // 'onRowDone()' event is fired on the CompactionIterator's listener.
-        // Any Cell versions which are retained are not passed to the CleanupTransaction
-        // so they are not included in the Rows to be removed by the registered
-        // Indexer.UpdateHandler instances
+        // notified of the versions being merged, which it diffs against the merge result
+        // and forwards to the registered Index.Indexer instances when on commit.
 
-        // TODO add a row deletion event for cleanup
-        void start();
+        void start(int versions);
         void onPartitionDeletion(DeletionTime deletionTime);
-        void onRowUpdate(int rowIndex, Clustering clustering, Cell cell);
+        void onRowMerge(Columns columns, Row merged, Row...versions);
+        void onRowDelete(Row row);
         void commit();
 
         CleanupTransaction NO_OP = new CleanupTransaction()
         {
-            public void start(){}
+            public void start(int versions){}
             public void onPartitionDeletion(DeletionTime deletionTime){}
-            public void onRowUpdate(int rowIndex, Clustering clustering, Cell cell){}
+            public void onRowMerge(Columns columns, Row merged, Row...versions){}
+            public void onRowDelete(Row row){}
             public void commit(){}
         };
     }
 
     /**
      * A single-use transaction for updating indexes for a single partition during a compaction / cleanup operation
-     * todo make this smarter at batching updates so we can use a single transaction to process multiple rows in
+     * TODO : make this smarter at batching updates so we can use a single transaction to process multiple rows in
      * a single partition
      */
     private final class IndexGCTransaction implements CleanupTransaction
     {
         private final DecoratedKey key;
-        private final PartitionColumns columns;
         private final int nowInSec;
         private final Index[] indexes;
-        private final Row.Builder[] rows;
         private final TransactionType transactionType;
 
+        private Row[] rows;
         private DeletionTime partitionDelete;
 
         private IndexGCTransaction(DecoratedKey key,
-                                   PartitionColumns columns,
-                                   int versions,
                                    int nowInSec,
                                    TransactionType transactionType,
                                    Index...indexes)
@@ -906,44 +877,77 @@ public class SecondaryIndexManager implements IndexRegistry
             for (Index index : indexes) assert index != null;
 
             this.key = key;
-            this.columns = columns;
-            this.rows = new Row.Builder[versions];
             this.indexes = indexes;
             this.nowInSec = nowInSec;
             this.transactionType = transactionType;
         }
 
-        private Row.Builder currentRow(int i, Clustering clustering)
+        public void start(int versions)
         {
-            if (rows[i] == null)
-            {
-                rows[i] = BTreeBackedRow.sortedBuilder(clustering == Clustering.STATIC_CLUSTERING
-                                                              ? columns.statics
-                                                              : columns.regulars);
-                rows[i].newRow(clustering);
-            }
-            return rows[i];
+            // versions may be 0 if this transaction is only to cover a partition delete during cleanup
+            if (versions > 0)
+                rows = new Row[versions];
         }
 
-        public void start()
-        {
-            // reset the row builders
-            for(int i=0; i< rows.length; i++)
-                rows[i] = null;
-        }
-
+        // Called during cleanup
         public void onPartitionDeletion(DeletionTime deletionTime)
         {
             partitionDelete = deletionTime;
         }
 
-        public void onRowUpdate(int rowIndex, Clustering clustering, Cell cell)
+        // Called during cleanup, where versions should always == 1
+        public void onRowDelete(Row row)
         {
-            currentRow(rowIndex, clustering).addCell(cell);
+            assert rows.length == 1;
+            rows[0] = row;
+        }
+
+        // Called during compaction
+        public void onRowMerge(Columns columns, Row merged, Row...versions)
+        {
+            // Diff listener constructs rows representing deltas between the merged and original versions
+            // These delta rows are then passed to registered indexes for removal processing
+            final Row.Builder[] builders = new Row.Builder[versions.length];
+            RowDiffListener diffListener = new RowDiffListener()
+            {
+                public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
+                {
+                }
+
+                public void onDeletion(int i, Clustering clustering, DeletionTime merged, DeletionTime original)
+                {
+                }
+
+                public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+                {
+                }
+
+                public void onCell(int i, Clustering clustering, Cell merged, Cell original)
+                {
+                    if (original != null && merged != original)
+                    {
+                        if (builders[i] == null)
+                        {
+                            builders[i] = BTreeBackedRow.sortedBuilder(columns);
+                            builders[i].newRow(clustering);
+                        }
+                        builders[i].addCell(original);
+                    }
+                }
+            };
+
+            Rows.diff(diffListener, merged, columns, versions);
+
+            for(int i = 0; i < builders.length; i++)
+                if (builders[i] != null)
+                    rows[i] = builders[i].build();
         }
 
         public void commit()
         {
+            if (rows == null && partitionDelete == null)
+                return;
+
             try (OpOrder.Group opGroup = Keyspace.writeOrder.start())
             {
                 Index.Indexer[] indexers = Arrays.stream(indexes)
@@ -953,14 +957,10 @@ public class SecondaryIndexManager implements IndexRegistry
                 Arrays.stream(indexers).forEach(Index.Indexer::begin);
 
                 flushPartitionDelete(indexers);
-                for (Row.Builder builder : rows)
-                {
-                    if (builder != null)
-                    {
-                        Row row = builder.build();
+
+                for (Row row : rows)
+                    if (row != null)
                         Arrays.stream(indexers).forEach(indexer -> indexer.removeRow(row));
-                    }
-                }
 
                 Arrays.stream(indexers).forEach(Index.Indexer::finish);
             }

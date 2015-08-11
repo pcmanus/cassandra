@@ -27,7 +27,6 @@ import com.google.common.collect.PeekingIterator;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.PartitionStatisticsCollector;
-import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.utils.SearchIterator;
 
 /**
@@ -129,7 +128,7 @@ public abstract class Rows
      * @param diffListener the listener to which to signal the differences between the inputs and the merged
      * result.
      */
-    public static void diff(Row merged, Columns columns, Row[] inputs, RowDiffListener diffListener)
+    public static void diff(RowDiffListener diffListener, Row merged, Columns columns, Row...inputs)
     {
         Clustering clustering = merged.clustering();
         LivenessInfo mergedInfo = merged.primaryKeyLivenessInfo().isEmpty() ? null : merged.primaryKeyLivenessInfo();
@@ -220,13 +219,8 @@ public abstract class Rows
     {
         Columns mergedColumns = row1.columns().mergeTo(row2.columns());
         Row.Builder builder = BTreeRow.sortedBuilder(mergedColumns);
-        merge(row1, row2, mergedColumns, builder, nowInSec, SecondaryIndexManager.IndexTransaction.NO_OP);
+        merge(row1, row2, mergedColumns, builder, nowInSec);
         return builder.build();
-    }
-
-    public static void merge(Row row1, Row row2, Columns mergedColumns, Row.Builder builder, int nowInSec)
-    {
-        merge(row1, row2, mergedColumns, builder, nowInSec, SecondaryIndexManager.IndexTransaction.NO_OP);
     }
 
     // Merge rows in memtable
@@ -235,8 +229,7 @@ public abstract class Rows
                              Row update,
                              Columns mergedColumns,
                              Row.Builder builder,
-                             int nowInSec,
-                             SecondaryIndexManager.IndexTransaction indexUpdater)
+                             int nowInSec)
     {
         Clustering clustering = existing.clustering();
         builder.newRow(clustering);
@@ -255,8 +248,6 @@ public abstract class Rows
         builder.addPrimaryKeyLivenessInfo(mergedInfo);
         builder.addRowDeletion(deletion);
 
-        indexUpdater.beginRowUpdate(mergedColumns, update, existing);
-
         for (int i = 0; i < mergedColumns.simpleColumnCount(); i++)
         {
             ColumnDefinition c = mergedColumns.getSimple(i);
@@ -266,8 +257,7 @@ public abstract class Rows
                                                             updateCell,
                                                             deletion,
                                                             builder,
-                                                            nowInSec,
-                                                            indexUpdater));
+                                                            nowInSec));
         }
 
         for (int i = 0; i < mergedColumns.complexColumnCount(); i++)
@@ -286,10 +276,9 @@ public abstract class Rows
 
             Iterator<Cell> existingCells = existingData == null ? null : existingData.iterator();
             Iterator<Cell> updateCells = updateData == null ? null : updateData.iterator();
-            timeDelta = Math.min(timeDelta, Cells.reconcileComplex(c, existingCells, updateCells, maxDt, builder, nowInSec, indexUpdater));
+            timeDelta = Math.min(timeDelta, Cells.reconcileComplex(c, existingCells, updateCells, maxDt, builder, nowInSec));
         }
 
-        indexUpdater.finishRowUpdate();
         return timeDelta;
     }
 }

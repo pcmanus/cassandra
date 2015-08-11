@@ -237,7 +237,7 @@ public class DataResolver extends ResponseResolver
                 if (merged.isEmpty())
                     return;
 
-                Rows.diff(merged, columns, versions, diffListener);
+                Rows.diff(diffListener, merged, columns, versions);
                 for (int i = 0; i < currentRows.length; i++)
                 {
                     if (currentRows[i] != null)

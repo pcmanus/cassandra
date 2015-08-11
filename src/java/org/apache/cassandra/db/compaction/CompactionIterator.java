@@ -162,25 +162,31 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                     return null;
 
                 // If we have a 2ndary index, we must update it with deleted/shadowed cells.
+                // we can reuse a single CleanupTransaction for the duration of a partition.
+                // Currently, it doesn't do any batching of row updates, so every merge event
+                // for a single partition results in a fresh cycle of:
+                // * Get new Indexer instances
+                // * Keyspace.writeOrder.start() (in an ARM block)
+                // * Indexer::start
+                // * Indexer::removeRow (for every row being purged by compaction)
+                // * Indexer::finish
                 // TODO: this should probably be done asynchronously and batched.
+                final SecondaryIndexManager.CleanupTransaction indexTransaction =
+                controller.cfs.indexManager.newCleanupTransaction(partitionKey,
+                                                                  partitionColumns,
+                                                                  nowInSec,
+                                                                  SecondaryIndexManager.TransactionType.COMPACTION);
 
                 return new UnfilteredRowIterators.MergeListener()
                 {
                     public void onMergedPartitionLevelDeletion(DeletionTime mergedDeletion, DeletionTime[] versions)
                     {
-                        // todo call indexTransaction.partitionDeletion is !mergedDeletion.isLive() ?
                     }
 
                     public void onMergedRows(Row merged, Columns columns, Row[] versions)
                     {
-                        final SecondaryIndexManager.CleanupTransaction indexTransaction =
-                            controller.cfs.indexManager.newCleanupTransaction(partitionKey,
-                                                                              partitionColumns,
-                                                                              versions.length,
-                                                                              nowInSec,
-                                                                              SecondaryIndexManager.TransactionType.COMPACTION);
-                        indexTransaction.start();
-                        Rows.diff(merged, columns, versions, diffListener(indexTransaction));
+                        indexTransaction.start(versions.length);
+                        indexTransaction.onRowMerge(columns, merged, versions);
                         indexTransaction.commit();
                     }
 
@@ -198,31 +204,6 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             {
             }
         };
-    }
-
-    private RowDiffListener diffListener(SecondaryIndexManager.CleanupTransaction indexTransaction)
-    {
-        return new RowDiffListener()
-        {
-            public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
-            {
-            }
-
-            public void onDeletion(int i, Clustering clustering, DeletionTime merged, DeletionTime original)
-            {
-            }
-
-            public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
-            {
-            }
-
-            public void onCell(int i, Clustering clustering, Cell merged, Cell original)
-            {
-                if (original != null && (merged == null || !merged.isLive(nowInSec)))
-                    indexTransaction.onRowUpdate(i, clustering, original);
-            }
-        };
-
     }
 
     private void updateBytesRead()
