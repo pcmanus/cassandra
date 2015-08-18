@@ -113,7 +113,7 @@ public abstract class MultiColumnRestriction extends AbstractRestriction
     @Override
     public final boolean hasSupportingIndex(SecondaryIndexManager indexManager)
     {
-        for (Index index : indexManager.listIndexers())
+        for (Index index : indexManager.listIndexes())
            if (isSupportedBy(index))
                return true;
         return false;

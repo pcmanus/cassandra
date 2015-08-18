@@ -470,7 +470,7 @@ public class SecondaryIndexTest
 
     private String getIndexNameForColumn(ColumnFamilyStore cfs, ColumnDefinition column)
     {
-        return cfs.indexManager.listIndexers()
+        return cfs.indexManager.listIndexes()
                                .stream()
                                .filter(indexer -> indexer.getIndexedColumns().contains(column))
                                .findFirst()

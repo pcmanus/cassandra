@@ -611,7 +611,7 @@ public class ThriftValidation
                                                                                   me.getMessage()));
             }
 
-            for(Index index : idxManager.listIndexers())
+            for(Index index : idxManager.listIndexes())
                 isIndexed |= index.supportsExpression(def, Operator.valueOf(expression.op.name()));
         }
 

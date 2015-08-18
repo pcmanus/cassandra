@@ -19,11 +19,11 @@
 package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.Callable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.function.BiFunction;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterators;
@@ -34,26 +34,21 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.UpdateBuilder;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.cql3.ColumnIdentifier;
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.IndexTarget;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.index.*;
-import org.apache.cassandra.io.sstable.ISSTableScanner;
+import org.apache.cassandra.index.StubIndex;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.concurrent.OpOrder;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -483,7 +478,7 @@ public class RangeTombstoneTest
         if (rebuild != null)
             rebuild.get();
 
-        StubIndex index = (StubIndex)cfs.indexManager.listIndexers()
+        StubIndex index = (StubIndex)cfs.indexManager.listIndexes()
                                                      .stream()
                                                      .filter(i -> "test_index".equals(i.getIndexName()))
                                                      .findFirst()
@@ -578,7 +573,8 @@ public class RangeTombstoneTest
         // If rebuild there is, wait for the rebuild to finish so it doesn't race with the following insertions
         if (rebuild != null)
             rebuild.get();
-        StubIndex index = (StubIndex)cfs.indexManager.listIndexers()
+
+        StubIndex index = (StubIndex)cfs.indexManager.listIndexes()
                                                      .stream()
                                                      .filter(i -> "test_index".equals(i.getIndexName()))
                                                      .findFirst()

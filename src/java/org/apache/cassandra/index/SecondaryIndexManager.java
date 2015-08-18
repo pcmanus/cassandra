@@ -487,17 +487,15 @@ public class SecondaryIndexManager implements IndexRegistry
 
         indexes.values().forEach(index -> index.getReducedFilter(command.rowFilter())
                                                .ifPresent(reduced ->
-                                                          indexesByReducedFilterSize.put(reduced.getExpressions()
-                                                                                                .size(),
-                                                                                         index)
-                                               )
-        );
+                                                          indexesByReducedFilterSize.put(reduced.getExpressions().size(),
+                                                                                         index)));
 
         // no indexes were able to reduce the filter
         if (indexesByReducedFilterSize.isEmpty())
         {
             logger.debug("No applicable indexes found");
-            Tracing.trace("No applicable indexes found");
+            if (includeInTrace)
+                Tracing.trace("No applicable indexes found");
             return null;
         }
 
@@ -646,7 +644,7 @@ public class SecondaryIndexManager implements IndexRegistry
         return indexes.get(metadata);
     }
 
-    public Collection<Index> listIndexers()
+    public Collection<Index> listIndexes()
     {
         return ImmutableSet.copyOf(indexes.values());
     }

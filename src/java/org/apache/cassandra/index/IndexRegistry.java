@@ -18,5 +18,5 @@ public interface IndexRegistry
     void unregisterIndex(Index index);
 
     Index getIndex(IndexMetadata indexMetadata);
-    Collection<Index> listIndexers();
+    Collection<Index> listIndexes();
 }

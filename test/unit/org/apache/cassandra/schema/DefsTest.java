@@ -516,7 +516,7 @@ public class DefsTest
                                           .orElseThrow(() -> new AssertionError("Index metadata not found"))
                                           .iterator()
                                           .next();
-        ColumnFamilyStore indexCfs = cfs.indexManager.listIndexers()
+        ColumnFamilyStore indexCfs = cfs.indexManager.listIndexes()
                                                      .stream()
                                                      .filter(i -> i.getIndexMetadata().equals(index))
                                                      .map(Index::getBackingTable)
@@ -546,7 +546,7 @@ public class DefsTest
         MigrationManager.announceColumnFamilyUpdate(meta, false);
 
         // check
-        assertTrue(cfs.indexManager.listIndexers().isEmpty());
+        assertTrue(cfs.indexManager.listIndexes().isEmpty());
         TransactionLog.waitForDeletions();
         assertFalse(new File(desc.filenameFor(Component.DATA)).exists());
     }

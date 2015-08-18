@@ -18,9 +18,9 @@ import org.apache.cassandra.schema.IndexMetadata;
 
 /**
  * Implementations provide specializations for dealing with entries in the various
- * different types of ColumnIndex. Variations are based on the type of column the
- * index is on; i.e. partition key, clustering column, collection keys/values/entries,
- * regular/compact/static column.
+ * different types of internal index. Variations are based on the characteristics of
+ * indexed column; i.e. its kind, the storage for the table and for collections,
+ * whether the collection keys/values/entries are the index target.
  */
 public interface ColumnIndexFunctions
 {

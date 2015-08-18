@@ -555,7 +555,7 @@ public class Keyspace
             if (idxName != null)
             {
                 boolean validIndex = false;
-                for (Index indexer : cfStore.indexManager.listIndexers())
+                for (Index indexer : cfStore.indexManager.listIndexes())
                 {
                     if (indexer.getIndexName().equals(cfName))
                     {

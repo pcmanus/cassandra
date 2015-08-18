@@ -40,6 +40,9 @@ public class ColumnIndexMetadata
         return indexCfs.metadata.comparator;
     }
 
+    // todo: should change this to return indexMetadata.name, but there are some places
+    // where the index cfs name (i.e. of the form basetable.indexname) is expected, such as
+    // input to nodetool rebuild_index and in system.IndexInfo
     public String getIndexName()
     {
         return indexCfs.name;
