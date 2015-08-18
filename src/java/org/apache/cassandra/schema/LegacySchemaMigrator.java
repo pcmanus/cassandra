@@ -626,7 +626,7 @@ public final class LegacySchemaMigrator
                                                                 isStaticCompactTable,
                                                                 needsUpgrade);
 
-            indexes.add(IndexMetadata.legacyIndex(column, indexName, indexType, indexOptions));
+            indexes.add(IndexMetadata.singleColumnIndex(column, indexName, indexType, indexOptions));
         }
 
         return indexes.build();

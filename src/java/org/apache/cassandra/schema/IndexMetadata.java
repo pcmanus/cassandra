@@ -19,9 +19,7 @@
 package org.apache.cassandra.schema;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableMap;
@@ -75,20 +73,20 @@ public final class IndexMetadata
         this.columns = columns == null ? ImmutableSet.of() : ImmutableSet.copyOf(columns);
     }
 
-    public static IndexMetadata legacyIndex(ColumnIdentifier column,
-                                              String name,
-                                              IndexType type,
-                                              Map<String, String> options)
+    public static IndexMetadata singleColumnIndex(ColumnIdentifier column,
+                                                  String name,
+                                                  IndexType type,
+                                                  Map<String, String> options)
     {
         return new IndexMetadata(name, options, type, TargetType.COLUMN, Collections.singleton(column));
     }
 
-    public static IndexMetadata legacyIndex(ColumnDefinition column,
-                                              String name,
-                                              IndexType type,
-                                              Map<String, String> options)
+    public static IndexMetadata singleColumnIndex(ColumnDefinition column,
+                                                  String name,
+                                                  IndexType type,
+                                                  Map<String, String> options)
     {
-        return legacyIndex(column.name, name, type, options);
+        return singleColumnIndex(column.name, name, type, options);
     }
 
     public static boolean isNameValid(String name)
@@ -179,6 +177,16 @@ public final class IndexMetadata
     public boolean isComposites()
     {
         return indexType == IndexType.COMPOSITES;
+    }
+
+    public boolean isRowIndex()
+    {
+        return targetType == TargetType.ROW;
+    }
+
+    public boolean isColumnIndex()
+    {
+        return targetType == TargetType.COLUMN;
     }
 
     public int hashCode()

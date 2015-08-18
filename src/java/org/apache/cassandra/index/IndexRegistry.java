@@ -2,6 +2,8 @@ package org.apache.cassandra.index;
 
 import java.util.Collection;
 
+import org.apache.cassandra.schema.IndexMetadata;
+
 /**
  * The collection of all Index instances for a base table.
  * The SecondaryIndexManager for a ColumnFamilyStore contains an IndexRegistry
@@ -14,5 +16,7 @@ public interface IndexRegistry
 {
     void registerIndex(Index index);
     void unregisterIndex(Index index);
+
+    Index getIndex(IndexMetadata indexMetadata);
     Collection<Index> listIndexers();
 }

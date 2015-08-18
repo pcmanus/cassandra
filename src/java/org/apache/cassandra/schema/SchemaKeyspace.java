@@ -1448,7 +1448,7 @@ public final class SchemaKeyspace
                     findColumnIdentifierWithName(targetColumnName, cfm.allColumns()).ifPresent(targetColumns::add);
             });
         }
-        return IndexMetadata.legacyIndex(targetColumns.iterator().next(), name, type, options);
+        return IndexMetadata.singleColumnIndex(targetColumns.iterator().next(), name, type, options);
     }
 
     private static Optional<ColumnIdentifier> findColumnIdentifierWithName(String name,

@@ -629,34 +629,4 @@ public class LegacySchemaMigratorTest
 
         return ListType.getInstance(UTF8Type.instance, false).decompose(arguments);
     }
-
-    // temporary
-    public static class TestIndex implements Index
-    {
-        public void init(ColumnFamilyStore baseCfs) {}
-        public void register(IndexRegistry registry) {}
-        public void maybeUnregister(IndexRegistry registry) {}
-        public String getIndexName() { return null; }
-        public Optional<ColumnFamilyStore> getBackingTable() { return Optional.empty(); }
-        public Collection<ColumnDefinition> getIndexedColumns() { return null; }
-        public Callable<?> getBlockingFlushTask() { return null; }
-        public Callable<?> getTruncateTask(long truncatedAt) { return null; }
-        public Callable<?> getInvalidateTask() { return null; }
-        public Callable<?> getMetadataReloadTask() { return null; }
-        public Callable<?> setIndexMetadata(IndexMetadata metadata) { return null; }
-        public IndexMetadata getIndexMetadata() { return null; }
-        public boolean indexes(PartitionColumns columns) { return false; }
-        public boolean supportsExpression(ColumnDefinition column, Operator operator) { return false; }
-        public Optional<RowFilter> getReducedFilter(RowFilter filter) { return Optional.empty(); }
-        public long getEstimatedResultRows() { return 0; }
-        public void validate(DecoratedKey partitionKey) throws InvalidRequestException {}
-        public void validate(Clustering clustering) throws InvalidRequestException {}
-        public void validate(ColumnDefinition column, ByteBuffer cellValue, CellPath path) {}
-        public Indexer indexerFor(DecoratedKey key,
-                                  int nowInSec,
-                                  OpOrder.Group opGroup,
-                                  SecondaryIndexManager.TransactionType transactionType) { return null; }
-        public Searcher searcherFor(ReadCommand command) { return null; }
-        public BiFunction<PartitionIterator, RowFilter, PartitionIterator> postProcessorFor(ReadCommand command) { return null; }
-    }
 }

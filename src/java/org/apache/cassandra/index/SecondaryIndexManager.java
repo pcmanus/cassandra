@@ -126,6 +126,7 @@ public class SecondaryIndexManager implements IndexRegistry
         this.baseCfs = baseCfs;
     }
 
+
     /**
      * Drops and adds new indexes associated with the underlying CF
      */
@@ -638,6 +639,11 @@ public class SecondaryIndexManager implements IndexRegistry
         Index removed = indexes.remove(index.getIndexMetadata());
         logger.debug(removed == null ? "Index {} was not registered" : "Removed index {} from registry",
                      index.getIndexMetadata().name);
+    }
+
+    public Index getIndex(IndexMetadata metadata)
+    {
+        return indexes.get(metadata);
     }
 
     public Collection<Index> listIndexers()

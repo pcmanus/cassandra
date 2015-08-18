@@ -34,7 +34,6 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.Config.DiskFailurePolicy;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.*;
-import org.apache.cassandra.config.Config.DiskFailurePolicy;
 import org.apache.cassandra.db.Directories.DataDirectory;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.index.internal.ColumnIndexFunctions;
@@ -169,10 +168,10 @@ public class DirectoriesTest
                                   .addClusteringColumn("col", UTF8Type.instance)
                                   .build();
         ColumnDefinition col = PARENT_CFM.getColumnDefinition(ByteBufferUtil.bytes("col"));
-        IndexMetadata indexDef = IndexMetadata.legacyIndex(col,
-                                                           "idx",
-                                                           IndexMetadata.IndexType.KEYS,
-                                                           Collections.emptyMap());
+        IndexMetadata indexDef = IndexMetadata.singleColumnIndex(col,
+                                                                 "idx",
+                                                                 IndexMetadata.IndexType.KEYS,
+                                                                 Collections.emptyMap());
         PARENT_CFM.indexes(PARENT_CFM.getIndexes().with(indexDef));
         CFMetaData INDEX_CFM = ColumnIndexFunctions.getFunctions(PARENT_CFM, indexDef)
                                                    .indexCfsMetadata(PARENT_CFM, indexDef);

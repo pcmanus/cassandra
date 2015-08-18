@@ -513,10 +513,9 @@ public class DefsTest
         ColumnDefinition indexedColumn = cfs.metadata.getColumnDefinition(ByteBufferUtil.bytes("birthdate"));
         IndexMetadata index = cfs.metadata.getIndexes()
                                           .get(indexedColumn)
-                                          .orElseThrow(() -> new AssertionError("Index metadata not found"));
-        System.out.println("XXX index name from meta = " + index.name);
-        for (Index i : cfs.indexManager.listIndexers())
-            System.out.println("XXX index name from SIM = " + i.getIndexName() + " ==> " + i.getIndexMetadata().name);
+                                          .orElseThrow(() -> new AssertionError("Index metadata not found"))
+                                          .iterator()
+                                          .next();
         ColumnFamilyStore indexCfs = cfs.indexManager.listIndexers()
                                                      .stream()
                                                      .filter(i -> i.getIndexMetadata().equals(index))

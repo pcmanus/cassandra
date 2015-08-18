@@ -350,6 +350,24 @@ public class CassandraIndexTest extends CQLTester
                         .run();
     }
 
+    @Test
+    public void createIndexesOnMultipleMapDimensions() throws Throwable
+    {
+        Object[] row1 = row(0, 0, ImmutableMap.of("a", 10, "b", 20, "c", 30));
+        Object[] row2 = row(1, 1, ImmutableMap.of("d", 11, "e", 21, "f", 32));
+        createTable("CREATE TABLE %s (k int, c int, m map<text, int>, PRIMARY KEY(k, c))");
+        createIndex("CREATE INDEX mkey_index on %s(keys(m))");
+        createIndex("CREATE INDEX mval_index on %s(m)");
+
+        execute("INSERT INTO %s (k, c, m) VALUES (?, ?, ?)", row1);
+        execute("INSERT INTO %s (k, c, m) VALUES (?, ?, ?)", row2);
+
+        assertRows(execute("SELECT * FROM %s WHERE m CONTAINS KEY 'a'"), row1);
+        assertRows(execute("SELECT * FROM %s WHERE m CONTAINS 20"), row1);
+        assertRows(execute("SELECT * FROM %s WHERE m CONTAINS KEY 'f'"), row2);
+        assertRows(execute("SELECT * FROM %s WHERE m CONTAINS 32"), row2);
+    }
+
     private class TestScript
     {
         String tableDefinition;

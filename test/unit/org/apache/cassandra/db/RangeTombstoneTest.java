@@ -45,9 +45,7 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.index.Index;
-import org.apache.cassandra.index.IndexRegistry;
-import org.apache.cassandra.index.SecondaryIndexManager;
+import org.apache.cassandra.index.*;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
@@ -471,11 +469,11 @@ public class RangeTombstoneTest
         cfs.disableAutoCompaction();
 
         ColumnDefinition cd = cfs.metadata.getColumnDefinition(indexedColumnName).copy();
-        IndexMetadata indexDef = IndexMetadata.legacyIndex(cd,
-                                                           "test_index",
-                                                           IndexMetadata.IndexType.CUSTOM,
-                                                           ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
-                                                                           TestIndex.class.getName()));
+        IndexMetadata indexDef = IndexMetadata.singleColumnIndex(cd,
+                                                                 "test_index",
+                                                                 IndexMetadata.IndexType.CUSTOM,
+                                                                 ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
+                                                                                 StubIndex.class.getName()));
 
         if (!cfs.metadata.getIndexes().get("test_index").isPresent())
             cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
@@ -485,12 +483,12 @@ public class RangeTombstoneTest
         if (rebuild != null)
             rebuild.get();
 
-        TestIndex index = (TestIndex)cfs.indexManager.listIndexers()
+        StubIndex index = (StubIndex)cfs.indexManager.listIndexers()
                                                      .stream()
                                                      .filter(i -> "test_index".equals(i.getIndexName()))
                                                      .findFirst()
                                                      .orElseThrow(() -> new RuntimeException(new AssertionError("Index not found")));
-        index.resetCounts();
+        index.reset();
 
         UpdateBuilder builder = UpdateBuilder.create(cfs.metadata, key).withTimestamp(0);
         for (int i = 0; i < 10; i++)
@@ -567,11 +565,11 @@ public class RangeTombstoneTest
         cfs.disableAutoCompaction();
 
         ColumnDefinition cd = cfs.metadata.getColumnDefinition(indexedColumnName).copy();
-        IndexMetadata indexDef = IndexMetadata.legacyIndex(cd,
-                                                           "test_index",
-                                                           IndexMetadata.IndexType.CUSTOM,
-                                                           ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
-                                                                           TestIndex.class.getName()));
+        IndexMetadata indexDef = IndexMetadata.singleColumnIndex(cd,
+                                                                 "test_index",
+                                                                 IndexMetadata.IndexType.CUSTOM,
+                                                                 ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
+                                                                                 StubIndex.class.getName()));
 
         if (!cfs.metadata.getIndexes().get("test_index").isPresent())
             cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
@@ -580,12 +578,12 @@ public class RangeTombstoneTest
         // If rebuild there is, wait for the rebuild to finish so it doesn't race with the following insertions
         if (rebuild != null)
             rebuild.get();
-        TestIndex index = (TestIndex)cfs.indexManager.listIndexers()
+        StubIndex index = (StubIndex)cfs.indexManager.listIndexers()
                                                      .stream()
                                                      .filter(i -> "test_index".equals(i.getIndexName()))
                                                      .findFirst()
                                                      .orElseThrow(() -> new RuntimeException(new AssertionError("Index not found")));
-        index.resetCounts();
+        index.reset();
 
         UpdateBuilder.create(cfs.metadata, key).withTimestamp(0).newRow(1).add("val", 1).applyUnsafe();
 
@@ -611,86 +609,5 @@ public class RangeTombstoneTest
     private static int i(ByteBuffer bb)
     {
         return ByteBufferUtil.toInt(bb);
-    }
-
-    public static class TestIndex implements Index
-    {
-        public List<Row> rowsInserted = new ArrayList<>();
-        public List<Row> rowsDeleted = new ArrayList<>();
-        public List<Row> rowsUpdated = new ArrayList<>();
-        private IndexMetadata indexMetadata;
-
-        public void resetCounts()
-        {
-            rowsInserted.clear();
-            rowsDeleted.clear();
-        }
-
-        public Callable<?> setIndexMetadata(IndexMetadata metadata)
-        {
-            indexMetadata = metadata;
-            return null;
-        }
-
-        public boolean indexes(PartitionColumns columns)
-        {
-            for (ColumnDefinition col : columns)
-                for (ColumnIdentifier indexed : indexMetadata.columns)
-                    if (indexed.equals(col.name))
-                        return true;
-            return false;
-        }
-
-        public boolean supportsExpression(ColumnDefinition column, Operator operator)
-        {
-            return operator == Operator.EQ;
-        }
-
-        public Optional<RowFilter> getReducedFilter(RowFilter filter)
-        {
-            return Optional.empty();
-        }
-
-        public Indexer indexerFor(DecoratedKey key,
-                                  int nowInSec,
-                                  OpOrder.Group opGroup,
-                                  SecondaryIndexManager.TransactionType transactionType)
-        {
-            return new Indexer()
-            {
-                public void insertRow(Row row)
-                {
-                    rowsInserted.add(row);
-                }
-
-                public void removeRow(Row row)
-                {
-                    rowsDeleted.add(row);
-                }
-
-                public void updateRow(Row oldRowData, Row newRowData)
-                {
-                    rowsUpdated.add(oldRowData);
-                }
-            };
-        }
-
-        public IndexMetadata getIndexMetadata() { return indexMetadata; }
-        public String getIndexName() {return "test_index";}
-        public void init(ColumnFamilyStore baseCfs){}
-        public void register(IndexRegistry registry){registry.registerIndex(this);}
-        public void maybeUnregister(IndexRegistry registry){}
-        public Optional<ColumnFamilyStore> getBackingTable(){return Optional.empty();}
-        public Collection<ColumnDefinition> getIndexedColumns(){return Collections.emptySet();}
-        public Callable<?> getBlockingFlushTask(){return null;}
-        public Callable<?> getTruncateTask(long truncatedAt){return null;}
-        public Callable<?> getInvalidateTask(){return null;}
-        public Callable<?> getMetadataReloadTask(){return null;}
-        public void validate(DecoratedKey key) {}
-        public void validate(ColumnDefinition column, ByteBuffer value, CellPath path) {}
-        public void validate(Clustering clustering){}
-        public long getEstimatedResultRows(){return 0;}
-        public Searcher searcherFor(ReadCommand command){return null;}
-        public BiFunction<PartitionIterator, RowFilter, PartitionIterator> postProcessorFor(ReadCommand readCommand) {return null;}
     }
 }

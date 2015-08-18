@@ -435,10 +435,10 @@ public class SecondaryIndexTest
         new RowUpdateBuilder(cfs.metadata, 0, "k1").clustering("c").add("birthdate", 1L).build().applyUnsafe();
 
         ColumnDefinition old = cfs.metadata.getColumnDefinition(ByteBufferUtil.bytes("birthdate"));
-        IndexMetadata indexDef = IndexMetadata.legacyIndex(old,
-                                                           "birthdate_index",
-                                                           IndexMetadata.IndexType.COMPOSITES,
-                                                           Collections.EMPTY_MAP);
+        IndexMetadata indexDef = IndexMetadata.singleColumnIndex(old,
+                                                                 "birthdate_index",
+                                                                 IndexMetadata.IndexType.COMPOSITES,
+                                                                 Collections.EMPTY_MAP);
         cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
         Future<?> future = cfs.indexManager.addIndex(indexDef);
         future.get();

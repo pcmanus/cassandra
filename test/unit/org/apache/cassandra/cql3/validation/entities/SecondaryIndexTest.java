@@ -22,16 +22,25 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.StringUtils;
 
 import org.junit.Test;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.CQLTester;
+import org.apache.cassandra.cql3.ColumnIdentifier;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.index.StubIndex;
 import org.apache.cassandra.utils.FBUtilities;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -76,7 +85,7 @@ public class SecondaryIndexTest extends CQLTester
         createIndex("CREATE INDEX " + indexName + " ON %s(b);");
         createIndex("CREATE INDEX IF NOT EXISTS " + indexName + " ON %s(b);");
 
-        assertInvalidMessage("Index already exists", "CREATE INDEX " + indexName + " ON %s(b)");
+        assertInvalidMessage("Index " + removeQuotes(indexName.toLowerCase(Locale.US)) + " already exists", "CREATE INDEX " + indexName + " ON %s(b)");
 
         execute("INSERT INTO %s (a, b) values (?, ?);", 0, 0);
         execute("INSERT INTO %s (a, b) values (?, ?);", 1, 1);
@@ -189,12 +198,10 @@ public class SecondaryIndexTest extends CQLTester
     public void testUnknownCompressionOptions() throws Throwable
     {
         String tableName = createTableName();
-        assertInvalidThrow(SyntaxException.class, String.format(
-                                                               "CREATE TABLE %s (key varchar PRIMARY KEY, password varchar, gender varchar) WITH compression_parameters:sstable_compressor = 'DeflateCompressor'", tableName));
+        assertInvalidThrow(SyntaxException.class, String.format("CREATE TABLE %s (key varchar PRIMARY KEY, password varchar, gender varchar) WITH compression_parameters:sstable_compressor = 'DeflateCompressor'", tableName));
 
-
-        assertInvalidThrow(ConfigurationException.class, String.format(
-                                                                      "CREATE TABLE %s (key varchar PRIMARY KEY, password varchar, gender varchar) WITH compression = { 'sstable_compressor': 'DeflateCompressor' }", tableName));
+        assertInvalidThrow(ConfigurationException.class, String.format("CREATE TABLE %s (key varchar PRIMARY KEY, password varchar, gender varchar) WITH compression = { 'sstable_compressor': 'DeflateCompressor' }",
+                                                                      tableName));
     }
 
     /**
@@ -400,9 +407,6 @@ public class SecondaryIndexTest extends CQLTester
         assertRows(execute("SELECT k, v FROM %s WHERE k = 0 AND m CONTAINS KEY 'a'"), row(0, 0), row(0, 1));
         assertRows(execute("SELECT k, v FROM %s WHERE m CONTAINS KEY 'c'"), row(0, 2));
         assertEmpty(execute("SELECT k, v FROM %s  WHERE m CONTAINS KEY 'd'"));
-
-        // we're not allowed to create a value index if we already have a key one
-        assertInvalid("CREATE INDEX ON %s(m)");
     }
 
     /**
@@ -412,7 +416,7 @@ public class SecondaryIndexTest extends CQLTester
     @Test
     public void testIndexOnKeyWithReverseClustering() throws Throwable
     {
-        createTable(" CREATE TABLE %s (k1 int, k2 int, v int, PRIMARY KEY ((k1, k2), v) ) WITH CLUSTERING ORDER BY (v DESC)");
+        createTable("CREATE TABLE %s (k1 int, k2 int, v int, PRIMARY KEY ((k1, k2), v) ) WITH CLUSTERING ORDER BY (v DESC)");
 
         createIndex("CREATE INDEX ON %s (k2)");
 
@@ -591,4 +595,55 @@ public class SecondaryIndexTest extends CQLTester
         assertInvalid("CREATE INDEX ON %s (c)");
     }
 
+    @Test
+    public void testMultipleIndexesOnOneColumn() throws Throwable
+    {
+        String indexClassName = StubIndex.class.getName();
+        createTable("CREATE TABLE %s (a int, b int, c int, PRIMARY KEY ((a), b))");
+        createIndex(String.format("CREATE CUSTOM INDEX c_idx_1 ON %%s(c) USING '%s'", indexClassName));
+        createIndex(String.format("CREATE CUSTOM INDEX c_idx_2 ON %%s(c) USING '%s'", indexClassName));
+
+        ColumnFamilyStore cfs = getCurrentColumnFamilyStore();
+        CFMetaData cfm = cfs.metadata;
+        StubIndex index1 = (StubIndex)cfs.indexManager.getIndex(cfm.getIndexes()
+                                                                   .get("c_idx_1")
+                                                                   .orElseThrow(fail("index not found")));
+        StubIndex index2 = (StubIndex)cfs.indexManager.getIndex(cfm.getIndexes()
+                                                                   .get("c_idx_2")
+                                                                   .orElseThrow(fail("index not found")));
+        Object[] row1a = row(0, 0, 0);
+        Object[] row1b = row(0, 0, 1);
+        Object[] row2 = row(2, 2, 2);
+        execute("INSERT INTO %s (a, b, c) VALUES (?, ?, ?)", row1a);
+        execute("INSERT INTO %s (a, b, c) VALUES (?, ?, ?)", row1b);
+        execute("INSERT INTO %s (a, b, c) VALUES (?, ?, ?)", row2);
+
+        assertEquals(2, index1.rowsInserted.size());
+        assertColumnValue(0, "c", index1.rowsInserted.get(0), cfm);
+        assertColumnValue(2, "c", index1.rowsInserted.get(1), cfm);
+
+        assertEquals(2, index2.rowsInserted.size());
+        assertColumnValue(0, "c", index2.rowsInserted.get(0), cfm);
+        assertColumnValue(2, "c", index2.rowsInserted.get(1), cfm);
+
+        assertEquals(1, index1.rowsUpdated.size());
+        assertColumnValue(0, "c", index1.rowsUpdated.get(0).left, cfm);
+        assertColumnValue(1, "c", index1.rowsUpdated.get(0).right, cfm);
+
+        assertEquals(1, index2.rowsUpdated.size());
+        assertColumnValue(0, "c", index2.rowsUpdated.get(0).left, cfm);
+        assertColumnValue(1, "c", index2.rowsUpdated.get(0).right, cfm);
+    }
+
+    private static void assertColumnValue(int expected, String name, Row row, CFMetaData cfm)
+    {
+        ColumnDefinition col = cfm.getColumnDefinition(new ColumnIdentifier(name, true));
+        AbstractType<?> type = col.type;
+        assertEquals(expected, type.compose(row.getCell(col).value()));
+    }
+
+    private static Supplier<AssertionError> fail(final String message)
+    {
+        return () -> new AssertionError(message);
+    }
 }

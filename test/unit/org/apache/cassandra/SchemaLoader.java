@@ -33,6 +33,7 @@ import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.index.StubIndex;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.service.MigrationManager;
@@ -287,7 +288,7 @@ public class SchemaLoader
     {
         final Map<String, String> indexOptions = Collections.singletonMap(
                                                       IndexTarget.CUSTOM_INDEX_OPTION_NAME,
-                                                      LegacySchemaMigratorTest.TestIndex.class.getName());
+                                                      StubIndex.class.getName());
 
         CFMetaData cfm =  CFMetaData.Builder.create(ksName, cfName)
                 .addPartitionKey("key", AsciiType.instance)
@@ -298,10 +299,10 @@ public class SchemaLoader
 
         cfm.indexes(
             cfm.getIndexes()
-               .with(IndexMetadata.legacyIndex(indexedColumn,
-                                               "indexe1",
-                                               IndexMetadata.IndexType.CUSTOM,
-                                               indexOptions)));
+               .with(IndexMetadata.singleColumnIndex(indexedColumn,
+                                                     "indexe1",
+                                                     IndexMetadata.IndexType.CUSTOM,
+                                                     indexOptions)));
         return cfm;
     }
 
@@ -409,10 +410,10 @@ public class SchemaLoader
         if (withIndex)
             cfm.indexes(
                 cfm.getIndexes()
-                    .with(IndexMetadata.legacyIndex(cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true)),
-                                                    "birthdate_key_index",
-                                                    IndexMetadata.IndexType.COMPOSITES,
-                                                    Collections.EMPTY_MAP)));
+                   .with(IndexMetadata.singleColumnIndex(cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true)),
+                                                         "birthdate_key_index",
+                                                         IndexMetadata.IndexType.COMPOSITES,
+                                                         Collections.EMPTY_MAP)));
 
         return cfm.compression(getCompressionParameters());
     }
@@ -429,10 +430,10 @@ public class SchemaLoader
         if (withIndex)
             cfm.indexes(
                 cfm.getIndexes()
-                    .with(IndexMetadata.legacyIndex(cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true)),
-                                                    "birthdate_composite_index",
-                                                    IndexMetadata.IndexType.KEYS,
-                                                    Collections.EMPTY_MAP)));
+                   .with(IndexMetadata.singleColumnIndex(cfm.getColumnDefinition(new ColumnIdentifier("birthdate", true)),
+                                                         "birthdate_composite_index",
+                                                         IndexMetadata.IndexType.KEYS,
+                                                         Collections.EMPTY_MAP)));
 
 
         return cfm.compression(getCompressionParameters());

@@ -118,7 +118,8 @@ public class CleanupTest
         String indexName = cfs.metadata.getIndexes()
                                        .get(cdef)
                                        .orElseThrow(() -> new AssertionError(String.format("No index not found for %s",
-                                                                                           cdef.name.toString()))).name;
+                                                                                           cdef.name.toString())))
+                                       .iterator().next().name;
         long start = System.nanoTime();
         while (!cfs.getBuiltIndexes().contains(indexName) && System.nanoTime() - start < TimeUnit.SECONDS.toNanos(10))
             Thread.sleep(10);

@@ -130,20 +130,6 @@ public class CassandraIndex implements Index
         return isBuilt() ? null : getBuildIndexTask();
     }
 
-//    public Callable<?> removeIndexedColumn(ColumnDefinition column)
-//    {
-//        if (metadata.indexedColumn.name.equals(column.name))
-//        {
-//            return () -> {
-//                markRemoved();
-//                invalidate();
-//                return null;
-//            };
-//        }
-//
-//        return null;
-//    }
-
     public boolean indexes(PartitionColumns columns)
     {
         // if we have indexes on the partition key or clustering columns, return true

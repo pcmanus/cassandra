@@ -197,16 +197,6 @@ public interface Index
      */
     public Callable<?> getTruncateTask(long truncatedAt);
 
-    // TODO : with #7771 this will change as the index options are extracted from ColumnDefinition (see also #6717)
-//
-//    // TODO : with #7771 this will change as the index options are extracted from ColumnDefinition (see also #6717)
-//    /**
-//     * Called when a column's indexing options are removed
-//     * @param column
-//     * @return
-//     */
-//    public Callable<?> removeIndexedColumn(ColumnDefinition column);
-
     /*
      * Index selection
      */

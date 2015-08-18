@@ -96,32 +96,15 @@ public class CreateIndexStatement extends SchemaAlteringStatement
             validateTargetColumnIsMapIfIndexInvolvesKeys(isMap, target);
         }
 
-        Indexes existingIndexes = cfm.getIndexes();
-        for (IndexMetadata index : existingIndexes)
-        {
-            if (index.indexedColumn(cfm).equals(cd))
-            {
-                IndexTarget.TargetType prevType = IndexTarget.TargetType.fromIndexMetadata(index, cfm);
-                if (isMap && target.type != prevType)
-                {
-                    String msg = "Cannot create index on %s(%s): an index on %s(%s) already exists and indexing " +
-                                 "a map on more than one dimension at the same time is not currently supported";
-                    throw new InvalidRequestException(String.format(msg,
-                                                                    target.type, target.column,
-                                                                    prevType, target.column));
-                }
-
-                if (ifNotExists)
-                    return;
-                else
-                    throw new InvalidRequestException("Index already existss");
-            }
-        }
-
         if (!Strings.isNullOrEmpty(indexName))
         {
             if (Schema.instance.getKSMetaData(keyspace()).existingIndexNames(null).contains(indexName))
-                throw new InvalidRequestException("Index already exists");
+            {
+                if (ifNotExists)
+                    return;
+                else
+                    throw new InvalidRequestException(String.format("Index %s already exists", indexName));
+            }
         }
 
         properties.validate();
@@ -187,12 +170,13 @@ public class CreateIndexStatement extends SchemaAlteringStatement
         if (Strings.isNullOrEmpty(acceptedName))
             acceptedName = Indexes.getAvailableIndexName(keyspace(), columnFamily(), cd.name);
 
-        for (IndexMetadata existing : cfm.getIndexes())
-            if (existing.indexedColumn(cfm).equals(cd) || existing.name.equals(acceptedName))
-                if (ifNotExists)
-                    return false;
-                else
-                    throw new InvalidRequestException("Index already exists");
+        if (Schema.instance.getKSMetaData(keyspace()).existingIndexNames(null).contains(acceptedName))
+        {
+            if (ifNotExists)
+                return false;
+            else
+                throw new InvalidRequestException(String.format("Index %s already exists", acceptedName));
+        }
 
         IndexMetadata.IndexType indexType;
         Map<String, String> indexOptions;
@@ -222,7 +206,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
 
         logger.debug("Updating index definition for {}", indexName);
 
-        IndexMetadata index = IndexMetadata.legacyIndex(cd, acceptedName, indexType, indexOptions);
+        IndexMetadata index = IndexMetadata.singleColumnIndex(cd, acceptedName, indexType, indexOptions);
         cfm.indexes(cfm.getIndexes().with(index));
         MigrationManager.announceColumnFamilyUpdate(cfm, false, isLocalOnly);
         return true;
