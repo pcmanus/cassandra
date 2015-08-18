@@ -343,9 +343,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             IndexMetadata def = parent.getIndexes()
                                       .get(indexName)
                                       .orElseThrow(() -> new AssertionError("Could not find index metadata for index cf " + i));
-            ColumnDefinition indexedColumn = def.indexedColumn(parent);
-            metadata = ColumnIndexFunctions.getFunctions(indexedColumn)
-                                           .indexCfsMetadata(parent, indexedColumn);
+            metadata = ColumnIndexFunctions.getFunctions(parent, def)
+                                           .indexCfsMetadata(parent, def);
         }
         else
         {

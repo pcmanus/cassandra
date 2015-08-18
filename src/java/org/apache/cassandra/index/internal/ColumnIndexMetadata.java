@@ -3,6 +3,7 @@ package org.apache.cassandra.index.internal;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.schema.IndexMetadata;
 
 /**
  * Wraps up the specifics about a particular local secondary index,
@@ -10,16 +11,19 @@ import org.apache.cassandra.db.ColumnFamilyStore;
  */
 public class ColumnIndexMetadata
 {
+    public final IndexMetadata indexMetadata;
     public final ColumnFamilyStore baseCfs;
     public final ColumnFamilyStore indexCfs;
     public final ColumnDefinition indexedColumn;
     public final ColumnIndexFunctions functions;
 
-    public ColumnIndexMetadata(ColumnFamilyStore baseCfs,
+    public ColumnIndexMetadata(IndexMetadata indexMetadata,
+                               ColumnFamilyStore baseCfs,
                                ColumnFamilyStore indexCfs,
                                ColumnDefinition indexedColumn,
                                ColumnIndexFunctions functions)
     {
+        this.indexMetadata = indexMetadata;
         this.baseCfs = baseCfs;
         this.indexCfs = indexCfs;
         this.indexedColumn = indexedColumn;

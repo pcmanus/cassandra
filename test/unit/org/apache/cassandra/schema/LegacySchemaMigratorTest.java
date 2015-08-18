@@ -643,8 +643,8 @@ public class LegacySchemaMigratorTest
         public Callable<?> getTruncateTask(long truncatedAt) { return null; }
         public Callable<?> getInvalidateTask() { return null; }
         public Callable<?> getMetadataReloadTask() { return null; }
-        public Callable<?> addIndexedColumn(ColumnDefinition column) { return null; }
-        public Callable<?> removeIndexedColumn(ColumnDefinition column) { return null; }
+        public Callable<?> setIndexMetadata(IndexMetadata metadata) { return null; }
+        public IndexMetadata getIndexMetadata() { return null; }
         public boolean indexes(PartitionColumns columns) { return false; }
         public boolean supportsExpression(ColumnDefinition column, Operator operator) { return false; }
         public Optional<RowFilter> getReducedFilter(RowFilter filter) { return Optional.empty(); }

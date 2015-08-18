@@ -114,12 +114,15 @@ public class CleanupTest
         fillCF(cfs, "birthdate", LOOPS);
         assertEquals(LOOPS, Util.getAll(Util.cmd(cfs).build()).size());
 
-        String indexName = cfs.metadata.getColumnDefinition(COLUMN).getIndexName();
+        ColumnDefinition cdef = cfs.metadata.getColumnDefinition(COLUMN);
+        String indexName = cfs.metadata.getIndexes()
+                                       .get(cdef)
+                                       .orElseThrow(() -> new AssertionError(String.format("No index not found for %s",
+                                                                                           cdef.name.toString()))).name;
         long start = System.nanoTime();
         while (!cfs.getBuiltIndexes().contains(indexName) && System.nanoTime() - start < TimeUnit.SECONDS.toNanos(10))
             Thread.sleep(10);
 
-        ColumnDefinition cdef = cfs.metadata.getColumnDefinition(COLUMN);
         RowFilter cf = RowFilter.create();
         cf.add(cdef, Operator.EQ, VALUE);
         assertEquals(LOOPS, Util.getAll(Util.cmd(cfs).filterOn("birthdate", Operator.EQ, VALUE).build()).size());

@@ -33,7 +33,7 @@ public class CassandraIndexSearcher implements Index.Searcher
 
     public UnfilteredPartitionIterator search(ReadOrderGroup orderGroup)
     {
-        switch (metadata.indexedColumn.getIndexType())
+        switch (metadata.indexMetadata.indexType)
         {
             case COMPOSITES:
                 return new CompositesSearcher(metadata, expression, indexer).search(command, orderGroup);
@@ -41,8 +41,8 @@ public class CassandraIndexSearcher implements Index.Searcher
                 return new KeysSearcher(metadata, expression, indexer).search(command, orderGroup);
             default:
                 throw new IllegalStateException(String.format("Unsupported index type %s for index %s on %s",
-                                                              metadata.indexedColumn.getIndexType(),
-                                                              metadata.indexedColumn.getIndexName(),
+                                                              metadata.indexMetadata.indexType,
+                                                              metadata.indexMetadata.name,
                                                               metadata.indexedColumn.name.toString()));
         }
     }

@@ -34,6 +34,7 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.UpdateBuilder;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.IndexTarget;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -479,7 +480,7 @@ public class RangeTombstoneTest
         if (!cfs.metadata.getIndexes().get("test_index").isPresent())
             cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
 
-        Future<?> rebuild = cfs.indexManager.addIndexedColumn(indexDef);
+        Future<?> rebuild = cfs.indexManager.addIndex(indexDef);
         // If rebuild there is, wait for the rebuild to finish so it doesn't race with the following insertions
         if (rebuild != null)
             rebuild.get();
@@ -575,7 +576,7 @@ public class RangeTombstoneTest
         if (!cfs.metadata.getIndexes().get("test_index").isPresent())
             cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
 
-        Future<?> rebuild = cfs.indexManager.addIndexedColumn(indexDef);
+        Future<?> rebuild = cfs.indexManager.addIndex(indexDef);
         // If rebuild there is, wait for the rebuild to finish so it doesn't race with the following insertions
         if (rebuild != null)
             rebuild.get();
@@ -599,7 +600,7 @@ public class RangeTombstoneTest
         // We should have 1 insert and 1 update to the indexed "1" column
         // CASSANDRA-6640 changed index update to just update, not insert then delete
         assertEquals(1, index.rowsInserted.size());
-        assertEquals(1, index.rowsDeleted.size());
+        assertEquals(1, index.rowsUpdated.size());
     }
 
     private static ByteBuffer bb(int i)
@@ -617,32 +618,25 @@ public class RangeTombstoneTest
         public List<Row> rowsInserted = new ArrayList<>();
         public List<Row> rowsDeleted = new ArrayList<>();
         public List<Row> rowsUpdated = new ArrayList<>();
-        private Set<ColumnDefinition> indexedColumns = new HashSet<>();
+        private IndexMetadata indexMetadata;
 
         public void resetCounts()
         {
             rowsInserted.clear();
             rowsDeleted.clear();
-            rowsUpdated.clear();
         }
 
-        public Callable<?> addIndexedColumn(ColumnDefinition column)
+        public Callable<?> setIndexMetadata(IndexMetadata metadata)
         {
-            indexedColumns.add(column);
-            return null;
-        }
-
-        public Callable<?> removeIndexedColumn(ColumnDefinition column)
-        {
-            indexedColumns.remove(column);
+            indexMetadata = metadata;
             return null;
         }
 
         public boolean indexes(PartitionColumns columns)
         {
             for (ColumnDefinition col : columns)
-                for (ColumnDefinition indexed : indexedColumns)
-                    if (indexed.name.equals(col.name))
+                for (ColumnIdentifier indexed : indexMetadata.columns)
+                    if (indexed.equals(col.name))
                         return true;
             return false;
         }
@@ -673,9 +667,15 @@ public class RangeTombstoneTest
                 {
                     rowsDeleted.add(row);
                 }
+
+                public void updateRow(Row oldRowData, Row newRowData)
+                {
+                    rowsUpdated.add(oldRowData);
+                }
             };
         }
 
+        public IndexMetadata getIndexMetadata() { return indexMetadata; }
         public String getIndexName() {return "test_index";}
         public void init(ColumnFamilyStore baseCfs){}
         public void register(IndexRegistry registry){registry.registerIndex(this);}

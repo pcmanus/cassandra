@@ -478,9 +478,6 @@ public class CassandraIndexTest extends CQLTester
             flush();
             compact();
 
-            // todo: remove this, see CASSANDRA-9908
-            ensureTransactionLogsCleaned();
-
             // insert second row, re-create the index and query for both indexed values
             execute(insertCql, secondRow);
             createIndex(createIndexCql);
@@ -527,28 +524,6 @@ public class CassandraIndexTest extends CQLTester
             compact();
             assertRows(execute(selectFirstRowCql), firstRow);
             assertRows(execute(selectSecondRowCql), secondRow);
-        }
-
-        private void ensureTransactionLogsCleaned() throws Exception
-        {
-            // to mitigate the race condition described in #9908, we wait to
-            // ensure that there are no transaction log files present
-            // We can remove this when #9908 is fixed
-            int cnt = 0;
-            while (true)
-            {
-                try
-                {
-                    long logCount = Files.find(getCurrentColumnFamilyStore().directories.getDirectoryForNewSSTables().toPath(),
-                                               4, (path, basicFileAttributes) -> path.endsWith(".data")).count();
-                    if (logCount == 0)
-                        return;
-                    TimeUnit.MILLISECONDS.sleep(100);
-                }
-                catch(Exception e){}
-                if (cnt++ > 10)
-                    throw new RuntimeException("Waiting too long");
-            }
         }
 
         private void assertPrimaryKeyColumnsOnly(UntypedResultSet resultSet, Object[] row)

@@ -15,6 +15,7 @@ import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 
 /**
@@ -111,6 +112,23 @@ public interface Index
     public void init(ColumnFamilyStore baseCfs);
 
     /**
+     * Called when a the configuration of an index is modified, including it s first initialized
+     * Implementations should return a task which performs any necessary work to be done due to
+     * updating the index definition such as (re)building etc. This task is performed asynchronously
+     * by SecondaryIndexManager
+     * @param metadata the updated metadata
+     * @return
+     */
+    public Callable<?> setIndexMetadata(IndexMetadata metadata);
+
+    /**
+     * Returns the IndexMetadata which configures & defines the index instance. This should be the same
+     * object passed as the argument to setIndexMetadata
+     * @return the indexes metadata
+     */
+    public IndexMetadata getIndexMetadata();
+
+    /**
      * An index must be registered in order to be able to either subscribe to update events on the base
      * table and/or to provide Searcher functionality for reads. The double dispatch involved here, where
      * the Index actually performs its own registration by calling back to the supplied IndexRegistry's
@@ -180,23 +198,14 @@ public interface Index
     public Callable<?> getTruncateTask(long truncatedAt);
 
     // TODO : with #7771 this will change as the index options are extracted from ColumnDefinition (see also #6717)
-    /**
-     * Called when a column's indexing options are modified
-     * Implementations should return a task which performs any necessary work
-     * to be done due to adding the new column, such as (re)building etc. This task is performed asyncronously
-     * by SecondaryIndexManager
-     * @param column the column definition to which the index configuration is attached
-     * @return
-     */
-    public Callable<?> addIndexedColumn(ColumnDefinition column);
-
-    // TODO : with #7771 this will change as the index options are extracted from ColumnDefinition (see also #6717)
-    /**
-     * Called when a column's indexing options are removed
-     * @param column
-     * @return
-     */
-    public Callable<?> removeIndexedColumn(ColumnDefinition column);
+//
+//    // TODO : with #7771 this will change as the index options are extracted from ColumnDefinition (see also #6717)
+//    /**
+//     * Called when a column's indexing options are removed
+//     * @param column
+//     * @return
+//     */
+//    public Callable<?> removeIndexedColumn(ColumnDefinition column);
 
     /*
      * Index selection

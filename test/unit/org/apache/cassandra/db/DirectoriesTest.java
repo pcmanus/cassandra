@@ -168,13 +168,14 @@ public class DirectoriesTest
                                   .addPartitionKey("thekey", UTF8Type.instance)
                                   .addClusteringColumn("col", UTF8Type.instance)
                                   .build();
-        ColumnDefinition col = PARENT_CFM.getColumnDefinition(ByteBufferUtil.bytes("col");
+        ColumnDefinition col = PARENT_CFM.getColumnDefinition(ByteBufferUtil.bytes("col"));
         IndexMetadata indexDef = IndexMetadata.legacyIndex(col,
                                                            "idx",
                                                            IndexMetadata.IndexType.KEYS,
                                                            Collections.emptyMap());
         PARENT_CFM.indexes(PARENT_CFM.getIndexes().with(indexDef));
-        CFMetaData INDEX_CFM = ColumnIndexFunctions.getFunctions(col).indexCfsMetadata(PARENT_CFM, col);
+        CFMetaData INDEX_CFM = ColumnIndexFunctions.getFunctions(PARENT_CFM, indexDef)
+                                                   .indexCfsMetadata(PARENT_CFM, indexDef);
         Directories parentDirectories = new Directories(PARENT_CFM);
         Directories indexDirectories = new Directories(INDEX_CFM);
         // secondary index has its own directory

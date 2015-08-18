@@ -309,10 +309,6 @@ public class SecondaryIndexTest
 
         // now, reset back to the original value, still skipping the index update, to
         // make sure the value was expunged from the index when it was discovered to be inconsistent
-        System.out.println("===========================================");
-        System.out.println("===========================================");
-        System.out.println("===========================================");
-        System.out.println("===========================================");
         keyspace.apply(new RowUpdateBuilder(cfs.metadata, 3, "k1").noRowMarker().add("birthdate", 1L).build(),
                        true,
                        false);
@@ -436,7 +432,6 @@ public class SecondaryIndexTest
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(COMPOSITE_INDEX_TO_BE_ADDED);
 
         // create a row and update the birthdate value, test that the index query fetches the new version
-        DecoratedKey dk = Util.dk("k1");
         new RowUpdateBuilder(cfs.metadata, 0, "k1").clustering("c").add("birthdate", 1L).build().applyUnsafe();
 
         ColumnDefinition old = cfs.metadata.getColumnDefinition(ByteBufferUtil.bytes("birthdate"));
@@ -445,7 +440,7 @@ public class SecondaryIndexTest
                                                            IndexMetadata.IndexType.COMPOSITES,
                                                            Collections.EMPTY_MAP);
         cfs.metadata.indexes(cfs.metadata.getIndexes().with(indexDef));
-        Future<?> future = cfs.indexManager.addIndexedColumn(indexDef);
+        Future<?> future = cfs.indexManager.addIndex(indexDef);
         future.get();
 
         // we had a bug (CASSANDRA-2244) where index would get created but not flushed -- check for that
@@ -464,11 +459,11 @@ public class SecondaryIndexTest
 
         // validate that drop clears it out & rebuild works (CASSANDRA-2320)
         assertTrue(cfs.getBuiltIndexes().contains(indexName));
-        cfs.indexManager.removeIndexedColumn(cDef);
+        cfs.indexManager.removeIndex(indexDef);
         assertFalse(cfs.getBuiltIndexes().contains(indexName));
 
         // rebuild & re-query
-        future = cfs.indexManager.addIndexedColumn(indexDef);
+        future = cfs.indexManager.addIndex(indexDef);
         future.get();
         assertIndexedOne(cfs, ByteBufferUtil.bytes("birthdate"), 1L);
     }

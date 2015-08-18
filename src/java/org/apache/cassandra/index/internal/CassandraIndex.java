@@ -26,6 +26,7 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.*;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -57,6 +58,11 @@ public class CassandraIndex implements Index
             registry.unregisterIndex(this);
     }
 
+    public IndexMetadata getIndexMetadata()
+    {
+        return metadata.indexMetadata;
+    }
+
     public String getIndexName()
     {
         return metadata.getIndexName();
@@ -84,6 +90,7 @@ public class CassandraIndex implements Index
     public Callable<?> getInvalidateTask()
     {
         return () -> {
+            markRemoved();
             invalidate();
             return null;
         };
@@ -106,36 +113,36 @@ public class CassandraIndex implements Index
         };
     }
 
-    public Callable<?> addIndexedColumn(ColumnDefinition column)
+    public Callable<?> setIndexMetadata(IndexMetadata indexDef)
     {
-        ColumnIndexFunctions functions = ColumnIndexFunctions.getFunctions(column);
-        CFMetaData cfm = functions.indexCfsMetadata(baseCfs.metadata, column);
+        ColumnIndexFunctions functions = ColumnIndexFunctions.getFunctions(baseCfs.metadata, indexDef);
+        CFMetaData cfm = functions.indexCfsMetadata(baseCfs.metadata, indexDef);
         ColumnFamilyStore indexCfs =
             ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
                                                       cfm.cfName,
                                                       cfm,
                                                       baseCfs.getTracker().loadsstables);
-        metadata = new ColumnIndexMetadata(baseCfs, indexCfs, column, functions);
-
+        // todo - assert indexDef has only 1 target column & extract it for use here
+        metadata = new ColumnIndexMetadata(indexDef, baseCfs, indexCfs, indexDef.indexedColumn(baseCfs.metadata), functions);
         // if we're just linking in the index on an already-built index post-restart, we're done
         // Otherwise, we create a stripped down Indexer, which contains only the newly added
         // ColumnIndexer and submit for building via SecondaryIndexBuilder
         return isBuilt() ? null : getBuildIndexTask();
     }
 
-    public Callable<?> removeIndexedColumn(ColumnDefinition column)
-    {
-        if (metadata.indexedColumn.name.equals(column.name))
-        {
-            return () -> {
-                markRemoved();
-                invalidate();
-                return null;
-            };
-        }
-
-        return null;
-    }
+//    public Callable<?> removeIndexedColumn(ColumnDefinition column)
+//    {
+//        if (metadata.indexedColumn.name.equals(column.name))
+//        {
+//            return () -> {
+//                markRemoved();
+//                invalidate();
+//                return null;
+//            };
+//        }
+//
+//        return null;
+//    }
 
     public boolean indexes(PartitionColumns columns)
     {
@@ -368,7 +375,7 @@ public class CassandraIndex implements Index
         DecoratedKey valueKey = getIndexKeyFor(getIndexedValue(rowKey,
                                                                clustering,
                                                                cell));
-        Row row = BTreeBackedRow.noCellLiveRow(buildIndexClustering(rowKey, clustering, cell), info);
+        Row row = BTreeRow.noCellLiveRow(buildIndexClustering(rowKey, clustering, cell), info);
         PartitionUpdate upd = partitionUpdate(valueKey, row);
         metadata.indexCfs.apply(upd, SecondaryIndexManager.IndexTransaction.NO_OP, opGroup, null);
         logger.debug("Inserted entry into index for value {}", valueKey);
@@ -414,7 +421,7 @@ public class CassandraIndex implements Index
                           DeletionTime deletion,
                           OpOrder.Group opGroup)
     {
-        Row row = BTreeBackedRow.emptyDeletedRow(indexClustering, deletion);
+        Row row = BTreeRow.emptyDeletedRow(indexClustering, deletion);
         PartitionUpdate upd = partitionUpdate(indexKey, row);
         metadata.indexCfs.apply(upd, SecondaryIndexManager.IndexTransaction.NO_OP, opGroup, null);
         logger.debug("Removed index entry for value {}", indexKey);

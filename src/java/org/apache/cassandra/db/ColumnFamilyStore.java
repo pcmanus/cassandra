@@ -377,7 +377,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         // create the private ColumnFamilyStores for the secondary column indexes
         for (IndexMetadata info : metadata.getIndexes())
-            indexManager.addIndexedColumn(info);
+            indexManager.addIndex(info);
 
         if (registerBookkeeping)
         {
@@ -575,9 +575,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         for (IndexMetadata index : metadata.getIndexes())
             if (!index.isCustom())
             {
-                ColumnDefinition indexedColumn = index.indexedColumn(metadata);
-                CFMetaData indexMetadata = ColumnIndexFunctions.getFunctions(indexedColumn)
-                                                               .indexCfsMetadata(metadata, indexedColumn);
+                CFMetaData indexMetadata = ColumnIndexFunctions.getFunctions(metadata, index)
+                                                               .indexCfsMetadata(metadata, index);
                 scrubDataDirectories(indexMetadata);
             }
     }
