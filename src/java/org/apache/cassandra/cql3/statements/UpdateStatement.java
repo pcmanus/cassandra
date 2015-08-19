@@ -49,8 +49,6 @@ public class UpdateStatement extends ModificationStatement
     public void addUpdateForKey(PartitionUpdate update, CBuilder cbuilder, UpdateParameters params)
     throws InvalidRequestException
     {
-        params.newPartition(update.partitionKey());
-
         if (updatesRegularRows())
         {
             params.newRow(cbuilder.build());
@@ -90,6 +88,8 @@ public class UpdateStatement extends ModificationStatement
                 op.execute(update.partitionKey(), params);
             update.add(params.buildRow());
         }
+
+        params.validateIndexedColumns(update);
     }
 
     public static class ParsedInsert extends ModificationStatement.Parsed

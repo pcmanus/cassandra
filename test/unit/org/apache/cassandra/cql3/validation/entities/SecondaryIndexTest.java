@@ -607,10 +607,10 @@ public class SecondaryIndexTest extends CQLTester
         CFMetaData cfm = cfs.metadata;
         StubIndex index1 = (StubIndex)cfs.indexManager.getIndex(cfm.getIndexes()
                                                                    .get("c_idx_1")
-                                                                   .orElseThrow(fail("index not found")));
+                                                                   .orElseThrow(throwAssert("index not found")));
         StubIndex index2 = (StubIndex)cfs.indexManager.getIndex(cfm.getIndexes()
                                                                    .get("c_idx_2")
-                                                                   .orElseThrow(fail("index not found")));
+                                                                   .orElseThrow(throwAssert("index not found")));
         Object[] row1a = row(0, 0, 0);
         Object[] row1b = row(0, 0, 1);
         Object[] row2 = row(2, 2, 2);
@@ -642,7 +642,7 @@ public class SecondaryIndexTest extends CQLTester
         assertEquals(expected, type.compose(row.getCell(col).value()));
     }
 
-    private static Supplier<AssertionError> fail(final String message)
+    private static Supplier<AssertionError> throwAssert(final String message)
     {
         return () -> new AssertionError(message);
     }

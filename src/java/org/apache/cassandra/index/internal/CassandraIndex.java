@@ -184,28 +184,14 @@ public class CassandraIndex implements Index
 
     }
 
-    /**
-     * Validation stuff - to be changed to row based
-     */
-    public void validate(DecoratedKey partitionKey) throws InvalidRequestException
+    public void validate(PartitionUpdate update) throws InvalidRequestException
     {
         if (metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY)
-            validateIndexedValue(getIndexedValue(partitionKey.getKey(), null, null ));
-    }
-
-    public void validate(Clustering clustering) throws InvalidRequestException
-    {
-        if (metadata.indexedColumn.kind == ColumnDefinition.Kind.CLUSTERING)
-            validateIndexedValue(getIndexedValue(null, clustering, null));
-    }
-
-    public void validate(ColumnDefinition column, ByteBuffer cellValue, CellPath path) throws InvalidRequestException
-    {
-        if (isPrimaryKeyIndex())
-            return;
-
-        if (!metadata.indexedColumn.isPrimaryKeyColumn())
-            validateIndexedValue(getIndexedValue(null, null, path, cellValue));
+            validatePartitionKey(update.partitionKey());
+        else if (metadata.indexedColumn.kind == ColumnDefinition.Kind.CLUSTERING)
+            validateClusterings(update);
+        else
+            validateColumnData(update);
     }
 
     public Indexer indexerFor(final DecoratedKey key,
@@ -411,6 +397,48 @@ public class CassandraIndex implements Index
         PartitionUpdate upd = partitionUpdate(indexKey, row);
         metadata.indexCfs.apply(upd, SecondaryIndexManager.IndexTransaction.NO_OP, opGroup, null);
         logger.debug("Removed index entry for value {}", indexKey);
+    }
+
+    private void validatePartitionKey(DecoratedKey partitionKey) throws InvalidRequestException
+    {
+        if (metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY)
+            validateIndexedValue(getIndexedValue(partitionKey.getKey(), null, null ));
+    }
+
+    private void validateClusterings(PartitionUpdate update) throws InvalidRequestException
+    {
+        for (Row row : update)
+            validateIndexedValue(getIndexedValue(null, row.clustering(), null));
+    }
+
+    private void validateColumnData(PartitionUpdate update) throws InvalidRequestException
+    {
+        if (metadata.indexedColumn.isStatic())
+            validateRows(Collections.singleton(update.staticRow()));
+        else
+            validateRows(update);
+    }
+
+    private void validateRows(Iterable<Row> rows)
+    {
+        for (Row row : rows)
+        {
+            if (metadata.indexedColumn.isComplex())
+            {
+                ComplexColumnData data = row.getComplexColumnData(metadata.indexedColumn);
+                if (data != null)
+                {
+                    for (Cell cell : data)
+                    {
+                        validateIndexedValue(getIndexedValue(null, null, cell.path(), cell.value()));
+                    }
+                }
+            }
+            else
+            {
+                validateIndexedValue(getIndexedValue(null, null, row.getCell(metadata.indexedColumn)));
+            }
+        }
     }
 
     private void validateIndexedValue(ByteBuffer value)

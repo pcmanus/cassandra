@@ -93,6 +93,8 @@ public class DeleteStatement extends ModificationStatement
                 update.add(params.buildRow());
             }
         }
+
+        params.validateIndexedColumns(update);
     }
 
     protected void validateWhereClauseForConditions() throws InvalidRequestException

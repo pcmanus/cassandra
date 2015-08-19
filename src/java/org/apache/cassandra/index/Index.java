@@ -11,6 +11,7 @@ import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.Row;
@@ -255,34 +256,15 @@ public interface Index
      */
 
     /**
-     * Called at write time to ensure that values which are valid for use
-     * as a PartitionKey in a primary table is also valid as an indexed
-     * value in any registered index.
-     * @param partitionKey
+     * Called at write time to ensure that values present in the update
+     * are valid according to the rules of all registered indexes which
+     * will process it. The partition key as well as the clustering and
+     * cell values for each row in the update may be checked by index
+     * implementations
+     * @param update PartitionUpdate containing the values to be validated by registered Index implementations
      * @throws InvalidRequestException
      */
-    public void validate(DecoratedKey partitionKey) throws InvalidRequestException;
-
-    /**
-     * Called at write time to ensure that values which are valid for use
-     * as a Clustering in a primary table is also valid as an indexed
-     * value in any registered index.
-     * @param clustering
-     * @throws InvalidRequestException
-     */
-    public void validate(Clustering clustering) throws InvalidRequestException;
-
-    /**
-     * Called at write time to ensure that values which are valid for use
-     * as a cell value in a primary table is also valid as an indexed
-     * value in any registered index.
-     *
-     * @param column
-     * @param cellValue
-     * @param path
-     * @throws InvalidRequestException
-     */
-    public void validate(ColumnDefinition column, ByteBuffer cellValue, CellPath path) throws InvalidRequestException;
+    public void validate(PartitionUpdate update) throws InvalidRequestException;
 
     /*
      * Update processing

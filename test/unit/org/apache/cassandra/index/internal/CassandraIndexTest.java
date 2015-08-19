@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.index.internal;
 
-import java.nio.file.Files;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;

@@ -451,8 +451,6 @@ public class ThriftValidation
             LegacyLayout.LegacyCellName cn = LegacyLayout.decodeCellName(metadata, scName, column.name);
             cn.column.validateCellValue(column.value);
 
-            // Indexed column values cannot be larger than 64K.  See CASSANDRA-3057/4240 for more details
-            Keyspace.open(metadata.ksName).getColumnFamilyStore(metadata.cfName).indexManager.validate(cn.column, column.value, null);
         }
         catch (UnknownColumnException e)
         {

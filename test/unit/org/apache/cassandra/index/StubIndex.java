@@ -29,8 +29,10 @@ import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.OpOrder;
@@ -151,21 +153,14 @@ public class StubIndex implements Index
         return null;
     }
 
-    public void validate(DecoratedKey key)
-    {
-    }
-
-    public void validate(ColumnDefinition column, ByteBuffer value, CellPath path)
-    {
-    }
-
-    public void validate(Clustering clustering)
-    {
-    }
-
     public long getEstimatedResultRows()
     {
         return 0;
+    }
+
+    public void validate(PartitionUpdate update) throws InvalidRequestException
+    {
+
     }
 
     public Searcher searcherFor(ReadCommand command)

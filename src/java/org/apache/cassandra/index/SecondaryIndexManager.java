@@ -583,48 +583,24 @@ public class SecondaryIndexManager implements IndexRegistry
     }
 
     /**
-     * Called at write time to ensure that values which are valid for use
-     * as a PartitionKey in a primary table is also valid as an indexed
-     * value in any registered index.
-     * @param partitionKey
+     * Called at write time to ensure that values present in the update
+     * are valid according to the rules of all registered indexes which
+     * will process it. The partition key as well as the clustering and
+     * cell values for each row in the update may be checked by index
+     * implementations
+     * @param update PartitionUpdate containing the values to be validated by registered Index implementations
      * @throws InvalidRequestException
      */
-    public void validate(DecoratedKey partitionKey) throws InvalidRequestException
+    public void validate(PartitionUpdate update) throws InvalidRequestException
     {
-        indexes.values().forEach(indexer -> indexer.validate(partitionKey));
-    }
-
-    /**
-     * Called at write time to ensure that values which are valid for use
-     * as a Clustering in a primary table is also valid as an indexed
-     * value in any registered index.
-     * @param clustering
-     * @throws InvalidRequestException
-     */
-    public void validate(Clustering clustering) throws InvalidRequestException
-    {
-        indexes.values().forEach(indexer -> indexer.validate(clustering));
-    }
-
-    /**
-     * Called at write time to ensure that values which are valid for use
-     * as a cell value in a primary table is also valid as an indexed
-     * value in any registered index.
-     * @param column
-     * @param value
-     * @param path
-     * @throws InvalidRequestException
-     */
-    public void validate(ColumnDefinition column, ByteBuffer value, CellPath path) throws InvalidRequestException
-    {
-        indexes.values().stream()
-                .filter(indexer -> indexer.indexes(PartitionColumns.of(column)))
-                .forEach(indexer -> indexer.validate(column, value, path));
+        indexes.values()
+               .stream()
+               .filter(i -> i.indexes(update.columns()))
+               .forEach(i -> i.validate(update));
     }
 
     /**
      * IndexRegistry methods
-     * TODO : maybe do this via composition for testability
      */
     public void registerIndex(Index index)
     {
