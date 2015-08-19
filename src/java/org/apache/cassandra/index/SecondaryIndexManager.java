@@ -201,7 +201,6 @@ public class SecondaryIndexManager implements IndexRegistry
         if (indexes.isEmpty())
             return;
 
-        // todo use index names, not indexes toString
         logger.info("Submitting index build of {} for data in {}",
                     indexes.stream().map(Index::getIndexName).collect(Collectors.joining(",")),
                     sstables.stream().map(SSTableReader::toString).collect(Collectors.joining(",")));
@@ -213,7 +212,6 @@ public class SecondaryIndexManager implements IndexRegistry
         FBUtilities.waitOnFuture(future);
 
         flushIndexesBlocking(indexes);
-        // todo names here also
         logger.info("Index build of {} complete",
                     indexes.stream().map(Index::getIndexName).collect(Collectors.joining(",")));
     }
@@ -252,9 +250,8 @@ public class SecondaryIndexManager implements IndexRegistry
             IndexMetadata registered = found.get();
             if (!registered.equals(indexDef))
             {
-                Index index = indexes.get(registered);
+                Index index = indexes.remove(registered);
                 final Callable<?> rebuildTask = index.setIndexMetadata(indexDef);
-                indexes.remove(registered);
                 indexes.put(indexDef, index);
                 return rebuildTask == null
                        ? Futures.immediateFuture(null)

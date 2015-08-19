@@ -140,15 +140,6 @@ public interface Index
     public void register(IndexRegistry registry);
 
     /**
-     * Possibly remove the index from the supplied registry. This is called after an update to the base
-     * table's metadata which may remove an index from a column. Implementations may determine whether or
-     * not the index should remain registered at that point and act accordingly, by either calling the
-     * unregisterIndex method on the supplied registry or not.
-     * @param registry
-     */
-    public void maybeUnregister(IndexRegistry registry);
-
-    /**
      * Return an identifier for the index. This should be unique across all indexes on a given base table
      * @return the name of the index
      */

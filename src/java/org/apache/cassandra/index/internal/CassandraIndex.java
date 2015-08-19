@@ -52,12 +52,6 @@ public class CassandraIndex implements Index
         registry.registerIndex(this);
     }
 
-    public void maybeUnregister(IndexRegistry registry)
-    {
-        if (! metadata.indexCfs.isValid())
-            registry.unregisterIndex(this);
-    }
-
     public IndexMetadata getIndexMetadata()
     {
         return metadata.indexMetadata;
