@@ -470,12 +470,14 @@ public class SecondaryIndexTest
 
     private String getIndexNameForColumn(ColumnFamilyStore cfs, ColumnDefinition column)
     {
-        return cfs.indexManager.listIndexes()
-                               .stream()
-                               .filter(indexer -> indexer.getIndexedColumns().contains(column))
-                               .findFirst()
-                               .get()
-                               .getIndexName();
+        // this is mega-ugly because there is a mismatch between the name of an index
+        // stored in schema metadata & the name used to refer to that index in other
+        // places (such as system.IndexInfo). Hopefully this is temporary and
+        // Index.getIndexName() can be made equalivalent to Index.getIndexMetadata().name
+        // (ideally even removing the former completely)
+        Collection<IndexMetadata> indexes = cfs.metadata.getIndexes().get(column).orElse(new ArrayList<>());
+        assertEquals(1, indexes.size());
+        return cfs.indexManager.getIndex(indexes.iterator().next()).getIndexName();
     }
 
     @Test

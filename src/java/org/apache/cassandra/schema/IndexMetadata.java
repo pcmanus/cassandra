@@ -159,6 +159,7 @@ public final class IndexMetadata
         }
     }
 
+    // to be removed in CASSANDRA-10124 with multi-target & row based indexes
     public ColumnDefinition indexedColumn(CFMetaData cfm)
     {
        return cfm.getColumnDefinition(columns.iterator().next());

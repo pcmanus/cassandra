@@ -73,12 +73,6 @@ public class CassandraIndex implements Index
         return metadata == null ? Optional.empty() : Optional.of(metadata.indexCfs);
     }
 
-    public Collection<ColumnDefinition> getIndexedColumns()
-    {
-        // if metadata is null, the indexer hasn't been fully setup yet (i.e. addIndexedColumn hasn't been called)
-        return metadata == null ? Collections.emptySet() : Collections.singleton(metadata.indexedColumn);
-    }
-
     public Callable<Void> getBlockingFlushTask()
     {
         return () -> {

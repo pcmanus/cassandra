@@ -163,13 +163,6 @@ public interface Index
     public Optional<ColumnFamilyStore> getBackingTable();
 
     /**
-     * The set of columns on the base table that this Index covers.
-     * TODO : this may change with #7771
-     * @return
-     */
-    public Collection<ColumnDefinition> getIndexedColumns();
-
-    /**
      * Return a task which performs a blocking flush of the index's data to persistent storage.
      * @return task to be executed by the index manager to perform the flush.
      */

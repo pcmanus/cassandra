@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.index;
 
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiFunction;
