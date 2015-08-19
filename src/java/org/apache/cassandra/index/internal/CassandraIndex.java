@@ -27,6 +27,7 @@ import org.apache.cassandra.index.*;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.IndexMetadata;
+import org.apache.cassandra.thrift.ColumnDef;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -126,7 +127,7 @@ public class CassandraIndex implements Index
 
     public boolean supportsExpression(ColumnDefinition column, Operator operator)
     {
-        return metadata.indexedColumn.equals(column)
+        return metadata.indexedColumn.name.equals(column.name)
                && metadata.functions.supportsOperator(metadata.indexedColumn, operator);
     }
 
