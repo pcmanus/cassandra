@@ -22,9 +22,6 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
@@ -451,6 +448,28 @@ abstract class AbstractSSTableIterator implements SliceableUnfilteredRowIterator
         public int blocksCount()
         {
             return indexes.size();
+        }
+
+        // Update the block idx based on the current reader position if we're past the current block.
+        public void updateBlock() throws IOException
+        {
+            assert currentIndexIdx >= 0;
+            while (currentIndexIdx + 1 < indexes.size() && isPastCurrentBlock())
+            {
+                reader.openMarker = currentIndex().endOpenMarker;
+                ++currentIndexIdx;
+
+                // We have to set the mark, and we have to set it at the beginning of the block. So if we're not at the beginning of the block, this forces us to a weird seek dance.
+                // This can only happen when reading old file however.
+                long startOfBlock = indexEntry.position + indexes.get(currentIndexIdx).offset;
+                long currentFilePointer = reader.file.getFilePointer();
+                boolean atBlockStart = startOfBlock == currentFilePointer;
+                if (!atBlockStart)
+                    reader.seekToPosition(startOfBlock);
+                mark = reader.file.mark();
+                if (!atBlockStart)
+                    reader.seekToPosition(currentFilePointer);
+            }
         }
 
         // Check if we've crossed an index boundary (based on the mark on the beginning of the index block).
