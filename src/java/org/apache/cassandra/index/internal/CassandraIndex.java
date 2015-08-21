@@ -163,7 +163,7 @@ public class CassandraIndex implements Index
     {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
-        if(target.isPresent())
+        if (target.isPresent())
         {
             target.get().validateForIndexing();
             return new CassandraIndexSearcher(metadata, command, target.get(), this);
@@ -175,12 +175,21 @@ public class CassandraIndex implements Index
 
     public void validate(PartitionUpdate update) throws InvalidRequestException
     {
-        if (metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY)
-            validatePartitionKey(update.partitionKey());
-        else if (metadata.indexedColumn.kind == ColumnDefinition.Kind.CLUSTERING)
-            validateClusterings(update);
-        else
-            validateColumnData(update);
+        switch (metadata.indexedColumn.kind)
+        {
+            case PARTITION_KEY:
+                validatePartitionKey(update.partitionKey());
+                break;
+            case CLUSTERING:
+                validateClusterings(update);
+                break;
+            case REGULAR:
+                validateRows(update);
+                break;
+            case STATIC:
+                validateRows(Collections.singleton(update.staticRow()));
+                break;
+        }
     }
 
     public Indexer indexerFor(final DecoratedKey key,
@@ -390,26 +399,20 @@ public class CassandraIndex implements Index
 
     private void validatePartitionKey(DecoratedKey partitionKey) throws InvalidRequestException
     {
-        if (metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY)
-            validateIndexedValue(getIndexedValue(partitionKey.getKey(), null, null ));
+        assert metadata.indexedColumn.isPartitionKey();
+        validateIndexedValue(getIndexedValue(partitionKey.getKey(), null, null ));
     }
 
     private void validateClusterings(PartitionUpdate update) throws InvalidRequestException
     {
+        assert metadata.indexedColumn.isClusteringColumn();
         for (Row row : update)
             validateIndexedValue(getIndexedValue(null, row.clustering(), null));
     }
 
-    private void validateColumnData(PartitionUpdate update) throws InvalidRequestException
-    {
-        if (metadata.indexedColumn.isStatic())
-            validateRows(Collections.singleton(update.staticRow()));
-        else
-            validateRows(update);
-    }
-
     private void validateRows(Iterable<Row> rows)
     {
+        assert !metadata.indexedColumn.isPrimaryKeyColumn();
         for (Row row : rows)
         {
             if (metadata.indexedColumn.isComplex())
@@ -511,10 +514,10 @@ public class CassandraIndex implements Index
         SystemKeyspace.setIndexRemoved(metadata.baseCfs.keyspace.getName(),
                                        metadata.getIndexName());
     }
+
     private boolean isPrimaryKeyIndex()
     {
-        return metadata.indexedColumn.kind == ColumnDefinition.Kind.PARTITION_KEY
-               || metadata.indexedColumn.kind == ColumnDefinition.Kind.CLUSTERING;
+        return metadata.indexedColumn.isPrimaryKeyColumn();
     }
 
     private Callable<?> getBuildIndexTask()
