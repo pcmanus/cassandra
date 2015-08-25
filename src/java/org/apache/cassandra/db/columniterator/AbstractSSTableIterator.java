@@ -485,7 +485,12 @@ abstract class AbstractSSTableIterator implements SliceableUnfilteredRowIterator
 
         public IndexHelper.IndexInfo currentIndex()
         {
-            return indexes.get(currentIndexIdx);
+            return index(currentIndexIdx);
+        }
+
+        public IndexHelper.IndexInfo index(int i)
+        {
+            return indexes.get(i);
         }
 
         // Finds the index of the first block containing the provided bound, starting at the provided index.
