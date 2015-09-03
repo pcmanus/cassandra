@@ -463,12 +463,16 @@ abstract class AbstractSSTableIterator implements SliceableUnfilteredRowIterator
                 // This can only happen when reading old file however.
                 long startOfBlock = indexEntry.position + indexes.get(currentIndexIdx).offset;
                 long currentFilePointer = reader.file.getFilePointer();
-                boolean atBlockStart = startOfBlock == currentFilePointer;
-                if (!atBlockStart)
+                if (startOfBlock == currentFilePointer)
+                {
+                    mark = reader.file.mark();
+                }
+                else
+                {
                     reader.seekToPosition(startOfBlock);
-                mark = reader.file.mark();
-                if (!atBlockStart)
+                    mark = reader.file.mark();
                     reader.seekToPosition(currentFilePointer);
+                }
             }
         }
 
