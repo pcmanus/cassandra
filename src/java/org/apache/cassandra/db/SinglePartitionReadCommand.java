@@ -185,6 +185,11 @@ public abstract class SinglePartitionReadCommand<F extends ClusteringIndexFilter
         return clusteringIndexFilter;
     }
 
+    public boolean isReversed()
+    {
+        return clusteringIndexFilter().isReversed();
+    }
+
     public long getTimeout()
     {
         return DatabaseDescriptor.getReadRpcTimeout();

@@ -277,6 +277,13 @@ public abstract class ReadCommand implements ReadQuery
     public abstract ReadCommand copy();
 
     /**
+     * Whether the underlying {@code ClusteringIndexFilter} is reversed or not.
+     *
+     * @return whether the underlying {@code ClusteringIndexFilter} is reversed or not.
+     */
+    public abstract boolean isReversed();
+
+    /**
      * Whether the provided row, identified by its primary key components, is selected by
      * this read command.
      *
@@ -292,11 +299,11 @@ public abstract class ReadCommand implements ReadQuery
 
     protected abstract int oldestUnrepairedTombstone();
 
-    public ReadResponse createResponse(UnfilteredPartitionIterator iterator, ColumnFilter selection)
+    public ReadResponse createResponse(UnfilteredPartitionIterator iterator)
     {
         return isDigestQuery()
              ? ReadResponse.createDigestResponse(iterator, digestVersion)
-             : ReadResponse.createDataResponse(iterator, selection);
+             : ReadResponse.createDataResponse(this, iterator);
     }
 
     public long indexSerializedSize(int version)
@@ -486,6 +493,13 @@ public abstract class ReadCommand implements ReadQuery
      * Creates a message for this command.
      */
     public abstract MessageOut<ReadCommand> createMessage(int version);
+
+    public IVersionedSerializer<ReadResponse> responseDeserializer()
+    {
+        return isDigestQuery
+             ? ReadResponse.digestDeserializer
+             : new ReadResponse.Deserializer(this);
+    }
 
     protected abstract void appendCQLWhereClause(StringBuilder sb);
 

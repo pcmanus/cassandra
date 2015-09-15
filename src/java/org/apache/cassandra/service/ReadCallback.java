@@ -239,10 +239,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                 AsyncRepairCallback repairHandler = new AsyncRepairCallback(repairResolver, endpoints.size());
 
                 for (InetAddress endpoint : endpoints)
-                {
-                    MessageOut<ReadCommand> message = command.createMessage(MessagingService.instance().getVersion(endpoint));
-                    MessagingService.instance().sendRR(message, endpoint, repairHandler);
-                }
+                    MessagingService.instance().sendReadMessage(command, endpoint, repairHandler);
             }
         }
     }

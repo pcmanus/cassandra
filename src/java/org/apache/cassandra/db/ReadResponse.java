@@ -43,32 +43,19 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public abstract class ReadResponse
 {
-    // Serializer for single partition read response
+    // Serializer for read responses (should only be used for actual serialization, not deserialization)
     public static final IVersionedSerializer<ReadResponse> serializer = new Serializer();
-    // Serializer for partition range read response (this actually delegate to 'serializer' in 3.0 and to
-    // 'legacyRangeSliceReplySerializer' in older version.
-    public static final IVersionedSerializer<ReadResponse> rangeSliceSerializer = new RangeSliceSerializer();
-    // Serializer for the pre-3.0 rang slice responses.
+
+    // Deserializer for digest responses
+    public static final IVersionedSerializer<ReadResponse> digestDeserializer = new DigestDeserializer();
+
+    // Serializer for the pre-3.0 responses.
+    private static final IVersionedSerializer<ReadResponse> legacySinglePartitionSerializer = new LegacySinglePartitionSerializer();
     public static final IVersionedSerializer<ReadResponse> legacyRangeSliceReplySerializer = new LegacyRangeSliceReplySerializer();
 
-    // This is used only when serializing data responses and we can't it easily in other cases. So this can be null, which is slighly
-    // hacky, but as this hack doesn't escape this class, and it's easy enough to validate that it's not null when we need, it's "good enough".
-    private final CFMetaData metadata;
-
-    protected ReadResponse(CFMetaData metadata)
+    public static ReadResponse createDataResponse(ReadCommand command, UnfilteredPartitionIterator data)
     {
-        this.metadata = metadata;
-    }
-
-    public static ReadResponse createDataResponse(UnfilteredPartitionIterator data, ColumnFilter selection)
-    {
-        return new LocalDataResponse(data, selection);
-    }
-
-    @VisibleForTesting
-    public static ReadResponse createRemoteDataResponse(UnfilteredPartitionIterator data, ColumnFilter selection)
-    {
-        return new RemoteDataResponse(LocalDataResponse.build(data, selection));
+        return new DataResponse(command, data);
     }
 
     public static ReadResponse createDigestResponse(UnfilteredPartitionIterator data, int version)
@@ -76,8 +63,8 @@ public abstract class ReadResponse
         return new DigestResponse(makeDigest(data, version));
     }
 
-    public abstract UnfilteredPartitionIterator makeIterator(CFMetaData metadata, ReadCommand command);
-    public abstract ByteBuffer digest(CFMetaData metadata, ReadCommand command);
+    public abstract UnfilteredPartitionIterator makeIterator();
+    public abstract ByteBuffer digest();
 
     public abstract boolean isDigestResponse();
 
@@ -94,22 +81,17 @@ public abstract class ReadResponse
 
         private DigestResponse(ByteBuffer digest)
         {
-            super(null);
             assert digest.hasRemaining();
             this.digest = digest;
         }
 
-        public UnfilteredPartitionIterator makeIterator(CFMetaData metadata, ReadCommand command)
+        public UnfilteredPartitionIterator makeIterator()
         {
             throw new UnsupportedOperationException();
         }
 
-        public ByteBuffer digest(CFMetaData metadata, ReadCommand command)
+        public ByteBuffer digest()
         {
-            // We assume that the digest is in the proper version, which bug excluded should be true since this is called with
-            // ReadCommand.digestVersion() as argument and that's also what we use to produce the digest in the first place.
-            // Validating it's the proper digest in this method would require sending back the digest version along with the
-            // digest which would waste bandwith for little gain.
             return digest;
         }
 
@@ -119,92 +101,18 @@ public abstract class ReadResponse
         }
     }
 
-    // built on the owning node responding to a query
-    private static class LocalDataResponse extends DataResponse
+    private static abstract class AbstractDataResponse extends ReadResponse
     {
-        private final ColumnFilter received;
-        private LocalDataResponse(UnfilteredPartitionIterator iter, ColumnFilter received)
+        protected final ReadCommand command;
+
+        protected AbstractDataResponse(ReadCommand command)
         {
-            super(iter.metadata(), build(iter, received), SerializationHelper.Flag.LOCAL);
-            this.received = received;
+            this.command = command;
         }
 
-        private static ByteBuffer build(UnfilteredPartitionIterator iter, ColumnFilter selection)
+        public ByteBuffer digest()
         {
-            try (DataOutputBuffer buffer = new DataOutputBuffer())
-            {
-                UnfilteredPartitionIterators.serializerForIntraNode().serialize(iter, selection, buffer, MessagingService.current_version);
-                return buffer.buffer();
-            }
-            catch (IOException e)
-            {
-                // We're serializing in memory so this shouldn't happen
-                throw new RuntimeException(e);
-            }
-        }
-
-        protected ColumnFilter selection(ReadCommand sent)
-        {
-            // we didn't send anything, so we don't provide it in the serializer methods, but use the
-            // object's reference to the original column filter we received
-            assert sent == null || sent.columnFilter() == received;
-            return received;
-        }
-    }
-
-    // built on the coordinator node receiving a response
-    private static class RemoteDataResponse extends DataResponse
-    {
-        protected RemoteDataResponse(ByteBuffer data)
-        {
-            super(null, data, SerializationHelper.Flag.FROM_REMOTE);
-        }
-
-        protected ColumnFilter selection(ReadCommand sent)
-        {
-            // we should always know what we sent, and should provide it in digest() and makeIterator()
-            assert sent != null;
-            return sent.columnFilter();
-        }
-    }
-
-    static abstract class DataResponse extends ReadResponse
-    {
-        // TODO: can the digest be calculated over the raw bytes now?
-        // The response, serialized in the current messaging version
-        private final ByteBuffer data;
-        private final SerializationHelper.Flag flag;
-
-        protected DataResponse(CFMetaData metadata, ByteBuffer data, SerializationHelper.Flag flag)
-        {
-            super(metadata);
-            this.data = data;
-            this.flag = flag;
-        }
-
-        protected abstract ColumnFilter selection(ReadCommand command);
-
-        public UnfilteredPartitionIterator makeIterator(CFMetaData metadata, ReadCommand command)
-        {
-            try
-            {
-                DataInputPlus in = new DataInputBuffer(data, true);
-                return UnfilteredPartitionIterators.serializerForIntraNode().deserialize(in,
-                                                                                         MessagingService.current_version,
-                                                                                         metadata,
-                                                                                         selection(command),
-                                                                                         flag);
-            }
-            catch (IOException e)
-            {
-                // We're deserializing in memory so this shouldn't happen
-                throw new RuntimeException(e);
-            }
-        }
-
-        public ByteBuffer digest(CFMetaData metadata, ReadCommand command)
-        {
-            try (UnfilteredPartitionIterator iterator = makeIterator(metadata, command))
+            try (UnfilteredPartitionIterator iterator = makeIterator())
             {
                 return makeDigest(iterator, command.digestVersion());
             }
@@ -216,6 +124,83 @@ public abstract class ReadResponse
         }
     }
 
+    /*
+     * A response for a local read. Such response is either used directly, or serialized to be sent to a remote node.
+     */
+    private static class DataResponse extends AbstractDataResponse
+    {
+        private final List<ImmutableBTreePartition> partitions;
+
+        protected DataResponse(ReadCommand command, UnfilteredPartitionIterator response)
+        {
+            super(command);
+            this.partitions = build(command, response);
+        }
+
+        public UnfilteredPartitionIterator makeIterator()
+        {
+            return new AbstractUnfilteredPartitionIterator()
+            {
+                private int idx;
+
+                public boolean isForThrift()
+                {
+                    return command.isForThrift();
+                }
+
+                public CFMetaData metadata()
+                {
+                    return command.metadata();
+                }
+
+                public boolean hasNext()
+                {
+                    return idx < partitions.size();
+                }
+
+                public UnfilteredRowIterator next()
+                {
+                    // TODO: we know rows don't require any filtering and that we return everything. We ought to be able to optimize this.
+                    return partitions.get(idx++).unfilteredIterator(command.columnFilter(), Slices.ALL, command.isReversed());
+                }
+            };
+        }
+
+        private static List<ImmutableBTreePartition> build(ReadCommand command, UnfilteredPartitionIterator iterator)
+        {
+            if (!iterator.hasNext())
+                return Collections.emptyList();
+
+            if (command instanceof SinglePartitionReadCommand)
+            {
+                try (UnfilteredRowIterator partition = iterator.next())
+                {
+                    List<ImmutableBTreePartition> partitions = Collections.singletonList(ImmutableBTreePartition.create(partition));
+                    assert !iterator.hasNext();
+                    return partitions;
+                }
+            }
+
+            List<ImmutableBTreePartition> partitions = new ArrayList<>();
+            while (iterator.hasNext())
+            {
+                try (UnfilteredRowIterator partition = iterator.next())
+                {
+                    partitions.add(ImmutableBTreePartition.create(partition));
+                }
+            }
+            return partitions;
+        }
+    }
+
+    private static class RemoteDataResponse extends DataResponse
+    {
+        private RemoteDataResponse(ReadCommand command, UnfilteredPartitionIterator response)
+        {
+            super(command, response);
+        }
+    }
+
     /**
      * A remote response from a pre-3.0 node.  This needs a separate class in order to cleanly handle trimming and
      * reversal of results when the read command calls for it.  Pre-3.0 nodes always return results in the normal
@@ -223,18 +208,18 @@ public abstract class ReadResponse
      * exclusive slices on non-composite tables, so extra rows may need to be trimmed.
      */
     @VisibleForTesting
-    static class LegacyRemoteDataResponse extends ReadResponse
+    static class LegacyRemoteDataResponse extends AbstractDataResponse
     {
         private final List<ImmutableBTreePartition> partitions;
 
         @VisibleForTesting
-        LegacyRemoteDataResponse(List<ImmutableBTreePartition> partitions)
+        LegacyRemoteDataResponse(ReadCommand command, List<ImmutableBTreePartition> partitions)
         {
-            super(null); // we never serialize LegacyRemoteDataResponses, so we don't care about the metadata
+            super(command);
             this.partitions = partitions;
         }
 
-        public UnfilteredPartitionIterator makeIterator(CFMetaData metadata, final ReadCommand command)
+        public UnfilteredPartitionIterator makeIterator()
         {
             // Due to a bug in the serialization of AbstractBounds, anything that isn't a Range is understood by pre-3.0 nodes
             // as a Bound, which means IncludingExcludingBounds and ExcludingBounds responses may include keys they shouldn't.
@@ -267,12 +252,12 @@ public abstract class ReadResponse
 
                 public boolean isForThrift()
                 {
-                    return true;
+                    return command.isForThrift();
                 }
 
                 public CFMetaData metadata()
                 {
-                    return metadata;
+                    return command.metadata();
                 }
 
                 public boolean hasNext()
@@ -296,163 +281,212 @@ public abstract class ReadResponse
                 }
             };
         }
-
-        public ByteBuffer digest(CFMetaData metadata, ReadCommand command)
-        {
-            try (UnfilteredPartitionIterator iterator = makeIterator(metadata, command))
-            {
-                return makeDigest(iterator, command.digestVersion());
-            }
-        }
-
-        public boolean isDigestResponse()
-        {
-            return false;
-        }
     }
 
+    /**
+     * Only for _serializing_ a ReadResponse. The deserialization method throws and Deserializer should be used instead.
+     */
     private static class Serializer implements IVersionedSerializer<ReadResponse>
     {
         public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
         {
-            boolean isDigest = response instanceof DigestResponse;
-            ByteBuffer digest = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
             if (version < MessagingService.VERSION_30)
             {
-                out.writeInt(digest.remaining());
-                out.write(digest);
-                out.writeBoolean(isDigest);
-                if (!isDigest)
-                {
-                    assert !(response instanceof LegacyRemoteDataResponse); // we only use those on the receiving side
-                    try (UnfilteredPartitionIterator iter = response.makeIterator(response.metadata, null))
-                    {
-                        assert iter.hasNext();
-                        try (UnfilteredRowIterator partition = iter.next())
-                        {
-                            ByteBufferUtil.writeWithShortLength(partition.partitionKey().getKey(), out);
-                            LegacyLayout.serializeAsLegacyPartition(partition, out, version);
-                        }
-                        assert !iter.hasNext();
-                    }
-                }
+                legacySinglePartitionSerializer.serialize(response, out, version);
                 return;
             }
 
+            boolean isDigest = response instanceof DigestResponse;
+            ByteBuffer digest = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
             ByteBufferUtil.writeWithVIntLength(digest, out);
             if (!isDigest)
             {
-                ByteBuffer data = ((DataResponse)response).data;
-                ByteBufferUtil.writeWithVIntLength(data, out);
+                assert response instanceof DataResponse;
+                DataResponse dataResponse = (DataResponse)response;
+                try (UnfilteredPartitionIterator iter = dataResponse.makeIterator())
+                {
+                    UnfilteredPartitionIterators.serializerForIntraNode().serialize(iter, dataResponse.command.columnFilter(), out, version);
+                }
             }
         }
 
         public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
         {
-            if (version < MessagingService.VERSION_30)
-            {
-                byte[] digest = null;
-                int digestSize = in.readInt();
-                if (digestSize > 0)
-                {
-                    digest = new byte[digestSize];
-                    in.readFully(digest, 0, digestSize);
-                }
-                boolean isDigest = in.readBoolean();
-                assert isDigest == digestSize > 0;
-                if (isDigest)
-                {
-                    assert digest != null;
-                    return new DigestResponse(ByteBuffer.wrap(digest));
-                }
-
-                // ReadResponses from older versions are always single-partition (ranges are handled by RangeSliceReply)
-                ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
-                UnfilteredRowIterator rowIterator = LegacyLayout.deserializeLegacyPartition(in, version, SerializationHelper.Flag.FROM_REMOTE, key);
-                if (rowIterator == null)
-                    return new LegacyRemoteDataResponse(Collections.emptyList());
-
-                try
-                {
-                    return new LegacyRemoteDataResponse(Collections.singletonList(ImmutableBTreePartition.create(rowIterator)));
-                }
-                finally
-                {
-                    rowIterator.close();
-                }
-            }
-
-            ByteBuffer digest = ByteBufferUtil.readWithVIntLength(in);
-            if (digest.hasRemaining())
-                return new DigestResponse(digest);
-
-            assert version == MessagingService.VERSION_30;
-            ByteBuffer data = ByteBufferUtil.readWithVIntLength(in);
-            return new RemoteDataResponse(data);
+            throw new UnsupportedOperationException();
         }
 
         public long serializedSize(ReadResponse response, int version)
         {
+            if (version < MessagingService.VERSION_30)
+                return legacySinglePartitionSerializer.serializedSize(response, version);
+
             boolean isDigest = response instanceof DigestResponse;
             ByteBuffer digest = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
-
-            if (version < MessagingService.VERSION_30)
-            {
-                long size = TypeSizes.sizeof(digest.remaining())
-                        + digest.remaining()
-                        + TypeSizes.sizeof(isDigest);
-                if (!isDigest)
-                {
-                    assert !(response instanceof LegacyRemoteDataResponse); // we only use those on the receiving side
-                    try (UnfilteredPartitionIterator iter = response.makeIterator(response.metadata, null))
-                    {
-                        assert iter.hasNext();
-                        try (UnfilteredRowIterator partition = iter.next())
-                        {
-                            size += ByteBufferUtil.serializedSizeWithShortLength(partition.partitionKey().getKey());
-                            size += LegacyLayout.serializedSizeAsLegacyPartition(partition, version);
-                        }
-                        assert !iter.hasNext();
-                    }
-                }
-                return size;
-            }
-
             long size = ByteBufferUtil.serializedSizeWithVIntLength(digest);
             if (!isDigest)
             {
-                // Note that we can only get there if version == 3.0, which is the current_version. When we'll change the
-                // version, we'll have to deserialize/re-serialize the data to be in the proper version.
-                assert version == MessagingService.VERSION_30;
-                ByteBuffer data = ((DataResponse)response).data;
-                size += ByteBufferUtil.serializedSizeWithVIntLength(data);
+                assert response instanceof DataResponse;
+                DataResponse dataResponse = (DataResponse)response;
+                try (UnfilteredPartitionIterator iter = dataResponse.makeIterator())
+                {
+                    size += UnfilteredPartitionIterators.serializerForIntraNode().serializedSize(iter, dataResponse.command.columnFilter(), version);
+                }
             }
             return size;
         }
     }
 
-    private static class RangeSliceSerializer implements IVersionedSerializer<ReadResponse>
+    /**
+     * Only for _deserializing_ a digest ReadResponse. The serialization methods throw and Serializer should be used instead.
+     */
+    private static class DigestDeserializer implements IVersionedSerializer<ReadResponse>
     {
         public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
         {
-            if (version < MessagingService.VERSION_30)
-                legacyRangeSliceReplySerializer.serialize(response, out, version);
-            else
-                serializer.serialize(response, out, version);
+            throw new UnsupportedOperationException();
         }
 
         public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
         {
-            return version < MessagingService.VERSION_30
-                 ? legacyRangeSliceReplySerializer.deserialize(in, version)
-                 : serializer.deserialize(in, version);
+            if (version < MessagingService.VERSION_30)
+            {
+                int digestSize = in.readInt();
+                assert digestSize > 0;
+                byte[] digest = new byte[digestSize];
+                in.readFully(digest, 0, digestSize);
+                boolean isDigest = in.readBoolean();
+                assert isDigest;
+                return new DigestResponse(ByteBuffer.wrap(digest));
+            }
+
+            ByteBuffer digest = ByteBufferUtil.readWithVIntLength(in);
+            assert digest.hasRemaining();
+            return new DigestResponse(digest);
         }
 
         public long serializedSize(ReadResponse response, int version)
         {
-            return version < MessagingService.VERSION_30
-                 ? legacyRangeSliceReplySerializer.serializedSize(response, version)
-                 : serializer.serializedSize(response, version);
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    /**
+     * Only for _deserializing_ a data ReadResponse. The serialization methods throw and Serializer should be used instead.
+     */
+    public static class Deserializer implements IVersionedSerializer<ReadResponse>
+    {
+        private final ReadCommand command;
+
+        public Deserializer(ReadCommand command)
+        {
+            this.command = command;
+        }
+
+        public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
+        {
+            if (version < MessagingService.VERSION_30)
+                return command instanceof PartitionRangeReadCommand
+                     ? LegacyRangeSliceReplySerializer.deserialize(in, version, command)
+                     : LegacySinglePartitionSerializer.deserialize(in, version, command);
+
+            // We could use skipWithVIntLength below, but we expect an empty value and readWithVIntLength don't
+            // allocate in that case, so using it allows to validate our assumption.
+            ByteBuffer digest = ByteBufferUtil.readWithVIntLength(in);
+            assert !digest.hasRemaining();
+
+            return new RemoteDataResponse(command,
+                                          UnfilteredPartitionIterators.serializerForIntraNode().deserialize(in, version, command.metadata(), command.columnFilter(), SerializationHelper.Flag.FROM_REMOTE));
+        }
+
+        public long serializedSize(ReadResponse response, int version)
+        {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    private static class LegacySinglePartitionSerializer implements IVersionedSerializer<ReadResponse>
+    {
+        public void serialize(ReadResponse response, DataOutputPlus out, int version) throws IOException
+        {
+            assert version < MessagingService.VERSION_30;
+
+            boolean isDigest = response instanceof DigestResponse;
+            ByteBuffer digest = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+
+            out.writeInt(digest.remaining());
+            out.write(digest);
+            out.writeBoolean(isDigest);
+            if (!isDigest)
+            {
+                assert response instanceof DataResponse;
+                DataResponse dataResponse = (DataResponse)response;
+                assert dataResponse.partitions.size() == 1; // We should be going through LegacyRangeSliceReplySerializer otherwise
+                try (UnfilteredRowIterator partition = dataResponse.partitions.get(0).unfilteredIterator())
+                {
+                    ByteBufferUtil.writeWithShortLength(partition.partitionKey().getKey(), out);
+                    LegacyLayout.serializeAsLegacyPartition(partition, out, version);
+                }
+            }
+            return;
+        }
+
+        public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        public static ReadResponse deserialize(DataInputPlus in, int version, ReadCommand command) throws IOException
+        {
+            assert version < MessagingService.VERSION_30;
+
+            int digestSize = in.readInt();
+            assert digestSize == 0; // This is handled by DigestDeserializer
+            boolean isDigest = in.readBoolean();
+            assert !isDigest;
+
+            // ReadResponses from older versions are always single-partition (ranges are handled by RangeSliceReply)
+            ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
+            UnfilteredRowIterator rowIterator = LegacyLayout.deserializeLegacyPartition(in, version, SerializationHelper.Flag.FROM_REMOTE, key);
+            if (rowIterator == null)
+                return new LegacyRemoteDataResponse(command, Collections.emptyList());
+
+            try
+            {
+                return new LegacyRemoteDataResponse(command, Collections.singletonList(ImmutableBTreePartition.create(rowIterator)));
+            }
+            finally
+            {
+                rowIterator.close();
+            }
+        }
+
+        public long serializedSize(ReadResponse response, int version)
+        {
+            assert version < MessagingService.VERSION_30;
+
+            boolean isDigest = response instanceof DigestResponse;
+            ByteBuffer digest = isDigest ? ((DigestResponse)response).digest : ByteBufferUtil.EMPTY_BYTE_BUFFER;
+
+            long size = TypeSizes.sizeof(digest.remaining())
+                      + digest.remaining()
+                      + TypeSizes.sizeof(isDigest);
+            if (!isDigest)
+            {
+                assert response instanceof DataResponse;
+                DataResponse dataResponse = (DataResponse)response;
+                assert dataResponse.partitions.size() == 1; // We should be going through LegacyRangeSliceReplySerializer otherwise
+                try (UnfilteredRowIterator partition = dataResponse.partitions.get(0).unfilteredIterator())
+                {
+                    size += ByteBufferUtil.serializedSizeWithShortLength(partition.partitionKey().getKey());
+                    size += LegacyLayout.serializedSizeAsLegacyPartition(partition, version);
+                }
+            }
+            return size;
         }
     }
 
@@ -465,7 +499,7 @@ public abstract class ReadResponse
             // determine the number of partitions upfront for serialization
             int numPartitions = 0;
             assert !(response instanceof LegacyRemoteDataResponse); // we only use those on the receiving side
-            try (UnfilteredPartitionIterator iterator = response.makeIterator(response.metadata, null))
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
             {
                 while (iterator.hasNext())
                 {
@@ -482,7 +516,7 @@ public abstract class ReadResponse
 
             out.writeInt(numPartitions);
 
-            try (UnfilteredPartitionIterator iterator = response.makeIterator(response.metadata, null))
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
             {
                 while (iterator.hasNext())
                 {
@@ -497,6 +531,11 @@ public abstract class ReadResponse
 
         public ReadResponse deserialize(DataInputPlus in, int version) throws IOException
         {
+            throw new UnsupportedOperationException();
+        }
+
+        public static ReadResponse deserialize(DataInputPlus in, int version, ReadCommand command) throws IOException
+        {
             int partitionCount = in.readInt();
             ArrayList<ImmutableBTreePartition> partitions = new ArrayList<>(partitionCount);
             for (int i = 0; i < partitionCount; i++)
@@ -507,7 +546,7 @@ public abstract class ReadResponse
                     partitions.add(ImmutableBTreePartition.create(partition));
                 }
             }
-            return new LegacyRemoteDataResponse(partitions);
+            return new LegacyRemoteDataResponse(command, partitions);
         }
 
         public long serializedSize(ReadResponse response, int version)
@@ -516,7 +555,7 @@ public abstract class ReadResponse
             long size = TypeSizes.sizeof(0);  // number of partitions
 
             assert !(response instanceof LegacyRemoteDataResponse); // we only use those on the receiving side
-            try (UnfilteredPartitionIterator iterator = response.makeIterator(response.metadata, null))
+            try (UnfilteredPartitionIterator iterator = response.makeIterator())
             {
                 while (iterator.hasNext())
                 {

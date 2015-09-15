@@ -67,14 +67,13 @@ public class ReadResponseTest extends CQLTester
         List<ImmutableBTreePartition> responses = Arrays.asList(makePartition(cfs.metadata, "k1"),
                                                                 makePartition(cfs.metadata, "k2"),
                                                                 makePartition(cfs.metadata, "k3"));
-        ReadResponse.LegacyRemoteDataResponse response = new ReadResponse.LegacyRemoteDataResponse(responses);
 
-        assertPartitions(response.makeIterator(cfs.metadata, Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k3").build()), "k2");
-        assertPartitions(response.makeIterator(cfs.metadata, Util.cmd(cfs).fromKeyExcl("k0").toKeyExcl("k3").build()), "k1", "k2");
-        assertPartitions(response.makeIterator(cfs.metadata, Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k4").build()), "k2", "k3");
+        assertPartitions(new ReadResponse.LegacyRemoteDataResponse(Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k3").build(), responses).makeIterator(), "k2");
+        assertPartitions(new ReadResponse.LegacyRemoteDataResponse(Util.cmd(cfs).fromKeyExcl("k0").toKeyExcl("k3").build(), responses).makeIterator(), "k1", "k2");
+        assertPartitions(new ReadResponse.LegacyRemoteDataResponse(Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k4").build(), responses).makeIterator(), "k2", "k3");
 
-        assertPartitions(response.makeIterator(cfs.metadata, Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k3").build()), "k1", "k2");
-        assertPartitions(response.makeIterator(cfs.metadata, Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k4").build()), "k1", "k2", "k3");
+        assertPartitions(new ReadResponse.LegacyRemoteDataResponse(Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k3").build(), responses).makeIterator(), "k1", "k2");
+        assertPartitions(new ReadResponse.LegacyRemoteDataResponse(Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k4").build(), responses).makeIterator(), "k1", "k2", "k3");
     }
 
     private void assertPartitions(UnfilteredPartitionIterator actual, String... expectedKeys)

@@ -452,5 +452,20 @@ public abstract class UnfilteredPartitionIterators
                 }
             };
         }
+
+        public long serializedSize(UnfilteredPartitionIterator iter, ColumnFilter selection, int version)
+        {
+            long size = TypeSizes.sizeof(iter.isForThrift());
+            while (iter.hasNext())
+            {
+                size += TypeSizes.sizeof(true);
+                try (UnfilteredRowIterator partition = iter.next())
+                {
+                    size += UnfilteredRowIteratorSerializer.serializer.serializedSize(partition, selection, version, -1);
+                }
+            }
+            size += TypeSizes.sizeof(false);
+            return size;
+        }
     }
 }

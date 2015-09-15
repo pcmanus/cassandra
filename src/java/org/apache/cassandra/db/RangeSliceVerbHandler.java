@@ -24,6 +24,7 @@ public class RangeSliceVerbHandler extends ReadCommandVerbHandler
     @Override
     protected IVersionedSerializer<ReadResponse> serializer()
     {
-        return ReadResponse.rangeSliceSerializer;
+        // Note that only old nodes will send us "RangeSlice" queries (3.0 always use the ReadCommandVerbHandler)
+        return ReadResponse.legacyRangeSliceReplySerializer;
     }
 }

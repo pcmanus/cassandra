@@ -237,16 +237,15 @@ public final class MessagingService implements MessagingServiceMBean
 
     /**
      * A Map of what kind of serializer to wire up to a REQUEST_RESPONSE callback, based on outbound Verb.
+     *
+     * Note that read response verbs are not present because their callback deserializer is provided directly from the ReadCommand (see sendReadMessage).
      */
-    public static final EnumMap<Verb, IVersionedSerializer<?>> callbackDeserializers = new EnumMap<Verb, IVersionedSerializer<?>>(Verb.class)
+    private static final EnumMap<Verb, IVersionedSerializer<?>> callbackDeserializers = new EnumMap<Verb, IVersionedSerializer<?>>(Verb.class)
     {{
         put(Verb.MUTATION, WriteResponse.serializer);
         put(Verb.HINT, HintResponse.serializer);
         put(Verb.READ_REPAIR, WriteResponse.serializer);
         put(Verb.COUNTER_MUTATION, WriteResponse.serializer);
-        put(Verb.RANGE_SLICE, ReadResponse.rangeSliceSerializer);
-        put(Verb.PAGED_RANGE, ReadResponse.legacyRangeSliceReplySerializer);
-        put(Verb.READ, ReadResponse.serializer);
         put(Verb.TRUNCATE, TruncateResponse.serializer);
         put(Verb.SNAPSHOT, null);
 
@@ -620,9 +619,43 @@ public final class MessagingService implements MessagingServiceMBean
         return verbHandlers.get(type);
     }
 
+    private boolean isMutation(Verb verb)
+    {
+        switch (verb)
+        {
+            case MUTATION:
+            case COUNTER_MUTATION:
+            case PAXOS_COMMIT:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isReadResponse(Verb verb)
+    {
+        switch (verb)
+        {
+            case READ:
+            case RANGE_SLICE:
+            case PAGED_RANGE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private int addCallback(IAsyncCallback cb, MessageOut<ReadCommand> message, InetAddress to, long timeout, boolean failureCallback, IVersionedSerializer<ReadResponse> serializer)
+    {
+        int messageId = nextId();
+        CallbackInfo previous = callbacks.put(messageId, new CallbackInfo(to, cb, serializer, failureCallback), timeout);
+        assert previous == null : String.format("Callback already exists for id %d! (%s)", messageId, previous);
+        return messageId;
+    }
+
     public int addCallback(IAsyncCallback cb, MessageOut message, InetAddress to, long timeout, boolean failureCallback)
     {
-        assert message.verb != Verb.MUTATION; // mutations need to call the overload with a ConsistencyLevel
+        assert !isMutation(message.verb) && !isReadResponse(message.verb); // mutations need to call the overload with a ConsistencyLevel, and read response must provide their own deserializer
         int messageId = nextId();
         CallbackInfo previous = callbacks.put(messageId, new CallbackInfo(to, cb, callbackDeserializers.get(message.verb), failureCallback), timeout);
         assert previous == null : String.format("Callback already exists for id %d! (%s)", messageId, previous);
@@ -636,9 +669,7 @@ public final class MessagingService implements MessagingServiceMBean
                            ConsistencyLevel consistencyLevel,
                            boolean allowHints)
     {
-        assert message.verb == Verb.MUTATION
-            || message.verb == Verb.COUNTER_MUTATION
-            || message.verb == Verb.PAXOS_COMMIT;
+        assert isMutation(message.verb);
         int messageId = nextId();
 
         CallbackInfo previous = callbacks.put(messageId,
@@ -685,6 +716,14 @@ public final class MessagingService implements MessagingServiceMBean
     {
         int id = addCallback(cb, message, to, timeout, failureCallback);
         sendOneWay(failureCallback ? message.withParameter(FAILURE_CALLBACK_PARAM, ONE_BYTE) : message, id, to);
+        return id;
+    }
+
+    public int sendReadMessage(ReadCommand command, InetAddress to, IAsyncCallback cb)
+    {
+        MessageOut<ReadCommand> message = command.createMessage(getVersion(to));
+        int id = addCallback(cb, message, to, message.getTimeout(), true, command.responseDeserializer());
+        sendOneWay(message.withParameter(FAILURE_CALLBACK_PARAM, ONE_BYTE), id, to);
         return id;
     }
 
