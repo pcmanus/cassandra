@@ -41,8 +41,6 @@ import org.apache.cassandra.utils.*;
  */
 public abstract class UnfilteredPartitionIterators
 {
-    private static final Serializer serializer = new Serializer();
-
     private static final Comparator<UnfilteredRowIterator> partitionComparator = (p1, p2) -> p1.partitionKey().compareTo(p2.partitionKey());
 
     private UnfilteredPartitionIterators() {}
@@ -338,11 +336,6 @@ public abstract class UnfilteredPartitionIterators
                 }
             }
         }
-    }
-
-    public static Serializer serializerForIntraNode()
-    {
-        return serializer;
     }
 
     /**
