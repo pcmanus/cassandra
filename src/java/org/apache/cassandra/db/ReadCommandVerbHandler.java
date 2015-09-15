@@ -28,6 +28,8 @@ import org.apache.cassandra.tracing.Tracing;
 
 public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
 {
+    public static final ReadCommandVerbHandler instance = new ReadCommandVerbHandler();
+
     protected IVersionedSerializer<ReadResponse> serializer()
     {
         return ReadResponse.serializer;
@@ -44,7 +46,7 @@ public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
         ReadResponse response;
         try (ReadOrderGroup opGroup = command.startOrderGroup(); UnfilteredPartitionIterator iterator = command.executeLocally(opGroup))
         {
-            response = command.createResponse(iterator, command.columnFilter());
+            response = command.createResponse(iterator);
         }
 
         MessageOut<ReadResponse> reply = new MessageOut<>(MessagingService.Verb.REQUEST_RESPONSE, response, serializer());

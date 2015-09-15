@@ -149,6 +149,16 @@ public class DataRange
     }
 
     /**
+     * Whether the underlying {@code ClusteringIndexFilter} is reversed or not.
+     *
+     * @return whether the underlying {@code ClusteringIndexFilter} is reversed or not.
+     */
+    public boolean isReversed()
+    {
+        return clusteringIndexFilter.isReversed();
+    }
+
+    /**
      * Whether the data range is for a paged request or not.
      *
      * @return true if for paging, false otherwise

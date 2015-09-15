@@ -93,7 +93,6 @@ public abstract class AbstractReadExecutor
 
     private void makeRequests(ReadCommand readCommand, Iterable<InetAddress> endpoints)
     {
-        MessageOut<ReadCommand> message = null;
         boolean hasLocalEndpoint = false;
 
         for (InetAddress endpoint : endpoints)
@@ -107,9 +106,7 @@ public abstract class AbstractReadExecutor
             if (traceState != null)
                 traceState.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
             logger.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
-            if (message == null)
-                message = readCommand.createMessage(MessagingService.instance().getVersion(endpoint));
-            MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
+            MessagingService.instance().sendReadMessage(readCommand, endpoint, handler);
         }
 
         // We delay the local (potentially blocking) read till the end to avoid stalling remote requests.

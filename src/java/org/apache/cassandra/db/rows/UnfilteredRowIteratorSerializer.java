@@ -131,14 +131,12 @@ public class UnfilteredRowIteratorSerializer
     }
 
     // Please note that this consume the iterator, and as such should not be called unless we have a simple way to
-    // recreate an iterator for both serialize and serializedSize, which is mostly only PartitionUpdate/ArrayBackedCachedPartition.
+    // recreate an iterator for both serialize and serializedSize.
     public long serializedSize(UnfilteredRowIterator iterator, ColumnFilter selection, int version, int rowEstimate)
     {
         SerializationHeader header = new SerializationHeader(iterator.metadata(),
                                                              iterator.columns(),
                                                              iterator.stats());
-
-        assert rowEstimate >= 0;
 
         long size = ByteBufferUtil.serializedSizeWithVIntLength(iterator.partitionKey().getKey())
                   + 1; // flags
