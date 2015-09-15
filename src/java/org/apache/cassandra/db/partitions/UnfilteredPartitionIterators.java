@@ -41,8 +41,6 @@ import org.apache.cassandra.utils.*;
  */
 public abstract class UnfilteredPartitionIterators
 {
-    private static final Serializer serializer = new Serializer();
-
     private static final Comparator<UnfilteredRowIterator> partitionComparator = (p1, p2) -> p1.partitionKey().compareTo(p2.partitionKey());
 
     private UnfilteredPartitionIterators() {}
@@ -340,11 +338,6 @@ public abstract class UnfilteredPartitionIterators
         }
     }
 
-    public static Serializer serializerForIntraNode()
-    {
-        return serializer;
-    }
-
     /**
      * Wraps the provided iterator so it logs the returned rows/RT for debugging purposes.
      * <p>
@@ -360,112 +353,5 @@ public abstract class UnfilteredPartitionIterators
                 return UnfilteredRowIterators.loggingIterator(super.next(), id, fullDetails);
             }
         };
-    }
-
-    /**
-     * Serialize each UnfilteredSerializer one after the other, with an initial byte that indicates whether
-     * we're done or not.
-     */
-    public static class Serializer
-    {
-        public void serialize(UnfilteredPartitionIterator iter, ColumnFilter selection, DataOutputPlus out, int version) throws IOException
-        {
-            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
-
-            out.writeBoolean(iter.isForThrift());
-            while (iter.hasNext())
-            {
-                out.writeBoolean(true);
-                try (UnfilteredRowIterator partition = iter.next())
-                {
-                    UnfilteredRowIteratorSerializer.serializer.serialize(partition, selection, out, version);
-                }
-            }
-            out.writeBoolean(false);
-        }
-
-        public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final CFMetaData metadata, final ColumnFilter selection, final SerializationHelper.Flag flag) throws IOException
-        {
-            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
-            final boolean isForThrift = in.readBoolean();
-
-            return new AbstractUnfilteredPartitionIterator()
-            {
-                private UnfilteredRowIterator next;
-                private boolean hasNext;
-                private boolean nextReturned = true;
-
-                public boolean isForThrift()
-                {
-                    return isForThrift;
-                }
-
-                public CFMetaData metadata()
-                {
-                    return metadata;
-                }
-
-                public boolean hasNext()
-                {
-                    if (!nextReturned)
-                        return hasNext;
-
-                    // We can't answer this until the previously returned iterator has been fully consumed,
-                    // so complain if that's not the case.
-                    if (next != null && next.hasNext())
-                        throw new IllegalStateException("Cannot call hasNext() until the previous iterator has been fully consumed");
-
-                    try
-                    {
-                        hasNext = in.readBoolean();
-                        nextReturned = false;
-                        return hasNext;
-                    }
-                    catch (IOException e)
-                    {
-                        throw new IOError(e);
-                    }
-                }
-
-                public UnfilteredRowIterator next()
-                {
-                    if (nextReturned && !hasNext())
-                        throw new NoSuchElementException();
-
-                    try
-                    {
-                        nextReturned = true;
-                        next = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, selection, flag);
-                        return next;
-                    }
-                    catch (IOException e)
-                    {
-                        throw new IOError(e);
-                    }
-                }
-
-                @Override
-                public void close()
-                {
-                    if (next != null)
-                        next.close();
-                }
-            };
-        }
-
-        public long serializedSize(UnfilteredPartitionIterator iter, ColumnFilter selection, int version)
-        {
-            long size = TypeSizes.sizeof(iter.isForThrift());
-            while (iter.hasNext())
-            {
-                size += TypeSizes.sizeof(true);
-                try (UnfilteredRowIterator partition = iter.next())
-                {
-                    size += UnfilteredRowIteratorSerializer.serializer.serializedSize(partition, selection, version, -1);
-                }
-            }
-            size += TypeSizes.sizeof(false);
-            return size;
-        }
     }
 }

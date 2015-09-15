@@ -50,6 +50,18 @@ public class ImmutableBTreePartition extends AbstractBTreePartition
     }
 
     /**
+     * Creates an empty partition for the povided key.
+     *
+     * @param metadata the metadata for the table the partition is of.
+     * @param partitionKey the partition key for the empty partition to create.
+     * @return an immutable empty partition for key {@code partitionKey}.
+     */
+    public static ImmutableBTreePartition createEmpty(CFMetaData metadata, DecoratedKey partitionKey)
+    {
+        return new ImmutableBTreePartition(metadata, partitionKey, EMPTY);
+    }
+
+    /**
      * Creates an {@code ImmutableBTreePartition} holding all the data of the provided iterator.
      *
      * Warning: Note that this method does not close the provided iterator and it is

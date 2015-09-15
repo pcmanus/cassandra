@@ -55,7 +55,7 @@ public abstract class ReadResponse
 
     public static ReadResponse createDataResponse(ReadCommand command, UnfilteredPartitionIterator data)
     {
-        return new DataResponse(command, data);
+        return DataResponse.fromIterator(command, data);
     }
 
     public static ReadResponse createDigestResponse(UnfilteredPartitionIterator data, int version)
@@ -110,6 +110,11 @@ public abstract class ReadResponse
             this.command = command;
         }
 
+        protected UnfilteredRowIterator iterator(ImmutableBTreePartition partition)
+        {
+            return partition.unfilteredIterator(command.columnFilter(), Slices.ALL, command.isReversed());
+        }
+
         public ByteBuffer digest()
         {
             try (UnfilteredPartitionIterator iterator = makeIterator())
@@ -131,10 +136,20 @@ public abstract class ReadResponse
     {
         private final List<ImmutableBTreePartition> partitions;
 
-        protected DataResponse(ReadCommand command, UnfilteredPartitionIterator response)
+        protected DataResponse(ReadCommand command, List<ImmutableBTreePartition> partitions)
         {
             super(command);
-            this.partitions = build(command, response);
+            this.partitions = partitions;
+        }
+
+        private static DataResponse fromIterator(ReadCommand command, UnfilteredPartitionIterator response)
+        {
+            return new DataResponse(command, build(command, response));
+        }
+
+        private static DataResponse fromRemoteResponse(ReadCommand command, DataInputPlus in, int version) throws IOException
+        {
+            return new DataResponse(command, deserialize(command, in, version));
         }
 
         public UnfilteredPartitionIterator makeIterator()
@@ -161,7 +176,7 @@ public abstract class ReadResponse
                 public UnfilteredRowIterator next()
                 {
                     // TODO: we know rows don't require any filtering and that we return everything. We ought to be able to optimize this.
-                    return partitions.get(idx++).unfilteredIterator(command.columnFilter(), Slices.ALL, command.isReversed());
+                    return iterator(partitions.get(idx++));
                 }
             };
         }
@@ -191,13 +206,75 @@ public abstract class ReadResponse
             }
             return partitions;
         }
-    }
 
-    private static class RemoteDataResponse extends DataResponse
-    {
-        private RemoteDataResponse(ReadCommand command, UnfilteredPartitionIterator response)
+        private void serialize(DataOutputPlus out, int version) throws IOException
         {
-            super(command, response);
+            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
+
+            out.writeUnsignedVInt(partitions.size());
+            for (ImmutableBTreePartition partition : partitions)
+                serializePartition(partition, out, version);
+        }
+
+        private void serializePartition(ImmutableBTreePartition partition, DataOutputPlus out, int version) throws IOException
+        {
+            try (UnfilteredRowIterator iter = iterator(partition))
+            {
+                UnfilteredRowIteratorSerializer.serializer.serialize(iter, command.columnFilter(), out, version, partition.rowCount());
+            }
+        }
+
+        private long serializedSize(int version)
+        {
+            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
+
+            long size = TypeSizes.sizeofUnsignedVInt(partitions.size());
+            for (ImmutableBTreePartition partition : partitions)
+                size += serializedSizePartition(partition, version);
+            return size;
+        }
+
+        private long serializedSizePartition(ImmutableBTreePartition partition, int version)
+        {
+            try (UnfilteredRowIterator iter = iterator(partition))
+            {
+                return UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, command.columnFilter(), version, partition.rowCount());
+            }
+        }
+
+        private static List<ImmutableBTreePartition> deserialize(ReadCommand command, DataInputPlus in, int version) throws IOException
+        {
+            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
+
+            int size = (int)in.readUnsignedVInt();
+            if (size == 0)
+                return Collections.emptyList();
+
+            // A single response is worth specializing since that's what non range queries will return.
+            if (size == 1)
+                return Collections.singletonList(deserializePartition(command, in, version));
+
+            List<ImmutableBTreePartition> partitions = new ArrayList<>(size);
+
+            for (int i = 0; i < size; i++)
+                partitions.add(deserializePartition(command, in, version));
+
+            return partitions;
+        }
+
+        private static ImmutableBTreePartition deserializePartition(ReadCommand command, DataInputPlus in, int version) throws IOException
+        {
+            CFMetaData metadata = command.metadata();
+            UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(metadata, command.columnFilter(), in, version, SerializationHelper.Flag.FROM_REMOTE);
+            if (header.isEmpty)
+                return ImmutableBTreePartition.createEmpty(metadata, header.key);
+
+            assert header.rowEstimate >= 0;
+
+            try (UnfilteredRowIterator partition = UnfilteredRowIteratorSerializer.serializer.deserialize(in, version, metadata, SerializationHelper.Flag.FROM_REMOTE, header))
+            {
+                return ImmutableBTreePartition.create(partition, header.rowEstimate);
+            }
         }
     }
 
@@ -277,7 +354,7 @@ public abstract class ReadResponse
                     if (!command.metadata().isCompound())
                         return filter.filter(partition.sliceableUnfilteredIterator(command.columnFilter(), filter.isReversed()));
 
-                    return partition.unfilteredIterator(command.columnFilter(), Slices.ALL, filter.isReversed());
+                    return iterator(partition);
                 }
             };
         }
@@ -303,10 +380,7 @@ public abstract class ReadResponse
             {
                 assert response instanceof DataResponse;
                 DataResponse dataResponse = (DataResponse)response;
-                try (UnfilteredPartitionIterator iter = dataResponse.makeIterator())
-                {
-                    UnfilteredPartitionIterators.serializerForIntraNode().serialize(iter, dataResponse.command.columnFilter(), out, version);
-                }
+                dataResponse.serialize(out, version);
             }
         }
 
@@ -327,10 +401,7 @@ public abstract class ReadResponse
             {
                 assert response instanceof DataResponse;
                 DataResponse dataResponse = (DataResponse)response;
-                try (UnfilteredPartitionIterator iter = dataResponse.makeIterator())
-                {
-                    size += UnfilteredPartitionIterators.serializerForIntraNode().serializedSize(iter, dataResponse.command.columnFilter(), version);
-                }
+                size += dataResponse.serializedSize(version);
             }
             return size;
         }
@@ -399,8 +470,7 @@ public abstract class ReadResponse
             ByteBuffer digest = ByteBufferUtil.readWithVIntLength(in);
             assert !digest.hasRemaining();
 
-            return new RemoteDataResponse(command,
-                                          UnfilteredPartitionIterators.serializerForIntraNode().deserialize(in, version, command.metadata(), command.columnFilter(), SerializationHelper.Flag.FROM_REMOTE));
+            return DataResponse.fromRemoteResponse(command, in, version);
         }
 
         public long serializedSize(ReadResponse response, int version)
