@@ -63,7 +63,7 @@ class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
     {
         super(directory, metadata, columns);
         this.bufferSize = bufferSizeInMB * 1024L * 1024L;
-        this.header = new SerializationHeader(metadata, columns, EncodingStats.NO_STATS);
+        this.header = new SerializationHeader(true, metadata, columns, EncodingStats.NO_STATS);
         diskWriter.start();
     }
 
