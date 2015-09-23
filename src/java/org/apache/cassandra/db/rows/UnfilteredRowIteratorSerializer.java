@@ -90,6 +90,8 @@ public class UnfilteredRowIteratorSerializer
     // Should only be used for the on-wire format.
     public void serialize(UnfilteredRowIterator iterator, SerializationHeader header, ColumnFilter selection, DataOutputPlus out, int version, int rowEstimate) throws IOException
     {
+        assert !header.isForSSTable();
+
         ByteBufferUtil.writeWithVIntLength(iterator.partitionKey().getKey(), out);
 
         int flags = 0;

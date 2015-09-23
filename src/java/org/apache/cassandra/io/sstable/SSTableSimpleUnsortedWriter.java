@@ -89,7 +89,7 @@ class SSTableSimpleUnsortedWriter extends AbstractSSTableSimpleWriter
         // improve that. In particular, what we count is closer to the serialized value, but it's debatable that it's the right thing
         // to count since it will take a lot more space in memory and the bufferSize if first and foremost used to avoid OOM when
         // using this writer.
-        currentSize += UnfilteredSerializer.serializer.serializedSize(row, header, formatType.info.getLatestVersion().correspondingMessagingVersion());
+        currentSize += UnfilteredSerializer.serializer.serializedSize(row, header, 0, formatType.info.getLatestVersion().correspondingMessagingVersion());
     }
 
     private void maybeSync() throws SyncException
