@@ -490,7 +490,7 @@ public class SelectStatement implements CQLStatement
         else
         {
             SortedSet<CellName> cellNames = getRequestedColumns(options);
-            if (cellNames == null) // in case of IN () for the last column of the key
+            if (cellNames.isEmpty()) // in case of IN () for the last column of the key
                 return null;
             QueryProcessor.validateCellNames(cellNames, cfm.comparator);
             return new NamesQueryFilter(cellNames, true);
