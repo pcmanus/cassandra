@@ -305,13 +305,15 @@ public abstract class UnfilteredDeserializer
 
         public int compareNextTo(Slice.Bound bound) throws IOException
         {
-            assert hasNext();
+            if (!hasNext())
+                throw new IllegalStateException();
             return metadata.comparator.compare(next.clustering(), bound);
         }
 
         public boolean nextIsRow() throws IOException
         {
-            assert hasNext();
+            if (!hasNext())
+                throw new IllegalStateException();
             return next.isRow();
         }
 
@@ -322,7 +324,8 @@ public abstract class UnfilteredDeserializer
 
         public Unfiltered readNext() throws IOException
         {
-            assert hasNext();
+            if (!hasNext())
+                throw new IllegalStateException();
             Unfiltered toReturn = next;
             next = null;
             return toReturn;
