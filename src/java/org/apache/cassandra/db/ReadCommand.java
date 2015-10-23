@@ -1143,9 +1143,9 @@ public abstract class ReadCommand implements ReadQuery
             out.writeLong(singleReadCommand.nowInSec() * 1000L);  // convert from seconds to millis
 
             if (singleReadCommand.clusteringIndexFilter().kind() == ClusteringIndexFilter.Kind.SLICE)
-                serializeSliceCommand((SinglePartitionSliceCommand) singleReadCommand, out);
+                serializeSliceCommand(singleReadCommand, out);
             else
-                serializeNamesCommand((SinglePartitionNamesCommand) singleReadCommand, out);
+                serializeNamesCommand(singleReadCommand, out);
         }
 
         public ReadCommand deserialize(DataInputPlus in, int version) throws IOException
@@ -1191,14 +1191,14 @@ public abstract class ReadCommand implements ReadQuery
             size += TypeSizes.sizeof((long) command.nowInSec());
 
             if (singleReadCommand.clusteringIndexFilter().kind() == ClusteringIndexFilter.Kind.SLICE)
-                return size + serializedSliceCommandSize((SinglePartitionSliceCommand) singleReadCommand);
+                return size + serializedSliceCommandSize(singleReadCommand);
             else
-                return size + serializedNamesCommandSize((SinglePartitionNamesCommand) singleReadCommand);
+                return size + serializedNamesCommandSize(singleReadCommand);
         }
 
-        private void serializeNamesCommand(SinglePartitionNamesCommand command, DataOutputPlus out) throws IOException
+        private void serializeNamesCommand(SinglePartitionReadCommand command, DataOutputPlus out) throws IOException
         {
-            serializeNamesFilter(command, command.clusteringIndexFilter(), out);
+            serializeNamesFilter(command, (ClusteringIndexNamesFilter)command.clusteringIndexFilter(), out);
         }
 
         private static void serializeNamesFilter(ReadCommand command, ClusteringIndexNamesFilter filter, DataOutputPlus out) throws IOException
@@ -1256,12 +1256,12 @@ public abstract class ReadCommand implements ReadQuery
             return size + TypeSizes.sizeof(true);  // countCql3Rows
         }
 
-        private SinglePartitionNamesCommand deserializeNamesCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
+        private SinglePartitionReadCommand deserializeNamesCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
         {
             Pair<ColumnFilter, ClusteringIndexNamesFilter> selectionAndFilter = deserializeNamesSelectionAndFilter(in, metadata);
 
             // messages from old nodes will expect the thrift format, so always use 'true' for isForThrift
-            return new SinglePartitionNamesCommand(
+            return new SinglePartitionReadCommand(
                     isDigest, version, true, metadata, nowInSeconds, selectionAndFilter.left, RowFilter.NONE, DataLimits.NONE,
                     key, selectionAndFilter.right);
         }
@@ -1311,17 +1311,17 @@ public abstract class ReadCommand implements ReadQuery
             return Pair.create(selectionBuilder.build(), filter);
         }
 
-        private long serializedNamesCommandSize(SinglePartitionNamesCommand command)
+        private long serializedNamesCommandSize(SinglePartitionReadCommand command)
         {
-            ClusteringIndexNamesFilter filter = command.clusteringIndexFilter();
+            ClusteringIndexNamesFilter filter = (ClusteringIndexNamesFilter)command.clusteringIndexFilter();
             PartitionColumns columns = command.columnFilter().fetchedColumns();
             return serializedNamesFilterSize(filter, command.metadata(), columns);
         }
 
-        private void serializeSliceCommand(SinglePartitionSliceCommand command, DataOutputPlus out) throws IOException
+        private void serializeSliceCommand(SinglePartitionReadCommand command, DataOutputPlus out) throws IOException
         {
             CFMetaData metadata = command.metadata();
-            ClusteringIndexSliceFilter filter = command.clusteringIndexFilter();
+            ClusteringIndexSliceFilter filter = (ClusteringIndexSliceFilter)command.clusteringIndexFilter();
 
             Slices slices = filter.requestedSlices();
             boolean makeStaticSlice = !command.columnFilter().fetchedColumns().statics.isEmpty() && !slices.selects(Clustering.STATIC_CLUSTERING);
@@ -1348,7 +1348,7 @@ public abstract class ReadCommand implements ReadQuery
             out.writeInt(compositesToGroup);
         }
 
-        private SinglePartitionSliceCommand deserializeSliceCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
+        private SinglePartitionReadCommand deserializeSliceCommand(DataInputPlus in, boolean isDigest, CFMetaData metadata, DecoratedKey key, int nowInSeconds, int version) throws IOException
         {
             Pair<ClusteringIndexSliceFilter, Boolean> p = deserializeSlicePartitionFilter(in, metadata);
             ClusteringIndexSliceFilter filter = p.left;
@@ -1369,13 +1369,13 @@ public abstract class ReadCommand implements ReadQuery
                 limits = DataLimits.cqlLimits(count);
 
             // messages from old nodes will expect the thrift format, so always use 'true' for isForThrift
-            return new SinglePartitionSliceCommand(isDigest, version, true, metadata, nowInSeconds, columnFilter, RowFilter.NONE, limits, key, filter);
+            return new SinglePartitionReadCommand(isDigest, version, true, metadata, nowInSeconds, columnFilter, RowFilter.NONE, limits, key, filter);
         }
 
-        private long serializedSliceCommandSize(SinglePartitionSliceCommand command)
+        private long serializedSliceCommandSize(SinglePartitionReadCommand command)
         {
             CFMetaData metadata = command.metadata();
-            ClusteringIndexSliceFilter filter = command.clusteringIndexFilter();
+            ClusteringIndexSliceFilter filter = (ClusteringIndexSliceFilter)command.clusteringIndexFilter();
 
             Slices slices = filter.requestedSlices();
             boolean makeStaticSlice = !command.columnFilter().fetchedColumns().statics.isEmpty() && !slices.selects(Clustering.STATIC_CLUSTERING);
@@ -1549,9 +1549,9 @@ public abstract class ReadCommand implements ReadQuery
             if (!shouldConvertNamesToSlice(metadata, command.columnFilter().fetchedColumns()))
                 return command;
 
-            ClusteringIndexNamesFilter filter = ((SinglePartitionNamesCommand) command).clusteringIndexFilter();
+            ClusteringIndexNamesFilter filter = (ClusteringIndexNamesFilter)command.clusteringIndexFilter();
             ClusteringIndexSliceFilter sliceFilter = convertNamesFilterToSliceFilter(filter, metadata);
-            return new SinglePartitionSliceCommand(
+            return new SinglePartitionReadCommand(
                     command.isDigestQuery(), command.digestVersion(), command.isForThrift(), metadata, command.nowInSec(),
                     command.columnFilter(), command.rowFilter(), command.limits(), command.partitionKey(), sliceFilter);
         }
