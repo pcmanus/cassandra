@@ -578,9 +578,20 @@ public abstract class CQLTester
         {
             logger.info("Executing: {} with values {}", query, formatAllValues(values));
             if (reusePrepared)
+            {
                 rs = QueryProcessor.executeInternal(query, transformValues(values));
+
+                // If a test uses a "USE ...", then presumably its statements use relative table. In that case, a USE
+                // change the meaning of the current keyspace, so we don't want a following statement to reuse a previously
+                // prepared statement at this wouldn't use the right keyspace. To avoid that, we drop the previously
+                // prepared statement.
+                if (query.startsWith("USE"))
+                    QueryProcessor.clearInternalStatementsCache();
+            }
             else
+            {
                 rs = QueryProcessor.executeOnceInternal(query, transformValues(values));
+            }
         }
         else
         {
