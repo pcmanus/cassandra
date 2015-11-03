@@ -527,7 +527,7 @@ public class SinglePartitionReadCommand extends ReadCommand
                 if (sstable.getMaxTimestamp() < mostRecentPartitionTombstone)
                     break;
 
-                if (!filter.shouldInclude(sstable))
+                if (!shouldInclude(sstable))
                 {
                     nonIntersectingSSTables++;
                     // sstable contains no tombstone if maxLocalDeletionTime == Integer.MAX_VALUE, so we can safely skip those entirely
@@ -612,6 +612,17 @@ public class SinglePartitionReadCommand extends ReadCommand
         }
     }
 
+    private boolean shouldInclude(SSTableReader sstable)
+    {
+        // If some static columns are queried, we should always include the sstable: the clustering values stats of the sstable
+        // don't tell us if the sstable contains static values in particular.
+        // TODO: we could record if a sstable contains any static value at all.
+        if (!columnFilter().fetchedColumns().statics.isEmpty())
+            return true;
+
+        return clusteringIndexFilter().shouldInclude(sstable);
+    }
+
     private boolean queryNeitherCountersNorCollections()
     {
         for (ColumnDefinition column : columnFilter().fetchedColumns())
@@ -675,7 +686,7 @@ public class SinglePartitionReadCommand extends ReadCommand
             if (filter == null)
                 break;
 
-            if (!filter.shouldInclude(sstable))
+            if (!shouldInclude(sstable))
             {
                 // This mean that nothing queried by the filter can be in the sstable. One exception is the top-level partition deletion
                 // however: if it is set, it impacts everything and must be included. Getting that top-level partition deletion costs us
