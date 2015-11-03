@@ -621,6 +621,24 @@ public class QueryProcessor implements QueryHandler
                 removeInvalidPreparedStatements(ksName, cfName);
         }
 
+        public void onUpdateFunction(String ksName, String functionName, List<AbstractType<?>> argTypes)
+        {
+            // Updating a function may imply we've changed the body of the function, so we need to invalid statements so that
+            // the new definition is picked (the function is resolved at preparation time).
+            // TODO: if the function has multiple overload, we could invalidate only the statement refering to the overload
+            // that was updated. This requires a few changes however and probably doesn't matter much in practice.
+            removeAllInvalidPreparedStatementsForFunction(ksName, functionName);
+        }
+
+        public void onUpdateAggregate(String ksName, String aggregateName, List<AbstractType<?>> argTypes)
+        {
+            // Updating a function may imply we've changed the body of the function, so we need to invalid statements so that
+            // the new definition is picked (the function is resolved at preparation time).
+            // TODO: if the function has multiple overload, we could invalidate only the statement refering to the overload
+            // that was updated. This requires a few changes however and probably doesn't matter much in practice.
+            removeAllInvalidPreparedStatementsForFunction(ksName, aggregateName);
+        }
+
         public void onDropKeyspace(String ksName)
         {
             logger.trace("Keyspace {} was dropped, invalidating related prepared statements", ksName);
