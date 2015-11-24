@@ -252,8 +252,6 @@ public abstract class MultiCBuilder
             if (size == 0)
                 return BTreeSet.of(comparator, isStart ? Slice.Bound.BOTTOM : Slice.Bound.TOP);
 
-            CBuilder builder = CBuilder.create(comparator);
-
             ByteBuffer[] newValues = size == elements.length
                                    ? elements
                                    : Arrays.copyOf(elements, size);
@@ -284,15 +282,14 @@ public abstract class MultiCBuilder
             if (elementsList.isEmpty())
                 elementsList.add(new ArrayList<ByteBuffer>());
 
-            for (int i = 0, m = elementsList.size(); i < m; i++)
-            {
-                if (value == null)
-                    containsNull = true;
-                if (value == ByteBufferUtil.UNSET_BYTE_BUFFER)
-                    containsUnset = true;
+            if (value == null)
+                containsNull = true;
+            else if (value == ByteBufferUtil.UNSET_BYTE_BUFFER)
+                containsUnset = true;
 
+            for (int i = 0, m = elementsList.size(); i < m; i++)
                 elementsList.get(i).add(value);
-            }
+
             size++;
             return this;
         }
