@@ -614,10 +614,14 @@ public class Schema
             // since we're going to call initCf on the new one manually
             Keyspace.open(cfm.ksName);
 
+            // init the new CF before switching the KSM to the new one
+            // (which happens when this function returns) to avoid races
+            // as in CASSANDRA-10761
+            Keyspace.open(cfm.ksName).initCf(cfm, true);
+
             return ks.withSwapped(ks.tables.with(cfm));
         });
 
-        Keyspace.open(cfm.ksName).initCf(cfm.cfId, cfm.cfName, true);
         MigrationManager.instance.notifyCreateColumnFamily(cfm);
     }
 
@@ -674,7 +678,7 @@ public class Schema
             return ks.withSwapped(ks.views.with(view));
         });
 
-        Keyspace.open(view.ksName).initCf(view.metadata.cfId, view.viewName, true);
+        Keyspace.open(view.ksName).initCf(view.metadata, true);
         Keyspace.open(view.ksName).viewManager.reload();
         MigrationManager.instance.notifyCreateView(view);
     }
