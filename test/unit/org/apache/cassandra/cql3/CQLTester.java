@@ -697,7 +697,7 @@ public abstract class CQLTester
         return sessions.get(protocolVersion);
     }
 
-    private String formatQuery(String query)
+    protected final String formatQuery(String query)
     {
         String currentTable = currentTable();
         return currentTable == null ? query : String.format(query, KEYSPACE + "." + currentTable);
@@ -746,6 +746,11 @@ public abstract class CQLTester
                 logger.debug("Got {} rows", rs.size());
         }
         return rs;
+    }
+
+    protected void assertRowsNet(ResultSet result, Object[]... rows)
+    {
+        assertRowsNet(PROTOCOL_VERSIONS.get(PROTOCOL_VERSIONS.size() - 1), result, rows);
     }
 
     protected void assertRowsNet(int protocolVersion, ResultSet result, Object[]... rows)

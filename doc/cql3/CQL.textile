@@ -1061,6 +1061,7 @@ bc(syntax)..
 <select-stmt> ::= SELECT ( JSON )? <select-clause>
                   FROM <tablename>
                   ( WHERE <where-clause> )?
+                  ( GROUP BY <group-by>)?
                   ( ORDER BY <order-by> )?
                   ( PER PARTITION LIMIT <integer> )?
                   ( LIMIT <integer> )?
@@ -1088,6 +1089,7 @@ bc(syntax)..
              | TOKEN '(' <identifier> ( ',' <identifer>)* ')' <op> <term>
 
 <op> ::= '=' | '<' | '>' | '<=' | '>=' | CONTAINS | CONTAINS KEY
+<group-by> ::= <identifier> (',' <identifier>)*
 <order-by> ::= <ordering> ( ',' <odering> )*
 <ordering> ::= <identifer> ( ASC | DESC )?
 <term-tuple> ::= '(' <term> (',' <term>)* ')'
@@ -1182,7 +1184,21 @@ The @ORDER BY@ option allows to select the order of the returned results. It tak
 * if the table has been defined without any specific @CLUSTERING ORDER@, then then allowed orderings are the order induced by the clustering columns and the reverse of that one.
 * otherwise, the orderings allowed are the order of the @CLUSTERING ORDER@ option and the reversed one.
 
+<<<<<<< 899bcce2d57ddd13322aabfa3a61da0deb503210
 h4(#selectLimit). @LIMIT@ and @PER PARTITION LIMIT@
+=======
+h4(#selectGroupBy). @<group-by>@
+
+The @GROUP BY@ option allows to condense into a single row all selected rows that share the same values for a set of columns.
+
+Using the @GROUP BY@ option, it is only possible to group rows at the partition key level or at a clustering column level. By consequence, the @GROUP BY@ option only accept as arguments primary key column names in the primary key order. If a primary key column is restricted by an equality restriction it is not required to be present in the @GROUP BY@ clause.
+
+Aggregate functions will produce a separate value for each group. If no @GROUP BY@ clause is specified, aggregates functions will produce a single value for all the rows.
+
+If a column is selected without an aggregate function, in a statement with a @GROUP BY@, the first value encounter in each group will be returned.
+
+h4(#selectLimit). @LIMIT@
+>>>>>>> Update documentation
 
 The @LIMIT@ option to a @SELECT@ statement limits the number of rows returned by a query, while the @PER PARTITION LIMIT@ option limits the number of rows returned for a given partition by the query. Note that both type of limit can used in the same statement.
 
@@ -2418,8 +2434,10 @@ h3. 3.4.2
 * "@INSERT/UPDATE options@":#updateOptions for tables having a default_time_to_live specifying a TTL of 0 will remove the TTL from the inserted or updated values
 * "@ALTER TABLE@":#alterTableStmt @ADD@ and @DROP@ now allow mutiple columns to be added/removed
 * New "@PER PARTITION LIMIT@":#selectLimit option (see "CASSANDRA-7017":https://issues.apache.org/jira/browse/CASSANDRA-7017).
+<<<<<<< fe762496f24f5eeda331cafe49212bc977dff0de
 * "User-defined functions":#udfs can now instantiate @UDTValue@ and @TupleValue@ instances via the new @UDFContext@ interface (see "CASSANDRA-10818":https://issues.apache.org/jira/browse/CASSANDRA-10818).
 * "User-defined types"#createTypeStmt may now be stored in a non-frozen form, allowing individual fields to be updated and deleted in "@UPDATE@ statements":#updateStmt and "@DELETE@ statements":#deleteStmt, respectively. ("CASSANDRA-7423":https://issues.apache.org/jira/browse/CASSANDRA-7423)
+* Support for @GROUP BY@. See "@<group-by>@":#selectGroupBy (see "CASSANDRA-10707":https://issues.apache.org/jira/browse/CASSANDRA-10707).
 
 h3. 3.4.1
 
