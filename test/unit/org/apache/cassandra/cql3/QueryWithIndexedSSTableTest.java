@@ -65,6 +65,10 @@ public class QueryWithIndexedSSTableTest extends CQLTester
         assert hasIndexed;
 
         assertRowCount(execute("SELECT s FROM %s WHERE k = ?", 0), ROWS);
+        assertRowCount(execute("SELECT s FROM %s WHERE k = ? ORDER BY t DESC", 0), ROWS);
+
+        assertRowCount(execute("SELECT DISTINCT s FROM %s WHERE k = ?", 0), 1);
+        assertRowCount(execute("SELECT DISTINCT s FROM %s WHERE k = ? ORDER BY t DESC", 0), 1);
     }
 
     // Creates a random string 

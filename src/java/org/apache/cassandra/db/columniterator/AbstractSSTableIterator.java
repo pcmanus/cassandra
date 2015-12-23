@@ -443,8 +443,12 @@ abstract class AbstractSSTableIterator implements SliceableUnfilteredRowIterator
         }
 
         // Update the block idx based on the current reader position if we're past the current block.
+        // This only makes sense for forward iteration (for reverse ones, when we reach the end of a block we
+        // should seek to the previous one, not update the index state and continue).
         public void updateBlock() throws IOException
         {
+            assert !reversed;
+
             // If we get here with currentBlockIdx < 0, it means setToBlock() has never been called, so it means
             // we're about to read from the beginning of the partition, but haven't "prepared" the IndexState yet.
             // Do so by setting us on the first block.
