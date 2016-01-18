@@ -46,6 +46,17 @@ public class BTreeRow extends AbstractRow
 {
     private static final long EMPTY_SIZE = ObjectSizes.measure(emptyRow(Clustering.EMPTY));
 
+    // We use sorted builder quite often and we can easily reuse them so we do (we can't do it for
+    // unsorted builders as they depend on the current time for resolving cells).
+    private static final ThreadLocal<Builder> sortedBuilders = new ThreadLocal<Builder>()
+    {
+        @Override
+        protected Builder initialValue()
+        {
+            return new Builder(true);
+        }
+    };
+
     private final Clustering clustering;
     private final LivenessInfo primaryKeyLivenessInfo;
     private final Deletion deletion;
@@ -371,7 +382,7 @@ public class BTreeRow extends AbstractRow
 
     public static Row.Builder sortedBuilder()
     {
-        return new Builder(true);
+        return sortedBuilders.get();
     }
 
     public static Row.Builder unsortedBuilder(int nowInSec)
@@ -571,6 +582,7 @@ public class BTreeRow extends AbstractRow
             }
 
         };
+
         protected Clustering clustering;
         protected LivenessInfo primaryKeyLivenessInfo = LivenessInfo.EMPTY;
         protected Deletion deletion = Deletion.LIVE;
@@ -590,7 +602,7 @@ public class BTreeRow extends AbstractRow
         protected Builder(boolean isSorted, int nowInSecs)
         {
             this.cells = BTree.builder(ColumnData.comparator);
-            resolver = new CellResolver(nowInSecs);
+            this.resolver = new CellResolver(nowInSecs);
             this.isSorted = isSorted;
             this.cells.auto(false);
         }
@@ -660,6 +672,5 @@ public class BTreeRow extends AbstractRow
             reset();
             return row;
         }
-
     }
 }
