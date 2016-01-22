@@ -341,9 +341,11 @@ public abstract class LegacyLayout
 
         DataLimits limits = command.limits();
 
-        // DISTINCT queries always count cells on old nodes and always expect only one cell per partition (See CASSANDRA-10762)
+        // There is 2 types of DISTINCT queries: those that includes only the partition key, and those that include static columns.
+        // On old nodes, the latter expects the first row in term of CQL count, which is what we already have and there is no additional
+        // limit to apply. The former however expect only one cell per partition and rely on it (See CASSANDRA-10762).
         if (limits.isDistinct())
-            return 1;
+            return command.columnFilter().fetchedColumns().statics.isEmpty() ? 1 : Integer.MAX_VALUE;
 
         switch (limits.kind())
         {
