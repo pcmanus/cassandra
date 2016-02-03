@@ -4030,15 +4030,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     	}
     	else
     	{
-            List<String> nonSystemKeyspaces = Schema.instance.getNonSystemKeyspaces();
+            List<String> userKeyspaces = Schema.instance.getUserKeyspaces();
 
-            //system_traces is a non-system keyspace however it needs to be counted as one for this process
-            int specialTableCount = 0;
-            if (nonSystemKeyspaces.contains("system_traces"))
-            {
-                specialTableCount += 1;
-            }
-            if (nonSystemKeyspaces.size() > specialTableCount)
+            if (userKeyspaces.size() > 1)
                 throw new IllegalStateException("Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless");
 
             keyspace = "system_traces";
