@@ -145,10 +145,8 @@ public interface CQL3Type
 
         public void toCQLLiteral(ByteBuffer buffer, int version, StringBuilder target)
         {
-            if (buffer == null)
-                target.append("null");
-            else
-                target.append(type.getString(buffer));
+            // *always* use the 'blob' syntax to express custom types in CQL
+            Native.BLOB.toCQLLiteral(buffer, version, target);
         }
 
         @Override
@@ -195,34 +193,14 @@ public interface CQL3Type
 
         public void toCQLLiteral(ByteBuffer buffer, int version, StringBuilder target)
         {
-            // Not sure whether the !buffer.hasRemaining() check is correct here or whether an empty
-            // BB should be returned as "[]" resp "{}" or whether it is not valid at all.
-            //
-            // Currently, all empty collections return '[]' or '{}'. Except frozen collections with
-            // a null BB return 'null'.
-            //
-            if (buffer == null || !buffer.hasRemaining())
+            if (buffer == null)
             {
-                if (buffer == null && type.isFrozenCollection())
-                {
-                    target.append("null");
-                }
-                else
-                {
-                    switch (type.kind)
-                    {
-                        case LIST:
-                            target.append("[]");
-                            break;
-                        case SET:
-                        case MAP:
-                            target.append("{}");
-                            break;
-                    }
-                }
+                target.append("null");
+                return;
             }
             else
             {
+                buffer = buffer.duplicate();
                 int size = CollectionSerializer.readCollectionSize(buffer, version);
 
                 switch (type.kind)
@@ -356,6 +334,7 @@ public interface CQL3Type
             }
             else
             {
+                buffer = buffer.duplicate();
                 target.append('{');
                 for (int i = 0; i < type.size(); i++)
                 {
@@ -446,6 +425,7 @@ public interface CQL3Type
             }
             else
             {
+                buffer = buffer.duplicate();
                 target.append('(');
                 boolean first = true;
                 for (int i = 0; i < type.size(); i++)
