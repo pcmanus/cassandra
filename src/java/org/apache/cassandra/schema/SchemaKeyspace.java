@@ -839,7 +839,7 @@ public final class SchemaKeyspace
              .add("state_func", aggregate.stateFunction().name().name)
              .add("state_type", aggregate.stateType() != null ? stateCqlType.toString() : null)
              .add("final_func", aggregate.finalFunction() != null ? aggregate.finalFunction().name().name : null)
-             .add("initcond", aggregate.initialCondition() != null ? stateCqlType.asCQLLiteral(aggregate.initialCondition(), Server.CURRENT_VERSION) : null)
+             .add("initcond", aggregate.initialCondition() != null ? stateCqlType.toCQLLiteral(aggregate.initialCondition(), Server.CURRENT_VERSION) : null)
              .build();
     }
 

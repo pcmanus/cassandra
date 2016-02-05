@@ -376,7 +376,7 @@ public class CQL3TypeLiteralTest
         {
             assertEquals(msg,
                          value.expected,
-                         value.cql3Type.asCQLLiteral(buffer, version));
+                         value.cql3Type.toCQLLiteral(buffer, version));
         }
         catch (RuntimeException e)
         {
@@ -464,7 +464,7 @@ public class CQL3TypeLiteralTest
                 buffers.add(el.value.duplicate());
                 if (expected.length() > 1)
                     expected.append(", ");
-                el.cql3Type.toCQLLiteral(el.value, version, expected);
+                expected.append(el.cql3Type.toCQLLiteral(el.value, version));
 
                 if (collectionType.kind == CollectionType.Kind.MAP)
                 {
@@ -472,7 +472,7 @@ public class CQL3TypeLiteralTest
                     el = generateAnyValue(version, values);
                     buffers.add(el.value.duplicate());
                     expected.append(": ");
-                    el.cql3Type.toCQLLiteral(el.value, version, expected);
+                    expected.append(el.cql3Type.toCQLLiteral(el.value, version));
                 }
             }
             expected.append(bracketClose);
