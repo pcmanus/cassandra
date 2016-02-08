@@ -604,7 +604,7 @@ public final class MessagingService implements MessagingServiceMBean
     }
 
 
-    public OutboundTcpConnection getConnection(InetAddress to, MessageOut msg)
+    public OutboundTcpConnection getConnection(InetAddress to, MessageOut msg) throws ConnectionException
     {
         return getConnectionPool(to).getConnection(msg);
     }
@@ -754,11 +754,22 @@ public final class MessagingService implements MessagingServiceMBean
             if (!ms.allowOutgoingMessage(message, id, to))
                 return;
 
-        // get pooled connection (really, connection queue)
-        OutboundTcpConnection connection = getConnection(to, message);
+        try
+        {
+            // get pooled connection (really, connection queue)
+            OutboundTcpConnection connection = getConnection(to, message);
 
-        // write it
-        connection.enqueue(message, id);
+            // write it
+            connection.enqueue(message, id);
+        }
+        catch (ConnectionException e)
+        {
+            // If we fail to send a message due to a connection problem, we basically ignore the problem and
+            // let the message handler deal with it (for instance by timeouting). This is the case if we
+            // enqueue the message (enqueing can't fail) and so we do the same if getConnection() has a
+            // connection problem.
+            logger.debug("Error while sending message " + message, e);
+        }
     }
 
     public <T> AsyncOneResponse<T> sendRR(MessageOut message, InetAddress to)

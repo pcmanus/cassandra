@@ -64,8 +64,11 @@ public class OutboundTcpConnectionPool
     /**
      * returns the appropriate connection based on message type.
      * returns null if a connection could not be established.
+     *
+     * @throws ConnectionException if the connection is newly initiated by a call to this method
+     * but we fail to connect.
      */
-    OutboundTcpConnection getConnection(MessageOut msg)
+    OutboundTcpConnection getConnection(MessageOut msg) throws ConnectionException
     {
         if (Stage.GOSSIP == msg.getStage())
             return gossipMessages;
@@ -84,7 +87,7 @@ public class OutboundTcpConnectionPool
     {
         for (OutboundTcpConnection conn : new OutboundTcpConnection[] { smallMessages, largeMessages, gossipMessages })
         {
-            if (version > conn.getTargetVersion())
+            if (conn.isConnected() && version > conn.getTargetVersion())
                 conn.softCloseSocket();
         }
     }

@@ -130,11 +130,11 @@ public class OutboundTcpConnection extends Thread
 
     private final CoalescingStrategy cs;
     private DataOutputStreamPlus out;
-    private Socket socket;
+    private volatile Socket socket;
     private volatile long completed;
     private final AtomicLong dropped = new AtomicLong();
     private volatile int currentMsgBufferCount = 0;
-    private int targetVersion = MessagingService.current_version;
+    private volatile int targetVersion = -1;
 
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
@@ -176,8 +176,43 @@ public class OutboundTcpConnection extends Thread
         enqueue(CLOSE_SENTINEL, -1);
     }
 
+    private void destroySocket()
+    {
+        socket = null;
+        targetVersion = -1;
+    }
+
+    /**
+     * Whether that connection is connected.
+     */
+    public boolean isConnected()
+    {
+        return socket != null;
+    }
+
     public int getTargetVersion()
     {
+        if (targetVersion < 0)
+        {
+            // We set targetVersion in connect() just before creating the socket, so it can only be its default value if the
+            // socket hasn't been created.
+            assert socket == null;
+
+            // Try connecting so we can get the proper targetVersion
+            try
+            {
+                if (!connect())
+                    throw new ConnectionException(poolReference.endPoint());
+                assert targetVersion >= 0;
+            }
+            catch (RuntimeException | Error e)
+            {
+                // connect() already catches normal exceptions and an error here is unexpected so submit
+                // it for inspection
+                JVMStabilityInspector.inspectThrowable(e);
+                throw e;
+            }
+        }
         return targetVersion;
     }
 
@@ -368,7 +403,7 @@ public class OutboundTcpConnection extends Thread
                     logger.trace("exception closing connection to " + poolReference.endPoint(), e);
             }
             out = null;
-            socket = null;
+            destroySocket();
         }
     }
 
@@ -476,13 +511,13 @@ public class OutboundTcpConnection extends Thread
             catch (SSLHandshakeException e)
             {
                 logger.error("SSL handshake error for outbound connection to " + socket, e);
-                socket = null;
+                destroySocket();
                 // SSL errors won't be recoverable within timeout period so we'll just abort
                 return false;
             }
             catch (IOException e)
             {
-                socket = null;
+                destroySocket();
                 if (logger.isTraceEnabled())
                     logger.trace("unable to connect to " + poolReference.endPoint(), e);
                 Uninterruptibles.sleepUninterruptibly(OPEN_RETRY_DELAY, TimeUnit.MILLISECONDS);
