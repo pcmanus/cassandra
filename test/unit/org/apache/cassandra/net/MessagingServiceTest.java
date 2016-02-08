@@ -38,12 +38,14 @@ import com.codahale.metrics.Timer;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.monitoring.ApproximateTime;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.caffinitas.ohc.histo.EstimatedHistogram;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Assert;
 import org.junit.Test;
 
 import static org.junit.Assert.*;
@@ -162,7 +164,7 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnSendWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddress.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         MessageOut<?> ignored = null;
@@ -183,7 +185,7 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnReceiveWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddress.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = false;
@@ -207,7 +209,7 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnTimeoutWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddress.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = true;
@@ -364,5 +366,24 @@ public class MessagingServiceTest
         {
             throw new UnsupportedOperationException("Not supported.");
         }
+    }
+
+    public void switchIpAddr() throws UnknownHostException
+    {
+        InetAddress publicIp = InetAddress.getByName("127.0.0.2");
+        InetAddress privateIp = InetAddress.getByName("127.0.0.3");
+
+        // reset the preferred IP value, for good test hygene
+        SystemKeyspace.updatePreferredIP(publicIp, publicIp);
+
+        // create pool/conn with public addr
+        Assert.assertEquals(publicIp, messagingService.getCurrentEndpoint(publicIp));
+        messagingService.reconnectWithNewIp(publicIp, privateIp);
+        Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
+
+        messagingService.destroyConnectionPool(publicIp);
+
+        // recreate the pool/conn, and make sure the preferred ip addr is used
+        Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
     }
 }

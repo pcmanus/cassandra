@@ -28,7 +28,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
-
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -37,15 +37,20 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
-import org.apache.cassandra.config.EncryptionOptions;
-import org.apache.cassandra.io.util.FileUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.OpenSsl;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
+import org.apache.cassandra.config.EncryptionOptions;
 
 /**
  * A Factory for providing and setting up Client and Server SSL wrapped
@@ -54,7 +59,12 @@ import com.google.common.collect.Sets;
 public final class SSLFactory
 {
     private static final Logger logger = LoggerFactory.getLogger(SSLFactory.class);
-    private static boolean checkedExpiry = false;
+
+    @VisibleForTesting
+    static volatile boolean checkedExpiry = false;
+
+    private static AtomicReference<SslContext> clientSslContext = new AtomicReference<>();
+    private static AtomicReference<SslContext> serverSslContext = new AtomicReference<>();
 
     public static SSLServerSocket getServerSocket(EncryptionOptions options, InetAddress address, int port) throws IOException
     {
@@ -151,29 +161,48 @@ public final class SSLFactory
         }
         socket.setEnabledCipherSuites(suites);
     }
-
     @SuppressWarnings("resource")
+
     public static SSLContext createSSLContext(EncryptionOptions options, boolean buildTruststore) throws IOException
     {
-        FileInputStream tsf = null;
-        FileInputStream ksf = null;
-        SSLContext ctx;
+        TrustManager[] trustManagers = null;
+        if (buildTruststore)
+            trustManagers = buildTrustManagerFactory(options).getTrustManagers();
+
+        KeyManagerFactory kmf = buildKeyManagerFactory(options);
+
         try
         {
-            ctx = SSLContext.getInstance(options.protocol);
-            TrustManager[] trustManagers = null;
+            SSLContext ctx = SSLContext.getInstance(options.protocol);
+            ctx.init(kmf.getKeyManagers(), trustManagers, null);
+            return ctx;
+        }
+        catch (Exception e)
+        {
+            throw new IOException("Error creating/initializing the SSL Context", e);
+        }
+    }
 
-            if(buildTruststore)
-            {
-                tsf = new FileInputStream(options.truststore);
-                TrustManagerFactory tmf = TrustManagerFactory.getInstance(options.algorithm);
-                KeyStore ts = KeyStore.getInstance(options.store_type);
-                ts.load(tsf, options.truststore_password.toCharArray());
-                tmf.init(ts);
-                trustManagers = tmf.getTrustManagers();
-            }
+    static TrustManagerFactory buildTrustManagerFactory(EncryptionOptions options) throws IOException
+    {
+        try (FileInputStream tsf = new FileInputStream(options.truststore))
+        {
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(options.algorithm);
+            KeyStore ts = KeyStore.getInstance(options.store_type);
+            ts.load(tsf, options.truststore_password.toCharArray());
+            tmf.init(ts);
+            return tmf;
+        }
+        catch (Exception e)
+        {
+            throw new IOException("failed to build trust manager store for secure connections", e);
+        }
+    }
 
-            ksf = new FileInputStream(options.keystore);
+    static KeyManagerFactory buildKeyManagerFactory(EncryptionOptions options) throws IOException
+    {
+        try (FileInputStream ksf = new FileInputStream(options.keystore))
+        {
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(options.algorithm);
             KeyStore ks = KeyStore.getInstance(options.store_type);
             ks.load(ksf, options.keystore_password.toCharArray());
@@ -192,20 +221,12 @@ public final class SSLFactory
                 checkedExpiry = true;
             }
             kmf.init(ks, options.keystore_password.toCharArray());
-
-            ctx.init(kmf.getKeyManagers(), trustManagers, null);
-
+            return kmf;
         }
         catch (Exception e)
         {
-            throw new IOException("Error creating the initializing the SSL Context", e);
+            throw new IOException("failed to build trust manager store for secure connections", e);
         }
-        finally
-        {
-            FileUtils.closeQuietly(tsf);
-            FileUtils.closeQuietly(ksf);
-        }
-        return ctx;
     }
 
     public static String[] filterCipherSuites(String[] supported, String[] desired)
@@ -221,5 +242,59 @@ public final class SSLFactory
             logger.warn("Filtering out {} as it isn't supported by the socket", Iterables.toString(missing));
         }
         return ret;
+    }
+
+    /** get a netty {@link SslContext} instance */
+    public static SslContext getSslContext(EncryptionOptions options, boolean buildTruststore, boolean forServer) throws IOException
+    {
+        return getSslContext(options, buildTruststore, forServer, OpenSsl.isAvailable());
+    }
+
+    /**
+     * Get a netty {@link SslContext} instance.
+     */
+    @VisibleForTesting
+    static SslContext getSslContext(EncryptionOptions options, boolean buildTruststore, boolean forServer, boolean useOpenSsl) throws IOException
+    {
+        // the netty folks informed me that a) SslContext is expensive to create (as well as to destroy),
+        // b) it consumes a lof of resources (especially direct memory),
+        // but c) it can be reused across connection (assuming the SSL params are the same)
+
+        if (forServer && serverSslContext.get() != null)
+            return serverSslContext.get();
+        if (!forServer && clientSslContext.get() != null)
+            return clientSslContext.get();
+
+        TrustManagerFactory tmf = null;
+        if (buildTruststore)
+            tmf = buildTrustManagerFactory(options);
+
+        SslContextBuilder builder;
+        if (forServer)
+        {
+            /*
+                There is a case where the netty/openssl combo might not support using KeyManagerFactory. If so, we would need
+                to fall back to passing in a file reference for both a x509 and PKCS#8 private key file in PEM format (see
+                {@link SslContextBuilder#forServer(File, File, String)}). However, we are not supporting that now to keep
+                the config/yaml API simple.
+             */
+            KeyManagerFactory kmf = buildKeyManagerFactory(options);
+            builder = SslContextBuilder.forServer(kmf).sslProvider(useOpenSsl ? SslProvider.OPENSSL : SslProvider.JDK);
+            builder.clientAuth(options.require_client_auth ? ClientAuth.REQUIRE : ClientAuth.NONE);
+        }
+        else
+        {
+            builder = SslContextBuilder.forClient();
+        }
+
+        SslContext ctx = builder.ciphers(Arrays.asList(options.cipher_suites))
+                        .trustManager(tmf)
+                        .build();
+
+        AtomicReference<SslContext> ref = forServer ? serverSslContext : clientSslContext;
+        if (ref.compareAndSet(null, ctx))
+            return ctx;
+        else
+            return ref.get();
     }
 }

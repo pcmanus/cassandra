@@ -31,20 +31,21 @@ import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.net.MessagingService.Verb;
 
 public class MessageIn<T>
 {
     public final InetAddress from;
     public final T payload;
     public final Map<String, byte[]> parameters;
-    public final MessagingService.Verb verb;
+    public final Verb verb;
     public final int version;
     public final long constructionTime;
 
     private MessageIn(InetAddress from,
                       T payload,
                       Map<String, byte[]> parameters,
-                      MessagingService.Verb verb,
+                      Verb verb,
                       int version,
                       long constructionTime)
     {
@@ -59,7 +60,7 @@ public class MessageIn<T>
     public static <T> MessageIn<T> create(InetAddress from,
                                           T payload,
                                           Map<String, byte[]> parameters,
-                                          MessagingService.Verb verb,
+                                          Verb verb,
                                           int version,
                                           long constructionTime)
     {
@@ -84,12 +85,18 @@ public class MessageIn<T>
     {
         InetAddress from = CompactEndpointSerializationHelper.deserialize(in);
 
-        MessagingService.Verb verb = MessagingService.verbValues[in.readInt()];
+        Verb verb = MessagingService.verbValues[in.readInt()];
+        Map<String, byte[]> parameters = readParameters(in);
+        int payloadSize = in.readInt();
+        return read(in, version, id, constructionTime, from, payloadSize, verb, parameters);
+    }
+
+    public static Map<String, byte[]> readParameters(DataInputPlus in) throws IOException
+    {
         int parameterCount = in.readInt();
-        Map<String, byte[]> parameters;
         if (parameterCount == 0)
         {
-            parameters = Collections.emptyMap();
+            return Collections.emptyMap();
         }
         else
         {
@@ -101,10 +108,13 @@ public class MessageIn<T>
                 in.readFully(value);
                 builder.put(key, value);
             }
-            parameters = builder.build();
+            return builder.build();
         }
+    }
 
-        int payloadSize = in.readInt();
+    public static <T2> MessageIn<T2> read(DataInputPlus in, int version, int id, long constructionTime,
+                                          InetAddress from, int payloadSize, Verb verb, Map<String, byte[]> parameters) throws IOException
+    {
         IVersionedSerializer<T2> serializer = (IVersionedSerializer<T2>) MessagingService.verbSerializers.get(verb);
         if (serializer instanceof MessagingService.CallbackDeterminedSerializer)
         {

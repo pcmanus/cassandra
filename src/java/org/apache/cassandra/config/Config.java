@@ -32,6 +32,8 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.net.async.OutboundMessagingPool;
+
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
  *
@@ -274,10 +276,11 @@ public class Config
     public int tracetype_query_ttl = (int) TimeUnit.DAYS.toSeconds(1);
     public int tracetype_repair_ttl = (int) TimeUnit.DAYS.toSeconds(7);
 
-    /*
-     * Strategy to use for coalescing messages in OutboundTcpConnection.
+    /**
+     * Strategy to use for coalescing messages in {@link OutboundMessagingPool}.
      * Can be fixed, movingaverage, timehorizon, disabled. Setting is case and leading/trailing
-     * whitespace insensitive. You can also specify a subclass of CoalescingStrategies.CoalescingStrategy by name.
+     * whitespace insensitive. You can also specify a subclass of
+     * {@link org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy} by name.
      */
     public String otc_coalescing_strategy = "TIMEHORIZON";
 
@@ -287,7 +290,7 @@ public class Config
      * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
      * for coalescing to be enabled.
      */
-    public static final int otc_coalescing_window_us_default = 200;
+    public static final int otc_coalescing_window_us_default = 300;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
     public int otc_coalescing_enough_coalesced_messages = 8;
 
