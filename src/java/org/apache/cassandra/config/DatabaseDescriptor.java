@@ -2398,4 +2398,9 @@ public class DatabaseDescriptor
     {
         return backPressureStrategy;
     }
+
+    public static boolean isMessagingServiceNettyEnabled()
+    {
+        return conf.ms_netty_enabled;
+    }
 }

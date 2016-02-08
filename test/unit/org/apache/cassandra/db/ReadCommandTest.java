@@ -18,10 +18,13 @@
 
 package org.apache.cassandra.db;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -47,6 +50,7 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -306,6 +310,35 @@ public class ReadCommandTest
 
             assertEquals(5, numPartitions);
             assertEquals(expectedRows.length, i);
+        }
+    }
+
+    public void serializerTest() throws IOException
+    {
+        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE).getColumnFamilyStore(CF2);
+
+        new RowUpdateBuilder(cfs.metadata, 0, ByteBufferUtil.bytes("key"))
+        .clustering("dd")
+        .add("a", ByteBufferUtil.bytes("abcd"))
+        .build()
+        .apply();
+
+        ReadCommand readCommand = Util.cmd(cfs, Util.dk("key")).includeRow("dd").build();
+        int messagingVersion = MessagingService.current_version;
+        long size = ReadCommand.serializer.serializedSize(readCommand, messagingVersion);
+
+        FakeOutputStream out = new FakeOutputStream();
+        ReadCommand.serializer.serialize(readCommand, new WrappedDataOutputStreamPlus(out), messagingVersion);
+        Assert.assertEquals(size, out.count);
+    }
+
+    static class FakeOutputStream extends OutputStream
+    {
+        long count;
+
+        public void write(int b) throws IOException
+        {
+            count++;
         }
     }
 }

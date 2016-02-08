@@ -1,0 +1,104 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.cassandra.net.async;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import javax.net.ssl.SSLHandshakeException;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
+import io.netty.channel.embedded.EmbeddedChannel;
+
+public class ClientConnectorTest
+{
+    private final static InetSocketAddress local = InetSocketAddress.createUnresolved("127.0.0.1", 9876);
+    private final static InetSocketAddress remote = InetSocketAddress.createUnresolved("127.0.0.2", 9876);
+
+    @Test
+    public void connectComplete_FutureIsSuccess()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelPromise promise = channel.newPromise();
+        promise.setSuccess();
+        Assert.assertTrue(connector.connectComplete(promise));
+    }
+
+    @Test
+    public void connectComplete_FutureIsCancelled()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelFuture future = channel.newPromise();
+        future.cancel(false);
+        Assert.assertFalse(connector.connectComplete(future));
+    }
+
+    @Test
+    public void connectComplete_ConnectorIsCancelled()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelPromise promise = channel.newPromise();
+        connector.cancel();
+        Assert.assertFalse(connector.connectComplete(promise));
+    }
+
+    @Test
+    public void connectComplete_FailCauseIsSslHandshake()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelPromise promise = channel.newPromise();
+        promise.setFailure(new SSLHandshakeException("test is only a test"));
+        Assert.assertFalse(connector.connectComplete(promise));
+    }
+
+    @Test
+    public void connectComplete_FailCauseIsNPE()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelPromise promise = channel.newPromise();
+        promise.setFailure(new NullPointerException("test is only a test"));
+        Assert.assertFalse(connector.connectComplete(promise));
+    }
+
+    @Test
+    public void connectComplete_FailCauseIsIOException()
+    {
+        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ClientConnector connector = new ClientConnector(null, local, remote);
+
+        ChannelPromise promise = channel.newPromise();
+        promise.setFailure(new IOException("test is only a test"));
+        Assert.assertFalse(connector.connectComplete(promise));
+    }
+}

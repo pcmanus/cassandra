@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -96,18 +97,27 @@ public class CoalescingStrategies
 
     private static boolean maybeSleep(int messages, long averageGap, long maxCoalesceWindow, Parker parker)
     {
+        long sleepTime = determineSleepTime(messages, averageGap, maxCoalesceWindow);
+        if (sleepTime < 0)
+            return false;
+
+        parker.park(sleepTime);
+        return true;
+    }
+
+    private static long determineSleepTime(int messages, long averageGap, long maxCoalesceWindow)
+    {
         // only sleep if we can expect to double the number of messages we're sending in the time interval
         long sleep = messages * averageGap;
         if (sleep > maxCoalesceWindow)
-            return false;
+            return -1;
 
         // assume we receive as many messages as we expect; apply the same logic to the future batch:
         // expect twice as many messages to consider sleeping for "another" interval; this basically translates
         // to doubling our sleep period until we exceed our max sleep window
         while (sleep * 2 < maxCoalesceWindow)
             sleep *= 2;
-        parker.park(sleep);
-        return true;
+        return sleep;
     }
 
     public static abstract class CoalescingStrategy
@@ -223,6 +233,25 @@ public class CoalescingStrategies
 
         protected abstract <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out, int maxItems) throws InterruptedException;
 
+        /**
+         * Performs any necessary logging/calulations on outbound messages, and returns the number of milliseconds to wait
+         * before sending those messages out. Together with {@link #coalesceNonBlocking(long, int)}, this comprises a
+         * non-blocking version of {@link #coalesce(BlockingQueue, List, int)}.
+         *
+         * @return the number of milliseconds the wait for messages to accumulate before preocessing them.
+         */
+        public abstract long coalesceNonBlocking(long sampleTimestampNanos, int pendingMessageCount);
+
+        /**
+         * A callback function to be invoked after a message is successfully sent to a peer.
+         */
+        public abstract Consumer<Long> coalesceNonBlockingCallback();
+
+
+        public boolean isCoalescing()
+        {
+            return true;
+        }
     }
 
     @VisibleForTesting
@@ -358,6 +387,24 @@ public class CoalescingStrategies
         }
 
         @Override
+        public long coalesceNonBlocking(long sampleTimestampNanos, int pendingMessageCount)
+        {
+            logSample(sampleTimestampNanos);
+            long averageGap = averageGap();
+            debugGap(averageGap);
+
+            return determineSleepTime(pendingMessageCount, averageGap, maxCoalesceWindow);
+        }
+
+        @Override
+        public Consumer<Long> coalesceNonBlockingCallback()
+        {
+            return timestamp -> {
+                logSample(timestamp);
+            };
+        }
+
+        @Override
         public String toString()
         {
             return "Time horizon moving average";
@@ -434,6 +481,22 @@ public class CoalescingStrategies
         }
 
         @Override
+        public long coalesceNonBlocking(long sampleTimestampNanos, int pendingMessageCount)
+        {
+            long average = notifyOfSample(sampleTimestampNanos);
+            debugGap(average);
+            return determineSleepTime(pendingMessageCount, average, maxCoalesceWindow);
+        }
+
+        @Override
+        public Consumer<Long> coalesceNonBlockingCallback()
+        {
+            return timestamp -> {
+                notifyOfSample(timestamp);
+            };
+        }
+
+        @Override
         public String toString()
         {
             return "Moving average";
@@ -467,6 +530,20 @@ public class CoalescingStrategies
         }
 
         @Override
+        public long coalesceNonBlocking(long sampleTimestampNanos, int pendingMessageCount)
+        {
+            return coalesceWindow;
+        }
+
+        @Override
+        public Consumer<Long> coalesceNonBlockingCallback()
+        {
+            return timestamp -> {
+                debugTimestamp(timestamp);
+            };
+        }
+
+        @Override
         public String toString()
         {
             return "Fixed";
@@ -494,6 +571,25 @@ public class CoalescingStrategies
                 input.drainTo(out, maxItems - 1);
             }
             debugTimestamps(out);
+        }
+
+        @Override
+        public long coalesceNonBlocking(long sampleTimestampNanos, int pendingMessageCount)
+        {
+            debugTimestamp(sampleTimestampNanos);
+            return -1;
+        }
+
+        @Override
+        public Consumer<Long> coalesceNonBlockingCallback()
+        {
+            return null;
+        }
+
+        @Override
+        public boolean isCoalescing()
+        {
+            return false;
         }
 
         @Override

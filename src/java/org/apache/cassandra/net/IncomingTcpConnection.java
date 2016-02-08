@@ -47,7 +47,7 @@ public class IncomingTcpConnection extends FastThreadLocalThread implements Clos
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingTcpConnection.class);
 
-    private static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".itc_buffer_size", 1024 * 4);
+    public static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".itc_buffer_size", 1024 * 4);
 
     private final int version;
     private final boolean compressed;
@@ -176,12 +176,16 @@ public class IncomingTcpConnection extends FastThreadLocalThread implements Clos
         while (true)
         {
             MessagingService.validateMagic(in.readInt());
-            receiveMessage(in, version);
+            receiveMessage(from, in, version);
         }
     }
 
-    private InetAddress receiveMessage(DataInputPlus input, int version) throws IOException
+    public static InetAddress receiveMessage(InetAddress from, DataInputPlus input, int version) throws IOException
     {
+        // throw away the frame size int as we don't use it here
+        if (version >= MessagingService.VERSION_40)
+            input.readInt();
+
         int id;
         if (version < MessagingService.VERSION_20)
             id = Integer.parseInt(input.readUTF());

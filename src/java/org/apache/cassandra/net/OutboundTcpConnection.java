@@ -62,6 +62,7 @@ import org.xerial.snappy.SnappyOutputStream;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 public class OutboundTcpConnection extends FastThreadLocalThread
@@ -74,13 +75,14 @@ public class OutboundTcpConnection extends FastThreadLocalThread
      * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
      */
     private static final String INTRADC_TCP_NODELAY_PROPERTY = PREFIX + "otc_intradc_tcp_nodelay";
-    private static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
+
+    public static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
 
     /*
      * Size of buffer in output stream
      */
     private static final String BUFFER_SIZE_PROPERTY = PREFIX + "otc_buffer_size";
-    private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
+    public static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
     private static CoalescingStrategy newCoalescingStrategy(String displayName)
     {
@@ -119,11 +121,11 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
     private volatile boolean isStopped = false;
 
-    private static final int OPEN_RETRY_DELAY = 100; // ms between retries
+    public static final int OPEN_RETRY_DELAY = 100; // ms between retries
     public static final int WAIT_FOR_VERSION_MAX_TIME = 5000;
     private static final int NO_VERSION = Integer.MIN_VALUE;
 
-    static final int LZ4_HASH_SEED = 0x9747b28c;
+    public static final int LZ4_HASH_SEED = 0x9747b28c;
 
     private final BlockingQueue<QueuedMessage> backlog = new LinkedBlockingQueue<>();
 
@@ -153,7 +155,7 @@ public class OutboundTcpConnection extends FastThreadLocalThread
         targetVersion = MessagingService.instance().getVersion(pool.endPoint());
     }
 
-    private static boolean isLocalDC(InetAddress targetHost)
+    public static boolean isLocalDC(InetAddress targetHost)
     {
         String remoteDC = DatabaseDescriptor.getEndpointSnitch().getDatacenter(targetHost);
         String localDC = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddress());
@@ -336,6 +338,9 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     private void writeInternal(MessageOut message, int id, long timestamp) throws IOException
     {
         out.writeInt(MessagingService.PROTOCOL_MAGIC);
+
+        if (targetVersion >= MessagingService.VERSION_40)
+            out.writeInt(message.serializedSize(targetVersion));
 
         if (targetVersion < MessagingService.VERSION_20)
             out.writeUTF(String.valueOf(id));
@@ -555,28 +560,34 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     }
 
     /** messages that have not been retried yet */
-    private static class QueuedMessage implements Coalescable
+    public static class QueuedMessage implements Coalescable
     {
-        final MessageOut<?> message;
-        final int id;
-        final long timestampNanos;
-        final boolean droppable;
+        public final MessageOut<?> message;
+        public final int id;
+        public final long timestampNanos;
+        public final boolean droppable;
 
-        QueuedMessage(MessageOut<?> message, int id)
+        public QueuedMessage(MessageOut<?> message, int id)
+        {
+            this(message, id, System.nanoTime(), MessagingService.DROPPABLE_VERBS.contains(message.verb));
+        }
+
+        @VisibleForTesting
+        public QueuedMessage(MessageOut<?> message, int id, long timestampNanos, boolean droppable)
         {
             this.message = message;
             this.id = id;
-            this.timestampNanos = System.nanoTime();
-            this.droppable = MessagingService.DROPPABLE_VERBS.contains(message.verb);
+            this.timestampNanos = timestampNanos;
+            this.droppable = droppable;
         }
 
         /** don't drop a non-droppable message just because it's timestamp is expired */
-        boolean isTimedOut()
+        public boolean isTimedOut()
         {
             return droppable && timestampNanos < System.nanoTime() - TimeUnit.MILLISECONDS.toNanos(message.getTimeout());
         }
 
-        boolean shouldRetry()
+        public boolean shouldRetry()
         {
             // retry all messages once
             return true;
@@ -588,14 +599,14 @@ public class OutboundTcpConnection extends FastThreadLocalThread
         }
     }
 
-    private static class RetriedQueuedMessage extends QueuedMessage
+    public static class RetriedQueuedMessage extends QueuedMessage
     {
-        RetriedQueuedMessage(QueuedMessage msg)
+        public RetriedQueuedMessage(QueuedMessage msg)
         {
             super(msg.message, msg.id);
         }
 
-        boolean shouldRetry()
+        public boolean shouldRetry()
         {
             return false;
         }

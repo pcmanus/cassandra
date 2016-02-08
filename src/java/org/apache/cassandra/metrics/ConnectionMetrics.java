@@ -26,6 +26,7 @@ import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
 
 import org.apache.cassandra.net.OutboundTcpConnectionPool;
+import org.apache.cassandra.net.async.InternodeMessagingPool;
 
 /**
  * Metrics for {@link OutboundTcpConnectionPool}.
@@ -136,6 +137,79 @@ public class ConnectionMetrics
             public Long getValue()
             {
                 return connectionPool.gossipMessages.getDroppedMessages();
+            }
+        });
+        timeouts = Metrics.meter(factory.createMetricName("Timeouts"));
+    }
+
+    public ConnectionMetrics(InetAddress ip, final InternodeMessagingPool messagingPool)
+    {
+        // ipv6 addresses will contain colons, which are invalid in a JMX ObjectName
+        address = ip.getHostAddress().replace(':', '.');
+
+        factory = new DefaultNameFactory("Connection", address);
+
+        largeMessagePendingTasks = Metrics.register(factory.createMetricName("LargeMessagePendingTasks"), new Gauge<Integer>()
+        {
+            public Integer getValue()
+            {
+                return messagingPool.largeMessageChannel.getPendingMessages();
+            }
+        });
+        largeMessageCompletedTasks = Metrics.register(factory.createMetricName("LargeMessageCompletedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.largeMessageChannel.getCompletedMesssages();
+            }
+        });
+        largeMessageDroppedTasks = Metrics.register(factory.createMetricName("LargeMessageDroppedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.largeMessageChannel.getDroppedMessages();
+            }
+        });
+        smallMessagePendingTasks = Metrics.register(factory.createMetricName("SmallMessagePendingTasks"), new Gauge<Integer>()
+        {
+            public Integer getValue()
+            {
+                return messagingPool.smallMessageChannel.getPendingMessages();
+            }
+        });
+        smallMessageCompletedTasks = Metrics.register(factory.createMetricName("SmallMessageCompletedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.smallMessageChannel.getCompletedMesssages();
+            }
+        });
+        smallMessageDroppedTasks = Metrics.register(factory.createMetricName("SmallMessageDroppedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.smallMessageChannel.getDroppedMessages();
+            }
+        });
+        gossipMessagePendingTasks = Metrics.register(factory.createMetricName("GossipMessagePendingTasks"), new Gauge<Integer>()
+        {
+            public Integer getValue()
+            {
+                return messagingPool.gossipChannel.getPendingMessages();
+            }
+        });
+        gossipMessageCompletedTasks = Metrics.register(factory.createMetricName("GossipMessageCompletedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.gossipChannel.getCompletedMesssages();
+            }
+        });
+        gossipMessageDroppedTasks = Metrics.register(factory.createMetricName("GossipMessageDroppedTasks"), new Gauge<Long>()
+        {
+            public Long getValue()
+            {
+                return messagingPool.gossipChannel.getDroppedMessages();
             }
         });
         timeouts = Metrics.meter(factory.createMetricName("Timeouts"));

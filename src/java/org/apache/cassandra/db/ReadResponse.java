@@ -377,7 +377,7 @@ public abstract class ReadResponse
             if (digest.hasRemaining())
                 return new DigestResponse(digest);
 
-            assert version == MessagingService.VERSION_30;
+            assert version >= MessagingService.VERSION_30;
             ByteBuffer data = ByteBufferUtil.readWithVIntLength(in);
             return new RemoteDataResponse(data);
         }
@@ -414,7 +414,7 @@ public abstract class ReadResponse
             {
                 // Note that we can only get there if version == 3.0, which is the current_version. When we'll change the
                 // version, we'll have to deserialize/re-serialize the data to be in the proper version.
-                assert version == MessagingService.VERSION_30;
+                assert version >= MessagingService.VERSION_30;
                 ByteBuffer data = ((DataResponse)response).data;
                 size += ByteBufferUtil.serializedSizeWithVIntLength(data);
             }

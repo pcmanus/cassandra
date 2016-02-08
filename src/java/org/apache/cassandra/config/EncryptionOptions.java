@@ -31,6 +31,9 @@ public abstract class EncryptionOptions
     public String store_type = "JKS";
     public boolean require_client_auth = false;
     public boolean require_endpoint_verification = false;
+    public String x509_cert;
+    public String keyfile;
+    public String keyfile_password;
 
     public static class ClientEncryptionOptions extends EncryptionOptions
     {

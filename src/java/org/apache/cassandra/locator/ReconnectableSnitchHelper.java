@@ -60,9 +60,9 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
     private void reconnect(InetAddress publicAddress, InetAddress localAddress)
     {
         if (snitch.getDatacenter(publicAddress).equals(localDc)
-                && !MessagingService.instance().getConnectionPool(publicAddress).endPoint().equals(localAddress))
+                && !MessagingService.instance().getCurrentEndpoint(publicAddress).equals(localAddress))
         {
-            MessagingService.instance().getConnectionPool(publicAddress).reset(localAddress);
+            MessagingService.instance().switchIpAddress(publicAddress, localAddress);
             logger.debug("Initiated reconnect to an Internal IP {} for the {}", localAddress, publicAddress);
         }
     }
