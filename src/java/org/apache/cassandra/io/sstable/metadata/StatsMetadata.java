@@ -45,12 +45,14 @@ public class StatsMetadata extends MetadataComponent
     public final ReplayPosition replayPosition;
     public final long minTimestamp;
     public final long maxTimestamp;
-    public final int minLocalDeletionTime;
-    public final int maxLocalDeletionTime;
+    public final int minPurgingTime;
+    public final int maxPurgingTime;
+    public final int minPurgingReferenceTime;
+    public final int maxPurgingReferenceTime;
     public final int minTTL;
     public final int maxTTL;
     public final double compressionRatio;
-    public final StreamingHistogram estimatedTombstoneDropTime;
+    public final StreamingHistogram estimatedTombstonePurgingTime;
     public final int sstableLevel;
     public final List<ByteBuffer> minClusteringValues;
     public final List<ByteBuffer> maxClusteringValues;
@@ -64,12 +66,14 @@ public class StatsMetadata extends MetadataComponent
                          ReplayPosition replayPosition,
                          long minTimestamp,
                          long maxTimestamp,
-                         int minLocalDeletionTime,
-                         int maxLocalDeletionTime,
+                         int minPurgingTime,
+                         int maxPurgingTime,
+                         int minPurgingReferenceTime,
+                         int maxPurgingReferenceTime,
                          int minTTL,
                          int maxTTL,
                          double compressionRatio,
-                         StreamingHistogram estimatedTombstoneDropTime,
+                         StreamingHistogram estimatedTombstonePurgingTime,
                          int sstableLevel,
                          List<ByteBuffer> minClusteringValues,
                          List<ByteBuffer> maxClusteringValues,
@@ -83,12 +87,14 @@ public class StatsMetadata extends MetadataComponent
         this.replayPosition = replayPosition;
         this.minTimestamp = minTimestamp;
         this.maxTimestamp = maxTimestamp;
-        this.minLocalDeletionTime = minLocalDeletionTime;
-        this.maxLocalDeletionTime = maxLocalDeletionTime;
+        this.minPurgingTime = minPurgingTime;
+        this.maxPurgingTime = maxPurgingTime;
+        this.minPurgingReferenceTime = minPurgingReferenceTime;
+        this.maxPurgingReferenceTime = maxPurgingReferenceTime;
         this.minTTL = minTTL;
         this.maxTTL = maxTTL;
         this.compressionRatio = compressionRatio;
-        this.estimatedTombstoneDropTime = estimatedTombstoneDropTime;
+        this.estimatedTombstonePurgingTime = estimatedTombstonePurgingTime;
         this.sstableLevel = sstableLevel;
         this.minClusteringValues = minClusteringValues;
         this.maxClusteringValues = maxClusteringValues;
@@ -104,27 +110,27 @@ public class StatsMetadata extends MetadataComponent
     }
 
     /**
-     * @param gcBefore gc time in seconds
-     * @return estimated droppable tombstone ratio at given gcBefore time.
+     * @param nowInSec the current local time in seconds
+     * @return estimated droppable tombstone ratio.
      */
-    public double getEstimatedDroppableTombstoneRatio(int gcBefore)
+    public double getEstimatedDroppableTombstoneRatio(int nowInSec)
     {
         long estimatedColumnCount = this.estimatedColumnCount.mean() * this.estimatedColumnCount.count();
         if (estimatedColumnCount > 0)
         {
-            double droppable = getDroppableTombstonesBefore(gcBefore);
+            double droppable = getDroppableTombstones(nowInSec);
             return droppable / estimatedColumnCount;
         }
         return 0.0f;
     }
 
     /**
-     * @param gcBefore gc time in seconds
-     * @return amount of droppable tombstones
+     * @param nowInSec the current time in seconds
+     * @return The amount of droppable tombstones in the sstable.
      */
-    public double getDroppableTombstonesBefore(int gcBefore)
+    public double getDroppableTombstones(int nowInSec)
     {
-        return estimatedTombstoneDropTime.sum(gcBefore);
+        return estimatedTombstonePurgingTime.sum(nowInSec);
     }
 
     public StatsMetadata mutateLevel(int newLevel)
@@ -134,12 +140,14 @@ public class StatsMetadata extends MetadataComponent
                                  replayPosition,
                                  minTimestamp,
                                  maxTimestamp,
-                                 minLocalDeletionTime,
-                                 maxLocalDeletionTime,
+                                 minPurgingTime,
+                                 maxPurgingTime,
+                                 minPurgingReferenceTime,
+                                 maxPurgingReferenceTime,
                                  minTTL,
                                  maxTTL,
                                  compressionRatio,
-                                 estimatedTombstoneDropTime,
+                                 estimatedTombstonePurgingTime,
                                  newLevel,
                                  minClusteringValues,
                                  maxClusteringValues,
@@ -156,12 +164,14 @@ public class StatsMetadata extends MetadataComponent
                                  replayPosition,
                                  minTimestamp,
                                  maxTimestamp,
-                                 minLocalDeletionTime,
-                                 maxLocalDeletionTime,
+                                 minPurgingTime,
+                                 maxPurgingTime,
+                                 minPurgingReferenceTime,
+                                 maxPurgingReferenceTime,
                                  minTTL,
                                  maxTTL,
                                  compressionRatio,
-                                 estimatedTombstoneDropTime,
+                                 estimatedTombstonePurgingTime,
                                  sstableLevel,
                                  minClusteringValues,
                                  maxClusteringValues,
@@ -184,12 +194,14 @@ public class StatsMetadata extends MetadataComponent
                        .append(replayPosition, that.replayPosition)
                        .append(minTimestamp, that.minTimestamp)
                        .append(maxTimestamp, that.maxTimestamp)
-                       .append(minLocalDeletionTime, that.minLocalDeletionTime)
-                       .append(maxLocalDeletionTime, that.maxLocalDeletionTime)
+                       .append(minPurgingTime, that.minPurgingTime)
+                       .append(maxPurgingTime, that.maxPurgingTime)
+                       .append(minPurgingReferenceTime, that.minPurgingReferenceTime)
+                       .append(maxPurgingReferenceTime, that.maxPurgingReferenceTime)
                        .append(minTTL, that.minTTL)
                        .append(maxTTL, that.maxTTL)
                        .append(compressionRatio, that.compressionRatio)
-                       .append(estimatedTombstoneDropTime, that.estimatedTombstoneDropTime)
+                       .append(estimatedTombstonePurgingTime, that.estimatedTombstonePurgingTime)
                        .append(sstableLevel, that.sstableLevel)
                        .append(repairedAt, that.repairedAt)
                        .append(maxClusteringValues, that.maxClusteringValues)
@@ -209,12 +221,14 @@ public class StatsMetadata extends MetadataComponent
                        .append(replayPosition)
                        .append(minTimestamp)
                        .append(maxTimestamp)
-                       .append(minLocalDeletionTime)
-                       .append(maxLocalDeletionTime)
+                       .append(minPurgingTime)
+                       .append(maxPurgingTime)
+                       .append(minPurgingReferenceTime)
+                       .append(maxPurgingReferenceTime)
                        .append(minTTL)
                        .append(maxTTL)
                        .append(compressionRatio)
-                       .append(estimatedTombstoneDropTime)
+                       .append(estimatedTombstonePurgingTime)
                        .append(sstableLevel)
                        .append(repairedAt)
                        .append(maxClusteringValues)
@@ -234,10 +248,10 @@ public class StatsMetadata extends MetadataComponent
             size += EstimatedHistogram.serializer.serializedSize(component.estimatedColumnCount);
             size += ReplayPosition.serializer.serializedSize(component.replayPosition);
             if (version.storeRows())
-                size += 8 + 8 + 4 + 4 + 4 + 4 + 8 + 8; // mix/max timestamp(long), min/maxLocalDeletionTime(int), min/max TTL, compressionRatio(double), repairedAt (long)
+                size += 8 + 8 + 4 + 4 + 4 + 4 + 8 + 8; // mix/max timestamp(long), min/maxPurgingTime(int), min/max TTL, compressionRatio(double), repairedAt (long)
             else
                 size += 8 + 8 + 4 + 8 + 8; // mix/max timestamp(long), maxLocalDeletionTime(int), compressionRatio(double), repairedAt (long)
-            size += StreamingHistogram.serializer.serializedSize(component.estimatedTombstoneDropTime);
+            size += StreamingHistogram.serializer.serializedSize(component.estimatedTombstonePurgingTime);
             size += TypeSizes.sizeof(component.sstableLevel);
             // min column names
             size += 4;
@@ -250,6 +264,8 @@ public class StatsMetadata extends MetadataComponent
             size += TypeSizes.sizeof(component.hasLegacyCounterShards);
             if (version.storeRows())
                 size += 8 + 8; // totalColumnsSet, totalRows
+            if (version.hasPurgingReferenceTimeStatistics())
+                size += 4 + 4; // min/max purgingReferenceTime
             return size;
         }
 
@@ -261,15 +277,15 @@ public class StatsMetadata extends MetadataComponent
             out.writeLong(component.minTimestamp);
             out.writeLong(component.maxTimestamp);
             if (version.storeRows())
-                out.writeInt(component.minLocalDeletionTime);
-            out.writeInt(component.maxLocalDeletionTime);
+                out.writeInt(component.minPurgingTime);
+            out.writeInt(component.maxPurgingTime);
             if (version.storeRows())
             {
                 out.writeInt(component.minTTL);
                 out.writeInt(component.maxTTL);
             }
             out.writeDouble(component.compressionRatio);
-            StreamingHistogram.serializer.serialize(component.estimatedTombstoneDropTime, out);
+            StreamingHistogram.serializer.serialize(component.estimatedTombstonePurgingTime, out);
             out.writeInt(component.sstableLevel);
             out.writeLong(component.repairedAt);
             out.writeInt(component.minClusteringValues.size());
@@ -285,6 +301,11 @@ public class StatsMetadata extends MetadataComponent
                 out.writeLong(component.totalColumnsSet);
                 out.writeLong(component.totalRows);
             }
+            if (version.hasPurgingReferenceTimeStatistics())
+            {
+                out.writeInt(component.minPurgingReferenceTime);
+                out.writeInt(component.maxPurgingReferenceTime);
+            }
         }
 
         public StatsMetadata deserialize(Version version, DataInputPlus in) throws IOException
@@ -294,9 +315,9 @@ public class StatsMetadata extends MetadataComponent
             ReplayPosition replayPosition = ReplayPosition.serializer.deserialize(in);
             long minTimestamp = in.readLong();
             long maxTimestamp = in.readLong();
-            // We use MAX_VALUE as that's the default value for "no deletion time"
-            int minLocalDeletionTime = version.storeRows() ? in.readInt() : Integer.MAX_VALUE;
-            int maxLocalDeletionTime = in.readInt();
+            // We use MAX_VALUE as that's the default value for "no purging time"
+            int minPurgingTime = version.storeRows() ? in.readInt() : Integer.MAX_VALUE;
+            int maxPurgingTime = in.readInt();
             int minTTL = version.storeRows() ? in.readInt() : 0;
             int maxTTL = version.storeRows() ? in.readInt() : Integer.MAX_VALUE;
             double compressionRatio = in.readDouble();
@@ -323,13 +344,19 @@ public class StatsMetadata extends MetadataComponent
             long totalColumnsSet = version.storeRows() ? in.readLong() : -1L;
             long totalRows = version.storeRows() ? in.readLong() : -1L;
 
+            // Using MAX_VALUE in both case because that's our "no purging time"
+            int minPurgingReferenceTime = version.hasPurgingReferenceTimeStatistics() ? in.readInt() : Integer.MAX_VALUE;
+            int maxPurgingReferenceTime = version.hasPurgingReferenceTimeStatistics() ? in.readInt() : Integer.MAX_VALUE;
+
             return new StatsMetadata(partitionSizes,
                                      columnCounts,
                                      replayPosition,
                                      minTimestamp,
                                      maxTimestamp,
-                                     minLocalDeletionTime,
-                                     maxLocalDeletionTime,
+                                     minPurgingTime,
+                                     maxPurgingTime,
+                                     minPurgingReferenceTime,
+                                     maxPurgingReferenceTime,
                                      minTTL,
                                      maxTTL,
                                      compressionRatio,

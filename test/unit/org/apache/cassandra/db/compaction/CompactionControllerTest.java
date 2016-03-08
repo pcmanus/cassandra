@@ -85,7 +85,7 @@ public class CompactionControllerTest extends SchemaLoader
         applyMutation(cfs.metadata, key, timestamp1);
 
         // check max purgeable timestamp without any sstables
-        try(CompactionController controller = new CompactionController(cfs, null, 0))
+        try(CompactionController controller = new CompactionController(cfs, null, GCParams.defaultFor(cfs, 0)))
         {
             assertEquals(timestamp1, controller.maxPurgeableTimestamp(key)); //memtable only
 
@@ -100,7 +100,7 @@ public class CompactionControllerTest extends SchemaLoader
         cfs.forceBlockingFlush();
 
         // check max purgeable timestamp when compacting the first sstable with and without a memtable
-        try (CompactionController controller = new CompactionController(cfs, compacting, 0))
+        try (CompactionController controller = new CompactionController(cfs, compacting, GCParams.defaultFor(cfs, 0)))
         {
             assertEquals(timestamp2, controller.maxPurgeableTimestamp(key)); //second sstable only
 
@@ -113,7 +113,7 @@ public class CompactionControllerTest extends SchemaLoader
         cfs.forceBlockingFlush();
 
         //newest to oldest
-        try (CompactionController controller = new CompactionController(cfs, null, 0))
+        try (CompactionController controller = new CompactionController(cfs, null, GCParams.defaultFor(cfs, 0)))
         {
             applyMutation(cfs.metadata, key, timestamp1);
             applyMutation(cfs.metadata, key, timestamp2);
@@ -125,7 +125,7 @@ public class CompactionControllerTest extends SchemaLoader
         cfs.forceBlockingFlush();
 
         //oldest to newest
-        try (CompactionController controller = new CompactionController(cfs, null, 0))
+        try (CompactionController controller = new CompactionController(cfs, null, GCParams.defaultFor(cfs, 0)))
         {
             applyMutation(cfs.metadata, key, timestamp3);
             applyMutation(cfs.metadata, key, timestamp2);
@@ -140,6 +140,7 @@ public class CompactionControllerTest extends SchemaLoader
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF2);
+        cfs.metadata.gcGraceSeconds(0);
         cfs.truncateBlocking();
 
         DecoratedKey key = Util.dk("k1");
@@ -162,16 +163,17 @@ public class CompactionControllerTest extends SchemaLoader
         // second sstable is overlapping
         Set<SSTableReader> overlapping = Sets.difference(Sets.newHashSet(cfs.getLiveSSTables()), compacting);
 
-        // the first sstable should be expired because the overlapping sstable is newer and the gc period is later
-        int gcBefore = (int) (System.currentTimeMillis() / 1000) + 5;
-        Set<SSTableReader> expired = CompactionController.getFullyExpiredSSTables(cfs, compacting, overlapping, gcBefore);
+        // the first sstable should be expired because the overlapping sstable is newer and we make sure gcGrace has expired
+        // by faking the current time
+        GCParams gcParams = GCParams.defaultFor(cfs, FBUtilities.nowInSeconds() + 5);
+        Set<SSTableReader> expired = CompactionController.getFullyExpiredSSTables(cfs, compacting, overlapping, gcParams);
         assertNotNull(expired);
         assertEquals(1, expired.size());
         assertEquals(compacting.iterator().next(), expired.iterator().next());
 
         // however if we add an older mutation to the memtable then the sstable should not be expired
         applyMutation(cfs.metadata, key, timestamp3);
-        expired = CompactionController.getFullyExpiredSSTables(cfs, compacting, overlapping, gcBefore);
+        expired = CompactionController.getFullyExpiredSSTables(cfs, compacting, overlapping, gcParams);
         assertNotNull(expired);
         assertEquals(0, expired.size());
     }

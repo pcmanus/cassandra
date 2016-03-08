@@ -176,11 +176,11 @@ public class CounterCellTest
         assertEquals(reconciled.timestamp(), 7L);
 
         // Confirm no deletion time
-        assert reconciled.localDeletionTime() == Integer.MAX_VALUE;
+        assert reconciled.purgingReferenceTime() == Integer.MAX_VALUE;
 
         Cell deleted = createDeleted(cfs, col, 8, 8);
         reconciled = Cells.reconcile(reconciled, deleted, 10);
-        assert reconciled.localDeletionTime() == 8;
+        assert reconciled.purgingReferenceTime() == 8;
     }
 
     @Test

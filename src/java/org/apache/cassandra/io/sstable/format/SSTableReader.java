@@ -1892,14 +1892,14 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         return sstableMetadata.estimatedColumnCount;
     }
 
-    public double getEstimatedDroppableTombstoneRatio(int gcBefore)
+    public double getEstimatedDroppableTombstoneRatio(int nowInSec)
     {
-        return sstableMetadata.getEstimatedDroppableTombstoneRatio(gcBefore);
+        return sstableMetadata.getEstimatedDroppableTombstoneRatio(nowInSec);
     }
 
-    public double getDroppableTombstonesBefore(int gcBefore)
+    public double getDroppableTombstones(int nowInSec)
     {
-        return sstableMetadata.getDroppableTombstonesBefore(gcBefore);
+        return sstableMetadata.getDroppableTombstones(nowInSec);
     }
 
     public double getCompressionRatio()
@@ -1922,22 +1922,26 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         return sstableMetadata.maxTimestamp;
     }
 
-    public int getMinLocalDeletionTime()
+    public int getMinPurgingTime()
     {
-        return sstableMetadata.minLocalDeletionTime;
+        return sstableMetadata.minPurgingTime;
     }
 
-    public int getMaxLocalDeletionTime()
+    public int getMaxPurgingTime()
     {
-        return sstableMetadata.maxLocalDeletionTime;
+        return sstableMetadata.maxPurgingTime;
     }
 
-    /** sstable contains no tombstones if maxLocalDeletionTime == Integer.MAX_VALUE */
+    public int getMinPurgingReferenceTime()
+    {
+        return sstableMetadata.minPurgingReferenceTime;
+    }
+
     public boolean hasTombstones()
     {
-        // sstable contains no tombstone if minLocalDeletionTime is still set to  the default value Integer.MAX_VALUE
+        // sstable contains no tombstone if minPurgingTime is still set to the default value Integer.MAX_VALUE
         // which is bigger than any valid deletion times
-        return getMinLocalDeletionTime() != Integer.MAX_VALUE;
+        return getMinPurgingTime() != Integer.MAX_VALUE;
     }
 
     public int getMinTTL()
@@ -2094,7 +2098,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     {
         // We could return sstable.header.stats(), but this may not be as accurate than the actual sstable stats (see
         // SerializationHeader.make() for details) so we use the latter instead.
-        return new EncodingStats(getMinTimestamp(), getMinLocalDeletionTime(), getMinTTL());
+        return new EncodingStats(getMinTimestamp(), getMinPurgingReferenceTime(), getMinTTL());
     }
 
     public Ref<SSTableReader> tryRef()

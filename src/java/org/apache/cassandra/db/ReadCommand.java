@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.Operator;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.monitoring.MonitorableImpl;
 import org.apache.cassandra.db.partitions.*;
@@ -283,6 +284,19 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
     protected abstract UnfilteredPartitionIterator queryStorage(ColumnFamilyStore cfs, ReadExecutionController executionController);
 
+    /**
+     * The minimun possible purging reference time for a tombstone in an unrepaired
+     * sstable participating in the read.
+     * <p>
+     * Note that every purging reference time for the tombstones returned by the query
+     * may be strictly bigger that the value returned but it is guaranteed that no
+     * purging reference time will be lower (this is a lower bound based on the sstable
+     * metadata).
+     *
+     * @return a lower bound on the purging reference times for tombstones
+     * returned by this query if the query has been executed. Otherwise, this
+     * return {@code Integer.MAX_VALUE}.
+     */
     protected abstract int oldestUnrepairedTombstone();
 
     public ReadResponse createResponse(UnfilteredPartitionIterator iterator)
@@ -554,7 +568,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
         {
             public WithoutPurgeableTombstones()
             {
-                super(isForThrift, cfs.gcBefore(nowInSec()), oldestUnrepairedTombstone(), cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones());
+                super(isForThrift, GCParams.defaultFor(cfs, nowInSec()), oldestUnrepairedTombstone(), cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones());
             }
 
             protected long getMaxPurgeableTimestamp()

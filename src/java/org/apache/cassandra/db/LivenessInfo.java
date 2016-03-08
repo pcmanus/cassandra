@@ -35,7 +35,7 @@ public class LivenessInfo
 {
     public static final long NO_TIMESTAMP = Long.MIN_VALUE;
     public static final int NO_TTL = 0;
-    public static final int NO_EXPIRATION_TIME = Integer.MAX_VALUE;
+    public static final int NO_PURGING_TIME = Integer.MAX_VALUE;
 
     public static final LivenessInfo EMPTY = new LivenessInfo(NO_TIMESTAMP);
 
@@ -57,7 +57,7 @@ public class LivenessInfo
 
     public static LivenessInfo expiring(long timestamp, int ttl, int nowInSec)
     {
-        return new ExpiringLivenessInfo(timestamp, ttl, nowInSec + ttl);
+        return new ExpiringLivenessInfo(timestamp, ttl, nowInSec);
     }
 
     public static LivenessInfo create(CFMetaData metadata, long timestamp, int ttl, int nowInSec)
@@ -67,11 +67,11 @@ public class LivenessInfo
              : expiring(timestamp, ttl, nowInSec);
     }
 
-    // Note that this ctor ignores the default table ttl and takes the expiration time, not the current time.
+    // Note that this ctor ignores the default table ttl and takes the purging reference time, not the current time.
     // Use when you know that's what you want.
-    public static LivenessInfo create(long timestamp, int ttl, int localExpirationTime)
+    public static LivenessInfo create(long timestamp, int ttl, int purgingReferenceTime)
     {
-        return ttl == NO_TTL ? new LivenessInfo(timestamp) : new ExpiringLivenessInfo(timestamp, ttl, localExpirationTime);
+        return ttl == NO_TTL ? new LivenessInfo(timestamp) : new ExpiringLivenessInfo(timestamp, ttl, purgingReferenceTime);
     }
 
     /**
@@ -115,12 +115,12 @@ public class LivenessInfo
     }
 
     /**
-     * The expiration time (in seconds) if the info is expiring ({@link #NO_EXPIRATION_TIME} otherwise).
-     *
+     * The local time (in seconds) from which gc grace should count for purging if the info is expiring
+     * (or {@link NO_PURGING_TIME} if not expiring).
      */
-    public int localExpirationTime()
+    public int purgingReferenceTime()
     {
-        return NO_EXPIRATION_TIME;
+        return NO_PURGING_TIME;
     }
 
     /**
@@ -207,26 +207,26 @@ public class LivenessInfo
         LivenessInfo that = (LivenessInfo)other;
         return this.timestamp() == that.timestamp()
             && this.ttl() == that.ttl()
-            && this.localExpirationTime() == that.localExpirationTime();
+            && this.purgingReferenceTime() == that.purgingReferenceTime();
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(timestamp(), ttl(), localExpirationTime());
+        return Objects.hash(timestamp(), ttl(), purgingReferenceTime());
     }
 
     private static class ExpiringLivenessInfo extends LivenessInfo
     {
         private final int ttl;
-        private final int localExpirationTime;
+        private final int purgingReferenceTime;
 
-        private ExpiringLivenessInfo(long timestamp, int ttl, int localExpirationTime)
+        private ExpiringLivenessInfo(long timestamp, int ttl, int purgingReferenceTime)
         {
             super(timestamp);
-            assert ttl != NO_TTL && localExpirationTime != NO_EXPIRATION_TIME;
+            assert ttl != NO_TTL && purgingReferenceTime != NO_PURGING_TIME;
             this.ttl = ttl;
-            this.localExpirationTime = localExpirationTime;
+            this.purgingReferenceTime = purgingReferenceTime;
         }
 
         @Override
@@ -236,9 +236,9 @@ public class LivenessInfo
         }
 
         @Override
-        public int localExpirationTime()
+        public int purgingReferenceTime()
         {
-            return localExpirationTime;
+            return purgingReferenceTime;
         }
 
         @Override
@@ -250,14 +250,16 @@ public class LivenessInfo
         @Override
         public boolean isLive(int nowInSec)
         {
-            return nowInSec < localExpirationTime;
+            return nowInSec < purgingReferenceTime + ttl;
         }
 
         @Override
         public void digest(MessageDigest digest)
         {
             super.digest(digest);
-            FBUtilities.updateWithInt(digest, localExpirationTime);
+            // We used to digest with the expiration time, which is purgingReferenceTime + ttl, so to avoid
+            // create false digest mismatches, we continue to do so.
+            FBUtilities.updateWithInt(digest, purgingReferenceTime + ttl);
             FBUtilities.updateWithInt(digest, ttl);
         }
 
@@ -266,8 +268,8 @@ public class LivenessInfo
         {
             if (ttl < 0)
                 throw new MarshalException("A TTL should not be negative");
-            if (localExpirationTime < 0)
-                throw new MarshalException("A local expiration time should not be negative");
+            if (purgingReferenceTime < 0)
+                throw new MarshalException("A purging reference time should not be negative");
         }
 
         @Override
@@ -275,20 +277,20 @@ public class LivenessInfo
         {
             return super.dataSize()
                  + TypeSizes.sizeof(ttl)
-                 + TypeSizes.sizeof(localExpirationTime);
+                 + TypeSizes.sizeof(purgingReferenceTime);
 
         }
 
         @Override
         public LivenessInfo withUpdatedTimestamp(long newTimestamp)
         {
-            return new ExpiringLivenessInfo(newTimestamp, ttl, localExpirationTime);
+            return new ExpiringLivenessInfo(newTimestamp, ttl, purgingReferenceTime);
         }
 
         @Override
         public String toString()
         {
-            return String.format("[ts=%d ttl=%d, let=%d]", timestamp, ttl, localExpirationTime);
+            return String.format("[ts=%d ttl=%d, prt=%d]", timestamp, ttl, purgingReferenceTime);
         }
     }
 }

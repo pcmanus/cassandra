@@ -39,6 +39,7 @@ import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.compaction.AbstractCompactionStrategy;
 import org.apache.cassandra.db.compaction.CompactionController;
 import org.apache.cassandra.db.compaction.CompactionIterator;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.io.sstable.CQLSSTableWriter;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -150,12 +151,12 @@ public class RealTransactionsTest extends SchemaLoader
     private SSTableReader replaceSSTable(ColumnFamilyStore cfs, LifecycleTransaction txn, boolean fail)
     {
         List<SSTableReader> newsstables = null;
-        int nowInSec = FBUtilities.nowInSeconds();
-        try (CompactionController controller = new CompactionController(cfs, txn.originals(), cfs.gcBefore(FBUtilities.nowInSeconds())))
+        GCParams gcParams = GCParams.defaultFor(cfs);
+        try (CompactionController controller = new CompactionController(cfs, txn.originals(), gcParams))
         {
             try (SSTableRewriter rewriter = SSTableRewriter.constructKeepingOriginals(txn, false, 1000);
                  AbstractCompactionStrategy.ScannerList scanners = cfs.getCompactionStrategyManager().getScanners(txn.originals());
-                 CompactionIterator ci = new CompactionIterator(txn.opType(), scanners.scanners, controller, nowInSec, txn.opId())
+                 CompactionIterator ci = new CompactionIterator(txn.opType(), scanners.scanners, controller, gcParams.nowInSeconds(), txn.opId())
             )
             {
                 long lastCheckObsoletion = System.nanoTime();

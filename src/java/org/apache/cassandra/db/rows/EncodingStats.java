@@ -39,14 +39,14 @@ import org.apache.cassandra.io.util.DataOutputPlus;
  */
 public class EncodingStats
 {
-    // Default values for the timestamp, deletion time and ttl. We use this both for NO_STATS, but also to serialize
+    // Default values for the timestamp, purging time and ttl. We use this both for NO_STATS, but also to serialize
     // an EncodingStats. Basically, we encode the diff of each value of to these epoch, which give values with better vint encoding.
     private static final long TIMESTAMP_EPOCH;
-    private static final int DELETION_TIME_EPOCH;
+    private static final int PURGING_TIME_EPOCH;
     private static final int TTL_EPOCH = 0;
     static
     {
-        // We want a fixed epoch, but that provide small values when substracted from our timestamp and deletion time.
+        // We want a fixed epoch, but that provide small values when substracted from our timestamp and purging time.
         // So we somewhat arbitrary use the date of the summit 2015, which should hopefully roughly correspond to 3.0 release.
         Calendar c = Calendar.getInstance(TimeZone.getTimeZone("GMT-0"), Locale.US);
         c.set(Calendar.YEAR, 2015);
@@ -58,20 +58,20 @@ public class EncodingStats
         c.set(Calendar.MILLISECOND, 0);
 
         TIMESTAMP_EPOCH = c.getTimeInMillis() * 1000; // timestamps should be in microseconds by convention
-        DELETION_TIME_EPOCH = (int)(c.getTimeInMillis() / 1000); // local deletion times are in seconds
+        PURGING_TIME_EPOCH = (int)(c.getTimeInMillis() / 1000); // local deletion times are in seconds
     }
 
     // We should use this sparingly obviously
-    public static final EncodingStats NO_STATS = new EncodingStats(TIMESTAMP_EPOCH, DELETION_TIME_EPOCH, TTL_EPOCH);
+    public static final EncodingStats NO_STATS = new EncodingStats(TIMESTAMP_EPOCH, PURGING_TIME_EPOCH, TTL_EPOCH);
 
     public static final Serializer serializer = new Serializer();
 
     public final long minTimestamp;
-    public final int minLocalDeletionTime;
+    public final int minPurgingReferenceTime;
     public final int minTTL;
 
     public EncodingStats(long minTimestamp,
-                         int minLocalDeletionTime,
+                         int minPurgingReferenceTime,
                          int minTTL)
     {
         // Note that the exact value of those don't impact correctness, just the efficiency of the encoding. So when we
@@ -80,7 +80,7 @@ public class EncodingStats
         // it's thus more efficient to use our EPOCH numbers, since it will result in a guaranteed 1 byte encoding.
 
         this.minTimestamp = minTimestamp == LivenessInfo.NO_TIMESTAMP ? TIMESTAMP_EPOCH : minTimestamp;
-        this.minLocalDeletionTime = minLocalDeletionTime == LivenessInfo.NO_EXPIRATION_TIME ? DELETION_TIME_EPOCH : minLocalDeletionTime;
+        this.minPurgingReferenceTime = minPurgingReferenceTime == LivenessInfo.NO_PURGING_TIME ? PURGING_TIME_EPOCH : minPurgingReferenceTime;
         this.minTTL = minTTL;
     }
 
@@ -96,15 +96,15 @@ public class EncodingStats
                           ? that.minTimestamp
                           : (that.minTimestamp == TIMESTAMP_EPOCH ? this.minTimestamp : Math.min(this.minTimestamp, that.minTimestamp));
 
-        int minDelTime = this.minLocalDeletionTime == DELETION_TIME_EPOCH
-                       ? that.minLocalDeletionTime
-                       : (that.minLocalDeletionTime == DELETION_TIME_EPOCH ? this.minLocalDeletionTime : Math.min(this.minLocalDeletionTime, that.minLocalDeletionTime));
+        int minPurgingRefTime = this.minPurgingReferenceTime == PURGING_TIME_EPOCH
+                              ? that.minPurgingReferenceTime
+                              : (that.minPurgingReferenceTime == PURGING_TIME_EPOCH ? this.minPurgingReferenceTime : Math.min(this.minPurgingReferenceTime, that.minPurgingReferenceTime));
 
         int minTTL = this.minTTL == TTL_EPOCH
                    ? that.minTTL
                    : (that.minTTL == TTL_EPOCH ? this.minTTL : Math.min(this.minTTL, that.minTTL));
 
-        return new EncodingStats(minTimestamp, minDelTime, minTTL);
+        return new EncodingStats(minTimestamp, minPurgingRefTime, minTTL);
     }
 
     @Override
@@ -115,7 +115,7 @@ public class EncodingStats
 
         EncodingStats that = (EncodingStats) o;
 
-        return this.minLocalDeletionTime == that.minLocalDeletionTime
+        return this.minPurgingReferenceTime == that.minPurgingReferenceTime
             && this.minTTL == that.minTTL
             && this.minTimestamp == that.minTimestamp;
     }
@@ -123,13 +123,13 @@ public class EncodingStats
     @Override
     public int hashCode()
     {
-        return Objects.hash(minTimestamp, minLocalDeletionTime, minTTL);
+        return Objects.hash(minTimestamp, minPurgingReferenceTime, minTTL);
     }
 
     @Override
     public String toString()
     {
-        return String.format("EncodingStats(ts=%d, ldt=%d, ttl=%d)", minTimestamp, minLocalDeletionTime, minTTL);
+        return String.format("EncodingStats(ts=%d, ldt=%d, ttl=%d)", minTimestamp, minPurgingReferenceTime, minTTL);
     }
 
     public static class Collector implements PartitionStatisticsCollector
@@ -137,8 +137,8 @@ public class EncodingStats
         private boolean isTimestampSet;
         private long minTimestamp = Long.MAX_VALUE;
 
-        private boolean isDelTimeSet;
-        private int minDeletionTime = Integer.MAX_VALUE;
+        private boolean isPurgingTimeSet;
+        private int minPurgingReferenceTime = Integer.MAX_VALUE;
 
         private boolean isTTLSet;
         private int minTTL = Integer.MAX_VALUE;
@@ -153,7 +153,7 @@ public class EncodingStats
             if (info.isExpiring())
             {
                 updateTTL(info.ttl());
-                updateLocalDeletionTime(info.localExpirationTime());
+                updatePurgingReferenceTime(info.purgingReferenceTime());
             }
         }
 
@@ -163,11 +163,11 @@ public class EncodingStats
             if (cell.isExpiring())
             {
                 updateTTL(cell.ttl());
-                updateLocalDeletionTime(cell.localDeletionTime());
+                updatePurgingReferenceTime(cell.purgingReferenceTime());
             }
             else if (cell.isTombstone())
             {
-                updateLocalDeletionTime(cell.localDeletionTime());
+                updatePurgingReferenceTime(cell.purgingReferenceTime());
             }
         }
 
@@ -177,7 +177,7 @@ public class EncodingStats
                 return;
 
             updateTimestamp(deletionTime.markedForDeleteAt());
-            updateLocalDeletionTime(deletionTime.localDeletionTime());
+            updatePurgingReferenceTime(deletionTime.localDeletionTime());
         }
 
         public void updateTimestamp(long timestamp)
@@ -186,10 +186,10 @@ public class EncodingStats
             minTimestamp = Math.min(minTimestamp, timestamp);
         }
 
-        public void updateLocalDeletionTime(int deletionTime)
+        public void updatePurgingReferenceTime(int purgingReferenceTime)
         {
-            isDelTimeSet = true;
-            minDeletionTime = Math.min(minDeletionTime, deletionTime);
+            isPurgingTimeSet = true;
+            minPurgingReferenceTime = Math.min(minPurgingReferenceTime, purgingReferenceTime);
         }
 
         public void updateTTL(int ttl)
@@ -210,7 +210,7 @@ public class EncodingStats
         public EncodingStats get()
         {
             return new EncodingStats(isTimestampSet ? minTimestamp : TIMESTAMP_EPOCH,
-                                     isDelTimeSet ? minDeletionTime : DELETION_TIME_EPOCH,
+                                     isPurgingTimeSet ? minPurgingReferenceTime : PURGING_TIME_EPOCH,
                                      isTTLSet ? minTTL : TTL_EPOCH);
         }
 
@@ -231,21 +231,21 @@ public class EncodingStats
         public void serialize(EncodingStats stats, DataOutputPlus out) throws IOException
         {
             out.writeUnsignedVInt(stats.minTimestamp - TIMESTAMP_EPOCH);
-            out.writeUnsignedVInt(stats.minLocalDeletionTime - DELETION_TIME_EPOCH);
+            out.writeUnsignedVInt(stats.minPurgingReferenceTime - PURGING_TIME_EPOCH);
             out.writeUnsignedVInt(stats.minTTL - TTL_EPOCH);
         }
 
         public int serializedSize(EncodingStats stats)
         {
             return TypeSizes.sizeofUnsignedVInt(stats.minTimestamp - TIMESTAMP_EPOCH)
-                   + TypeSizes.sizeofUnsignedVInt(stats.minLocalDeletionTime - DELETION_TIME_EPOCH)
+                   + TypeSizes.sizeofUnsignedVInt(stats.minPurgingReferenceTime - PURGING_TIME_EPOCH)
                    + TypeSizes.sizeofUnsignedVInt(stats.minTTL - TTL_EPOCH);
         }
 
         public EncodingStats deserialize(DataInputPlus in) throws IOException
         {
             long minTimestamp = in.readUnsignedVInt() + TIMESTAMP_EPOCH;
-            int minLocalDeletionTime = (int)in.readUnsignedVInt() + DELETION_TIME_EPOCH;
+            int minLocalDeletionTime = (int)in.readUnsignedVInt() + PURGING_TIME_EPOCH;
             int minTTL = (int)in.readUnsignedVInt() + TTL_EPOCH;
             return new EncodingStats(minTimestamp, minLocalDeletionTime, minTTL);
         }

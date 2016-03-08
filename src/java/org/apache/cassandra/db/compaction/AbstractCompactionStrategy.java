@@ -164,38 +164,38 @@ public abstract class AbstractCompactionStrategy
     }
 
     /**
-     * @param gcBefore throw away tombstones older than this
+     * @param gcParams the tombstone garbage collection parameters for the compaction
      *
      * @return the next background/minor compaction task to run; null if nothing to do.
      *
      * Is responsible for marking its sstables as compaction-pending.
      */
-    public abstract AbstractCompactionTask getNextBackgroundTask(final int gcBefore);
+    public abstract AbstractCompactionTask getNextBackgroundTask(final GCParams gcParams);
 
     /**
-     * @param gcBefore throw away tombstones older than this
+     * @param gcParams the tombstone garbage collection parameters for the compaction
      *
      * @return a compaction task that should be run to compact this columnfamilystore
      * as much as possible.  Null if nothing to do.
      *
      * Is responsible for marking its sstables as compaction-pending.
      */
-    public abstract Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore, boolean splitOutput);
+    public abstract Collection<AbstractCompactionTask> getMaximalTask(final GCParams gcParams, boolean splitOutput);
 
     /**
      * @param sstables SSTables to compact. Must be marked as compacting.
-     * @param gcBefore throw away tombstones older than this
+     * @param gcParams the tombstone garbage collection parameters for the compaction
      *
      * @return a compaction task corresponding to the requested sstables.
      * Will not be null. (Will throw if user requests an invalid compaction.)
      *
      * Is responsible for marking its sstables as compaction-pending.
      */
-    public abstract AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final int gcBefore);
+    public abstract AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final GCParams gcParams);
 
-    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, final int gcBefore, long maxSSTableBytes)
+    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, final GCParams gcParams, long maxSSTableBytes)
     {
-        return new CompactionTask(cfs, txn, gcBefore);
+        return new CompactionTask(cfs, txn, gcParams);
     }
 
     /**
@@ -354,14 +354,14 @@ public abstract class AbstractCompactionStrategy
     }
 
     /**
-     * Check if given sstable is worth dropping tombstones at gcBefore.
+     * Check if given sstable is worth dropping tombstones given the current time.
      * Check is skipped if tombstone_compaction_interval time does not elapse since sstable creation and returns false.
      *
      * @param sstable SSTable to check
-     * @param gcBefore time to drop tombstones
+     * @param gcParams the tombstone garbage collection parameters for the compaction
      * @return true if given sstable's tombstones are expected to be removed
      */
-    protected boolean worthDroppingTombstones(SSTableReader sstable, int gcBefore)
+    protected boolean worthDroppingTombstones(SSTableReader sstable, GCParams gcParams)
     {
         if (disableTombstoneCompactions)
             return false;
@@ -371,7 +371,7 @@ public abstract class AbstractCompactionStrategy
         if (System.currentTimeMillis() < sstable.getCreationTimeFor(Component.DATA) + tombstoneCompactionInterval * 1000)
            return false;
 
-        double droppableRatio = sstable.getEstimatedDroppableTombstoneRatio(gcBefore);
+        double droppableRatio = sstable.getEstimatedDroppableTombstoneRatio(gcParams.nowInSeconds());
         if (droppableRatio <= tombstoneThreshold)
             return false;
 
@@ -385,7 +385,7 @@ public abstract class AbstractCompactionStrategy
             // there is no overlap, tombstones are safely droppable
             return true;
         }
-        else if (CompactionController.getFullyExpiredSSTables(cfs, Collections.singleton(sstable), overlaps, gcBefore).size() > 0)
+        else if (CompactionController.getFullyExpiredSSTables(cfs, Collections.singleton(sstable), overlaps, gcParams).size() > 0)
         {
             return true;
         }

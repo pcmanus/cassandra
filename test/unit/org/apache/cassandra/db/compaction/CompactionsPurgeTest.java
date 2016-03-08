@@ -115,7 +115,7 @@ public class CompactionsPurgeTest
         cfs.forceBlockingFlush();
 
         // major compact and test that all columns but the resurrected one is completely gone
-        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, Integer.MAX_VALUE, false));
+        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, GCParams.GC_ALL, false));
         cfs.invalidateCachedPartition(dk(key));
 
         ImmutableBTreePartition partition = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, key).build());
@@ -167,7 +167,7 @@ public class CompactionsPurgeTest
                 .build().applyUnsafe();
 
         cfs.forceBlockingFlush();
-        cfs.getCompactionStrategyManager().getUserDefinedTask(sstablesIncomplete, Integer.MAX_VALUE).execute(null);
+        cfs.getCompactionStrategyManager().getUserDefinedTask(sstablesIncomplete, GCParams.GC_ALL).execute(null);
 
         // verify that minor compaction does GC when key is provably not
         // present in a non-compacted sstable
@@ -215,7 +215,7 @@ public class CompactionsPurgeTest
         cfs.forceBlockingFlush();
 
         // compact the sstables with the c1/c2 data and the c1 tombstone
-        cfs.getCompactionStrategyManager().getUserDefinedTask(sstablesIncomplete, Integer.MAX_VALUE).execute(null);
+        cfs.getCompactionStrategyManager().getUserDefinedTask(sstablesIncomplete, GCParams.GC_ALL).execute(null);
 
         // We should have both the c1 and c2 tombstones still. Since the min timestamp in the c2 tombstone
         // sstable is older than the c1 tombstone, it is invalid to throw out the c1 tombstone.
@@ -254,7 +254,7 @@ public class CompactionsPurgeTest
         assertEquals(String.valueOf(cfs.getLiveSSTables()), 1, cfs.getLiveSSTables().size()); // inserts & deletes were in the same memtable -> only deletes in sstable
 
         // compact and test that the row is completely gone
-        Util.compactAll(cfs, Integer.MAX_VALUE).get();
+        Util.compactAll(cfs, GCParams.GC_ALL).get();
         assertTrue(cfs.getLiveSSTables().isEmpty());
 
         Util.assertEmpty(Util.cmd(cfs, key).build());
@@ -296,7 +296,7 @@ public class CompactionsPurgeTest
 
         // flush and major compact
         cfs.forceBlockingFlush();
-        Util.compactAll(cfs, Integer.MAX_VALUE).get();
+        Util.compactAll(cfs, GCParams.GC_ALL).get();
 
         // Since we've force purging (by passing MAX_VALUE for gc_before), the row should have been invalidated and we should have no deletion info anymore
         Util.assertEmpty(Util.cmd(cfs, key).build());
@@ -332,7 +332,7 @@ public class CompactionsPurgeTest
 
         // flush and major compact (with tombstone purging)
         cfs.forceBlockingFlush();
-        Util.compactAll(cfs, Integer.MAX_VALUE).get();
+        Util.compactAll(cfs, GCParams.GC_ALL).get();
         assertFalse(Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, key).build()).isEmpty());
 
         // re-inserts with timestamp lower than delete
@@ -376,7 +376,7 @@ public class CompactionsPurgeTest
         assertEquals(0, result.size());
 
         // compact the two sstables with a gcBefore that does *not* allow the row tombstone to be purged
-        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, (int) (System.currentTimeMillis() / 1000) - 10000, false));
+        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, GCParams.defaultFor(cfs, (int) (System.currentTimeMillis() / 1000) - 10000), false));
 
         // the data should be gone, but the tombstone should still exist
         assertEquals(1, cfs.getLiveSSTables().size());
@@ -396,7 +396,7 @@ public class CompactionsPurgeTest
         cfs.forceBlockingFlush();
 
         // compact the two sstables with a gcBefore that *does* allow the row tombstone to be purged
-        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, (int) (System.currentTimeMillis() / 1000) + 10000, false));
+        FBUtilities.waitOnFutures(CompactionManager.instance.submitMaximal(cfs, GCParams.defaultFor(cfs, (int) (System.currentTimeMillis() / 1000) + 10000), false));
 
         // both the data and the tombstone should be gone this time
         assertEquals(0, cfs.getLiveSSTables().size());

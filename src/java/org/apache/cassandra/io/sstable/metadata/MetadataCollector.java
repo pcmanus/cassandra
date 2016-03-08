@@ -23,10 +23,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus;
 import com.clearspring.analytics.stream.cardinality.ICardinality;
+
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -70,6 +73,8 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                  Long.MAX_VALUE,
                                  Integer.MAX_VALUE,
                                  Integer.MAX_VALUE,
+                                 Integer.MAX_VALUE,
+                                 Integer.MAX_VALUE,
                                  0,
                                  Integer.MAX_VALUE,
                                  NO_COMPRESSION_RATIO,
@@ -83,15 +88,20 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                  -1);
     }
 
+    // The GcGrace set at the time of the creation of the collector
+    private final int currentGCGrace;
+
     protected EstimatedHistogram estimatedPartitionSize = defaultPartitionSizeHistogram();
     // TODO: cound the number of row per partition (either with the number of cells, or instead)
     protected EstimatedHistogram estimatedCellPerPartitionCount = defaultCellPerPartitionCountHistogram();
     protected ReplayPosition replayPosition = ReplayPosition.NONE;
     protected final MinMaxLongTracker timestampTracker = new MinMaxLongTracker();
-    protected final MinMaxIntTracker localDeletionTimeTracker = new MinMaxIntTracker(Cell.NO_DELETION_TIME, Cell.NO_DELETION_TIME);
+    // Tracks the local time at which data can be purged, based on the gcGrace at the time of the creation of the collector
+    protected final MinMaxIntTracker purgingTimeTracker = new MinMaxIntTracker(Cell.NO_PURGING_TIME, Cell.NO_PURGING_TIME);
+    protected final MinMaxIntTracker purgingReferenceTimeTracker = new MinMaxIntTracker(Cell.NO_PURGING_TIME, Cell.NO_PURGING_TIME);
     protected final MinMaxIntTracker ttlTracker = new MinMaxIntTracker(Cell.NO_TTL, Cell.NO_TTL);
     protected double compressionRatio = NO_COMPRESSION_RATIO;
-    protected StreamingHistogram estimatedTombstoneDropTime = defaultTombstoneDropTimeHistogram();
+    protected StreamingHistogram estimatedTombstonePurgingTime = defaultTombstoneDropTimeHistogram();
     protected int sstableLevel;
     protected ByteBuffer[] minClusteringValues;
     protected ByteBuffer[] maxClusteringValues;
@@ -108,17 +118,24 @@ public class MetadataCollector implements PartitionStatisticsCollector
     protected ICardinality cardinality = new HyperLogLogPlus(13, 25);
     private final ClusteringComparator comparator;
 
-    public MetadataCollector(ClusteringComparator comparator)
+    public MetadataCollector(CFMetaData metadata)
     {
+        this(metadata.comparator, metadata.params.gcGraceSeconds);
+    }
+
+    @VisibleForTesting
+    public MetadataCollector(ClusteringComparator comparator, int gcGrace)
+    {
+        this.currentGCGrace = gcGrace;
         this.comparator = comparator;
 
         this.minClusteringValues = new ByteBuffer[comparator.size()];
         this.maxClusteringValues = new ByteBuffer[comparator.size()];
     }
 
-    public MetadataCollector(Iterable<SSTableReader> sstables, ClusteringComparator comparator, int level)
+    public MetadataCollector(Iterable<SSTableReader> sstables, CFMetaData metadata, int level)
     {
-        this(comparator);
+        this(metadata);
 
         replayPosition(ReplayPosition.getReplayPosition(sstables));
         sstableLevel(level);
@@ -145,7 +162,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
 
     public MetadataCollector mergeTombstoneHistogram(StreamingHistogram histogram)
     {
-        estimatedTombstoneDropTime.merge(histogram);
+        estimatedTombstonePurgingTime.merge(histogram);
         return this;
     }
 
@@ -166,14 +183,42 @@ public class MetadataCollector implements PartitionStatisticsCollector
 
         updateTimestamp(newInfo.timestamp());
         updateTTL(newInfo.ttl());
-        updateLocalDeletionTime(newInfo.localExpirationTime());
+        updatePurgingReferenceTime(newInfo.purgingReferenceTime());
+
+        if (newInfo.isExpiring())
+        {
+            int expiringTime = newInfo.purgingReferenceTime() + newInfo.ttl();
+            int minPurgingTime = newInfo.purgingReferenceTime() + currentGCGrace;
+            updatePurgingTime(Math.max(expiringTime, minPurgingTime));
+        }
+        else
+        {
+            // Marks that there is at least one row that lives forever
+            updatePurgingTime(Cell.NO_PURGING_TIME);
+        }
     }
 
     public void update(Cell cell)
     {
         updateTimestamp(cell.timestamp());
         updateTTL(cell.ttl());
-        updateLocalDeletionTime(cell.localDeletionTime());
+        updatePurgingReferenceTime(cell.purgingReferenceTime());
+
+        if (cell.isTombstone())
+        {
+            updatePurgingTime(cell.purgingReferenceTime() + currentGCGrace);
+        }
+        else if (cell.isExpiring())
+        {
+            int expiringTime = cell.purgingReferenceTime() + cell.ttl();
+            int minPurgingTime = cell.purgingReferenceTime() + currentGCGrace;
+            updatePurgingTime(Math.max(expiringTime, minPurgingTime));
+        }
+        else
+        {
+            // Marks that there is at least one cell that lives forever
+            updatePurgingTime(Cell.NO_PURGING_TIME);
+        }
     }
 
     public void update(DeletionTime dt)
@@ -181,7 +226,8 @@ public class MetadataCollector implements PartitionStatisticsCollector
         if (!dt.isLive())
         {
             updateTimestamp(dt.markedForDeleteAt());
-            updateLocalDeletionTime(dt.localDeletionTime());
+            updatePurgingReferenceTime(dt.localDeletionTime());
+            updatePurgingTime(dt.localDeletionTime() + currentGCGrace);
         }
     }
 
@@ -196,10 +242,15 @@ public class MetadataCollector implements PartitionStatisticsCollector
         timestampTracker.update(newTimestamp);
     }
 
-    private void updateLocalDeletionTime(int newLocalDeletionTime)
+    private void updatePurgingTime(int newPurgingTime)
     {
-        localDeletionTimeTracker.update(newLocalDeletionTime);
-        estimatedTombstoneDropTime.update(newLocalDeletionTime);
+        purgingTimeTracker.update(newPurgingTime);
+        estimatedTombstonePurgingTime.update(newPurgingTime);
+    }
+
+    private void updatePurgingReferenceTime(int newPurgingReferenceTime)
+    {
+        purgingReferenceTimeTracker.update(newPurgingReferenceTime);
     }
 
     private void updateTTL(int newTTL)
@@ -277,12 +328,14 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                                              replayPosition,
                                                              timestampTracker.min(),
                                                              timestampTracker.max(),
-                                                             localDeletionTimeTracker.min(),
-                                                             localDeletionTimeTracker.max(),
+                                                             purgingTimeTracker.min(),
+                                                             purgingTimeTracker.max(),
+                                                             purgingReferenceTimeTracker.min(),
+                                                             purgingReferenceTimeTracker.max(),
                                                              ttlTracker.min(),
                                                              ttlTracker.max(),
                                                              compressionRatio,
-                                                             estimatedTombstoneDropTime,
+                                                             estimatedTombstonePurgingTime,
                                                              sstableLevel,
                                                              makeList(minClusteringValues),
                                                              makeList(maxClusteringValues),

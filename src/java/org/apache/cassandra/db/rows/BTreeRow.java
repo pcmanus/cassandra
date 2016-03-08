@@ -138,12 +138,14 @@ public class BTreeRow extends AbstractRow
 
     private static int minDeletionTime(Cell cell)
     {
-        return cell.isTombstone() ? Integer.MIN_VALUE : cell.localDeletionTime();
+        // Note that if the cell is not a tombstone and not expiring, purgingReferenceTime() is MAX_VALUE but
+        // ttl() is 0, which gets us MAX_VALUE..
+        return cell.isTombstone() ? Integer.MIN_VALUE : cell.purgingReferenceTime() + cell.ttl();
     }
 
     private static int minDeletionTime(LivenessInfo info)
     {
-        return info.isExpiring() ? info.localExpirationTime() : Integer.MAX_VALUE;
+        return info.isExpiring() ? info.purgingReferenceTime() + info.ttl() : Integer.MAX_VALUE;
     }
 
     private static int minDeletionTime(DeletionTime dt)
@@ -605,7 +607,7 @@ public class BTreeRow extends AbstractRow
                         break;
 
                     if (cell.timestamp() > deletion.markedForDeleteAt())
-                        deletion = new DeletionTime(cell.timestamp(), cell.localDeletionTime());
+                        deletion = new DeletionTime(cell.timestamp(), cell.purgingReferenceTime());
                     lb++;
                 }
 

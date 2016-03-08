@@ -309,7 +309,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
         for (int i = 0; i < size; i++)
         {
             collector.updateTimestamp(markedAts[i]);
-            collector.updateLocalDeletionTime(delTimes[i]);
+            collector.updatePurgingReferenceTime(delTimes[i]);
         }
     }
 

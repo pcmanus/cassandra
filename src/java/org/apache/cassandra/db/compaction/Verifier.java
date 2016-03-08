@@ -74,7 +74,7 @@ public class Verifier implements Closeable
         this.outputHandler = outputHandler;
         this.rowIndexEntrySerializer = sstable.descriptor.version.getSSTableFormat().getIndexSerializer(sstable.metadata, sstable.descriptor.version, sstable.header);
 
-        this.controller = new VerifyController(cfs);
+        this.controller = CompactionController.defaultToolController(cfs);
 
         this.dataFile = isOffline
                         ? sstable.openDataReader()
@@ -270,20 +270,6 @@ public class Verifier implements Closeable
             {
                 throw new RuntimeException();
             }
-        }
-    }
-
-    private static class VerifyController extends CompactionController
-    {
-        public VerifyController(ColumnFamilyStore cfs)
-        {
-            super(cfs, Integer.MAX_VALUE);
-        }
-
-        @Override
-        public long maxPurgeableTimestamp(DecoratedKey key)
-        {
-            return Long.MIN_VALUE;
         }
     }
 }

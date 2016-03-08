@@ -58,12 +58,12 @@ public class LegacyMetadataSerializer extends MetadataSerializer
         ReplayPosition.serializer.serialize(stats.replayPosition, out);
         out.writeLong(stats.minTimestamp);
         out.writeLong(stats.maxTimestamp);
-        out.writeInt(stats.maxLocalDeletionTime);
+        out.writeInt(stats.maxPurgingTime);
         out.writeDouble(validation.bloomFilterFPChance);
         out.writeDouble(stats.compressionRatio);
         out.writeUTF(validation.partitioner);
         out.writeInt(0); // compaction ancestors
-        StreamingHistogram.serializer.serialize(stats.estimatedTombstoneDropTime, out);
+        StreamingHistogram.serializer.serialize(stats.estimatedTombstonePurgingTime, out);
         out.writeInt(stats.sstableLevel);
         out.writeInt(stats.minClusteringValues.size());
         for (ByteBuffer value : stats.minClusteringValues)
@@ -128,6 +128,8 @@ public class LegacyMetadataSerializer extends MetadataSerializer
                                                      maxTimestamp,
                                                      Integer.MAX_VALUE,
                                                      maxLocalDeletionTime,
+                                                     Integer.MAX_VALUE,
+                                                     Integer.MAX_VALUE,
                                                      0,
                                                      Integer.MAX_VALUE,
                                                      compressionRatio,

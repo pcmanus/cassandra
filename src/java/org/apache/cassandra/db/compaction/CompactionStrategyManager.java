@@ -87,12 +87,11 @@ public class CompactionStrategyManager implements INotificationConsumer
     }
 
     /**
-     * Return the next background task
+     * Returns the next background task
      *
-     * Returns a task for the compaction strategy that needs it the most (most estimated remaining tasks)
-     *
+     * @return a task for the compaction strategy that needs it the most (most estimated remaining tasks)
      */
-    public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
+    public synchronized AbstractCompactionTask getNextBackgroundTask(GCParams gcParams)
     {
         if (!isEnabled())
             return null;
@@ -105,7 +104,7 @@ public class CompactionStrategyManager implements INotificationConsumer
         Collections.sort(strategies, (o1, o2) -> Ints.compare(o2.getEstimatedRemainingTasks(), o1.getEstimatedRemainingTasks()));
         for (AbstractCompactionStrategy strategy : strategies)
         {
-            AbstractCompactionTask task = strategy.getNextBackgroundTask(gcBefore);
+            AbstractCompactionTask task = strategy.getNextBackgroundTask(gcParams);
             if (task != null)
                 return task;
         }
@@ -491,11 +490,11 @@ public class CompactionStrategyManager implements INotificationConsumer
         return unrepaired.get(0).getMaxSSTableBytes();
     }
 
-    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, int gcBefore, long maxSSTableBytes)
+    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, GCParams gcParams, long maxSSTableBytes)
     {
         maybeReload(cfs.metadata);
         validateForCompaction(txn.originals());
-        return getCompactionStrategyFor(txn.originals().iterator().next()).getCompactionTask(txn, gcBefore, maxSSTableBytes);
+        return getCompactionStrategyFor(txn.originals().iterator().next()).getCompactionTask(txn, gcParams, maxSSTableBytes);
     }
 
     private void validateForCompaction(Iterable<SSTableReader> input)
@@ -513,7 +512,7 @@ public class CompactionStrategyManager implements INotificationConsumer
         }
     }
 
-    public Collection<AbstractCompactionTask> getMaximalTasks(final int gcBefore, final boolean splitOutput)
+    public Collection<AbstractCompactionTask> getMaximalTasks(final GCParams gcParams, final boolean splitOutput)
     {
         maybeReload(cfs.metadata);
         // runWithCompactionsDisabled cancels active compactions and disables them, then we are able
@@ -529,13 +528,13 @@ public class CompactionStrategyManager implements INotificationConsumer
                     List<AbstractCompactionTask> tasks = new ArrayList<>();
                     for (AbstractCompactionStrategy strategy : repaired)
                     {
-                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcBefore, splitOutput);
+                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcParams, splitOutput);
                         if (task != null)
                             tasks.addAll(task);
                     }
                     for (AbstractCompactionStrategy strategy : unrepaired)
                     {
-                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcBefore, splitOutput);
+                        Collection<AbstractCompactionTask> task = strategy.getMaximalTask(gcParams, splitOutput);
                         if (task != null)
                             tasks.addAll(task);
                     }
@@ -547,11 +546,11 @@ public class CompactionStrategyManager implements INotificationConsumer
         }, false, false);
     }
 
-    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, int gcBefore)
+    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, GCParams gcParams)
     {
         maybeReload(cfs.metadata);
         validateForCompaction(sstables);
-        return getCompactionStrategyFor(sstables.iterator().next()).getUserDefinedTask(sstables, gcBefore);
+        return getCompactionStrategyFor(sstables.iterator().next()).getUserDefinedTask(sstables, gcParams);
     }
 
     public int getEstimatedRemainingTasks()

@@ -77,7 +77,7 @@ public class CompressedRandomAccessReaderTest
         try(ChannelProxy channel = new ChannelProxy(f))
         {
 
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance));
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance), 0);
             try(CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", CompressionParams.snappy(32), sstableMetadataCollector))
             {
 
@@ -120,7 +120,7 @@ public class CompressedRandomAccessReaderTest
         final String filename = f.getAbsolutePath();
         try(ChannelProxy channel = new ChannelProxy(f))
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance)).replayPosition(null);
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance), 0).replayPosition(null);
             try(SequentialWriter writer = compressed
                 ? new CompressedSequentialWriter(f, filename + ".metadata", CompressionParams.snappy(), sstableMetadataCollector)
                 : SequentialWriter.open(f))
@@ -190,7 +190,7 @@ public class CompressedRandomAccessReaderTest
         assertTrue(file.createNewFile());
         assertTrue(metadata.createNewFile());
 
-        MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance)).replayPosition(null);
+        MetadataCollector sstableMetadataCollector = new MetadataCollector(new ClusteringComparator(BytesType.instance), 0).replayPosition(null);
         try (SequentialWriter writer = new CompressedSequentialWriter(file, metadata.getPath(), CompressionParams.snappy(), sstableMetadataCollector))
         {
             writer.write(CONTENT.getBytes());

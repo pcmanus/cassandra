@@ -200,7 +200,7 @@ public class ThriftResultsMerger extends Transformation<UnfilteredRowIterator>
 
             // Given a static cell, the equivalent row uses the column name as clustering and the value as unique cell value.
             builder.newRow(Clustering.make(cell.column().name.bytes));
-            builder.addCell(new BufferCell(metadata().compactValueColumn(), cell.timestamp(), cell.ttl(), cell.localDeletionTime(), cell.value(), cell.path()));
+            builder.addCell(new BufferCell(metadata().compactValueColumn(), cell.timestamp(), cell.ttl(), cell.purgingReferenceTime(), cell.value(), cell.path()));
             nextToMerge = builder.build();
         }
     }
@@ -269,7 +269,7 @@ public class ThriftResultsMerger extends Transformation<UnfilteredRowIterator>
 
         private Cell makeDynamicCell(Cell staticCell)
         {
-            return new BufferCell(superColumnMapColumn, staticCell.timestamp(), staticCell.ttl(), staticCell.localDeletionTime(), staticCell.value(), CellPath.create(staticCell.column().name.bytes));
+            return new BufferCell(superColumnMapColumn, staticCell.timestamp(), staticCell.ttl(), staticCell.purgingReferenceTime(), staticCell.value(), CellPath.create(staticCell.column().name.bytes));
         }
 
         private Iterator<Cell> simpleCellsIterator(Row row)

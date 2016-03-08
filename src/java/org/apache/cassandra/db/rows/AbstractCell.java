@@ -51,12 +51,12 @@ public abstract class AbstractCell extends Cell
 
     public boolean isLive(int nowInSec)
     {
-        return localDeletionTime() == NO_DELETION_TIME || (ttl() != NO_TTL && nowInSec < localDeletionTime());
+        return purgingReferenceTime() == NO_PURGING_TIME || (ttl() != NO_TTL && nowInSec < purgingReferenceTime() + ttl());
     }
 
     public boolean isTombstone()
     {
-        return localDeletionTime() != NO_DELETION_TIME && ttl() == NO_TTL;
+        return purgingReferenceTime() != NO_PURGING_TIME && ttl() == NO_TTL;
     }
 
     public boolean isExpiring()
@@ -71,14 +71,14 @@ public abstract class AbstractCell extends Cell
 
         ByteBuffer value = value();
         ByteBuffer marked = CounterContext.instance().markLocalToBeCleared(value);
-        return marked == value ? this : new BufferCell(column, timestamp(), ttl(), localDeletionTime(), marked, path());
+        return marked == value ? this : new BufferCell(column, timestamp(), ttl(), purgingReferenceTime(), marked, path());
     }
 
     public Cell purge(DeletionPurger purger, int nowInSec)
     {
         if (!isLive(nowInSec))
         {
-            if (purger.shouldPurge(timestamp(), localDeletionTime()))
+            if (purger.shouldPurge(timestamp(), purgingReferenceTime(), ttl()))
                 return null;
 
             // We slightly hijack purging to convert expired but not purgeable columns to tombstones. The reason we do that is
@@ -91,7 +91,7 @@ public abstract class AbstractCell extends Cell
                 // Note that as long as the expiring column and the tombstone put together live longer than GC grace seconds,
                 // we'll fulfil our responsibility to repair. See discussion at
                 // http://cassandra-user-incubator-apache-org.3065146.n2.nabble.com/repair-compaction-and-tombstone-rows-td7583481.html
-                return BufferCell.tombstone(column, timestamp(), localDeletionTime() - ttl());
+                return BufferCell.tombstone(column, timestamp(), purgingReferenceTime());
             }
         }
         return this;
@@ -100,13 +100,13 @@ public abstract class AbstractCell extends Cell
     public Cell copy(AbstractAllocator allocator)
     {
         CellPath path = path();
-        return new BufferCell(column, timestamp(), ttl(), localDeletionTime(), allocator.clone(value()), path == null ? null : path.copy(allocator));
+        return new BufferCell(column, timestamp(), ttl(), purgingReferenceTime(), allocator.clone(value()), path == null ? null : path.copy(allocator));
     }
 
     // note: while the cell returned may be different, the value is the same, so if the value is offheap it must be referenced inside a guarded context (or copied)
     public Cell updateAllTimestamp(long newTimestamp)
     {
-        return new BufferCell(column, isTombstone() ? newTimestamp - 1 : newTimestamp, ttl(), localDeletionTime(), value(), path());
+        return new BufferCell(column, isTombstone() ? newTimestamp - 1 : newTimestamp, ttl(), purgingReferenceTime(), value(), path());
     }
 
     public int dataSize()
@@ -114,7 +114,7 @@ public abstract class AbstractCell extends Cell
         CellPath path = path();
         return TypeSizes.sizeof(timestamp())
                + TypeSizes.sizeof(ttl())
-               + TypeSizes.sizeof(localDeletionTime())
+               + TypeSizes.sizeof(purgingReferenceTime())
                + value().remaining()
                + (path == null ? 0 : path.dataSize());
     }
@@ -135,10 +135,10 @@ public abstract class AbstractCell extends Cell
 
         if (ttl() < 0)
             throw new MarshalException("A TTL should not be negative");
-        if (localDeletionTime() < 0)
-            throw new MarshalException("A local deletion time should not be negative");
-        if (isExpiring() && localDeletionTime() == NO_DELETION_TIME)
-            throw new MarshalException("Shoud not have a TTL without an associated local deletion time");
+        if (purgingReferenceTime() < 0)
+            throw new MarshalException("A local purging reference time should not be negative");
+        if (isExpiring() && purgingReferenceTime() == NO_PURGING_TIME)
+            throw new MarshalException("Shoud not have a TTL without an associated local purging reference time");
 
         // If cell is a tombstone, it shouldn't have a value.
         if (isTombstone() && value().hasRemaining())
@@ -162,7 +162,7 @@ public abstract class AbstractCell extends Cell
             && this.isCounterCell() == that.isCounterCell()
             && this.timestamp() == that.timestamp()
             && this.ttl() == that.ttl()
-            && this.localDeletionTime() == that.localDeletionTime()
+            && this.purgingReferenceTime() == that.purgingReferenceTime()
             && Objects.equals(this.value(), that.value())
             && Objects.equals(this.path(), that.path());
     }
@@ -170,7 +170,7 @@ public abstract class AbstractCell extends Cell
     @Override
     public int hashCode()
     {
-        return Objects.hash(column(), isCounterCell(), timestamp(), ttl(), localDeletionTime(), value(), path());
+        return Objects.hash(column(), isCounterCell(), timestamp(), ttl(), purgingReferenceTime(), value(), path());
     }
 
     @Override
@@ -198,9 +198,9 @@ public abstract class AbstractCell extends Cell
     private String livenessInfoString()
     {
         if (isExpiring())
-            return String.format("ts=%d ttl=%d ldt=%d", timestamp(), ttl(), localDeletionTime());
+            return String.format("ts=%d ttl=%d prt=%d", timestamp(), ttl(), purgingReferenceTime());
         else if (isTombstone())
-            return String.format("ts=%d ldt=%d", timestamp(), localDeletionTime());
+            return String.format("ts=%d prt=%d", timestamp(), purgingReferenceTime());
         else
             return String.format("ts=%d", timestamp());
     }

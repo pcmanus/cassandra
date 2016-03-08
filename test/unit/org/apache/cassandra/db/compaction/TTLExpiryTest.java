@@ -39,6 +39,7 @@ import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.tools.SSTableExpiredBlockers;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -126,13 +127,11 @@ public class TTLExpiryTest
         cfs.forceBlockingFlush();
 
         Set<SSTableReader> sstables = Sets.newHashSet(cfs.getLiveSSTables());
-        int now = (int)(System.currentTimeMillis() / 1000);
-        int gcBefore = now + 2;
         Set<SSTableReader> expired = CompactionController.getFullyExpiredSSTables(
                 cfs,
                 sstables,
                 Collections.EMPTY_SET,
-                gcBefore);
+                GCParams.defaultFor(cfs, FBUtilities.nowInSeconds() + 2));
         assertEquals(2, expired.size());
 
         cfs.clearUnsafe();
@@ -253,7 +252,8 @@ public class TTLExpiryTest
                             .applyUnsafe();
             cfs.forceBlockingFlush();
         }
-        Multimap<SSTableReader, SSTableReader> blockers = SSTableExpiredBlockers.checkForExpiredSSTableBlockers(cfs.getSSTables(SSTableSet.LIVE), (int) (System.currentTimeMillis() / 1000) + 100);
+        GCParams gcParams = GCParams.defaultFor(cfs, FBUtilities.nowInSeconds() + 100);
+        Multimap<SSTableReader, SSTableReader> blockers = SSTableExpiredBlockers.checkForExpiredSSTableBlockers(cfs.getSSTables(SSTableSet.LIVE), gcParams);
         assertEquals(1, blockers.keySet().size());
         assertTrue(blockers.keySet().contains(blockingSSTable));
         assertEquals(10, blockers.get(blockingSSTable).size());

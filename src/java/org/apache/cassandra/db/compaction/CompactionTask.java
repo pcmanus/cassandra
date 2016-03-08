@@ -48,26 +48,26 @@ import org.apache.cassandra.utils.concurrent.Refs;
 public class CompactionTask extends AbstractCompactionTask
 {
     protected static final Logger logger = LoggerFactory.getLogger(CompactionTask.class);
-    protected final int gcBefore;
+    protected final GCParams gcParams;
     protected final boolean keepOriginals;
     protected static long totalBytesCompacted = 0;
     private CompactionExecutorStatsCollector collector;
 
-    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore)
+    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, GCParams gcParams)
     {
-        this(cfs, txn, gcBefore, false);
+        this(cfs, txn, gcParams, false);
     }
 
     @Deprecated
-    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore, boolean offline, boolean keepOriginals)
+    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, GCParams gcParams, boolean offline, boolean keepOriginals)
     {
-        this(cfs, txn, gcBefore, keepOriginals);
+        this(cfs, txn, gcParams, keepOriginals);
     }
 
-    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore, boolean keepOriginals)
+    public CompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, GCParams gcParams, boolean keepOriginals)
     {
         super(cfs, txn);
-        this.gcBefore = gcBefore;
+        this.gcParams = gcParams;
         this.keepOriginals = keepOriginals;
     }
 
@@ -163,10 +163,9 @@ public class CompactionTask extends AbstractCompactionTask
             // SSTableScanners need to be closed before markCompactedSSTablesReplaced call as scanners contain references
             // to both ifile and dfile and SSTR will throw deletion errors on Windows if it tries to delete before scanner is closed.
             // See CASSANDRA-8019 and CASSANDRA-8399
-            int nowInSec = FBUtilities.nowInSeconds();
             try (Refs<SSTableReader> refs = Refs.ref(actuallyCompact);
                  AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(actuallyCompact);
-                 CompactionIterator ci = new CompactionIterator(compactionType, scanners.scanners, controller, nowInSec, taskId))
+                 CompactionIterator ci = new CompactionIterator(compactionType, scanners.scanners, controller, gcParams.nowInSeconds(), taskId))
             {
                 if (collector != null)
                     collector.beginCompaction(ci);
@@ -286,7 +285,7 @@ public class CompactionTask extends AbstractCompactionTask
 
     protected CompactionController getCompactionController(Set<SSTableReader> toCompact)
     {
-        return new CompactionController(cfs, toCompact, gcBefore);
+        return new CompactionController(cfs, toCompact, gcParams);
     }
 
     protected boolean partialCompactionsAcceptable()

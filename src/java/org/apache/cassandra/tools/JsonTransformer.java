@@ -26,6 +26,8 @@ import org.apache.cassandra.db.rows.Unfiltered;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
+
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.JsonGenerator;
 import org.codehaus.jackson.impl.Indenter;
@@ -242,9 +244,9 @@ public final class JsonTransformer
                     json.writeFieldName("ttl");
                     json.writeNumber(liveInfo.ttl());
                     json.writeFieldName("expires_at");
-                    json.writeNumber(liveInfo.localExpirationTime());
+                    json.writeNumber(liveInfo.purgingReferenceTime() + liveInfo.ttl());
                     json.writeFieldName("expired");
-                    json.writeBoolean(liveInfo.localExpirationTime() < (System.currentTimeMillis() / 1000));
+                    json.writeBoolean(!liveInfo.isLive(FBUtilities.nowInSeconds()));
                 }
                 json.writeEndObject();
                 objectIndenter.setCompact(false);
@@ -385,7 +387,7 @@ public final class JsonTransformer
             if (cell.isTombstone())
             {
                 json.writeFieldName("deletion_time");
-                json.writeNumber(cell.localDeletionTime());
+                json.writeNumber(cell.purgingReferenceTime());
             }
             else
             {
@@ -402,7 +404,7 @@ public final class JsonTransformer
                 json.writeFieldName("ttl");
                 json.writeNumber(cell.ttl());
                 json.writeFieldName("expires_at");
-                json.writeNumber(cell.localDeletionTime());
+                json.writeNumber(cell.purgingReferenceTime() + cell.ttl());
                 json.writeFieldName("expired");
                 json.writeBoolean(!cell.isLive((int) (System.currentTimeMillis() / 1000)));
             }

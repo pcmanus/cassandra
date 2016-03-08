@@ -57,7 +57,7 @@ public class Validator implements Runnable
 
     public final RepairJobDesc desc;
     public final InetAddress initiator;
-    public final int gcBefore;
+    public final int nowInSec;
 
     // null when all rows with the min token have been consumed
     private long validated;
@@ -69,11 +69,11 @@ public class Validator implements Runnable
     // last key seen
     private DecoratedKey lastKey;
 
-    public Validator(RepairJobDesc desc, InetAddress initiator, int gcBefore)
+    public Validator(RepairJobDesc desc, InetAddress initiator, int nowInSec)
     {
         this.desc = desc;
         this.initiator = initiator;
-        this.gcBefore = gcBefore;
+        this.nowInSec = nowInSec;
         validated = 0;
         range = null;
         ranges = null;

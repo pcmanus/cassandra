@@ -81,8 +81,8 @@ public class SSTableMetadataViewer
                 {
                     out.printf("Minimum timestamp: %s%n", stats.minTimestamp);
                     out.printf("Maximum timestamp: %s%n", stats.maxTimestamp);
-                    out.printf("SSTable min local deletion time: %s%n", stats.minLocalDeletionTime);
-                    out.printf("SSTable max local deletion time: %s%n", stats.maxLocalDeletionTime);
+                    out.printf("SSTable min purging time: %s%n", stats.minPurgingTime);
+                    out.printf("SSTable max purging time: %s%n", stats.maxPurgingTime);
                     out.printf("Compressor: %s%n", compression != null ? compression.compressor().getClass().getName() : "-");
                     if (compression != null)
                         out.printf("Compression ratio: %s%n", stats.compressionRatio);
@@ -103,15 +103,15 @@ public class SSTableMetadataViewer
                         out.printf("minClustringValues: %s%n", Arrays.toString(minValues));
                         out.printf("maxClustringValues: %s%n", Arrays.toString(maxValues));
                     }
-                    out.printf("Estimated droppable tombstones: %s%n", stats.getEstimatedDroppableTombstoneRatio((int) (System.currentTimeMillis() / 1000)));
+                    out.printf("Estimated droppable tombstones: %s%n", stats.getEstimatedDroppableTombstoneRatio(FBUtilities.nowInSeconds()));
                     out.printf("SSTable Level: %d%n", stats.sstableLevel);
                     out.printf("Repaired at: %d%n", stats.repairedAt);
                     out.println(stats.replayPosition);
                     out.printf("totalColumnsSet: %s%n", stats.totalColumnsSet);
                     out.printf("totalRows: %s%n", stats.totalRows);
-                    out.println("Estimated tombstone drop times:");
+                    out.println("Estimated tombstone purging times:");
 
-                    for (Map.Entry<Double, Long> entry : stats.estimatedTombstoneDropTime.getAsMap().entrySet())
+                    for (Map.Entry<Double, Long> entry : stats.estimatedTombstonePurgingTime.getAsMap().entrySet())
                     {
                         out.printf("%-10s:%10s%n",entry.getKey().intValue(), entry.getValue());
                     }
@@ -138,7 +138,7 @@ public class SSTableMetadataViewer
                                                                  e -> e.getValue().toString()));
 
                     out.printf("EncodingStats minTTL: %s%n", encodingStats.minTTL);
-                    out.printf("EncodingStats minLocalDeletionTime: %s%n", encodingStats.minLocalDeletionTime);
+                    out.printf("EncodingStats minPurgingReferenceTime: %s%n", encodingStats.minPurgingReferenceTime);
                     out.printf("EncodingStats minTimestamp: %s%n", encodingStats.minTimestamp);
                     out.printf("KeyType: %s%n", keyType.toString());
                     out.printf("ClusteringTypes: %s%n", clusteringTypes.toString());

@@ -171,7 +171,7 @@ public class UnfilteredSerializer
         if ((flags & HAS_TTL) != 0)
         {
             header.writeTTL(pkLiveness.ttl(), out);
-            header.writeLocalDeletionTime(pkLiveness.localExpirationTime(), out);
+            header.writePurgingReferenceTime(pkLiveness.purgingReferenceTime(), out);
         }
         if ((flags & HAS_DELETION) != 0)
             header.writeDeletionTime(deletion.time(), out);
@@ -268,7 +268,7 @@ public class UnfilteredSerializer
         if (pkLiveness.isExpiring())
         {
             size += header.ttlSerializedSize(pkLiveness.ttl());
-            size += header.localDeletionTimeSerializedSize(pkLiveness.localExpirationTime());
+            size += header.purgingReferenceTimeSerializedSize(pkLiveness.purgingReferenceTime());
         }
         if (!deletion.isLive())
             size += header.deletionTimeSerializedSize(deletion.time());
@@ -419,8 +419,8 @@ public class UnfilteredSerializer
             {
                 long timestamp = header.readTimestamp(in);
                 int ttl = hasTTL ? header.readTTL(in) : LivenessInfo.NO_TTL;
-                int localDeletionTime = hasTTL ? header.readLocalDeletionTime(in) : LivenessInfo.NO_EXPIRATION_TIME;
-                rowLiveness = LivenessInfo.create(timestamp, ttl, localDeletionTime);
+                int purgingReferenceTime = hasTTL ? header.readPurgingReferenceTime(in) : LivenessInfo.NO_PURGING_TIME;
+                rowLiveness = LivenessInfo.create(timestamp, ttl, purgingReferenceTime);
             }
 
             builder.addPrimaryKeyLivenessInfo(rowLiveness);

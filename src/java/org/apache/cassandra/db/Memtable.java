@@ -308,26 +308,26 @@ public class Memtable implements Comparable<Memtable>
                    ? partitions.tailMap(keyRange.left, includeStart)
                    : partitions.subMap(keyRange.left, includeStart, keyRange.right, includeStop);
 
-        int minLocalDeletionTime = Integer.MAX_VALUE;
+        int minPurgingReferenceTime = Integer.MAX_VALUE;
 
         // avoid iterating over the memtable if we purge all tombstones
         if (cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones())
-            minLocalDeletionTime = findMinLocalDeletionTime(subMap.entrySet().iterator());
+            minPurgingReferenceTime = findMinPurgingReferenceTime(subMap.entrySet().iterator());
 
         final Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter = subMap.entrySet().iterator();
 
-        return new MemtableUnfilteredPartitionIterator(cfs, iter, isForThrift, minLocalDeletionTime, columnFilter, dataRange);
+        return new MemtableUnfilteredPartitionIterator(cfs, iter, isForThrift, minPurgingReferenceTime, columnFilter, dataRange);
     }
 
-    private int findMinLocalDeletionTime(Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iterator)
+    private int findMinPurgingReferenceTime(Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iterator)
     {
-        int minLocalDeletionTime = Integer.MAX_VALUE;
+        int minPurgingReferenceTime = Integer.MAX_VALUE;
         while (iterator.hasNext())
         {
             Map.Entry<PartitionPosition, AtomicBTreePartition> entry = iterator.next();
-            minLocalDeletionTime = Math.min(minLocalDeletionTime, entry.getValue().stats().minLocalDeletionTime);
+            minPurgingReferenceTime = Math.min(minPurgingReferenceTime, entry.getValue().stats().minPurgingReferenceTime);
         }
-        return minLocalDeletionTime;
+        return minPurgingReferenceTime;
     }
 
     public Partition getPartition(DecoratedKey key)
@@ -444,7 +444,7 @@ public class Memtable implements Comparable<Memtable>
                                                   PartitionColumns columns,
                                                   EncodingStats stats)
         {
-            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator).replayPosition(context);
+            MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata).replayPosition(context);
             return cfs.createSSTableMultiWriter(Descriptor.fromFilename(filename),
                                                 (long)toFlush.size(),
                                                 ActiveRepairService.UNREPAIRED_SSTABLE,
@@ -487,16 +487,21 @@ public class Memtable implements Comparable<Memtable>
         private final ColumnFamilyStore cfs;
         private final Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter;
         private final boolean isForThrift;
-        private final int minLocalDeletionTime;
+        private final int minPurgingReferenceTime;
         private final ColumnFilter columnFilter;
         private final DataRange dataRange;
 
-        public MemtableUnfilteredPartitionIterator(ColumnFamilyStore cfs, Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter, boolean isForThrift, int minLocalDeletionTime, ColumnFilter columnFilter, DataRange dataRange)
+        public MemtableUnfilteredPartitionIterator(ColumnFamilyStore cfs,
+                                                   Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter,
+                                                   boolean isForThrift,
+                                                   int minPurgingReferenceTime,
+                                                   ColumnFilter columnFilter,
+                                                   DataRange dataRange)
         {
             this.cfs = cfs;
             this.iter = iter;
             this.isForThrift = isForThrift;
-            this.minLocalDeletionTime = minLocalDeletionTime;
+            this.minPurgingReferenceTime = minPurgingReferenceTime;
             this.columnFilter = columnFilter;
             this.dataRange = dataRange;
         }
@@ -506,9 +511,9 @@ public class Memtable implements Comparable<Memtable>
             return isForThrift;
         }
 
-        public int getMinLocalDeletionTime()
+        public int getMinPurgingReferenceTime()
         {
-            return minLocalDeletionTime;
+            return minPurgingReferenceTime;
         }
 
         public CFMetaData metadata()

@@ -1047,8 +1047,8 @@ public class CassandraServer implements Cassandra.Iface
                 }
                 else
                 {
-                    res = Conflicts.resolveRegular(pc.timestamp, pc.isLive(nowInSec), pc.localDeletionTime, pc.value,
-                                                   cc.timestamp, cc.isLive(nowInSec), cc.localDeletionTime, cc.value);
+                    res = Conflicts.resolveRegular(pc.timestamp, pc.isLive(nowInSec), pc.ttl, pc.localDeletionTime, pc.value,
+                                                   cc.timestamp, cc.isLive(nowInSec), cc.ttl, cc.localDeletionTime, cc.value);
                 }
 
                 switch (res)

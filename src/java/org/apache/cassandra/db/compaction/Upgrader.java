@@ -57,7 +57,7 @@ public class Upgrader
 
         this.directory = new File(sstable.getFilename()).getParentFile();
 
-        this.controller = new UpgradeController(cfs);
+        this.controller = CompactionController.defaultToolController(cfs);
 
         this.strategyManager = cfs.getCompactionStrategyManager();
         long estimatedTotalKeys = Math.max(cfs.metadata.params.minIndexInterval, SSTableReader.getApproximateKeyCount(Arrays.asList(this.sstable)));
@@ -67,7 +67,7 @@ public class Upgrader
 
     private SSTableWriter createCompactionWriter(long repairedAt)
     {
-        MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.getComparator());
+        MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata);
         sstableMetadataCollector.sstableLevel(sstable.getSSTableLevel());
         return SSTableWriter.create(Descriptor.fromFilename(cfs.getSSTablePath(directory)),
                                     estimatedRows,
@@ -101,20 +101,6 @@ public class Upgrader
         finally
         {
             controller.close();
-        }
-    }
-
-    private static class UpgradeController extends CompactionController
-    {
-        public UpgradeController(ColumnFamilyStore cfs)
-        {
-            super(cfs, Integer.MAX_VALUE);
-        }
-
-        @Override
-        public long maxPurgeableTimestamp(DecoratedKey key)
-        {
-            return Long.MIN_VALUE;
         }
     }
 }

@@ -266,7 +266,7 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
 
         private Purger(boolean isForThrift, CompactionController controller)
         {
-            super(isForThrift, controller.gcBefore, controller.compactingRepaired() ? Integer.MIN_VALUE : Integer.MAX_VALUE, controller.cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones());
+            super(isForThrift, controller.gcParams, controller.compactingRepaired() ? Integer.MIN_VALUE : Integer.MAX_VALUE, controller.cfs.getCompactionStrategyManager().onlyPurgeRepairedTombstones());
             this.controller = controller;
         }
 

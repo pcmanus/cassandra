@@ -39,6 +39,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -209,7 +210,7 @@ public class KeyCacheTest
         if (refs == null)
             throw new IllegalStateException();
 
-        Util.compactAll(cfs, Integer.MAX_VALUE).get();
+        Util.compactAll(cfs, GCParams.GC_ALL).get();
         boolean noEarlyOpen = DatabaseDescriptor.getSSTablePreempiveOpenIntervalInMB() < 0;
 
         // after compaction cache should have entries for new SSTables,

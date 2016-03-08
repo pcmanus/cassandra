@@ -150,17 +150,19 @@ public abstract class Cells
                     else if (merged == c2.value() && timestamp == c2.timestamp())
                         return c2;
                     else // merge clocks and timestamps.
-                        return new BufferCell(c1.column(), timestamp, Cell.NO_TTL, Cell.NO_DELETION_TIME, merged, c1.path());
+                        return new BufferCell(c1.column(), timestamp, Cell.NO_TTL, Cell.NO_PURGING_TIME, merged, c1.path());
             }
         }
 
         Conflicts.Resolution res = Conflicts.resolveRegular(c1.timestamp(),
                                                             c1.isLive(nowInSec),
-                                                            c1.localDeletionTime(),
+                                                            c1.ttl(),
+                                                            c1.purgingReferenceTime(),
                                                             c1.value(),
                                                             c2.timestamp(),
                                                             c2.isLive(nowInSec),
-                                                            c2.localDeletionTime(),
+                                                            c2.ttl(),
+                                                            c2.purgingReferenceTime(),
                                                             c2.value());
         assert res != Conflicts.Resolution.MERGE;
         return res == Conflicts.Resolution.LEFT_WINS ? c1 : c2;

@@ -87,7 +87,7 @@ public class SSTableFlushObserverTest
                                                                   0,
                                                                   sstableFormat),
                                                    10L, 0L, cfm,
-                                                   new MetadataCollector(cfm.comparator).sstableLevel(0),
+                                                   new MetadataCollector(cfm).sstableLevel(0),
                                                    new SerializationHeader(true, cfm, cfm.partitionColumns(), EncodingStats.NO_STATS),
                                                    Collections.singletonList(observer),
                                                    transaction);

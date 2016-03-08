@@ -169,10 +169,10 @@ public class CompactionAwareWriterTest extends CQLTester
     {
         assert txn.originals().size() == 1;
         int rowsWritten = 0;
-        int nowInSec = FBUtilities.nowInSeconds();
+        GCParams gcParams = GCParams.defaultFor(cfs);
         try (AbstractCompactionStrategy.ScannerList scanners = cfs.getCompactionStrategyManager().getScanners(txn.originals());
-             CompactionController controller = new CompactionController(cfs, txn.originals(), cfs.gcBefore(nowInSec));
-             CompactionIterator ci = new CompactionIterator(OperationType.COMPACTION, scanners.scanners, controller, nowInSec, UUIDGen.getTimeUUID()))
+             CompactionController controller = new CompactionController(cfs, txn.originals(), gcParams);
+             CompactionIterator ci = new CompactionIterator(OperationType.COMPACTION, scanners.scanners, controller, gcParams.nowInSeconds(), UUIDGen.getTimeUUID()))
         {
             while (ci.hasNext())
             {

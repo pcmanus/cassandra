@@ -33,7 +33,7 @@ public class NativeCell extends AbstractCell
     private static final long HAS_CELLPATH = 0;
     private static final long TIMESTAMP = 1;
     private static final long TTL = 9;
-    private static final long DELETION = 13;
+    private static final long PURGING_REF_TIME = 13;
     private static final long LENGTH = 17;
     private static final long VALUE = 21;
 
@@ -54,7 +54,7 @@ public class NativeCell extends AbstractCell
              cell.column(),
              cell.timestamp(),
              cell.ttl(),
-             cell.localDeletionTime(),
+             cell.purgingReferenceTime(),
              cell.value(),
              cell.path());
     }
@@ -64,7 +64,7 @@ public class NativeCell extends AbstractCell
                       ColumnDefinition column,
                       long timestamp,
                       int ttl,
-                      int localDeletionTime,
+                      int purgingReferenceTime,
                       ByteBuffer value,
                       CellPath path)
     {
@@ -82,12 +82,12 @@ public class NativeCell extends AbstractCell
         if (size > Integer.MAX_VALUE)
             throw new IllegalStateException();
 
-        // cellpath? : timestamp : ttl : localDeletionTime : length : <data> : [cell path length] : [<cell path data>]
+        // cellpath? : timestamp : ttl : purgingReferenceTime : length : <data> : [cell path length] : [<cell path data>]
         peer = allocator.allocate((int) size, writeOp);
         MemoryUtil.setByte(peer + HAS_CELLPATH, (byte)(path == null ? 0 : 1));
         MemoryUtil.setLong(peer + TIMESTAMP, timestamp);
         MemoryUtil.setInt(peer + TTL, ttl);
-        MemoryUtil.setInt(peer + DELETION, localDeletionTime);
+        MemoryUtil.setInt(peer + PURGING_REF_TIME, purgingReferenceTime);
         MemoryUtil.setInt(peer + LENGTH, value.remaining());
         MemoryUtil.setBytes(peer + VALUE, value);
 
@@ -117,9 +117,9 @@ public class NativeCell extends AbstractCell
         return MemoryUtil.getInt(peer + TTL);
     }
 
-    public int localDeletionTime()
+    public int purgingReferenceTime()
     {
-        return MemoryUtil.getInt(peer + DELETION);
+        return MemoryUtil.getInt(peer + PURGING_REF_TIME);
     }
 
     public ByteBuffer value()

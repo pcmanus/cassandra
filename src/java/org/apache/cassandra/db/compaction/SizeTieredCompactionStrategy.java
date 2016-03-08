@@ -75,7 +75,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         this.sizeTieredOptions = new SizeTieredCompactionStrategyOptions(options);
     }
 
-    private List<SSTableReader> getNextBackgroundSSTables(final int gcBefore)
+    private List<SSTableReader> getNextBackgroundSSTables(final GCParams gcParams)
     {
         // make local copies so they can't be changed out from under us mid-method
         int minThreshold = cfs.getMinimumCompactionThreshold();
@@ -95,7 +95,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         List<SSTableReader> sstablesWithTombstones = new ArrayList<>();
         for (SSTableReader sstable : candidates)
         {
-            if (worthDroppingTombstones(sstable, gcBefore))
+            if (worthDroppingTombstones(sstable, gcParams))
                 sstablesWithTombstones.add(sstable);
         }
         if (sstablesWithTombstones.isEmpty())
@@ -175,23 +175,23 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
     }
 
     @SuppressWarnings("resource")
-    public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
+    public synchronized AbstractCompactionTask getNextBackgroundTask(GCParams gcParams)
     {
         while (true)
         {
-            List<SSTableReader> hottestBucket = getNextBackgroundSSTables(gcBefore);
+            List<SSTableReader> hottestBucket = getNextBackgroundSSTables(gcParams);
 
             if (hottestBucket.isEmpty())
                 return null;
 
             LifecycleTransaction transaction = cfs.getTracker().tryModify(hottestBucket, OperationType.COMPACTION);
             if (transaction != null)
-                return new CompactionTask(cfs, transaction, gcBefore);
+                return new CompactionTask(cfs, transaction, gcParams);
         }
     }
 
     @SuppressWarnings("resource")
-    public Collection<AbstractCompactionTask> getMaximalTask(final int gcBefore, boolean splitOutput)
+    public Collection<AbstractCompactionTask> getMaximalTask(final GCParams gcParams, boolean splitOutput)
     {
         Iterable<SSTableReader> filteredSSTables = filterSuspectSSTables(sstables);
         if (Iterables.isEmpty(filteredSSTables))
@@ -200,12 +200,12 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
         if (txn == null)
             return null;
         if (splitOutput)
-            return Arrays.<AbstractCompactionTask>asList(new SplittingCompactionTask(cfs, txn, gcBefore));
-        return Arrays.<AbstractCompactionTask>asList(new CompactionTask(cfs, txn, gcBefore));
+            return Arrays.<AbstractCompactionTask>asList(new SplittingCompactionTask(cfs, txn, gcParams));
+        return Arrays.<AbstractCompactionTask>asList(new CompactionTask(cfs, txn, gcParams));
     }
 
     @SuppressWarnings("resource")
-    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final int gcBefore)
+    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, final GCParams gcParams)
     {
         assert !sstables.isEmpty(); // checked for by CM.submitUserDefined
 
@@ -216,7 +216,7 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
             return null;
         }
 
-        return new CompactionTask(cfs, transaction, gcBefore).setUserDefined(true);
+        return new CompactionTask(cfs, transaction, gcParams).setUserDefined(true);
     }
 
     public int getEstimatedRemainingTasks()
@@ -337,9 +337,9 @@ public class SizeTieredCompactionStrategy extends AbstractCompactionStrategy
 
     private static class SplittingCompactionTask extends CompactionTask
     {
-        public SplittingCompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, int gcBefore)
+        public SplittingCompactionTask(ColumnFamilyStore cfs, LifecycleTransaction txn, GCParams gcParams)
         {
-            super(cfs, txn, gcBefore);
+            super(cfs, txn, gcParams);
         }
 
         @Override

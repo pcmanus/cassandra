@@ -63,27 +63,22 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
 
     @Override
     @SuppressWarnings("resource")
-    public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
+    public synchronized AbstractCompactionTask getNextBackgroundTask(GCParams gcParams)
     {
         while (true)
         {
-            List<SSTableReader> latestBucket = getNextBackgroundSSTables(gcBefore);
+            List<SSTableReader> latestBucket = getNextBackgroundSSTables(gcParams);
 
             if (latestBucket.isEmpty())
                 return null;
 
             LifecycleTransaction modifier = cfs.getTracker().tryModify(latestBucket, OperationType.COMPACTION);
             if (modifier != null)
-                return new CompactionTask(cfs, modifier, gcBefore);
+                return new CompactionTask(cfs, modifier, gcParams);
         }
     }
 
-    /**
-     *
-     * @param gcBefore
-     * @return
-     */
-    private List<SSTableReader> getNextBackgroundSSTables(final int gcBefore)
+    private List<SSTableReader> getNextBackgroundSSTables(final GCParams gcParams)
     {
         if (sstables.isEmpty())
             return Collections.emptyList();
@@ -95,12 +90,12 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
         if (System.currentTimeMillis() - lastExpiredCheck > options.expiredSSTableCheckFrequency)
         {
             // Find fully expired SSTables. Those will be included no matter what.
-            expired = CompactionController.getFullyExpiredSSTables(cfs, uncompacting, cfs.getOverlappingSSTables(SSTableSet.CANONICAL, uncompacting), gcBefore);
+            expired = CompactionController.getFullyExpiredSSTables(cfs, uncompacting, cfs.getOverlappingSSTables(SSTableSet.CANONICAL, uncompacting), gcParams);
             lastExpiredCheck = System.currentTimeMillis();
         }
         Set<SSTableReader> candidates = Sets.newHashSet(filterSuspectSSTables(uncompacting));
 
-        List<SSTableReader> compactionCandidates = new ArrayList<>(getNextNonExpiredSSTables(Sets.difference(candidates, expired), gcBefore));
+        List<SSTableReader> compactionCandidates = new ArrayList<>(getNextNonExpiredSSTables(Sets.difference(candidates, expired), gcParams));
         if (!expired.isEmpty())
         {
             logger.trace("Including expired sstables: {}", expired);
@@ -109,7 +104,7 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
         return compactionCandidates;
     }
 
-    private List<SSTableReader> getNextNonExpiredSSTables(Iterable<SSTableReader> nonExpiringSSTables, final int gcBefore)
+    private List<SSTableReader> getNextNonExpiredSSTables(Iterable<SSTableReader> nonExpiringSSTables, final GCParams gcParams)
     {
         int base = cfs.getMinimumCompactionThreshold();
         long now = getNow();
@@ -124,7 +119,7 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
         List<SSTableReader> sstablesWithTombstones = Lists.newArrayList();
         for (SSTableReader sstable : nonExpiringSSTables)
         {
-            if (worthDroppingTombstones(sstable, gcBefore))
+            if (worthDroppingTombstones(sstable, gcParams))
                 sstablesWithTombstones.add(sstable);
         }
         if (sstablesWithTombstones.isEmpty())
@@ -389,7 +384,7 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
 
     @Override
     @SuppressWarnings("resource")
-    public synchronized Collection<AbstractCompactionTask> getMaximalTask(int gcBefore, boolean splitOutput)
+    public synchronized Collection<AbstractCompactionTask> getMaximalTask(GCParams gcParams, boolean splitOutput)
     {
         Iterable<SSTableReader> filteredSSTables = filterSuspectSSTables(sstables);
         if (Iterables.isEmpty(filteredSSTables))
@@ -397,12 +392,12 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
         LifecycleTransaction txn = cfs.getTracker().tryModify(filteredSSTables, OperationType.COMPACTION);
         if (txn == null)
             return null;
-        return Collections.<AbstractCompactionTask>singleton(new CompactionTask(cfs, txn, gcBefore));
+        return Collections.<AbstractCompactionTask>singleton(new CompactionTask(cfs, txn, gcParams));
     }
 
     @Override
     @SuppressWarnings("resource")
-    public synchronized AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, int gcBefore)
+    public synchronized AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, GCParams gcParams)
     {
         assert !sstables.isEmpty(); // checked for by CM.submitUserDefined
 
@@ -413,7 +408,7 @@ public class DateTieredCompactionStrategy extends AbstractCompactionStrategy
             return null;
         }
 
-        return new CompactionTask(cfs, modifier, gcBefore).setUserDefined(true);
+        return new CompactionTask(cfs, modifier, gcParams).setUserDefined(true);
     }
 
     public int getEstimatedRemainingTasks()

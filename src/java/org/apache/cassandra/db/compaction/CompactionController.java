@@ -51,21 +51,43 @@ public class CompactionController implements AutoCloseable
     private OverlapIterator<PartitionPosition, SSTableReader> overlapIterator;
     private final Iterable<SSTableReader> compacting;
 
-    public final int gcBefore;
+    public final GCParams gcParams;
 
-    protected CompactionController(ColumnFamilyStore cfs, int maxValue)
-    {
-        this(cfs, null, maxValue);
-    }
-
-    public CompactionController(ColumnFamilyStore cfs, Set<SSTableReader> compacting, int gcBefore)
+    public CompactionController(ColumnFamilyStore cfs, Set<SSTableReader> compacting, GCParams gcParams)
     {
         assert cfs != null;
         this.cfs = cfs;
-        this.gcBefore = gcBefore;
+        this.gcParams = gcParams;
         this.compacting = compacting;
         compactingRepaired = compacting != null && compacting.stream().allMatch(SSTableReader::isRepaired);
         refreshOverlaps();
+    }
+
+    protected CompactionController(ColumnFamilyStore cfs, GCParams gcParams)
+    {
+        this(cfs, null, gcParams);
+    }
+
+    /**
+     * @param cfs the table on which the tool is working.
+     * @return a controller for tools that don't really compact sstables but use
+     * the compaction machinery on a single sstable (at a time), like the Upgrader,
+     * Verifier and sstable splitter.
+     */
+    public static CompactionController defaultToolController(ColumnFamilyStore cfs)
+    {
+        // Tools are not (and should not be) in the business of purging stuffs.
+        return new CompactionController(cfs, null, GCParams.NO_GC)
+        {
+            @Override
+            public long maxPurgeableTimestamp(DecoratedKey key)
+            {
+                // Note that due to the use of GCParams.NO_GC, we shouldn't even call this method (and we don't as of this writing). That said,
+                // the default implementation do stuffs like looking up memtable which we definitively don't want to do for tools, so make sure
+                // we have an harmless implementation in case the code is refactored and this ends up being called.
+                return Long.MIN_VALUE;
+            }
+        };
     }
 
     public void maybeRefreshOverlaps()
@@ -94,7 +116,7 @@ public class CompactionController implements AutoCloseable
 
     public Set<SSTableReader> getFullyExpiredSSTables()
     {
-        return getFullyExpiredSSTables(cfs, compacting, overlappingSSTables, gcBefore);
+        return getFullyExpiredSSTables(cfs, compacting, overlappingSSTables, gcParams);
     }
 
     /**
@@ -110,10 +132,10 @@ public class CompactionController implements AutoCloseable
      * @param cfStore
      * @param compacting we take the drop-candidates from this set, it is usually the sstables included in the compaction
      * @param overlapping the sstables that overlap the ones in compacting.
-     * @param gcBefore
+     * @param gcParams the compaction tombstone garbage collection parameters
      * @return
      */
-    public static Set<SSTableReader> getFullyExpiredSSTables(ColumnFamilyStore cfStore, Iterable<SSTableReader> compacting, Iterable<SSTableReader> overlapping, int gcBefore)
+    public static Set<SSTableReader> getFullyExpiredSSTables(ColumnFamilyStore cfStore, Iterable<SSTableReader> compacting, Iterable<SSTableReader> overlapping, GCParams gcParams)
     {
         logger.trace("Checking droppable sstables in {}", cfStore);
 
@@ -131,13 +153,13 @@ public class CompactionController implements AutoCloseable
         {
             // Overlapping might include fully expired sstables. What we care about here is
             // the min timestamp of the overlapping sstables that actually contain live data.
-            if (sstable.getSSTableMetadata().maxLocalDeletionTime >= gcBefore)
+            if (!gcParams.isFullyExpired(sstable))
                 minTimestamp = Math.min(minTimestamp, sstable.getMinTimestamp());
         }
 
         for (SSTableReader candidate : compacting)
         {
-            if (candidate.getSSTableMetadata().maxLocalDeletionTime < gcBefore)
+            if (gcParams.isFullyExpired(candidate))
                 candidates.add(candidate);
             else
                 minTimestamp = Math.min(minTimestamp, candidate.getMinTimestamp());
@@ -161,8 +183,8 @@ public class CompactionController implements AutoCloseable
             }
             else
             {
-               logger.trace("Dropping expired SSTable {} (maxLocalDeletionTime={}, gcBefore={})",
-                        candidate, candidate.getSSTableMetadata().maxLocalDeletionTime, gcBefore);
+               logger.trace("Dropping expired SSTable {} (maxPurgingTime={}, nowInSec={})",
+                        candidate, candidate.getSSTableMetadata().maxPurgingTime, gcParams.nowInSeconds());
             }
         }
         return new HashSet<>(candidates);

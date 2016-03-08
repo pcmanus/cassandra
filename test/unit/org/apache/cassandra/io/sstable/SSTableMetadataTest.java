@@ -69,10 +69,11 @@ public class SSTableMetadataTest
     }
 
     @Test
-    public void testTrackMaxDeletionTime()
+    public void testTrackMaxPurgingTime()
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
+        store.metadata.gcGraceSeconds(0);
         long timestamp = System.currentTimeMillis();
         for(int i = 0; i < 10; i++)
         {
@@ -99,9 +100,8 @@ public class SSTableMetadataTest
         int firstDelTime = 0;
         for(SSTableReader sstable : store.getLiveSSTables())
         {
-            firstDelTime = sstable.getSSTableMetadata().maxLocalDeletionTime;
+            firstDelTime = sstable.getSSTableMetadata().maxPurgingTime;
             assertEquals(ttltimestamp + 10000, firstDelTime, 10);
-
         }
 
         new RowUpdateBuilder(store.metadata, timestamp, 20000, "longttl2")
@@ -115,22 +115,22 @@ public class SSTableMetadataTest
         store.forceBlockingFlush();
         assertEquals(2, store.getLiveSSTables().size());
         List<SSTableReader> sstables = new ArrayList<>(store.getLiveSSTables());
-        if(sstables.get(0).getSSTableMetadata().maxLocalDeletionTime < sstables.get(1).getSSTableMetadata().maxLocalDeletionTime)
+        if(sstables.get(0).getSSTableMetadata().maxPurgingTime < sstables.get(1).getSSTableMetadata().maxPurgingTime)
         {
-            assertEquals(sstables.get(0).getSSTableMetadata().maxLocalDeletionTime, firstDelTime);
-            assertEquals(sstables.get(1).getSSTableMetadata().maxLocalDeletionTime, ttltimestamp + 20000, 10);
+            assertEquals(sstables.get(0).getSSTableMetadata().maxPurgingTime, firstDelTime);
+            assertEquals(sstables.get(1).getSSTableMetadata().maxPurgingTime, ttltimestamp + 20000, 10);
         }
         else
         {
-            assertEquals(sstables.get(1).getSSTableMetadata().maxLocalDeletionTime, firstDelTime);
-            assertEquals(sstables.get(0).getSSTableMetadata().maxLocalDeletionTime, ttltimestamp + 20000, 10);
+            assertEquals(sstables.get(1).getSSTableMetadata().maxPurgingTime, firstDelTime);
+            assertEquals(sstables.get(0).getSSTableMetadata().maxPurgingTime, ttltimestamp + 20000, 10);
         }
 
         Util.compact(store, store.getLiveSSTables());
         assertEquals(1, store.getLiveSSTables().size());
         for(SSTableReader sstable : store.getLiveSSTables())
         {
-            assertEquals(sstable.getSSTableMetadata().maxLocalDeletionTime, ttltimestamp + 20000, 10);
+            assertEquals(sstable.getSSTableMetadata().maxPurgingTime, ttltimestamp + 20000, 10);
         }
     }
 
@@ -150,6 +150,7 @@ public class SSTableMetadataTest
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard2");
+        store.metadata.gcGraceSeconds(0);
         long timestamp = System.currentTimeMillis();
         DecoratedKey key = Util.dk("deletetest");
         for (int i = 0; i<5; i++)
@@ -172,7 +173,7 @@ public class SSTableMetadataTest
         int firstMaxDelTime = 0;
         for(SSTableReader sstable : store.getLiveSSTables())
         {
-            firstMaxDelTime = sstable.getSSTableMetadata().maxLocalDeletionTime;
+            firstMaxDelTime = sstable.getSSTableMetadata().maxPurgingTime;
             assertEquals(ttltimestamp + 1000, firstMaxDelTime, 10);
         }
 
@@ -183,9 +184,9 @@ public class SSTableMetadataTest
         boolean foundDelete = false;
         for(SSTableReader sstable : store.getLiveSSTables())
         {
-            if(sstable.getSSTableMetadata().maxLocalDeletionTime != firstMaxDelTime)
+            if(sstable.getSSTableMetadata().maxPurgingTime != firstMaxDelTime)
             {
-                assertEquals(sstable.getSSTableMetadata().maxLocalDeletionTime, ttltimestamp, 10);
+                assertEquals(sstable.getSSTableMetadata().maxPurgingTime, ttltimestamp, 10);
                 foundDelete = true;
             }
         }
@@ -194,7 +195,7 @@ public class SSTableMetadataTest
         assertEquals(1,store.getLiveSSTables().size());
         for(SSTableReader sstable : store.getLiveSSTables())
         {
-            assertEquals(ttltimestamp + 100, sstable.getSSTableMetadata().maxLocalDeletionTime, 10);
+            assertEquals(ttltimestamp + 100, sstable.getSSTableMetadata().maxPurgingTime, 10);
         }
     }
 

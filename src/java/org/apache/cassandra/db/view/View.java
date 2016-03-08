@@ -374,7 +374,7 @@ public class View
         regularBuilder.addPrimaryKeyLivenessInfo(LivenessInfo.create(viewCfm,
                                                                      temporalRow.viewClusteringTimestamp(),
                                                                      temporalRow.viewClusteringTtl(),
-                                                                     temporalRow.viewClusteringLocalDeletionTime()));
+                                                                     temporalRow.viewClusteringPurgingReferenceTime()));
 
         for (ColumnDefinition columnDefinition : viewCfm.allColumns())
         {

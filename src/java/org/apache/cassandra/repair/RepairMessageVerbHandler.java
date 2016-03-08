@@ -125,7 +125,7 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                         return;
                     }
 
-                    Validator validator = new Validator(desc, message.from, validationRequest.gcBefore);
+                    Validator validator = new Validator(desc, message.from, validationRequest.nowInSec);
                     CompactionManager.instance.submitValidation(store, validator);
                     break;
 

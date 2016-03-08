@@ -413,7 +413,7 @@ public abstract class CassandraIndex implements Index
                 insert(key.getKey(),
                        clustering,
                        cell,
-                       LivenessInfo.create(cell.timestamp(), cell.ttl(), cell.localDeletionTime()),
+                       LivenessInfo.create(cell.timestamp(), cell.ttl(), cell.purgingReferenceTime()),
                        opGroup);
             }
 

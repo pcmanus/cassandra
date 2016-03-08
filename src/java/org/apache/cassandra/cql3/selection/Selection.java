@@ -324,7 +324,7 @@ public abstract class Selection
             if (!c.isExpiring())
                 return -1;
 
-            int remaining = c.localDeletionTime() - nowInSec;
+            int remaining = (c.purgingReferenceTime() + c.ttl()) - nowInSec;
             return remaining >= 0 ? remaining : -1;
         }
 

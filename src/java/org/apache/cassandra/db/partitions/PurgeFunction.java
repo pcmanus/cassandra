@@ -19,23 +19,40 @@ package org.apache.cassandra.db.partitions;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.transform.Transformation;
 
 public abstract class PurgeFunction extends Transformation<UnfilteredRowIterator>
 {
     private final boolean isForThrift;
     private final DeletionPurger purger;
-    private final int gcBefore;
+    private final GCParams gcParams;
     private boolean isReverseOrder;
 
-    public PurgeFunction(boolean isForThrift, int gcBefore, int oldestUnrepairedTombstone, boolean onlyPurgeRepairedTombstones)
+    public PurgeFunction(boolean isForThrift, GCParams gcParams, int oldestUnrepairedTombstone, boolean onlyPurgeRepairedTombstones)
     {
         this.isForThrift = isForThrift;
-        this.gcBefore = gcBefore;
-        this.purger = (timestamp, localDeletionTime) ->
-                      !(onlyPurgeRepairedTombstones && localDeletionTime >= oldestUnrepairedTombstone)
-                      && localDeletionTime < gcBefore
-                      && timestamp < getMaxPurgeableTimestamp();
+        this.gcParams = gcParams;
+
+        this.purger = (timestamp, purgingReferenceTime, ttl) ->
+        {
+            int expiringTime = purgingReferenceTime + ttl;
+            int minPurgingTime = purgingReferenceTime + gcParams.gcGraceSeconds();
+            // We can't purge before minPurgingTime, but we certainly can't purge before the data is actually expired
+            int purgingTime = Math.max(expiringTime, minPurgingTime);
+            // There is 3 conditions to met to be allowed to purge the tombstone having the provided data:
+            // 1) if the option to only purge tombstone in repaired sstables is set, we only purge if the
+            //    purging time is smaller than the smallest purging time in unrepaired sstable (in other worlds, if
+            //    we can guarantee the tombstone is from a repaired sstable, see #6434).
+            // 2) the tombstone must be purgeable in the first place, i.e. his purging time (which includes GCGrace)
+            //    should have pass.
+            // 3) the timestamp must be lower than biggest timestamp we're allowed to purge (this is used in practice to
+            //    ensure tombstone doesn't shadow something older in a sstable that is not compacted to avoid ressurecting
+            //    data. See #8914 and CompactionIterator.Purger#getMaxPurgeableTimestamp.
+            return !(onlyPurgeRepairedTombstones && purgingReferenceTime >= oldestUnrepairedTombstone)
+                && purgingTime < gcParams.nowInSeconds()
+                && timestamp < getMaxPurgeableTimestamp();
+        };
     }
 
     protected abstract long getMaxPurgeableTimestamp();
@@ -79,13 +96,13 @@ public abstract class PurgeFunction extends Transformation<UnfilteredRowIterator
     public Row applyToStatic(Row row)
     {
         updateProgress();
-        return row.purge(purger, gcBefore);
+        return row.purge(purger, gcParams.nowInSeconds());
     }
 
     public Row applyToRow(Row row)
     {
         updateProgress();
-        return row.purge(purger, gcBefore);
+        return row.purge(purger, gcParams.nowInSeconds());
     }
 
     public RangeTombstoneMarker applyToMarker(RangeTombstoneMarker marker)

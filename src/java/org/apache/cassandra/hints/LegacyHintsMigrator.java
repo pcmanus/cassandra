@@ -31,6 +31,7 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.marshal.UUIDType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.FSWriteError;
@@ -112,7 +113,7 @@ public final class LegacyHintsMigrator
     {
         try
         {
-            CompactionManager.instance.submitUserDefined(legacyHintsTable, descriptors, FBUtilities.nowInSeconds()).get();
+            CompactionManager.instance.submitUserDefined(legacyHintsTable, descriptors, GCParams.defaultFor(legacyHintsTable)).get();
         }
         catch (InterruptedException | ExecutionException e)
         {

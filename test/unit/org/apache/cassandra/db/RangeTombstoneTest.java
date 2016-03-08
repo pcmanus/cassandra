@@ -309,7 +309,7 @@ public class RangeTombstoneTest
     {
         assertEquals(min, metadata.minTimestamp);
         assertEquals(max, metadata.maxTimestamp);
-        assertEquals(localDeletionTime, metadata.maxLocalDeletionTime);
+        assertEquals(localDeletionTime, metadata.maxPurgingReferenceTime);
     }
 
     @Test

@@ -90,7 +90,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
      * (by explicit user request) even when compaction is disabled.
      */
     @SuppressWarnings("resource")
-    public synchronized AbstractCompactionTask getNextBackgroundTask(int gcBefore)
+    public synchronized AbstractCompactionTask getNextBackgroundTask(GCParams gcParams)
     {
         while (true)
         {
@@ -99,7 +99,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             if (candidate == null)
             {
                 // if there is no sstable to compact in standard way, try compacting based on droppable tombstone ratio
-                SSTableReader sstable = findDroppableSSTable(gcBefore);
+                SSTableReader sstable = findDroppableSSTable(gcParams);
                 if (sstable == null)
                 {
                     logger.trace("No compaction necessary for {}", this);
@@ -118,7 +118,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             LifecycleTransaction txn = cfs.getTracker().tryModify(candidate.sstables, OperationType.COMPACTION);
             if (txn != null)
             {
-                LeveledCompactionTask newTask = new LeveledCompactionTask(cfs, txn, candidate.level, gcBefore, candidate.maxSSTableBytes, false);
+                LeveledCompactionTask newTask = new LeveledCompactionTask(cfs, txn, candidate.level, gcParams, candidate.maxSSTableBytes, false);
                 newTask.setCompactionType(op);
                 return newTask;
             }
@@ -126,7 +126,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
     }
 
     @SuppressWarnings("resource")
-    public synchronized Collection<AbstractCompactionTask> getMaximalTask(int gcBefore, boolean splitOutput)
+    public synchronized Collection<AbstractCompactionTask> getMaximalTask(GCParams gcParams, boolean splitOutput)
     {
         Iterable<SSTableReader> sstables = manifest.getAllSSTables();
 
@@ -136,18 +136,18 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
         LifecycleTransaction txn = cfs.getTracker().tryModify(filteredSSTables, OperationType.COMPACTION);
         if (txn == null)
             return null;
-        return Arrays.<AbstractCompactionTask>asList(new LeveledCompactionTask(cfs, txn, 0, gcBefore, getMaxSSTableBytes(), true));
+        return Arrays.<AbstractCompactionTask>asList(new LeveledCompactionTask(cfs, txn, 0, gcParams, getMaxSSTableBytes(), true));
 
     }
 
     @Override
-    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, int gcBefore)
+    public AbstractCompactionTask getUserDefinedTask(Collection<SSTableReader> sstables, GCParams gcParams)
     {
         throw new UnsupportedOperationException("LevelDB compaction strategy does not allow user-specified compactions");
     }
 
     @Override
-    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, int gcBefore, long maxSSTableBytes)
+    public AbstractCompactionTask getCompactionTask(LifecycleTransaction txn, GCParams gcParams, long maxSSTableBytes)
     {
         assert txn.originals().size() > 0;
         int level = -1;
@@ -159,7 +159,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             if (level != sstable.getSSTableLevel())
                 level = 0;
         }
-        return new LeveledCompactionTask(cfs, txn, level, gcBefore, maxSSTableBytes, false);
+        return new LeveledCompactionTask(cfs, txn, level, gcParams, maxSSTableBytes, false);
     }
 
     /**
@@ -394,7 +394,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
         return String.format("LCS@%d(%s)", hashCode(), cfs.name);
     }
 
-    private SSTableReader findDroppableSSTable(final int gcBefore)
+    private SSTableReader findDroppableSSTable(final GCParams gcParams)
     {
         level:
         for (int i = manifest.getLevelCount(); i >= 0; i--)
@@ -404,8 +404,8 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             {
                 public int compare(SSTableReader o1, SSTableReader o2)
                 {
-                    double r1 = o1.getEstimatedDroppableTombstoneRatio(gcBefore);
-                    double r2 = o2.getEstimatedDroppableTombstoneRatio(gcBefore);
+                    double r1 = o1.getEstimatedDroppableTombstoneRatio(gcParams.nowInSeconds());
+                    double r2 = o2.getEstimatedDroppableTombstoneRatio(gcParams.nowInSeconds());
                     return -1 * Doubles.compare(r1, r2);
                 }
             });
@@ -415,9 +415,9 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             Set<SSTableReader> compacting = cfs.getTracker().getCompacting();
             for (SSTableReader sstable : sstables)
             {
-                if (sstable.getEstimatedDroppableTombstoneRatio(gcBefore) <= tombstoneThreshold)
+                if (sstable.getEstimatedDroppableTombstoneRatio(gcParams.nowInSeconds()) <= tombstoneThreshold)
                     continue level;
-                else if (!compacting.contains(sstable) && !sstable.isMarkedSuspect() && worthDroppingTombstones(sstable, gcBefore))
+                else if (!compacting.contains(sstable) && !sstable.isMarkedSuspect() && worthDroppingTombstones(sstable, gcParams))
                     return sstable;
             }
         }

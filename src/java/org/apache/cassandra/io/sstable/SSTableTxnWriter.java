@@ -113,7 +113,7 @@ public class SSTableTxnWriter extends Transactional.AbstractTransactional implem
     {
         // if the column family store does not exist, we create a new default SSTableMultiWriter to use:
         LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
-        MetadataCollector collector = new MetadataCollector(cfm.comparator).sstableLevel(sstableLevel);
+        MetadataCollector collector = new MetadataCollector(cfm).sstableLevel(sstableLevel);
         SSTableMultiWriter writer = SimpleSSTableMultiWriter.create(descriptor, keyCount, repairedAt, cfm, collector, header, indexes, txn);
         return new SSTableTxnWriter(txn, writer);
     }

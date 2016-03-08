@@ -110,7 +110,7 @@ public class BigFormat implements SSTableFormat
     // we always incremented the major version.
     static class BigVersion extends Version
     {
-        public static final String current_version = "ma";
+        public static final String current_version = "mb";
         public static final String earliest_supported_version = "jb";
 
         // jb (2.0.1): switch from crc32 to adler32 for compression checksums
@@ -122,6 +122,7 @@ public class BigFormat implements SSTableFormat
         // la (2.2.0): new file name format
         // ma (3.0.0): swap bf hash order
         //             store rows natively
+        // mb (3.6): new statistics (purging reference time for #5546)
         //
         // NOTE: when adding a new version, please add that to LegacySSTableTest, too.
 
@@ -136,6 +137,8 @@ public class BigFormat implements SSTableFormat
         public final boolean storeRows;
         public final int correspondingMessagingVersion; // Only use by storage that 'storeRows' so far
         public final boolean hasBoundaries;
+        public final boolean hasPurgingReferenceTimeStatistics;
+
         /**
          * CASSANDRA-8413: 3.0 bloom filter representation changed (two longs just swapped)
          * have no 'static' bits caused by using the same upper bits for both bloom filter and token distribution.
@@ -180,6 +183,7 @@ public class BigFormat implements SSTableFormat
                                           : MessagingService.VERSION_21;
 
             hasBoundaries = version.compareTo("ma") < 0;
+            hasPurgingReferenceTimeStatistics = version.compareTo("mb") >= 0;
         }
 
         @Override
@@ -258,6 +262,12 @@ public class BigFormat implements SSTableFormat
         public boolean hasBoundaries()
         {
             return hasBoundaries;
+        }
+
+        @Override
+        public boolean hasPurgingReferenceTimeStatistics()
+        {
+            return hasPurgingReferenceTimeStatistics;
         }
 
         @Override

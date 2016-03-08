@@ -33,18 +33,18 @@ public class BufferCell extends AbstractCell
 
     private final long timestamp;
     private final int ttl;
-    private final int localDeletionTime;
+    private final int purgingReferenceTime;
 
     private final ByteBuffer value;
     private final CellPath path;
 
-    public BufferCell(ColumnDefinition column, long timestamp, int ttl, int localDeletionTime, ByteBuffer value, CellPath path)
+    public BufferCell(ColumnDefinition column, long timestamp, int ttl, int purgingReferenceTime, ByteBuffer value, CellPath path)
     {
         super(column);
         assert column.isComplex() == (path != null);
         this.timestamp = timestamp;
         this.ttl = ttl;
-        this.localDeletionTime = localDeletionTime;
+        this.purgingReferenceTime = purgingReferenceTime;
         this.value = value;
         this.path = path;
     }
@@ -59,7 +59,7 @@ public class BufferCell extends AbstractCell
         if (metadata.params.defaultTimeToLive != NO_TTL)
             return expiring(column, timestamp, metadata.params.defaultTimeToLive, FBUtilities.nowInSeconds(), value, path);
 
-        return new BufferCell(column, timestamp, NO_TTL, NO_DELETION_TIME, value, path);
+        return new BufferCell(column, timestamp, NO_TTL, NO_PURGING_TIME, value, path);
     }
 
     public static BufferCell expiring(ColumnDefinition column, long timestamp, int ttl, int nowInSec, ByteBuffer value)
@@ -70,7 +70,7 @@ public class BufferCell extends AbstractCell
     public static BufferCell expiring(ColumnDefinition column, long timestamp, int ttl, int nowInSec, ByteBuffer value, CellPath path)
     {
         assert ttl != NO_TTL;
-        return new BufferCell(column, timestamp, ttl, nowInSec + ttl, value, path);
+        return new BufferCell(column, timestamp, ttl, nowInSec, value, path);
     }
 
     public static BufferCell tombstone(ColumnDefinition column, long timestamp, int nowInSec)
@@ -93,9 +93,9 @@ public class BufferCell extends AbstractCell
         return ttl;
     }
 
-    public int localDeletionTime()
+    public int purgingReferenceTime()
     {
-        return localDeletionTime;
+        return purgingReferenceTime;
     }
 
     public ByteBuffer value()
@@ -110,7 +110,7 @@ public class BufferCell extends AbstractCell
 
     public Cell withUpdatedValue(ByteBuffer newValue)
     {
-        return new BufferCell(column, timestamp, ttl, localDeletionTime, newValue, path);
+        return new BufferCell(column, timestamp, ttl, purgingReferenceTime, newValue, path);
     }
 
     public Cell copy(AbstractAllocator allocator)
@@ -118,7 +118,7 @@ public class BufferCell extends AbstractCell
         if (!value.hasRemaining())
             return this;
 
-        return new BufferCell(column, timestamp, ttl, localDeletionTime, allocator.clone(value), path == null ? null : path.copy(allocator));
+        return new BufferCell(column, timestamp, ttl, purgingReferenceTime, allocator.clone(value), path == null ? null : path.copy(allocator));
     }
 
     public long unsharedHeapSizeExcludingData()

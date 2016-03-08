@@ -40,7 +40,7 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
 public abstract class Cell extends ColumnData
 {
     public static final int NO_TTL = 0;
-    public static final int NO_DELETION_TIME = Integer.MAX_VALUE;
+    public static final int NO_PURGING_TIME = Integer.MAX_VALUE;
 
     public final static Comparator<Cell> comparator = (c1, c2) ->
     {
@@ -88,12 +88,17 @@ public abstract class Cell extends ColumnData
     public abstract int ttl();
 
     /**
-     * The cell local deletion time.
+     * The local time (in seconds) from which gc grace should count for purging the cell
+     * (once it is deleted).
+     * <p>
+     * Note that this value is only meaningful for tombstones and expiring cells, and for expiring
+     * cells this should only ever be taken into account if the cell is dead (tested using {@link #isLive(int)}).
      *
-     * @return the cell local deletion time, or {@code NO_DELETION_TIME} if the cell is neither
-     * a tombstone nor an expiring one.
+     * @return the cell local reference time to take into time for purging the cell if it is deleted (in other
+     * words, a cell will be purged if it is deleted and {@code purgingReferenceTime() + nowInSec <= nowInSec}),
+     * or {@code NO_PURGING_TIME} if the cell is neither a tombstone nor expiring.
      */
-    public abstract int localDeletionTime();
+    public abstract int purgingReferenceTime();
 
     /**
      * Whether the cell is a tombstone or not.
@@ -176,7 +181,7 @@ public abstract class Cell extends ColumnData
             boolean isDeleted = cell.isTombstone();
             boolean isExpiring = cell.isExpiring();
             boolean useRowTimestamp = !rowLiveness.isEmpty() && cell.timestamp() == rowLiveness.timestamp();
-            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localExpirationTime();
+            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.purgingReferenceTime() == rowLiveness.purgingReferenceTime();
             int flags = 0;
             if (!hasValue)
                 flags |= HAS_EMPTY_VALUE_MASK;
@@ -197,7 +202,7 @@ public abstract class Cell extends ColumnData
                 header.writeTimestamp(cell.timestamp(), out);
 
             if ((isDeleted || isExpiring) && !useRowTTL)
-                header.writeLocalDeletionTime(cell.localDeletionTime(), out);
+                header.writePurgingReferenceTime(cell.purgingReferenceTime(), out);
             if (isExpiring && !useRowTTL)
                 header.writeTTL(cell.ttl(), out);
 
@@ -220,8 +225,8 @@ public abstract class Cell extends ColumnData
             long timestamp = useRowTimestamp ? rowLiveness.timestamp() : header.readTimestamp(in);
 
             int localDeletionTime = useRowTTL
-                                    ? rowLiveness.localExpirationTime()
-                                    : (isDeleted || isExpiring ? header.readLocalDeletionTime(in) : NO_DELETION_TIME);
+                                    ? rowLiveness.purgingReferenceTime()
+                                    : (isDeleted || isExpiring ? header.readPurgingReferenceTime(in) : NO_PURGING_TIME);
 
             int ttl = useRowTTL ? rowLiveness.ttl() : (isExpiring ? header.readTTL(in) : NO_TTL);
 
@@ -229,7 +234,7 @@ public abstract class Cell extends ColumnData
                             ? column.cellPathSerializer().deserialize(in)
                             : null;
 
-            boolean isCounter = localDeletionTime == NO_DELETION_TIME && column.type.isCounter();
+            boolean isCounter = localDeletionTime == NO_PURGING_TIME && column.type.isCounter();
 
             ByteBuffer value = ByteBufferUtil.EMPTY_BYTE_BUFFER;
             if (hasValue)
@@ -256,13 +261,13 @@ public abstract class Cell extends ColumnData
             boolean isDeleted = cell.isTombstone();
             boolean isExpiring = cell.isExpiring();
             boolean useRowTimestamp = !rowLiveness.isEmpty() && cell.timestamp() == rowLiveness.timestamp();
-            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.localDeletionTime() == rowLiveness.localExpirationTime();
+            boolean useRowTTL = isExpiring && rowLiveness.isExpiring() && cell.ttl() == rowLiveness.ttl() && cell.purgingReferenceTime() == rowLiveness.purgingReferenceTime();
 
             if (!useRowTimestamp)
                 size += header.timestampSerializedSize(cell.timestamp());
 
             if ((isDeleted || isExpiring) && !useRowTTL)
-                size += header.localDeletionTimeSerializedSize(cell.localDeletionTime());
+                size += header.purgingReferenceTimeSerializedSize(cell.purgingReferenceTime());
             if (isExpiring && !useRowTTL)
                 size += header.ttlSerializedSize(cell.ttl());
 
@@ -289,7 +294,7 @@ public abstract class Cell extends ColumnData
                 header.skipTimestamp(in);
 
             if (!useRowTTL && (isDeleted || isExpiring))
-                header.skipLocalDeletionTime(in);
+                header.skipPurgingReferenceTime(in);
 
             if (!useRowTTL && isExpiring)
                 header.skipTTL(in);

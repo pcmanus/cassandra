@@ -25,7 +25,8 @@ import org.apache.cassandra.db.compaction.writers.MaxSSTableSizeWriter;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 
-public class SSTableSplitter {
+public class SSTableSplitter
+{
 
     private final SplittingCompactionTask task;
 
@@ -60,7 +61,7 @@ public class SSTableSplitter {
 
         public SplittingCompactionTask(ColumnFamilyStore cfs, LifecycleTransaction transaction, int sstableSizeInMB)
         {
-            super(cfs, transaction, CompactionManager.NO_GC, false);
+            super(cfs, transaction, GCParams.NO_GC, false);
             this.sstableSizeInMB = sstableSizeInMB;
 
             if (sstableSizeInMB <= 0)
@@ -70,7 +71,7 @@ public class SSTableSplitter {
         @Override
         protected CompactionController getCompactionController(Set<SSTableReader> toCompact)
         {
-            return new SplitController(cfs);
+            return CompactionController.defaultToolController(cfs);
         }
 
         @Override
@@ -86,20 +87,6 @@ public class SSTableSplitter {
         protected boolean partialCompactionsAcceptable()
         {
             return true;
-        }
-    }
-
-    public static class SplitController extends CompactionController
-    {
-        public SplitController(ColumnFamilyStore cfs)
-        {
-            super(cfs, CompactionManager.NO_GC);
-        }
-
-        @Override
-        public long maxPurgeableTimestamp(DecoratedKey key)
-        {
-            return Long.MIN_VALUE;
         }
     }
 }

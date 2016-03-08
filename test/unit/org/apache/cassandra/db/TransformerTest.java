@@ -145,7 +145,7 @@ public class TransformerTest
     private static Row row(int i)
     {
         return BTreeRow.singleCellRow(Util.clustering(metadata.comparator, i),
-                                      new BufferCell(metadata.partitionColumns().columns(false).getSimple(0), 1L, BufferCell.NO_TTL, BufferCell.NO_DELETION_TIME, ByteBufferUtil.bytes(i), null));
+                                      new BufferCell(metadata.partitionColumns().columns(false).getSimple(0), 1L, BufferCell.NO_TTL, BufferCell.NO_PURGING_TIME, ByteBufferUtil.bytes(i), null));
     }
 
     // Transformations that check mock data ranges

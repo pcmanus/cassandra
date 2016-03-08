@@ -32,6 +32,7 @@ import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.compaction.GCParams;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
@@ -93,8 +94,7 @@ public class SSTableExpiredBlockers
             System.exit(1);
         }
 
-        int gcBefore = (int)(System.currentTimeMillis()/1000) - metadata.params.gcGraceSeconds;
-        Multimap<SSTableReader, SSTableReader> blockers = checkForExpiredSSTableBlockers(sstables, gcBefore);
+        Multimap<SSTableReader, SSTableReader> blockers = checkForExpiredSSTableBlockers(sstables, GCParams.defaultFor(cfs));
         for (SSTableReader blocker : blockers.keySet())
         {
             out.println(String.format("%s blocks %d expired sstables from getting dropped: %s%n",
@@ -106,18 +106,18 @@ public class SSTableExpiredBlockers
         System.exit(0);
     }
 
-    public static Multimap<SSTableReader, SSTableReader> checkForExpiredSSTableBlockers(Iterable<SSTableReader> sstables, int gcBefore)
+    public static Multimap<SSTableReader, SSTableReader> checkForExpiredSSTableBlockers(Iterable<SSTableReader> sstables, GCParams gcParams)
     {
         Multimap<SSTableReader, SSTableReader> blockers = ArrayListMultimap.create();
         for (SSTableReader sstable : sstables)
         {
-            if (sstable.getSSTableMetadata().maxLocalDeletionTime < gcBefore)
+            if (gcParams.isFullyExpired(sstable))
             {
                 for (SSTableReader potentialBlocker : sstables)
                 {
                     if (!potentialBlocker.equals(sstable) &&
                         potentialBlocker.getMinTimestamp() <= sstable.getMaxTimestamp() &&
-                        potentialBlocker.getSSTableMetadata().maxLocalDeletionTime > gcBefore)
+                        !gcParams.isFullyExpired(potentialBlocker))
                         blockers.put(potentialBlocker, sstable);
                 }
             }
@@ -130,7 +130,7 @@ public class SSTableExpiredBlockers
         StringBuilder sb = new StringBuilder();
 
         for (SSTableReader sstable : sstables)
-            sb.append(String.format("[%s (minTS = %d, maxTS = %d, maxLDT = %d)]", sstable, sstable.getMinTimestamp(), sstable.getMaxTimestamp(), sstable.getSSTableMetadata().maxLocalDeletionTime)).append(", ");
+            sb.append(String.format("[%s (minTS = %d, maxTS = %d, maxPT = %d)]", sstable, sstable.getMinTimestamp(), sstable.getMaxTimestamp(), sstable.getSSTableMetadata().maxPurgingTime)).append(", ");
 
         return sb.toString();
     }

@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.Iterables;
@@ -47,6 +48,10 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
+import static org.apache.cassandra.db.LivenessInfo.NO_TIMESTAMP;
+import static org.apache.cassandra.db.LivenessInfo.NO_TTL;
+import static org.apache.cassandra.db.LivenessInfo.NO_PURGING_TIME;
+
 /**
  * Represents a single CQL Row in a base table, with both the currently persisted value and the update's value. The
  * values are stored in timestamp order, but also indicate whether they are from the currently persisted, allowing a
@@ -55,10 +60,6 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public class TemporalRow
 {
-    private static final int NO_TTL = LivenessInfo.NO_TTL;
-    private static final long NO_TIMESTAMP = LivenessInfo.NO_TIMESTAMP;
-    private static final int NO_DELETION_TIME = DeletionTime.LIVE.localDeletionTime();
-
     public interface Resolver
     {
         /**
@@ -78,15 +79,15 @@ public class TemporalRow
         public final ByteBuffer value;
         public final long timestamp;
         public final int ttl;
-        public final int localDeletionTime;
+        public final int purgingReferenceTime;
         public final boolean isNew;
 
-        private TemporalCell(ByteBuffer value, long timestamp, int ttl, int localDeletionTime, boolean isNew)
+        private TemporalCell(ByteBuffer value, long timestamp, int ttl, int purgingReferenceTime, boolean isNew)
         {
             this.value = value;
             this.timestamp = timestamp;
             this.ttl = ttl;
-            this.localDeletionTime = localDeletionTime;
+            this.purgingReferenceTime = purgingReferenceTime;
             this.isNew = isNew;
         }
 
@@ -97,7 +98,7 @@ public class TemporalRow
                     .add("value", value == null ? "null" : ByteBufferUtil.bytesToHex(value))
                     .add("timestamp", timestamp)
                     .add("ttl", ttl)
-                    .add("localDeletionTime", localDeletionTime)
+                    .add("purgingReferenceTime", purgingReferenceTime)
                     .add("isNew", isNew)
                     .toString();
         }
@@ -107,11 +108,13 @@ public class TemporalRow
             int now = FBUtilities.nowInSeconds();
             Conflicts.Resolution resolution = Conflicts.resolveRegular(that.timestamp,
                                                                        that.isLive(now),
-                                                                       that.localDeletionTime,
+                                                                       that.ttl,
+                                                                       that.purgingReferenceTime,
                                                                        that.value,
                                                                        this.timestamp,
                                                                        this.isLive(now),
-                                                                       this.localDeletionTime,
+                                                                       this.ttl,
+                                                                       this.purgingReferenceTime,
                                                                        this.value);
             assert resolution != Conflicts.Resolution.MERGE;
             if (resolution == Conflicts.Resolution.LEFT_WINS)
@@ -121,12 +124,12 @@ public class TemporalRow
 
         private boolean isLive(int now)
         {
-            return localDeletionTime == NO_DELETION_TIME || (ttl != NO_TTL && now < localDeletionTime);
+            return purgingReferenceTime == NO_PURGING_TIME || (ttl != NO_TTL && now < purgingReferenceTime + ttl);
         }
 
         public Cell cell(ColumnDefinition definition, CellPath cellPath)
         {
-            return new BufferCell(definition, timestamp, ttl, localDeletionTime, value, cellPath);
+            return new BufferCell(definition, timestamp, ttl, purgingReferenceTime, value, cellPath);
         }
 
         public boolean equals(Object o)
@@ -135,22 +138,16 @@ public class TemporalRow
             if (o == null || getClass() != o.getClass()) return false;
 
             TemporalCell that = (TemporalCell) o;
-
-            if (timestamp != that.timestamp) return false;
-            if (ttl != that.ttl) return false;
-            if (localDeletionTime != that.localDeletionTime) return false;
-            if (isNew != that.isNew) return false;
-            return !(value != null ? !value.equals(that.value) : that.value != null);
+            return timestamp == that.timestamp
+                && ttl == that.ttl
+                && purgingReferenceTime == that.purgingReferenceTime
+                && isNew == that.isNew
+                && Objects.equals(value, that.value);
         }
 
         public int hashCode()
         {
-            int result = value != null ? value.hashCode() : 0;
-            result = 31 * result + (int) (timestamp ^ (timestamp >>> 32));
-            result = 31 * result + ttl;
-            result = 31 * result + localDeletionTime;
-            result = 31 * result + (isNew ? 1 : 0);
-            return result;
+            return Objects.hash(timestamp, ttl, purgingReferenceTime, isNew, value);
         }
 
         /**
@@ -232,11 +229,11 @@ public class TemporalRow
             {
                 if (existingCell != null)
                     row.addColumnValue(column, path, existingCell.timestamp, existingCell.ttl,
-                                       existingCell.localDeletionTime, existingCell.value, existingCell.isNew);
+                                       existingCell.purgingReferenceTime, existingCell.value, existingCell.isNew);
 
                 if (newCell != null)
                     row.addColumnValue(column, path, newCell.timestamp, newCell.ttl,
-                                       newCell.localDeletionTime, newCell.value, newCell.isNew);
+                                       newCell.purgingReferenceTime, newCell.value, newCell.isNew);
             }
 
             @Override
@@ -262,7 +259,7 @@ public class TemporalRow
     private final Map<ColumnIdentifier, Map<CellPath, TemporalCell.Versions>> columnValues = new HashMap<>();
     private int viewClusteringTtl = NO_TTL;
     private long viewClusteringTimestamp = NO_TIMESTAMP;
-    private int viewClusteringLocalDeletionTime = NO_DELETION_TIME;
+    private int viewClusteringPurgingReferenceTime = NO_PURGING_TIME;
 
     TemporalRow(ColumnFamilyStore baseCfs, java.util.Set<ColumnIdentifier> viewPrimaryKey, ByteBuffer key, Row row, int nowInSec, boolean isNew)
     {
@@ -284,7 +281,7 @@ public class TemporalRow
             ColumnDefinition cdef = clusteringDefs.get(i);
             clusteringColumns.put(cdef.name, row.clustering().get(i));
 
-            addColumnValue(cdef.name, null, NO_TIMESTAMP, NO_TTL, NO_DELETION_TIME, row.clustering().get(i), isNew);
+            addColumnValue(cdef.name, null, NO_TIMESTAMP, NO_TTL, NO_PURGING_TIME, row.clustering().get(i), isNew);
         }
     }
 
@@ -297,16 +294,16 @@ public class TemporalRow
      *
      * Timestamp uses max, as this is the time that the row has been written to the view. See CASSANDRA-10910.
      *
-     * Local Deletion Time should use max, as this deletion will cover all previous values written.
+     * Purging reference time should use max, as this deletion will cover all previous values written.
      */
-    private void updateLiveness(int ttl, long timestamp, int localDeletionTime)
+    private void updateLiveness(int ttl, long timestamp, int purgingReferenceTime)
     {
         // We are returning whichever is higher from valueIfSet
         // Natural order will return the max: 1.compareTo(2) < 0, so 2 is returned
         // Reverse order will return the min: 1.compareTo(2) > 0, so 1 is returned
         this.viewClusteringTtl = valueIfSet(viewClusteringTtl, ttl, NO_TTL, reverseOrder());
         this.viewClusteringTimestamp = valueIfSet(viewClusteringTimestamp, timestamp, NO_TIMESTAMP, naturalOrder());
-        this.viewClusteringLocalDeletionTime = valueIfSet(viewClusteringLocalDeletionTime, localDeletionTime, NO_DELETION_TIME, naturalOrder());
+        this.viewClusteringPurgingReferenceTime = valueIfSet(viewClusteringPurgingReferenceTime, purgingReferenceTime, NO_PURGING_TIME, naturalOrder());
     }
 
     @Override
@@ -320,7 +317,7 @@ public class TemporalRow
                 .add("nowInSec", nowInSec)
                 .add("viewClusteringTtl", viewClusteringTtl)
                 .add("viewClusteringTimestamp", viewClusteringTimestamp)
-                .add("viewClusteringLocalDeletionTime", viewClusteringLocalDeletionTime)
+                .add("viewClusteringPurgingReferenceTime", viewClusteringPurgingReferenceTime)
                 .add("columnValues", columnValues)
                 .toString();
     }
@@ -351,7 +348,7 @@ public class TemporalRow
                                CellPath cellPath,
                                long timestamp,
                                int ttl,
-                               int localDeletionTime,
+                               int purgingReferenceTime,
                                ByteBuffer value,  boolean isNew)
     {
         if (!columnValues.containsKey(identifier))
@@ -365,10 +362,10 @@ public class TemporalRow
         // If this column is part of the view's primary keys
         if (viewPrimaryKey.contains(identifier))
         {
-            updateLiveness(ttl, timestamp, localDeletionTime);
+            updateLiveness(ttl, timestamp, purgingReferenceTime);
         }
 
-        innerMap.get(cellPath).setVersion(new TemporalCell(value, timestamp, ttl, localDeletionTime, isNew));
+        innerMap.get(cellPath).setVersion(new TemporalCell(value, timestamp, ttl, purgingReferenceTime, isNew));
     }
 
     /**
@@ -404,14 +401,14 @@ public class TemporalRow
         return viewClusteringTimestamp;
     }
 
-    public int viewClusteringLocalDeletionTime()
+    public int viewClusteringPurgingReferenceTime()
     {
-        return viewClusteringLocalDeletionTime;
+        return viewClusteringPurgingReferenceTime;
     }
 
     public void addCell(Cell cell, boolean isNew)
     {
-        addColumnValue(cell.column().name, cell.path(), cell.timestamp(), cell.ttl(), cell.localDeletionTime(), cell.value(), isNew);
+        addColumnValue(cell.column().name, cell.path(), cell.timestamp(), cell.ttl(), cell.purgingReferenceTime(), cell.value(), isNew);
     }
 
     // The Definition here is actually the *base table* definition

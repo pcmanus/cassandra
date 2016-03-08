@@ -51,7 +51,7 @@ public class MetadataSerializerTest
 
         ReplayPosition rp = new ReplayPosition(11L, 12);
 
-        MetadataCollector collector = new MetadataCollector(cfm.comparator).replayPosition(rp);
+        MetadataCollector collector = new MetadataCollector(cfm).replayPosition(rp);
 
         String partitioner = RandomPartitioner.class.getCanonicalName();
         double bfFpChance = 0.1;

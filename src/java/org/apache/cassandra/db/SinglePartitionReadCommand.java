@@ -503,7 +503,7 @@ public class SinglePartitionReadCommand extends ReadCommand
 
                 @SuppressWarnings("resource") // 'iter' is added to iterators which is closed on exception, or through the closing of the final merged iterator
                 UnfilteredRowIterator iter = filter.getUnfilteredRowIterator(columnFilter(), partition);
-                oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, partition.stats().minLocalDeletionTime);
+                oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, partition.stats().minPurgingReferenceTime);
                 iterators.add(isForThrift() ? ThriftResultsMerger.maybeWrap(iter, nowInSec()) : iter);
             }
 
@@ -549,7 +549,7 @@ public class SinglePartitionReadCommand extends ReadCommand
                                               // or through the closing of the final merged iterator
                 UnfilteredRowIteratorWithLowerBound iter = makeIterator(cfs, sstable, true);
                 if (!sstable.isRepaired())
-                    oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, sstable.getMinLocalDeletionTime());
+                    oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, sstable.getMinPurgingReferenceTime());
 
                 iterators.add(iter);
                 mostRecentPartitionTombstone = Math.max(mostRecentPartitionTombstone,
@@ -569,7 +569,7 @@ public class SinglePartitionReadCommand extends ReadCommand
                                                   // or through the closing of the final merged iterator
                     UnfilteredRowIteratorWithLowerBound iter = makeIterator(cfs, sstable, false);
                     if (!sstable.isRepaired())
-                        oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, sstable.getMinLocalDeletionTime());
+                        oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, sstable.getMinPurgingReferenceTime());
 
                     iterators.add(iter);
                     includedDueToTombstones++;
@@ -784,7 +784,7 @@ public class SinglePartitionReadCommand extends ReadCommand
     private ImmutableBTreePartition add(UnfilteredRowIterator iter, ImmutableBTreePartition result, ClusteringIndexNamesFilter filter, boolean isRepaired)
     {
         if (!isRepaired)
-            oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, iter.stats().minLocalDeletionTime);
+            oldestUnrepairedTombstone = Math.min(oldestUnrepairedTombstone, iter.stats().minPurgingReferenceTime);
 
         int maxRows = Math.max(filter.requestedRows().size(), 1);
         if (result == null)

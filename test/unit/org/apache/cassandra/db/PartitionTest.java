@@ -187,6 +187,6 @@ public class PartitionTest
         RowUpdateBuilder.deleteRowAt(cfs.metadata, 10L, localDeletionTime, "key1", "c").applyUnsafe();
         ImmutableBTreePartition partition = Util.getOnlyPartitionUnfiltered(Util.cmd(cfs, "key1").build());
         EncodingStats stats = partition.stats();
-        assertEquals(localDeletionTime, stats.minLocalDeletionTime);
+        assertEquals(localDeletionTime, stats.minPurgingReferenceTime);
     }
 }

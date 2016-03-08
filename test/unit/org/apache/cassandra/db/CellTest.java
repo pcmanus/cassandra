@@ -130,7 +130,7 @@ public class CellTest
         Assert.assertEquals(Lists.newArrayList(r1m1, r2m2, r2m3, r2m4), builder.cells);
     }
 
-    private int testExpiring(String n1, String v1, long t1, int et1, String n2, String v2, Long t2, Integer et2)
+    private int testExpiring(String n1, String v1, long t1, int ttl1, String n2, String v2, Long t2, Integer ttl2)
     {
         if (n2 == null)
             n2 = n1;
@@ -138,10 +138,10 @@ public class CellTest
             v2 = v1;
         if (t2 == null)
             t2 = t1;
-        if (et2 == null)
-            et2 = et1;
-        Cell c1 = expiring(cfm, n1, v1, t1, et1);
-        Cell c2 = expiring(cfm, n2, v2, t2, et2);
+        if (ttl2 == null)
+            ttl2 = ttl1;
+        Cell c1 = expiring(cfm, n1, v1, t1, ttl1);
+        Cell c2 = expiring(cfm, n2, v2, t2, ttl2);
 
         int now = FBUtilities.nowInSeconds();
         if (Cells.reconcile(c1, c2, now) == c1)
@@ -155,10 +155,10 @@ public class CellTest
         return BufferCell.live(cfm, cdef, timestamp, ByteBufferUtil.bytes(value));
     }
 
-    private Cell expiring(CFMetaData cfm, String columnName, String value, long timestamp, int localExpirationTime)
+    private Cell expiring(CFMetaData cfm, String columnName, String value, long timestamp, int ttl)
     {
         ColumnDefinition cdef = cfm.getColumnDefinition(ByteBufferUtil.bytes(columnName));
-        return new BufferCell(cdef, timestamp, 1, localExpirationTime, ByteBufferUtil.bytes(value), null);
+        return new BufferCell(cdef, timestamp, ttl, 1, ByteBufferUtil.bytes(value), null);
     }
 
     private Cell deleted(CFMetaData cfm, String columnName, int localDeletionTime, long timestamp)

@@ -250,6 +250,7 @@ public class DateTieredCompactionStrategyTest extends SchemaLoader
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF_STANDARD1);
+        cfs.metadata.gcGraceSeconds(0);
         cfs.disableAutoCompaction();
 
         ByteBuffer value = ByteBuffer.wrap(new byte[100]);
@@ -284,12 +285,12 @@ public class DateTieredCompactionStrategyTest extends SchemaLoader
         cfs.truncateBlocking();
     }
 
-
     @Test
     public void testDropExpiredSSTables() throws InterruptedException
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(CF_STANDARD1);
+        cfs.metadata.gcGraceSeconds(0);
         cfs.disableAutoCompaction();
 
         ByteBuffer value = ByteBuffer.wrap(new byte[100]);
@@ -322,9 +323,9 @@ public class DateTieredCompactionStrategyTest extends SchemaLoader
         for (SSTableReader sstable : cfs.getLiveSSTables())
             dtcs.addSSTable(sstable);
         dtcs.startup();
-        assertNull(dtcs.getNextBackgroundTask((int) (System.currentTimeMillis() / 1000)));
+        assertNull(dtcs.getNextBackgroundTask(GCParams.defaultFor(cfs)));
         Thread.sleep(2000);
-        AbstractCompactionTask t = dtcs.getNextBackgroundTask((int) (System.currentTimeMillis()/1000));
+        AbstractCompactionTask t = dtcs.getNextBackgroundTask(GCParams.defaultFor(cfs));
         assertNotNull(t);
         assertEquals(1, Iterables.size(t.transaction.originals()));
         SSTableReader sstable = t.transaction.originals().iterator().next();
@@ -369,7 +370,7 @@ public class DateTieredCompactionStrategyTest extends SchemaLoader
         DateTieredCompactionStrategy dtcs = new DateTieredCompactionStrategy(cfs, options);
         for (SSTableReader sstable : cfs.getSSTables(SSTableSet.CANONICAL))
             dtcs.addSSTable(sstable);
-        AbstractCompactionTask task = dtcs.getNextBackgroundTask(0);
+        AbstractCompactionTask task = dtcs.getNextBackgroundTask(GCParams.defaultFor(cfs, 0));
         assertEquals(20, task.transaction.originals().size());
         task.transaction.abort();
     }
