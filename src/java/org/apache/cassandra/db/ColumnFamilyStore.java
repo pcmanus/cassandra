@@ -198,7 +198,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     private final AtomicInteger fileIndexGenerator = new AtomicInteger(0);
 
     public final SecondaryIndexManager indexManager;
-    public final ViewManager.ForStore viewManager;
+    public final ViewManager.TableViews viewManager;
 
     /* These are locally held copies to be changed from the config during runtime */
     private volatile DefaultValue<Integer> minCompactionThreshold;

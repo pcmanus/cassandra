@@ -69,6 +69,11 @@ public abstract class AbstractCell extends Cell
             column().validateCellPath(path());
     }
 
+    public long maxTimestamp()
+    {
+        return timestamp();
+    }
+
     @Override
     public boolean equals(Object other)
     {
