@@ -98,7 +98,7 @@ public class ViewTest extends CQLTester
     @Test
     public void testPartitionTombstone() throws Throwable
     {
-        createTable("CREATE TABLE %s (k1 int, c1 int , val int, PRIMARY KEY (k1))");
+        createTable("CREATE TABLE %s (k1 int, c1 int , val int, PRIMARY KEY (k1, c1))");
 
         execute("USE " + keyspace());
         executeNet(protocolVersion, "USE " + keyspace());
@@ -108,8 +108,8 @@ public class ViewTest extends CQLTester
         updateView("INSERT INTO %s (k1, c1, val) VALUES (1, 2, 200)");
         updateView("INSERT INTO %s (k1, c1, val) VALUES (1, 3, 300)");
 
-        Assert.assertEquals(1, execute("select * from %s").size());
-        Assert.assertEquals(1, execute("select * from view1").size());
+        Assert.assertEquals(2, execute("select * from %s").size());
+        Assert.assertEquals(2, execute("select * from view1").size());
 
         updateView("DELETE FROM %s WHERE k1 = 1");
 
