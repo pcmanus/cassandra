@@ -1,4 +1,5 @@
 3.6
+ * Allow per-partition LIMIT clause in CQL (CASSANDRA-7017)
  * More user friendly error when providing an invalid token to nodetool (CASSANDRA-9348)
  * Add static column support to SASI index (CASSANDRA-11183)
  * Support EQ/PREFIX queries in SASI CONTAINS mode without tokenization (CASSANDRA-11434)
