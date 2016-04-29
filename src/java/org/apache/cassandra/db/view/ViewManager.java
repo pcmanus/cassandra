@@ -87,8 +87,15 @@ public class ViewManager
             return views.iterator();
         }
 
+        public boolean contains(String viewName)
+        {
+            return Iterables.any(views, view -> view.name.equals(viewName));
+        }
+
         public boolean add(View view)
         {
+            // We should have validated that there is no existing view with this name at this point
+            assert !contains(view.name);
             return views.add(view);
         }
 
@@ -120,6 +127,15 @@ public class ViewManager
 
         private void removeByName(String viewName)
         {
+            Iterator<View> iter = views.iterator();
+            while (iter.hasNext())
+            {
+                if (iter.next().name.equals(viewName))
+                {
+                    iter.remove();
+                    return; // There can only be one view with this name
+                }
+            }
         }
     }
 
