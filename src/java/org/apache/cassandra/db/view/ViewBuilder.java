@@ -87,7 +87,7 @@ public class ViewBuilder extends CompactionInfo.Holder
         try (ReadOrderGroup orderGroup = command.startOrderGroup();
              UnfilteredRowIterator data = UnfilteredPartitionIterators.getOnlyElement(command.executeLocally(orderGroup), command))
         {
-            mutations = baseCfs.keyspace.viewManager.generateViewUpdates(Collections.singleton(view), data, empty, nowInSec);
+            mutations = baseCfs.keyspace.viewManager.forTable(baseCfs.metadata).generateViewUpdates(Collections.singleton(view), data, empty, nowInSec);
         }
 
         if (!mutations.isEmpty())
