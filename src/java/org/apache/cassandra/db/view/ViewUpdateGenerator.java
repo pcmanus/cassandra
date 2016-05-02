@@ -38,10 +38,10 @@ import org.apache.cassandra.db.marshal.CompositeType;
  * on a single partition only).
  *
  * This class is used by passing the updates made to the base table to
- * {@link #generateViewMutations} and calling {@link #build} once all updates have
+ * {@link #addBaseTableUpdate} and calling {@link #generateViewUpdates} once all updates have
  * been handled to get the resulting view mutations.
  */
-public class ViewUpdateBuilder
+public class ViewUpdateGenerator
 {
     private final View view;
     private final int nowInSec;
@@ -81,7 +81,7 @@ public class ViewUpdateBuilder
      * @param nowInSec the current time in seconds. Used to decide if data are live or not
      * and as base reference for new deletions.
      */
-    public ViewUpdateBuilder(View view, DecoratedKey basePartitionKey, int nowInSec)
+    public ViewUpdateGenerator(View view, DecoratedKey basePartitionKey, int nowInSec)
     {
         this.view = view;
         this.nowInSec = nowInSec;
@@ -104,14 +104,14 @@ public class ViewUpdateBuilder
     }
 
     /**
-     * Generates the updates to be made to the view given a base table row
+     * Adds to this generator the updates to be made to the view given a base table row
      * before and after an update.
      *
      * @param existingBaseRow the base table row as it is before an update.
      * @param mergedBaseRow the base table row after the update is applied (note that
      * this is not just the new update, but rather the resulting row).
      */
-    public void generateViewMutations(Row existingBaseRow, Row mergedBaseRow)
+    public void addBaseTableUpdate(Row existingBaseRow, Row mergedBaseRow)
     {
         switch (updateAction(existingBaseRow, mergedBaseRow))
         {
@@ -139,7 +139,7 @@ public class ViewUpdateBuilder
      *
      * @return the updates to do to the view.
      */
-    public Collection<PartitionUpdate> build()
+    public Collection<PartitionUpdate> generateViewUpdates()
     {
         return updates.values();
     }
