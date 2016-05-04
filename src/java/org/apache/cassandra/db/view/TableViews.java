@@ -105,15 +105,7 @@ public class TableViews extends AbstractCollection<View>
 
     public void removeByName(String viewName)
     {
-        Iterator<View> iter = views.iterator();
-        while (iter.hasNext())
-        {
-            if (iter.next().name.equals(viewName))
-            {
-                iter.remove();
-                return; // There can only be one view with this name
-            }
-        }
+        views.removeIf(v -> v.name.equals(viewName));
     }
 
     /**
