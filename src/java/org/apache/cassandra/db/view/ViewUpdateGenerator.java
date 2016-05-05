@@ -447,7 +447,7 @@ public class ViewUpdateGenerator
             }
             return ttl == baseLiveness.ttl()
                  ? baseLiveness
-                 : LivenessInfo.create(baseLiveness.timestamp(), ttl, expirationTime);
+                 : LivenessInfo.withExpirationTime(baseLiveness.timestamp(), ttl, expirationTime);
         }
 
         ColumnDefinition baseColumn = view.baseNonPKColumnsInViewPK.get(0);
@@ -455,7 +455,7 @@ public class ViewUpdateGenerator
         assert isLive(cell) : "We shouldn't have got there is the base row had no associated entry";
 
         long timestamp = Math.max(baseLiveness.timestamp(), cell.timestamp());
-        return LivenessInfo.create(timestamp, cell.ttl(), cell.localDeletionTime());
+        return LivenessInfo.withExpirationTime(timestamp, cell.ttl(), cell.localDeletionTime());
     }
 
     private long computeTimestampForEntryDeletion(Row baseRow)
