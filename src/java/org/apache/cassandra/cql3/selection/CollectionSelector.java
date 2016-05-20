@@ -19,12 +19,16 @@ package org.apache.cassandra.cql3.selection;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.Term;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -37,6 +41,11 @@ abstract class CollectionSelector extends Selector
     protected CollectionSelector(Selector selected)
     {
         this.selected = selected;
+    }
+
+    private static boolean isUnset(ByteBuffer bb)
+    {
+        return bb == ByteBufferUtil.UNSET_BYTE_BUFFER;
     }
 
     // For sets and maps, return the type corresponding to the element of a selection (that is, x in c[x]).
@@ -108,6 +117,32 @@ abstract class CollectionSelector extends Selector
                     throw new InvalidRequestException("Invalid unset value for element selection on " + factory.getColumnName());
                 return new ElementSelector(factory.newInstance(options), keyValue);
             }
+
+            public boolean isTerminal()
+            {
+                // Terminal means that we don't add to wait execution to create the ColumnFilter (through
+                // addFetchedColumns below). That's the case if either there is no particular subselection
+                // to add, or if there is one but the selected key is terminal. In other words, it's terminal
+                // if the factory is terminal and either:
+                //  1) the type is frozen (in which case there isn't subselection to do).
+                //  2) the factory (the left-hand-side) isn't a simple column selection (here again, no
+                //     subselection we can do).
+                //  3) the element selected is terminal.
+                return factory.isTerminal()
+                    && (!type.isMultiCell() || !factory.isSimpleSelectorFactory() || key.isTerminal());
+            }
+
+            public void addFetchedColumns(ColumnFilter.Builder builder)
+            {
+                if (!type.isMultiCell() || !factory.isSimpleSelectorFactory())
+                {
+                    factory.addFetchedColumns(builder);
+                    return;
+                }
+
+                ColumnDefinition column = ((SimpleSelector.Factory)factory).getColumn();
+                builder.select(column, CellPath.create(((Term.Terminal)key).get(Server.VERSION_3)));
+            }
         };
     }
 
@@ -142,6 +177,34 @@ abstract class CollectionSelector extends Selector
                     throw new InvalidRequestException("Invalid null value for slice selection on " + factory.getColumnName());
                 return new SliceSelector(factory.newInstance(options), from.bindAndGet(options), to.bindAndGet(options));
             }
+
+            public boolean isTerminal()
+            {
+                // Terminal means that we don't add to wait execution to create the ColumnFilter (through
+                // addFetchedColumns below). That's the case if either there is no particular subselection
+                // to add, or if there is one but the selected key is terminal. In other words, it's terminal
+                // if the factory is terminal and either:
+                //  1) the type is frozen (in which case there isn't subselection to do).
+                //  2) the factory (the left-hand-side) isn't a simple column selection (here again, no
+                //     subselection we can do).
+                //  3) the bound of the selected slice are terminal terminal.
+                return factory.isTerminal()
+                    && (!type.isMultiCell() || !factory.isSimpleSelectorFactory() || (from.isTerminal() && to.isTerminal()));
+            }
+
+            public void addFetchedColumns(ColumnFilter.Builder builder)
+            {
+                if (!type.isMultiCell() || !factory.isSimpleSelectorFactory())
+                {
+                    factory.addFetchedColumns(builder);
+                    return;
+                }
+
+                ColumnDefinition column = ((SimpleSelector.Factory)factory).getColumn();
+                ByteBuffer fromBB = ((Term.Terminal)from).get(Server.VERSION_3);
+                ByteBuffer toBB = ((Term.Terminal)to).get(Server.VERSION_3);
+                builder.slice(column, isUnset(fromBB) ? CellPath.BOTTOM : CellPath.create(fromBB), isUnset(toBB) ? CellPath.TOP  : CellPath.create(toBB));
+            }
         };
     }
 
@@ -174,6 +237,19 @@ abstract class CollectionSelector extends Selector
             assert selected.getType() instanceof MapType || selected.getType() instanceof SetType : "this shouldn't have passed validation in Selectable";
             this.type = (CollectionType)selected.getType();
             this.key = key;
+        }
+
+        public void addFetchedColumns(ColumnFilter.Builder builder)
+        {
+            if (type.isMultiCell() && selected instanceof SimpleSelector)
+            {
+                ColumnDefinition column = ((SimpleSelector)selected).column;
+                builder.select(column, CellPath.create(key));
+            }
+            else
+            {
+                selected.addFetchedColumns(builder);
+            }
         }
 
         protected ByteBuffer extractSelection(ByteBuffer collection)
@@ -211,9 +287,17 @@ abstract class CollectionSelector extends Selector
             this.to = to;
         }
 
-        private boolean isUnset(ByteBuffer bb)
+        public void addFetchedColumns(ColumnFilter.Builder builder)
         {
-            return bb == ByteBufferUtil.UNSET_BYTE_BUFFER;
+            if (type.isMultiCell() && selected instanceof SimpleSelector)
+            {
+                ColumnDefinition column = ((SimpleSelector)selected).column;
+                builder.slice(column, isUnset(from) ? CellPath.BOTTOM : CellPath.create(from), isUnset(to) ? CellPath.TOP  : CellPath.create(to));
+            }
+            else
+            {
+                selected.addFetchedColumns(builder);
+            }
         }
 
         protected ByteBuffer extractSelection(ByteBuffer collection)

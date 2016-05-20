@@ -23,50 +23,31 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
 public final class SimpleSelector extends Selector
 {
-    private final String columnName;
+   public final ColumnDefinition column;
     private final int idx;
-    private final AbstractType<?> type;
     private ByteBuffer current;
     private boolean isSet;
 
+    private SimpleSelector(ColumnDefinition column, int idx)
+    {
+        this.column = column;
+        this.idx = idx;
+    }
+
     public static Factory newFactory(final ColumnDefinition def, final int idx)
     {
-        return new Factory()
-        {
-            @Override
-            protected String getColumnName()
-            {
-                return def.name.toString();
-            }
+        return new Factory(def, idx);
+    }
 
-            @Override
-            protected AbstractType<?> getReturnType()
-            {
-                return def.type;
-            }
-
-            protected void addColumnMapping(SelectionColumnMapping mapping, ColumnSpecification resultColumn)
-            {
-               mapping.addMapping(resultColumn, def);
-            }
-
-            @Override
-            public Selector newInstance(QueryOptions options)
-            {
-                return new SimpleSelector(def.name.toString(), idx, def.type);
-            }
-
-            @Override
-            public boolean isSimpleSelectorFactory(int index)
-            {
-                return index == idx;
-            }
-        };
+    public void addFetchedColumns(ColumnFilter.Builder builder)
+    {
+        builder.add(column);
     }
 
     @Override
@@ -95,19 +76,71 @@ public final class SimpleSelector extends Selector
     @Override
     public AbstractType<?> getType()
     {
-        return type;
+        return column.type;
     }
 
     @Override
     public String toString()
     {
-        return columnName;
+        return column.name.toString();
     }
 
-    private SimpleSelector(String columnName, int idx, AbstractType<?> type)
+    public static class Factory extends Selector.Factory
     {
-        this.columnName = columnName;
-        this.idx = idx;
-        this.type = type;
+        private final ColumnDefinition def;
+        private final int idx;
+
+        private Factory(ColumnDefinition def, int idx)
+        {
+            this.def = def;
+            this.idx = idx;
+        }
+
+        protected String getColumnName()
+        {
+            return def.name.toString();
+        }
+
+        protected AbstractType<?> getReturnType()
+        {
+            return def.type;
+        }
+
+        protected void addColumnMapping(SelectionColumnMapping mapping, ColumnSpecification resultColumn)
+        {
+            mapping.addMapping(resultColumn, def);
+        }
+
+        public Selector newInstance(QueryOptions options)
+        {
+            return new SimpleSelector(def, idx);
+        }
+
+        @Override
+        public boolean isSimpleSelectorFactory(int index)
+        {
+            return index == idx;
+        }
+
+        @Override
+        public boolean isSimpleSelectorFactory()
+        {
+            return true;
+        }
+
+        public ColumnDefinition getColumn()
+        {
+            return def;
+        }
+
+        public boolean isTerminal()
+        {
+            return true;
+        }
+
+        public void addFetchedColumns(ColumnFilter.Builder builder)
+        {
+            builder.add(def);
+        }
     }
 }

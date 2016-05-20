@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.UserType;
@@ -61,7 +62,22 @@ final class FieldSelector extends Selector
             {
                 return factory.isAggregateSelectorFactory();
             }
+
+            public boolean isTerminal()
+            {
+                return factory.isTerminal();
+            }
+
+            public void addFetchedColumns(ColumnFilter.Builder builder)
+            {
+                factory.addFetchedColumns(builder);
+            }
         };
+    }
+
+    public void addFetchedColumns(ColumnFilter.Builder builder)
+    {
+        selected.addFetchedColumns(builder);
     }
 
     public void addInput(int protocolVersion, ResultSetBuilder rs) throws InvalidRequestException

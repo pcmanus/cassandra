@@ -546,11 +546,12 @@ public abstract class ModificationStatement implements CQLStatement
             for (ColumnDefinition def : columnsWithConditions)
                 defs.add(def);
             selection = Selection.forColumns(cfm, new ArrayList<>(defs));
-
         }
 
-        Selection.ResultSetBuilder builder = selection.resultSetBuilder(options, false);
-        SelectStatement.forSelection(cfm, selection).processPartition(partition, options, builder, FBUtilities.nowInSeconds());
+        SelectStatement select = SelectStatement.forSelection(cfm, selection);
+        SelectOptions.Finalized finalizedOptions = select.options().finalize(options);
+        Selection.ResultSetBuilder builder = finalizedOptions.resultSetBuilder();
+        select.processPartition(partition, builder, finalizedOptions);
 
         return builder.build();
     }

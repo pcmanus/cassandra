@@ -26,6 +26,7 @@ import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.selection.Selection.ResultSetBuilder;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -117,6 +118,14 @@ public abstract class Selector
         }
 
         /**
+         * Checks if this factory creates {@link SimpleSelector}.
+         */
+        public boolean isSimpleSelectorFactory()
+        {
+            return false;
+        }
+
+        /**
          * Returns the name of the column corresponding to the output value of the selector instances created by
          * this factory.
          *
@@ -143,6 +152,21 @@ public abstract class Selector
          *                      by the Selector are to be mapped
          */
         protected abstract void addColumnMapping(SelectionColumnMapping mapping, ColumnSpecification resultsColumn);
+
+        /**
+         * A factory is called "terminal" if what it selects doesn't depend on anything only know
+         * at execution time (typically, it doesn't contain a term with a bind markers).
+         */
+        abstract boolean isTerminal();
+
+        /**
+         * Adds the columns fetched by the selector created by this factory to the provided builder, assuming the
+         * factory is terminal (i.e. that {@code isTerminal() == true}).
+         *
+         * @param builder the column builder to add fetched columns (and potential subselection) to.
+         * @throws AssertionError if the method is called on a factory where {@code isTerminal()} returns {@code false}.
+         */
+        abstract void addFetchedColumns(ColumnFilter.Builder builder);
     }
 
     /**
@@ -185,4 +209,12 @@ public abstract class Selector
      * Reset the internal state of this <code>Selector</code>.
      */
     public abstract void reset();
+
+    /**
+     * Add to the provided builder the column (and potential subselections) to fetch for this
+     * selection.
+     *
+     * @param builder the builder to add columns and subselections to.
+     */
+    public abstract void addFetchedColumns(ColumnFilter.Builder builder);
 }

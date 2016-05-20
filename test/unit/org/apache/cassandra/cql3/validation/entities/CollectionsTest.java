@@ -1086,6 +1086,32 @@ public class CollectionsTest extends CQLTester
     }
 
     @Test
+    public void testMapOverlappingSlices() throws Throwable
+    {
+        createTable("CREATE TABLE %s (k int PRIMARY KEY, m map<int, int>)");
+
+        execute("INSERT INTO %s(k, m) VALUES (?, ?)", 0, map(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5));
+
+        flush();
+
+        assertRows(execute("SELECT m[0..3], m[2..4] FROM %s WHERE k=?", 0),
+            row(map(0, 0, 1, 1, 2, 2, 3, 3), map(2, 2, 3, 3, 4, 4))
+        );
+
+        assertRows(execute("SELECT m, m[2..4] FROM %s WHERE k=?", 0),
+            row(map(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5), map(2, 2, 3, 3, 4, 4))
+        );
+
+        assertRows(execute("SELECT m[..3], m[3..4] FROM %s WHERE k=?", 0),
+            row(map(0, 0, 1, 1, 2, 2, 3, 3), map(3, 3, 4, 4))
+        );
+
+        assertRows(execute("SELECT m[1..3], m[2] FROM %s WHERE k=?", 0),
+            row(map(1, 1, 2, 2, 3, 3), 2)
+        );
+    }
+
+    @Test
     public void testMapOperationWithIntKey() throws Throwable
     {
         // used type "int" as map key intentionally since CQL parsing relies on "BigInteger"
