@@ -72,6 +72,14 @@ public interface Term
     public void addFunctionsTo(List<Function> functions);
 
     /**
+     * Whether that term is terminal (this is a shortcut for {@code this instanceof Term.Terminal}).
+     */
+    default public boolean isTerminal()
+    {
+        return false; // overriden below by Terminal
+    }
+
+    /**
      * A parsed, non prepared (thus untyped) term.
      *
      * This can be one of:
@@ -150,6 +158,12 @@ public interface Term
         public boolean containsBindMarker()
         {
             return false;
+        }
+
+        @Override
+        public boolean isTerminal()
+        {
+            return true;
         }
 
         /**

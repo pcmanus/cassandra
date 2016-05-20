@@ -21,12 +21,15 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 
+import com.google.common.collect.Iterables;
 import org.apache.commons.lang3.text.StrBuilder;
+
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.RequestValidations;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -102,6 +105,17 @@ abstract class AbstractFunctionSelector<T extends Function> extends Selector
             {
                 return fun.isAggregate() || factories.doesAggregation();
             }
+
+            public boolean isTerminal()
+            {
+                return Iterables.all(factories, f -> f.isTerminal());
+            }
+
+            public void addFetchedColumns(ColumnFilter.Builder builder)
+            {
+                for (Selector.Factory factory : factories)
+                    factory.addFetchedColumns(builder);
+            }
         };
     }
 
@@ -123,6 +137,12 @@ abstract class AbstractFunctionSelector<T extends Function> extends Selector
     protected List<ByteBuffer> args()
     {
         return args;
+    }
+
+    public void addFetchedColumns(ColumnFilter.Builder builder)
+    {
+        for (Selector selector : argSelectors)
+            selector.addFetchedColumns(builder);
     }
 
     public AbstractType<?> getType()

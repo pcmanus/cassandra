@@ -293,6 +293,9 @@ public class ColumnFilter
 
         public Builder add(ColumnDefinition c)
         {
+            if (c.isPrimaryKeyColumn())
+                return this;
+
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
             queriedBuilder.add(c);
@@ -303,7 +306,8 @@ public class ColumnFilter
         {
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
-            queriedBuilder.addAll(columns);
+            for (ColumnDefinition column : columns)
+                add(column);
             return this;
         }
 

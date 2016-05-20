@@ -30,8 +30,9 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.functions.Function;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.context.CounterContext;
+import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -50,7 +51,7 @@ public abstract class Selection
     };
 
     private final CFMetaData cfm;
-    private final List<ColumnDefinition> columns;
+    protected final List<ColumnDefinition> columns;
     private final SelectionColumnMapping columnMapping;
     private final ResultSet.ResultMetadata metadata;
     private final boolean collectTimestamps;
@@ -231,17 +232,37 @@ public abstract class Selection
         return columns;
     }
 
+    public Finalized finalize(QueryOptions options) throws InvalidRequestException
+    {
+        return new Finalized(options);
+    }
+
+    /**
+     * A selection is called "terminal" if what it selects doesn't depend on anything only know
+     * at execution time (typically, none of the selection depends on bind markers).
+     * <p>
+     * This is equivalent of the selection either not containing any {@link Term}, or only terminal ones.
+     */
+    public abstract boolean isTerminal();
+
+    /**
+     * Adds the columns fetched by this selection to the provided builder, assuming the selection is terminal
+     * (i.e. that {@code isTerminal() == true}).
+     * <p>
+     * The only legitimate caller of this method is probably {@link FetchedColumnsCollector#create()}. For other
+     * use, you should bind the selection and use {@link FetchedColumnsCollector#fetchedColumns()}.
+     *
+     * @param builder the column builder to add fetched columns (and potential subselection) to.
+     * @throws AssertionError if the method is called on a selection where {@code isTerminal()} returns {@code false}.
+     */
+    public abstract void addFetchedColumns(ColumnFilter.Builder builder);
+
     /**
      * @return the mappings between resultset columns and the underlying columns
      */
     public SelectionColumns getColumnMapping()
     {
         return columnMapping;
-    }
-
-    public ResultSetBuilder resultSetBuilder(QueryOptions options, boolean isJons) throws InvalidRequestException
-    {
-        return new ResultSetBuilder(options, isJons);
     }
 
     public abstract boolean isAggregate();
@@ -284,16 +305,50 @@ public abstract class Selection
         return Collections.singletonList(UTF8Type.instance.getSerializer().serialize(sb.toString()));
     }
 
+    /**
+     * A selection object where every bound markers (if any) have been bound to their final value.
+     *
+     * Such object is created at execution time once we have the bound values. Contrarily to a {@code Selection},
+     * a {@code Selection.Finalized} is not thread safe and should be only use within the context of a single
+     * execution.
+     */
+    public class Finalized
+    {
+        /**
+         * {@code Selectors} are unique to a given execution because:
+         *  1) multiple threads can access a {@code Selection} and some selectors maintain a state (for aggregation).
+         *  2) some selectors might depend on bound values.
+         */
+        private final Selectors selectors;
+
+        private Finalized(QueryOptions options) throws InvalidRequestException
+        {
+            this.selectors = newSelectors(options);
+        }
+
+        public ResultSetBuilder resultSetBuilder(QueryOptions options, boolean isJons)
+        {
+            return new ResultSetBuilder(columns, selectors, isJons, options.getProtocolVersion());
+        }
+
+        /**
+         * Add to the provided builder the column (and potential subselections) to fetch for this
+         * selection.
+         *
+         * @param builder the builder to add columns and subselections to.
+         */
+        public void addFetchedColumns(ColumnFilter.Builder builder)
+        {
+            selectors.addFetchedColumns(builder);
+        }
+    }
+
     public class ResultSetBuilder
     {
         private final ResultSet resultSet;
-        private final int protocolVersion;
-
-        /**
-         * As multiple thread can access a <code>Selection</code> instance each <code>ResultSetBuilder</code> will use
-         * its own <code>Selectors</code> instance.
-         */
+        private final int columnCount;
         private final Selectors selectors;
+        public final int protocolVersion;
 
         /*
          * We'll build CQL3 row one by one.
@@ -309,14 +364,15 @@ public abstract class Selection
 
         private final boolean isJson;
 
-        private ResultSetBuilder(QueryOptions options, boolean isJson) throws InvalidRequestException
+        private ResultSetBuilder(List<ColumnDefinition> columns, Selectors selectors, boolean isJson, int protocolVersion) throws InvalidRequestException
         {
             this.resultSet = new ResultSet(getResultMetadata(isJson).copy(), new ArrayList<List<ByteBuffer>>());
-            this.protocolVersion = options.getProtocolVersion();
-            this.selectors = newSelectors(options);
-            this.timestamps = collectTimestamps ? new long[columns.size()] : null;
-            this.ttls = collectTTLs ? new int[columns.size()] : null;
+            this.columnCount = columns.size();
+            this.selectors = selectors;
+            this.timestamps = collectTimestamps ? new long[columnCount] : null;
+            this.ttls = collectTTLs ? new int[columnCount] : null;
             this.isJson = isJson;
+            this.protocolVersion = protocolVersion;
 
             // We use MIN_VALUE to indicate no timestamp and -1 for no ttl
             if (timestamps != null)
@@ -374,7 +430,7 @@ public abstract class Selection
                     selectors.reset();
                 }
             }
-            current = new ArrayList<>(columns.size());
+            current = new ArrayList<>(columnCount);
         }
 
         public ResultSet build() throws InvalidRequestException
@@ -415,6 +471,14 @@ public abstract class Selection
         public List<ByteBuffer> getOutputRow(int protocolVersion) throws InvalidRequestException;
 
         public void reset();
+
+        /**
+         * Add to the provided builder the column (and potential subselections) to fetch for this
+         * selection.
+         *
+         * @param builder the builder to add columns and subselections to.
+         */
+        public void addFetchedColumns(ColumnFilter.Builder builder);
     }
 
     // Special cased selection for when only columns are selected.
@@ -452,6 +516,16 @@ public abstract class Selection
             return false;
         }
 
+        public boolean isTerminal()
+        {
+            return true;
+        }
+
+        public void addFetchedColumns(ColumnFilter.Builder builder)
+        {
+            builder.addAll(getColumns());
+        }
+
         protected Selectors newSelectors(QueryOptions options)
         {
             return new Selectors()
@@ -476,6 +550,13 @@ public abstract class Selection
                 public boolean isAggregate()
                 {
                     return false;
+                }
+
+                public void addFetchedColumns(ColumnFilter.Builder builder)
+                {
+                    for (ColumnDefinition def : columns)
+                        if (!def.isPrimaryKeyColumn())
+                            builder.add(def);
                 }
             };
         }
@@ -533,6 +614,17 @@ public abstract class Selection
             return factories.doesAggregation();
         }
 
+        public boolean isTerminal()
+        {
+            return Iterables.all(factories, f -> f.isTerminal());
+        }
+
+        public void addFetchedColumns(ColumnFilter.Builder builder)
+        {
+            for (Selector.Factory factory : factories)
+                factory.addFetchedColumns(builder);
+        }
+
         protected Selectors newSelectors(final QueryOptions options) throws InvalidRequestException
         {
             return new Selectors()
@@ -564,6 +656,12 @@ public abstract class Selection
                 {
                     for (Selector selector : selectors)
                         selector.addInput(protocolVersion, rs);
+                }
+
+                public void addFetchedColumns(ColumnFilter.Builder builder)
+                {
+                    for (Selector selector : selectors)
+                        selector.addFetchedColumns(builder);
                 }
             };
         }
