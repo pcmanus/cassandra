@@ -271,13 +271,7 @@ public abstract class Relation {
     protected final ColumnDefinition toColumnDefinition(CFMetaData cfm,
                                                         ColumnIdentifier.Raw entity) throws InvalidRequestException
     {
-        ColumnIdentifier identifier = entity.prepare(cfm);
-        ColumnDefinition def = cfm.getColumnDefinition(identifier);
-
-        if (def == null)
-            throw new UnrecognizedEntityException(identifier, this);
-
-        return def;
+        return entity.prepare(cfm);
     }
 
     /**

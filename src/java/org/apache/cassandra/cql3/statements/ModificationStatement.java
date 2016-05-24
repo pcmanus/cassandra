@@ -549,10 +549,10 @@ public abstract class ModificationStatement implements CQLStatement
 
         }
 
-        Selection.ResultSetBuilder builder = selection.resultSetBuilder(false);
+        Selection.ResultSetBuilder builder = selection.resultSetBuilder(options, false);
         SelectStatement.forSelection(cfm, selection).processPartition(partition, options, builder, FBUtilities.nowInSeconds());
 
-        return builder.build(options.getProtocolVersion());
+        return builder.build();
     }
 
     public ResultMessage executeInternal(QueryState queryState, QueryOptions options) throws RequestValidationException, RequestExecutionException
@@ -834,14 +834,11 @@ public abstract class ModificationStatement implements CQLStatement
 
             for (Pair<ColumnIdentifier.Raw, ColumnCondition.Raw> entry : conditions)
             {
-                ColumnIdentifier id = entry.left.prepare(metadata);
-                ColumnDefinition def = metadata.getColumnDefinition(id);
-                checkNotNull(metadata.getColumnDefinition(id), "Unknown identifier %s in IF conditions", id);
-
+                ColumnDefinition def = entry.left.prepare(metadata);
                 ColumnCondition condition = entry.right.prepare(keyspace(), def, metadata);
                 condition.collectMarkerSpecification(boundNames);
 
-                checkFalse(def.isPrimaryKeyColumn(), "PRIMARY KEY column '%s' cannot have IF conditions", id);
+                checkFalse(def.isPrimaryKeyColumn(), "PRIMARY KEY column '%s' cannot have IF conditions", def.name);
                 builder.add(condition);
             }
             return builder.build();
@@ -884,8 +881,7 @@ public abstract class ModificationStatement implements CQLStatement
          */
         protected static ColumnDefinition getColumnDefinition(CFMetaData cfm, Raw rawId)
         {
-            ColumnIdentifier id = rawId.prepare(cfm);
-            return checkNotNull(cfm.getColumnDefinition(id), "Unknown identifier %s", id);
+            return rawId.prepare(cfm);
         }
     }
 }

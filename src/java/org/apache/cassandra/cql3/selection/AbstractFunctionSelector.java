@@ -24,6 +24,7 @@ import java.util.List;
 import org.apache.commons.lang3.text.StrBuilder;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnSpecification;
+import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -80,10 +81,10 @@ abstract class AbstractFunctionSelector<T extends Function> extends Selector
                 factories.addFunctionsTo(functions);
             }
 
-            public Selector newInstance() throws InvalidRequestException
+            public Selector newInstance(QueryOptions options) throws InvalidRequestException
             {
-                return fun.isAggregate() ? new AggregateFunctionSelector(fun, factories.newInstances())
-                                         : new ScalarFunctionSelector(fun, factories.newInstances());
+                return fun.isAggregate() ? new AggregateFunctionSelector(fun, factories.newInstances(options))
+                                         : new ScalarFunctionSelector(fun, factories.newInstances(options));
             }
 
             public boolean isWritetimeSelectorFactory()

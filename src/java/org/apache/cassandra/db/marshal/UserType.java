@@ -138,11 +138,6 @@ public class UserType extends TupleType
         return UTF8Type.instance.compose(name);
     }
 
-    public short fieldPosition(ColumnIdentifier field)
-    {
-        return fieldPosition(field.bytes);
-    }
-
     public short fieldPosition(ByteBuffer fieldName)
     {
         for (short i = 0; i < fieldNames.size(); i++)

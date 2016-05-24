@@ -21,22 +21,40 @@ package org.apache.cassandra.cql3.selection;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.nio.ByteBuffer;
 
 import org.apache.commons.lang3.text.StrBuilder;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.cql3.CQL3Type;
-import org.apache.cassandra.cql3.ColumnIdentifier;
+import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.functions.*;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.UserType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
-public abstract class Selectable
+public interface Selectable extends AssignmentTestable
 {
-    public abstract Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs);
+    public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames);
 
-    protected static int addAndGetIndex(ColumnDefinition def, List<ColumnDefinition> l)
+    /**
+     * The type of the {@code Selectable} if it can be infered.
+     *
+     * @param keyspace the keyspace on which the statement for which this is a
+     * {@code Selectable} is on.
+     * @return the type of this {@code Selectable} if inferrable, or {@code null}
+     * otherwise (for instance, the type isn't inferable for a bind marker. Even for
+     * literals, the exact type is not inferrable since they are valid for many
+     * different types and so this will return {@code null} too).
+     */
+    public AbstractType<?> getExactTypeIfKnown(String keyspace);
+
+    // Term.Raw overrides this since some literals can be WEAKLY_ASSIGNABLE
+    default public TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+    {
+        AbstractType<?> type = getExactTypeIfKnown(keyspace);
+        return type == null ? TestResult.NOT_ASSIGNABLE : type.testAssignment(keyspace, receiver);
+    }
+
+    default int addAndGetIndex(ColumnDefinition def, List<ColumnDefinition> l)
     {
         int idx = l.indexOf(def);
         if (idx < 0)
@@ -47,52 +65,71 @@ public abstract class Selectable
         return idx;
     }
 
-    public static interface Raw
+    public static Raw forRawTerm(final Term.Raw term)
     {
-        public Selectable prepare(CFMetaData cfm);
+        return new Raw()
+        {
+            public Selectable prepare(CFMetaData cfm)
+            {
+                return term;
+            }
+        };
+    }
+
+    public static abstract class Raw
+    {
+        public abstract Selectable prepare(CFMetaData cfm);
 
         /**
          * Returns true if any processing is performed on the selected column.
          **/
-        public boolean processesSelection();
+        public boolean processesSelection()
+        {
+            // ColumnIdentifier is the only case that returns false and override this
+            return true;
+        }
     }
 
-    public static class WritetimeOrTTL extends Selectable
+    public static class WritetimeOrTTL implements Selectable
     {
-        public final ColumnIdentifier id;
+        public final ColumnDefinition column;
         public final boolean isWritetime;
 
-        public WritetimeOrTTL(ColumnIdentifier id, boolean isWritetime)
+        public WritetimeOrTTL(ColumnDefinition column, boolean isWritetime)
         {
-            this.id = id;
+            this.column = column;
             this.isWritetime = isWritetime;
         }
 
         @Override
         public String toString()
         {
-            return (isWritetime ? "writetime" : "ttl") + "(" + id + ")";
+            return (isWritetime ? "writetime" : "ttl") + "(" + column.name + ")";
         }
 
         public Selector.Factory newSelectorFactory(CFMetaData cfm,
-                                                   List<ColumnDefinition> defs)
+                                                   AbstractType<?> expectedType,
+                                                   List<ColumnDefinition> defs,
+                                                   VariableSpecifications boundNames)
         {
-            ColumnDefinition def = cfm.getColumnDefinition(id);
-            if (def == null)
-                throw new InvalidRequestException(String.format("Undefined name %s in selection clause", id));
-            if (def.isPrimaryKeyColumn())
+            if (column.isPrimaryKeyColumn())
                 throw new InvalidRequestException(
                         String.format("Cannot use selection function %s on PRIMARY KEY part %s",
                                       isWritetime ? "writeTime" : "ttl",
-                                      def.name));
-            if (def.type.isCollection())
+                                      column.name));
+            if (column.type.isCollection())
                 throw new InvalidRequestException(String.format("Cannot use selection function %s on collections",
                                                                 isWritetime ? "writeTime" : "ttl"));
 
-            return WritetimeOrTTLSelector.newFactory(def, addAndGetIndex(def, defs), isWritetime);
+            return WritetimeOrTTLSelector.newFactory(column, addAndGetIndex(column, defs), isWritetime);
         }
 
-        public static class Raw implements Selectable.Raw
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return isWritetime ? LongType.instance : Int32Type.instance;
+        }
+
+        public static class Raw extends Selectable.Raw
         {
             private final ColumnIdentifier.Raw id;
             private final boolean isWritetime;
@@ -107,59 +144,42 @@ public abstract class Selectable
             {
                 return new WritetimeOrTTL(id.prepare(cfm), isWritetime);
             }
-
-            public boolean processesSelection()
-            {
-                return true;
-            }
         }
     }
 
-    public static class WithFunction extends Selectable
+    public static class WithFunction implements Selectable
     {
-        public final FunctionName functionName;
+        public final Function function;
         public final List<Selectable> args;
 
-        public WithFunction(FunctionName functionName, List<Selectable> args)
+        public WithFunction(Function function, List<Selectable> args)
         {
-            this.functionName = functionName;
+            this.function = function;
             this.args = args;
         }
 
         @Override
         public String toString()
         {
-            return new StrBuilder().append(functionName)
+            return new StrBuilder().append(function.name())
                                    .append("(")
                                    .appendWithSeparators(args, ", ")
                                    .append(")")
                                    .toString();
         }
 
-        public Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs)
+        public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames)
         {
-            SelectorFactories factories  =
-                    SelectorFactories.createFactoriesAndCollectColumnDefinitions(args, cfm, defs);
-
-            // We need to circumvent the normal function lookup process for toJson() because instances of the function
-            // are not pre-declared (because it can accept any type of argument).
-            Function fun;
-            if (functionName.equalsNativeFunction(ToJsonFct.NAME))
-                fun = ToJsonFct.getInstance(factories.getReturnTypes());
-            else
-                fun = FunctionResolver.get(cfm.ksName, functionName, factories.newInstances(), cfm.ksName, cfm.cfName, null);
-
-            if (fun == null)
-                throw new InvalidRequestException(String.format("Unknown function '%s'", functionName));
-
-            if (fun.returnType() == null)
-                throw new InvalidRequestException(String.format("Unknown function %s called in selection clause",
-                                                                functionName));
-
-            return AbstractFunctionSelector.newFactory(fun, factories);
+            SelectorFactories factories = SelectorFactories.createFactoriesAndCollectColumnDefinitions(args, function.argTypes(), cfm, defs, boundNames);
+            return AbstractFunctionSelector.newFactory(function, factories);
         }
 
-        public static class Raw implements Selectable.Raw
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return function.returnType();
+        }
+
+        public static class Raw extends Selectable.Raw
         {
             private final FunctionName functionName;
             private final List<Selectable.Raw> args;
@@ -176,22 +196,76 @@ public abstract class Selectable
                                Collections.emptyList());
             }
 
-            public WithFunction prepare(CFMetaData cfm)
+            public Selectable prepare(CFMetaData cfm)
             {
                 List<Selectable> preparedArgs = new ArrayList<>(args.size());
                 for (Selectable.Raw arg : args)
                     preparedArgs.add(arg.prepare(cfm));
-                return new WithFunction(functionName, preparedArgs);
-            }
 
-            public boolean processesSelection()
-            {
-                return true;
+                FunctionName name = functionName;
+                // We need to circumvent the normal function lookup process for toJson() because instances of the function
+                // are not pre-declared (because it can accept any type of argument). We also have to wait until we have the
+                // selector factories of the argument so we can access their final type.
+                if (functionName.equalsNativeFunction(ToJsonFct.NAME))
+                {
+                    return new WithToJSonFunction(preparedArgs);
+                }
+                // Also, COUNT(x) is equivalent to COUNT(*) for any non-null term x (since count(x) don't care about it's argument outside of check for nullness) and
+                // for backward compatibilty we want to support COUNT(1), but we actually have COUNT(x) method for every existing (simple) input types so currently COUNT(1)
+                // will throw as ambiguous (since 1 works for any type). So we have have to special case COUNT.
+                else if (functionName.equalsNativeFunction(FunctionName.nativeFunction("count")) && preparedArgs.size() == 1 && (preparedArgs.get(0) instanceof Constants.Literal))
+                {
+                    // Note that 'null' isn't a Constants.Literal
+                    name = AggregateFcts.countRowsFunction.name();
+                    preparedArgs = Collections.emptyList();
+                }
+
+                Function fun = FunctionResolver.get(cfm.ksName, name, preparedArgs, cfm.ksName, cfm.cfName, null);
+
+                if (fun == null)
+                    throw new InvalidRequestException(String.format("Unknown function '%s'", functionName));
+
+                if (fun.returnType() == null)
+                    throw new InvalidRequestException(String.format("Unknown function %s called in selection clause", functionName));
+
+                return new WithFunction(fun, preparedArgs);
             }
         }
     }
 
-    public static class WithCast extends Selectable
+    public static class WithToJSonFunction implements Selectable
+    {
+        public final List<Selectable> args;
+
+        private WithToJSonFunction(List<Selectable> args)
+        {
+            this.args = args;
+        }
+
+        @Override
+        public String toString()
+        {
+            return new StrBuilder().append(ToJsonFct.NAME)
+                                   .append("(")
+                                   .appendWithSeparators(args, ", ")
+                                   .append(")")
+                                   .toString();
+        }
+
+        public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames)
+        {
+            SelectorFactories factories = SelectorFactories.createFactoriesAndCollectColumnDefinitions(args, null, cfm, defs, boundNames);
+            Function fun = ToJsonFct.getInstance(factories.getReturnTypes());
+            return AbstractFunctionSelector.newFactory(fun, factories);
+        }
+
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return UTF8Type.instance;
+        }
+    }
+
+    public static class WithCast implements Selectable
     {
         private final CQL3Type type;
         private final Selectable arg;
@@ -208,21 +282,19 @@ public abstract class Selectable
             return String.format("cast(%s as %s)", arg, type.toString().toLowerCase());
         }
 
-        public Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs)
+        public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames)
         {
-            SelectorFactories factories  =
-                    SelectorFactories.createFactoriesAndCollectColumnDefinitions(Collections.singletonList(arg), cfm, defs);
+            List<Selectable> args = Collections.singletonList(arg);
+            SelectorFactories factories = SelectorFactories.createFactoriesAndCollectColumnDefinitions(args, null, cfm, defs, boundNames);
 
             Selector.Factory factory = factories.get(0);
 
             // If the user is trying to cast a type on its own type we simply ignore it.
             if (type.getType().equals(factory.getReturnType()))
-            {
                 return factory;
-            }
 
             FunctionName name = FunctionName.nativeFunction(CastFcts.getFunctionName(type));
-            Function fun = FunctionResolver.get(cfm.ksName, name, factories.newInstances(), cfm.ksName, cfm.cfName, null);
+            Function fun = FunctionResolver.get(cfm.ksName, name, args, cfm.ksName, cfm.cfName, null);
 
             if (fun == null)
             {
@@ -233,7 +305,12 @@ public abstract class Selectable
             return AbstractFunctionSelector.newFactory(fun, factories);
         }
 
-        public static class Raw implements Selectable.Raw
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return type.getType();
+        }
+
+        public static class Raw extends Selectable.Raw
         {
             private final CQL3Type type;
             private final Selectable.Raw arg;
@@ -248,20 +325,15 @@ public abstract class Selectable
             {
                 return new WithCast(arg.prepare(cfm), type);
             }
-
-            public boolean processesSelection()
-            {
-                return true;
-            }
         }
     }
 
-    public static class WithFieldSelection extends Selectable
+    public static class WithFieldSelection implements Selectable
     {
         public final Selectable selected;
-        public final ColumnIdentifier field;
+        public final ByteBuffer field;
 
-        public WithFieldSelection(Selectable selected, ColumnIdentifier field)
+        public WithFieldSelection(Selectable selected, ByteBuffer field)
         {
             this.selected = selected;
             this.field = field;
@@ -273,10 +345,10 @@ public abstract class Selectable
             return String.format("%s.%s", selected, field);
         }
 
-        public Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs)
+        public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames)
         {
-            Selector.Factory factory = selected.newSelectorFactory(cfm, defs);
-            AbstractType<?> type = factory.newInstance().getType();
+            Selector.Factory factory = selected.newSelectorFactory(cfm, null, defs, boundNames);
+            AbstractType<?> type = factory.getColumnSpecification(cfm).type;
             if (!type.isUDT())
             {
                 throw new InvalidRequestException(
@@ -286,7 +358,7 @@ public abstract class Selectable
             }
 
             UserType ut = (UserType) type;
-            int fieldIndex = ((UserType) type).fieldPosition(field);
+            int fieldIndex = ut.fieldPosition(field);
             if (fieldIndex == -1)
             {
                 throw new InvalidRequestException(String.format("%s of type %s has no field %s",
@@ -296,7 +368,21 @@ public abstract class Selectable
             return FieldSelector.newFactory(ut, fieldIndex, factory);
         }
 
-        public static class Raw implements Selectable.Raw
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            AbstractType<?> selectedType = selected.getExactTypeIfKnown(keyspace);
+            if (selectedType == null || !(selectedType instanceof UserType))
+                return null;
+
+            UserType ut = (UserType) selectedType;
+            int fieldIndex = ut.fieldPosition(field);
+            if (fieldIndex == -1)
+                return null;
+
+            return ut.fieldType(fieldIndex);
+        }
+
+        public static class Raw extends Selectable.Raw
         {
             private final Selectable.Raw selected;
             private final ColumnIdentifier.Raw field;
@@ -309,12 +395,7 @@ public abstract class Selectable
 
             public WithFieldSelection prepare(CFMetaData cfm)
             {
-                return new WithFieldSelection(selected.prepare(cfm), field.prepare(cfm));
-            }
-
-            public boolean processesSelection()
-            {
-                return true;
+                return new WithFieldSelection(selected.prepare(cfm), field.prepareAsUDTField(cfm));
             }
         }
     }

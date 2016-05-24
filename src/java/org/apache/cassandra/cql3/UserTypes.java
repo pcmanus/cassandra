@@ -23,9 +23,7 @@ import java.util.*;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.marshal.TupleType;
-import org.apache.cassandra.db.marshal.UTF8Type;
-import org.apache.cassandra.db.marshal.UserType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -127,6 +125,11 @@ public abstract class UserTypes
             {
                 return AssignmentTestable.TestResult.NOT_ASSIGNABLE;
             }
+        }
+
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return null;
         }
 
         public String getText()
@@ -318,9 +321,9 @@ public abstract class UserTypes
 
     public static class SetterByField extends Operation
     {
-        private final ColumnIdentifier field;
+        private final ByteBuffer field;
 
-        public SetterByField(ColumnDefinition column, ColumnIdentifier field, Term t)
+        public SetterByField(ColumnDefinition column, ByteBuffer field, Term t)
         {
             super(column, t);
             this.field = field;
@@ -335,7 +338,7 @@ public abstract class UserTypes
             if (value == UNSET_VALUE)
                 return;
 
-            CellPath fieldPath = ((UserType) column.type).cellPathForField(field.bytes);
+            CellPath fieldPath = ((UserType) column.type).cellPathForField(field);
             if (value == null)
                 params.addTombstone(column, fieldPath);
             else
@@ -345,9 +348,9 @@ public abstract class UserTypes
 
     public static class DeleterByField extends Operation
     {
-        private final ColumnIdentifier field;
+        private final ByteBuffer field;
 
-        public DeleterByField(ColumnDefinition column, ColumnIdentifier field)
+        public DeleterByField(ColumnDefinition column, ByteBuffer field)
         {
             super(column, null);
             this.field = field;
@@ -358,7 +361,7 @@ public abstract class UserTypes
             // we should not get here for frozen UDTs
             assert column.type.isMultiCell() : "Attempted to delete a single field from a frozen UDT";
 
-            CellPath fieldPath = ((UserType) column.type).cellPathForField(field.bytes);
+            CellPath fieldPath = ((UserType) column.type).cellPathForField(field);
             params.addTombstone(column, fieldPath);
         }
     }

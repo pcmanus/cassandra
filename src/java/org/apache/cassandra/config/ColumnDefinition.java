@@ -27,11 +27,15 @@ import com.google.common.base.Objects;
 import com.google.common.collect.Collections2;
 
 import org.apache.cassandra.cql3.*;
+import org.apache.cassandra.cql3.selection.Selectable;
+import org.apache.cassandra.cql3.selection.Selector;
+import org.apache.cassandra.cql3.selection.SimpleSelector;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.serializers.MarshalException;
 
-public class ColumnDefinition extends ColumnSpecification implements Comparable<ColumnDefinition>
+public class ColumnDefinition extends ColumnSpecification implements Selectable, Comparable<ColumnDefinition>
 {
     public static final Comparator<Object> asymmetricColumnDataComparator =
         (a, b) -> ((ColumnData) a).column().compareTo((ColumnDefinition) b);
@@ -280,8 +284,14 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         }
         return result;
     }
+
     @Override
     public String toString()
+    {
+        return name.toString();
+    }
+
+    public String debugString()
     {
         return MoreObjects.toStringHelper(this)
                           .add("name", name)
@@ -418,5 +428,15 @@ public class ColumnDefinition extends ColumnSpecification implements Comparable<
         return type instanceof CollectionType
              ? ((CollectionType)type).valueComparator()
              : type;
+    }
+
+    public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames) throws InvalidRequestException
+    {
+        return SimpleSelector.newFactory(this, addAndGetIndex(this, defs));
+    }
+
+    public AbstractType<?> getExactTypeIfKnown(String keyspace)
+    {
+        return type;
     }
 }

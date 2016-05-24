@@ -31,8 +31,6 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.selection.Selectable;
-import org.apache.cassandra.cql3.selection.Selector;
-import org.apache.cassandra.cql3.selection.SimpleSelector;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -44,7 +42,7 @@ import org.apache.cassandra.utils.memory.AbstractAllocator;
  * Represents an identifer for a CQL column definition.
  * TODO : should support light-weight mode without text representation for when not interned
  */
-public class ColumnIdentifier extends Selectable implements IMeasurableMemory, Comparable<ColumnIdentifier>
+public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIdentifier>
 {
     private static final Pattern PATTERN_DOUBLE_QUOTE = Pattern.compile("\"", Pattern.LITERAL);
     private static final String ESCAPED_DOUBLE_QUOTE = Matcher.quoteReplacement("\"\"");
@@ -183,15 +181,6 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
         return interned ? this : new ColumnIdentifier(allocator.clone(bytes), text, false);
     }
 
-    public Selector.Factory newSelectorFactory(CFMetaData cfm, List<ColumnDefinition> defs) throws InvalidRequestException
-    {
-        ColumnDefinition def = cfm.getColumnDefinition(this);
-        if (def == null)
-            throw new InvalidRequestException(String.format("Undefined name %s in selection clause", this));
-
-        return SimpleSelector.newFactory(def, addAndGetIndex(def, defs));
-    }
-
     public int compareTo(ColumnIdentifier that)
     {
         int c = Long.compare(this.prefixComparison, that.prefixComparison);
@@ -208,19 +197,34 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
      * once the comparator is known with prepare(). This should only be used with identifiers that are actual
      * column names. See CASSANDRA-8178 for more background.
      */
-    public static interface Raw extends Selectable.Raw
+    public static abstract class Raw extends Selectable.Raw
     {
+        public ColumnDefinition prepare(CFMetaData cfm)
+        {
+            ColumnDefinition def = cfm.getColumnDefinition(getIdentifier(cfm));
+            if (def == null)
+                throw new InvalidRequestException(String.format("Undefined column name %s", toCQLString()));
+            return def;
+        }
 
-        public ColumnIdentifier prepare(CFMetaData cfm);
+        public abstract ByteBuffer prepareAsUDTField(CFMetaData cfm);
+
+        public abstract ColumnIdentifier getIdentifier(CFMetaData cfm);
 
         /**
          * Returns a string representation of the identifier that is safe to use directly in CQL queries.
          * In necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
          */
-        public String toCQLString();
+        public abstract String toCQLString();
+
+        @Override
+        public boolean processesSelection()
+        {
+            return false;
+        }
     }
 
-    public static class Literal implements Raw
+    public static class Literal extends Raw
     {
         private final String rawText;
         private final String text;
@@ -231,7 +235,7 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
             this.text =  keepCase ? rawText : rawText.toLowerCase(Locale.US);
         }
 
-        public ColumnIdentifier prepare(CFMetaData cfm)
+        public ColumnIdentifier getIdentifier(CFMetaData cfm)
         {
             if (!cfm.isStaticCompactTable())
                 return getInterned(text, true);
@@ -251,9 +255,9 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
             return getInterned(thriftColumnNameType.fromString(rawText), text);
         }
 
-        public boolean processesSelection()
+        public ByteBuffer prepareAsUDTField(CFMetaData cfm)
         {
-            return false;
+            return ByteBufferUtil.bytes(text);
         }
 
         @Override
@@ -284,7 +288,7 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
         }
     }
 
-    public static class ColumnIdentifierValue implements Raw
+    public static class ColumnIdentifierValue extends Raw
     {
         private final ColumnIdentifier identifier;
 
@@ -293,14 +297,14 @@ public class ColumnIdentifier extends Selectable implements IMeasurableMemory, C
             this.identifier = identifier;
         }
 
-        public ColumnIdentifier prepare(CFMetaData cfm)
+        public ColumnIdentifier getIdentifier(CFMetaData cfm)
         {
             return identifier;
         }
 
-        public boolean processesSelection()
+        public ByteBuffer prepareAsUDTField(CFMetaData cfm)
         {
-            return false;
+            return identifier.bytes;
         }
 
         @Override

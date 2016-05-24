@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.cql3;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
@@ -264,10 +265,10 @@ public abstract class Operation
             else if (!receiver.type.isMultiCell())
                 throw new InvalidRequestException(String.format("Invalid operation (%s) for frozen UDT column %s", toString(receiver), receiver.name));
 
-            ColumnIdentifier fieldIdentifier = field.prepare(cfm);
+            ByteBuffer fieldIdentifier = field.prepareAsUDTField(cfm);
             int fieldPosition = ((UserType) receiver.type).fieldPosition(fieldIdentifier);
             if (fieldPosition == -1)
-                throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, fieldIdentifier));
+                throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, field));
 
             Term val = value.prepare(cfm.ksName, UserTypes.fieldSpecOf(receiver, fieldPosition));
             return new UserTypes.SetterByField(receiver, fieldIdentifier, val);
@@ -495,9 +496,9 @@ public abstract class Operation
             else if (!receiver.type.isMultiCell())
                 throw new InvalidRequestException(String.format("Frozen UDT column %s does not support field deletions", receiver.name));
 
-            ColumnIdentifier fieldIdentifier = field.prepare(cfm);
+            ByteBuffer fieldIdentifier = field.prepareAsUDTField(cfm);
             if (((UserType) receiver.type).fieldPosition(fieldIdentifier) == -1)
-                throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, fieldIdentifier));
+                throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, field));
 
             return new UserTypes.DeleterByField(receiver, fieldIdentifier);
         }

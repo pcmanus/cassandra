@@ -109,13 +109,9 @@ public class IndexTarget
             // same syntax as an index on a regular column (i.e. the 'values' in
             // 'CREATE INDEX on table(values(collection));' is optional). So we correct the target type
             // when the target column is a collection & the target type is SIMPLE.
-            ColumnIdentifier colId = column.prepare(cfm);
-            ColumnDefinition columnDef = cfm.getColumnDefinition(colId);
-            if (columnDef == null)
-                throw new InvalidRequestException("No column definition found for column " + colId);
-
+            ColumnDefinition columnDef = column.prepare(cfm);
             Type actualType = (type == Type.SIMPLE && columnDef.type.isCollection()) ? Type.VALUES : type;
-            return new IndexTarget(colId, actualType);
+            return new IndexTarget(columnDef.name, actualType);
         }
     }
 

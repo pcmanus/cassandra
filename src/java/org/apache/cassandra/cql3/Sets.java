@@ -122,6 +122,30 @@ public abstract class Sets
             return AssignmentTestable.TestResult.testAll(keyspace, valueSpec, elements);
         }
 
+        @Override
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            for (Term.Raw term : elements)
+            {
+                AbstractType<?> type = term.getExactTypeIfKnown(keyspace);
+                if (type != null)
+                    return SetType.getInstance(type, false);
+            }
+            return null;
+        }
+
+        @Override
+        public AbstractType<?> getDefaultType(String keyspace)
+        {
+            for (Term.Raw term : elements)
+            {
+                AbstractType<?> type = term.getDefaultType(keyspace);
+                if (type != null)
+                    return SetType.getInstance(type, false);
+            }
+            return null;
+        }
+
         public String getText()
         {
             return elements.stream().map(Term.Raw::getText).collect(Collectors.joining(", ", "{", "}"));

@@ -280,10 +280,16 @@ selector returns [RawSelector s]
     : us=unaliasedSelector (K_AS c=noncol_ident { alias = c; })? { $s = new RawSelector(us, alias); }
     ;
 
+/*
+ * A single selection. The core of it is selecting a column, but we also allow any term and function, as well as
+ * sub-element selection for UDT.
+ */
 unaliasedSelector returns [Selectable.Raw s]
     @init { Selectable.Raw tmp = null; }
     :  ( c=cident                                  { tmp = c; }
-       | K_COUNT '(' countArgument ')'             { tmp = Selectable.WithFunction.Raw.newCountRowsFunction();}
+       | v=value                                   { tmp = Selectable.forRawTerm(v); }
+       | '(' ct=comparatorType ')' v=value         { tmp = Selectable.forRawTerm(new TypeCast(ct, v)); }
+       | K_COUNT '(' '\*' ')'                      { tmp = Selectable.WithFunction.Raw.newCountRowsFunction(); }
        | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, true); }
        | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, false); }
        | K_CAST      '(' sn=unaliasedSelector K_AS t=native_type ')' {tmp = new Selectable.WithCast.Raw(sn, t);}
@@ -296,11 +302,6 @@ selectionFunctionArgs returns [List<Selectable.Raw> a]
     | '(' s1=unaliasedSelector { List<Selectable.Raw> args = new ArrayList<Selectable.Raw>(); args.add(s1); }
           ( ',' sn=unaliasedSelector { args.add(sn); } )*
       ')' { $a = args; }
-    ;
-
-countArgument
-    : '\*'
-    | i=INTEGER { if (!i.getText().equals("1")) addRecognitionError("Only COUNT(1) is supported, got COUNT(" + i.getText() + ")");}
     ;
 
 whereClause returns [WhereClause.Builder clause]
@@ -1572,7 +1573,7 @@ non_type_ident returns [ColumnIdentifier id]
 
 unreserved_keyword returns [String str]
     : u=unreserved_function_keyword     { $str = u; }
-    | k=(K_TTL | K_COUNT | K_WRITETIME | K_KEY | K_CAST) { $str = $k.text; }
+    | k=(K_TTL | K_COUNT | K_WRITETIME | K_KEY | K_CAST | K_JSON | K_DISTINCT) { $str = $k.text; }
     ;
 
 unreserved_function_keyword returns [String str]
@@ -1608,7 +1609,6 @@ basic_unreserved_keyword returns [String str]
         | K_EXISTS
         | K_CUSTOM
         | K_TRIGGER
-        | K_DISTINCT
         | K_CONTAINS
         | K_STATIC
         | K_FROZEN
@@ -1622,7 +1622,6 @@ basic_unreserved_keyword returns [String str]
         | K_INITCOND
         | K_RETURNS
         | K_LANGUAGE
-        | K_JSON
         | K_CALLED
         | K_INPUT
         | K_LIKE

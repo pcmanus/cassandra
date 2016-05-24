@@ -159,16 +159,15 @@ public class CreateViewStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException("Cannot use function when defining a materialized view");
             if (selectable instanceof Selectable.WritetimeOrTTL.Raw)
                 throw new InvalidRequestException("Cannot use function when defining a materialized view");
-            ColumnIdentifier identifier = (ColumnIdentifier) selectable.prepare(cfm);
             if (selector.alias != null)
-                throw new InvalidRequestException(String.format("Cannot alias column '%s' as '%s' when defining a materialized view", identifier.toString(), selector.alias.toString()));
+                throw new InvalidRequestException("Cannot use alias when defining a materialized view");
 
-            ColumnDefinition cdef = cfm.getColumnDefinition(identifier);
+            Selectable s = selectable.prepare(cfm);
+            if (s instanceof Term.Raw)
+                throw new InvalidRequestException("Cannot use terms in selection when defining a materialized view");
 
-            if (cdef == null)
-                throw new InvalidRequestException("Unknown column name detected in CREATE MATERIALIZED VIEW statement : "+identifier);
-
-            included.add(identifier);
+            ColumnDefinition cdef = (ColumnDefinition)s;
+            included.add(cdef.name);
         }
 
         Set<ColumnIdentifier.Raw> targetPrimaryKeys = new HashSet<>();
@@ -177,12 +176,9 @@ public class CreateViewStatement extends SchemaAlteringStatement
             if (!targetPrimaryKeys.add(identifier))
                 throw new InvalidRequestException("Duplicate entry found in PRIMARY KEY: "+identifier);
 
-            ColumnDefinition cdef = cfm.getColumnDefinition(identifier.prepare(cfm));
+            ColumnDefinition cdef = identifier.prepare(cfm);
 
-            if (cdef == null)
-                throw new InvalidRequestException("Unknown column name detected in CREATE MATERIALIZED VIEW statement : "+identifier);
-
-            if (cfm.getColumnDefinition(identifier.prepare(cfm)).type.isMultiCell())
+            if (cdef.type.isMultiCell())
                 throw new InvalidRequestException(String.format("Cannot use MultiCell column '%s' in PRIMARY KEY of materialized view", identifier));
 
             if (cdef.isStatic())
@@ -311,21 +307,20 @@ public class CreateViewStatement extends SchemaAlteringStatement
                                                List<ColumnIdentifier> columns,
                                                StatementRestrictions restrictions)
     {
-        ColumnIdentifier identifier = raw.prepare(cfm);
-        ColumnDefinition def = cfm.getColumnDefinition(identifier);
+        ColumnDefinition def = raw.prepare(cfm);
 
-        boolean isPk = basePK.contains(identifier);
+        boolean isPk = basePK.contains(def.name);
         if (!isPk && hasNonPKColumn)
-            throw new InvalidRequestException(String.format("Cannot include more than one non-primary key column '%s' in materialized view partition key", identifier));
+            throw new InvalidRequestException(String.format("Cannot include more than one non-primary key column '%s' in materialized view partition key", def.name));
 
         // We don't need to include the "IS NOT NULL" filter on a non-composite partition key
         // because we will never allow a single partition key to be NULL
-        boolean isSinglePartitionKey = cfm.getColumnDefinition(identifier).isPartitionKey()
+        boolean isSinglePartitionKey = def.isPartitionKey()
                                        && cfm.partitionKeyColumns().size() == 1;
         if (!isSinglePartitionKey && !restrictions.isRestricted(def))
-            throw new InvalidRequestException(String.format("Primary key column '%s' is required to be filtered by 'IS NOT NULL'", identifier));
+            throw new InvalidRequestException(String.format("Primary key column '%s' is required to be filtered by 'IS NOT NULL'", def.name));
 
-        columns.add(identifier);
+        columns.add(def.name);
         return !isPk;
     }
 }
