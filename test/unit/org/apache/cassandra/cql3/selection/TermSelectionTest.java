@@ -50,21 +50,22 @@ public class TermSelectionTest extends CQLTester
         execute("INSERT INTO %s (pk, ck, t) VALUES (1, 2, 'two')");
         execute("INSERT INTO %s (pk, ck, t) VALUES (1, 3, 'three')");
 
-        assertConstantResult(execute("SELECT ck, t, 'a const' FROM %s"), "a const");
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, 'a const' FROM %s");
+        assertConstantResult(execute("SELECT ck, t, (text)'a const' FROM %s"), "a const");
 
-        assertConstantResult(execute("SELECT ck, t, 42 FROM %s"), BigInteger.valueOf(42));
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, 42 FROM %s");
         assertConstantResult(execute("SELECT ck, t, (int)42 FROM %s"), 42);
 
-        assertConstantResult(execute("SELECT ck, t, (1, 'foo') FROM %s"), tuple(BigInteger.valueOf(1), "foo"));
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, (1, 'foo') FROM %s");
         assertConstantResult(execute("SELECT ck, t, (tuple<int, text>)(1, 'foo') FROM %s"), tuple(1, "foo"));
 
-        assertConstantResult(execute("SELECT ck, t, [1, 2, 3] FROM %s"), list(BigInteger.valueOf(1), BigInteger.valueOf(2), BigInteger.valueOf(3)));
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, [1, 2, 3] FROM %s");
         assertConstantResult(execute("SELECT ck, t, (list<int>)[1, 2, 3] FROM %s"), list(1, 2, 3));
 
-        assertConstantResult(execute("SELECT ck, t, {1, 2, 3} FROM %s"), set(BigInteger.valueOf(1), BigInteger.valueOf(2), BigInteger.valueOf(3)));
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, {1, 2, 3} FROM %s");
         assertConstantResult(execute("SELECT ck, t, (set<int>){1, 2, 3} FROM %s"), set(1, 2, 3));
 
-        assertConstantResult(execute("SELECT ck, t, {1: 'foo', 2: 'bar', 3: 'baz'} FROM %s"), map(BigInteger.valueOf(1), "foo", BigInteger.valueOf(2), "bar", BigInteger.valueOf(3), "baz"));
+        assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, {1: 'foo', 2: 'bar', 3: 'baz'} FROM %s");
         assertConstantResult(execute("SELECT ck, t, (map<int, text>){1: 'foo', 2: 'bar', 3: 'baz'} FROM %s"), map(1, "foo", 2, "bar", 3, "baz"));
     }
 

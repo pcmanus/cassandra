@@ -150,20 +150,6 @@ public class Tuples
             return new TupleType(types);
         }
 
-        @Override
-        public AbstractType<?> getDefaultType(String keyspace)
-        {
-            List<AbstractType<?>> types = new ArrayList<>(elements.size());
-            for (Term.Raw term : elements)
-            {
-                AbstractType<?> type = term.getDefaultType(keyspace);
-                if (type == null)
-                    return null;
-                types.add(type);
-            }
-            return new TupleType(types);
-        }
-
         public String getText()
         {
             return elements.stream().map(Term.Raw::getText).collect(Collectors.joining(", ", "(", ")"));

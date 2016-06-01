@@ -249,21 +249,6 @@ public abstract class Constants
             return null;
         }
 
-        @Override
-        public AbstractType<?> getDefaultType(String keyspace)
-        {
-            switch (type)
-            {
-                case STRING:  return UTF8Type.instance;
-                case INTEGER: return IntegerType.instance;
-                case UUID:    return UUIDType.instance;
-                case FLOAT:   return DecimalType.instance;
-                case BOOLEAN: return BooleanType.instance;
-                case HEX:     return BytesType.instance;
-                default:      return null;
-            }
-        }
-
         public String getRawText()
         {
             return text;

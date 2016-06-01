@@ -114,29 +114,6 @@ public interface Term
          */
         public abstract Term prepare(String keyspace, ColumnSpecification receiver) throws InvalidRequestException;
 
-        /**
-         * The "default" type for the term, if any.
-         * <p>
-         * A CQL term doesn't necessarily have an intrinsic type. For instance, a bind marker '?' can
-         * have any type depending on the context. Some terms do have fixed type (a casted marker for
-         * instance, '(int)?', is of type int). And literal are "weakly" typed, i.e. are associated to
-         * some types but not to only one. For instance, the literal '2' works for an int, a varint, a
-         * float, etc.
-         * This method will return their type for the terms that have a fixed one, will return
-         * {@code null} if no type information can be determined from the term itself, and will a return
-         * a "default" type for the weakly typed ones (the literals), which will be used when there is
-         * no additional context.
-         * The goal of this method is to provide a default type in selection clauses, i.e. when we have
-         *   SELECT 1 FROM foo;
-         * In that case, we need to have a concrete type for the returned value and we use this default
-         * one (and if this method returns {@code null}, we reject the query asking for more type information).
-         */
-        public AbstractType<?> getDefaultType(String keyspace)
-        {
-            // Will be overriden when this make sense
-            return getExactTypeIfKnown(keyspace);
-        }
-
         public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames) throws InvalidRequestException
         {
             /*
@@ -159,12 +136,12 @@ public interface Term
              * Lastly, note that if the term is a terminal literal, we don't have to check it's compatibility with 'expectedType' as any incompatibility
              * would have been found at preparation time.
              */
-            AbstractType<?> type = expectedType;
+            AbstractType<?> type = getExactTypeIfKnown(cfm.ksName);
             if (type == null)
             {
-                type = getDefaultType(cfm.ksName);
+                type = expectedType;
                 if (type == null)
-                    throw new InvalidRequestException("Cannot infer type for term " + this + " in selection clause");
+                    throw new InvalidRequestException("Cannot infer type for term " + this + " in selection clause (try using a cast to force a type)");
             }
 
             // The fact we default the name to "[selection]" inconditionally means that any bind marker in a

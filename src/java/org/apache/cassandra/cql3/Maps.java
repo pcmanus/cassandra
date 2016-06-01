@@ -144,23 +144,6 @@ public abstract class Maps
             return null;
         }
 
-        @Override
-        public AbstractType<?> getDefaultType(String keyspace)
-        {
-            AbstractType<?> keyType = null;
-            AbstractType<?> valueType = null;
-            for (Pair<Term.Raw, Term.Raw> entry : entries)
-            {
-                if (keyType == null)
-                    keyType = entry.left.getDefaultType(keyspace);
-                if (valueType == null)
-                    valueType = entry.right.getDefaultType(keyspace);
-                if (keyType != null && valueType != null)
-                    return MapType.getInstance(keyType, valueType, false);
-            }
-            return null;
-        }
-
         public String getText()
         {
             return entries.stream()
