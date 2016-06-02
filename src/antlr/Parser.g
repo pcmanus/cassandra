@@ -285,16 +285,44 @@ selector returns [RawSelector s]
  * sub-element selection for UDT.
  */
 unaliasedSelector returns [Selectable.Raw s]
-    @init { Selectable.Raw tmp = null; }
-    :  ( c=cident                                  { tmp = c; }
-       | v=value                                   { tmp = new Selectable.WithTerm.Raw(v); }
-       | '(' ct=comparatorType ')' v=value         { tmp = new Selectable.WithTerm.Raw(new TypeCast(ct, v)); }
-       | K_COUNT '(' '\*' ')'                      { tmp = Selectable.WithFunction.Raw.newCountRowsFunction(); }
-       | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, true); }
-       | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, false); }
-       | K_CAST      '(' sn=unaliasedSelector K_AS t=native_type ')' {tmp = new Selectable.WithCast.Raw(sn, t);}
-       | f=functionName args=selectionFunctionArgs { tmp = new Selectable.WithFunction.Raw(f, args); }
-       ) ( '.' fi=fident { tmp = new Selectable.WithFieldSelection.Raw(tmp, fi); } )* { $s = tmp; }
+    : c=cident m=selectorModifier[c] { $s = m; }
+    | ss=simpleSelector o=onlyFieldSelectorModifier[ss]  { $s = o; }
+    ;
+
+simpleSelector returns [Selectable.Raw s]
+    : v=value                                   { $s = new Selectable.WithTerm.Raw(v); }
+    | '(' ct=comparatorType ')' v=value         { $s = new Selectable.WithTerm.Raw(new TypeCast(ct, v)); }
+    | K_COUNT '(' '\*' ')'                      { $s = Selectable.WithFunction.Raw.newCountRowsFunction(); }
+    | K_WRITETIME '(' c=cident ')'              { $s = new Selectable.WritetimeOrTTL.Raw(c, true); }
+    | K_TTL       '(' c=cident ')'              { $s = new Selectable.WritetimeOrTTL.Raw(c, false); }
+    | K_CAST      '(' sn=unaliasedSelector K_AS t=native_type ')' { $s = new Selectable.WithCast.Raw(sn, t);}
+    | f=functionName args=selectionFunctionArgs { $s = new Selectable.WithFunction.Raw(f, args); }
+    ;
+
+selectorModifier[Selectable.Raw receiver] returns [Selectable.Raw s]
+    : f=onlyFieldSelectorModifier[receiver]      { $s = f; }
+    | '[' ss=collectionSubSelection[receiver] ']' m=selectorModifier[ss] { $s = m; }
+    ;
+
+onlyFieldSelectorModifier[Selectable.Raw receiver] returns [Selectable.Raw s]
+    : f=fieldSelectorModifier[receiver] m=selectorModifier[f] { $s = m; }
+    |                                                         { $s = receiver; }
+    ;
+
+fieldSelectorModifier[Selectable.Raw receiver] returns [Selectable.Raw s]
+    : '.' fi=fident { $s = new Selectable.WithFieldSelection.Raw(receiver, fi); }
+    ;
+
+
+collectionSubSelection [Selectable.Raw receiver] returns [Selectable.Raw s]
+    @init { boolean isSlice=false; }
+    : ( t1=term ( { isSlice=true; } '..' (t2=term)? )?
+      | '..' { isSlice=true; } t2=term
+      ) {
+          $s = isSlice
+             ? new Selectable.WithSliceSelection.Raw(receiver, t1, t2)
+             : new Selectable.WithElementSelection.Raw(receiver, t1);
+      }
     ;
 
 selectionFunctionArgs returns [List<Selectable.Raw> a]
@@ -1579,7 +1607,7 @@ non_type_ident returns [ColumnIdentifier id]
 
 unreserved_keyword returns [String str]
     : u=unreserved_function_keyword     { $str = u; }
-    | k=(K_TTL | K_COUNT | K_WRITETIME | K_KEY | K_CAST | K_JSON | K_DISTINCT) { $str = $k.text; }
+    | k=(K_TTL | K_COUNT | K_WRITETIME | K_KEY | K_CAST ) { $str = $k.text; }
     ;
 
 unreserved_function_keyword returns [String str]

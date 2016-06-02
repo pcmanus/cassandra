@@ -18,11 +18,12 @@
 
 package org.apache.cassandra.serializers;
 
-import org.apache.cassandra.transport.Server;
-
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.util.*;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.transport.Server;
 
 public class ListSerializer<T> extends CollectionSerializer<List<T>>
 {
@@ -159,5 +160,17 @@ public class ListSerializer<T> extends CollectionSerializer<List<T>>
     public Class<List<T>> getType()
     {
         return (Class) List.class;
+    }
+
+    public ByteBuffer getSerializedValue(ByteBuffer collection, ByteBuffer key, AbstractType<?> comparator)
+    {
+        // We don't allow selecting an element of a list so we don't need this.
+        throw new UnsupportedOperationException();
+    }
+
+    public ByteBuffer getSliceFromSerialized(ByteBuffer collection, ByteBuffer from, ByteBuffer to, AbstractType<?> comparator)
+    {
+        // We don't allow slicing of list so we don't need this.
+        throw new UnsupportedOperationException();
     }
 }
