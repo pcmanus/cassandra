@@ -230,6 +230,12 @@ public class ListType<T> extends CollectionType<List<T>>
         return sb.append("]").toString();
     }
 
+    public ByteBuffer getSliceFromSerialized(ByteBuffer collection, ByteBuffer from, ByteBuffer to)
+    {
+        // We don't support slicing on lists so we don't need that function
+        throw new UnsupportedOperationException();
+    }
+
     @Override
     public String toJSONString(ByteBuffer buffer, int protocolVersion)
     {
