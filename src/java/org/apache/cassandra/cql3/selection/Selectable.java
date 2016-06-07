@@ -65,17 +65,6 @@ public interface Selectable extends AssignmentTestable
         return idx;
     }
 
-    public static Raw forRawTerm(final Term.Raw term)
-    {
-        return new Raw()
-        {
-            public Selectable prepare(CFMetaData cfm)
-            {
-                return term;
-            }
-        };
-    }
-
     public static abstract class Raw
     {
         public abstract Selectable prepare(CFMetaData cfm);
@@ -87,6 +76,101 @@ public interface Selectable extends AssignmentTestable
         {
             // ColumnIdentifier is the only case that returns false and override this
             return true;
+        }
+    }
+
+    public static class WithTerm implements Selectable
+    {
+        /**
+         * The names given to unamed bind markers found in selection. In selection clause, we often don't have a good
+         * name for bind markers, typically if you have:
+         *   SELECT (int)? FROM foo;
+         * there isn't a good name for that marker. So we give the same name to all the markers. Note that we could try
+         * to differenciate the names by using some increasing number in the name (so [selection_1], [selection_2], ...)
+         * but it's actually not trivial to do in the current code and it's not really more helpful since if users wants
+         * to bind by position (which they will have to in this case), they can do so at the driver level directly. And
+         * so we don't bother.
+         * Note that users should really be using named bind markers if they want to be able to bind by names.
+         */
+        private static final ColumnIdentifier bindMarkerNameInSelection = new ColumnIdentifier("[selection]", true);
+
+        private final Term.Raw rawTerm;
+
+        public WithTerm(Term.Raw rawTerm)
+        {
+            this.rawTerm = rawTerm;
+        }
+
+        @Override
+        public TestResult testAssignment(String keyspace, ColumnSpecification receiver)
+        {
+            return rawTerm.testAssignment(keyspace, receiver);
+        }
+
+        public Selector.Factory newSelectorFactory(CFMetaData cfm, AbstractType<?> expectedType, List<ColumnDefinition> defs, VariableSpecifications boundNames) throws InvalidRequestException
+        {
+            /*
+             * expectedType will be null if we have no constraint on what the type should be. For instance, if this term is a bind marker:
+             *   - it will be null if we do "SELECT ? FROM foo"
+             *   - it won't be null (and be LongType) if we do "SELECT bigintAsBlob(?) FROM foo" because the function constrain it.
+             *
+             * In the first case, we have to error out: we need to infer the type of the metadata of a SELECT at preparation time, which we can't
+             * here (users will have to do "SELECT (varint)? FROM foo" for instance).
+             * But in the 2nd case, we're fine and can use the expectedType to "prepare" the bind marker/collect the bound type.
+             *
+             * Further, the term might not be a bind marker, in which case we sometimes can default to some most-general type. For instance, in
+             *   SELECT 3 FROM foo
+             * we'll just default the type to 'varint' as that's the most generic type for the literal '3' (this is mostly for convenience, the query
+             * is not terribly useful in practice and use can force the type as for the bind marker case through "SELECT (int)3 FROM foo").
+             * But note that not all literals can have such default type. For instance, there is no way to infer the type of a UDT literal in a vacuum,
+             * and so we simply error out if we have something like:
+             *   SELECT { foo: 'bar' } FROM foo
+             *
+             * Lastly, note that if the term is a terminal literal, we don't have to check it's compatibility with 'expectedType' as any incompatibility
+             * would have been found at preparation time.
+             */
+            AbstractType<?> type = getExactTypeIfKnown(cfm.ksName);
+            if (type == null)
+            {
+                type = expectedType;
+                if (type == null)
+                    throw new InvalidRequestException("Cannot infer type for term " + this + " in selection clause (try using a cast to force a type)");
+            }
+
+            // The fact we default the name to "[selection]" inconditionally means that any bind marker in a
+            // selection will have this name. Which isn't terribly helpful, but it's unclear how to provide
+            // something a lot more helpful and in practice user can bind those markers by position or, even better,
+            // use bind markers.
+            Term term = rawTerm.prepare(cfm.ksName, new ColumnSpecification(cfm.ksName, cfm.cfName, bindMarkerNameInSelection, type));
+            term.collectMarkerSpecification(boundNames);
+            return TermSelector.newFactory(rawTerm.getText(), term, type);
+        }
+
+        @Override
+        public AbstractType<?> getExactTypeIfKnown(String keyspace)
+        {
+            return rawTerm.getExactTypeIfKnown(keyspace);
+        }
+ 
+        @Override
+        public String toString()
+        {
+            return rawTerm.toString();
+        }
+
+        public static class Raw extends Selectable.Raw
+        {
+            private final Term.Raw term;
+
+            public Raw(Term.Raw term)
+            {
+                this.term = term;
+            }
+
+            public Selectable prepare(CFMetaData cfm)
+            {
+                return new WithTerm(term);
+            }
         }
     }
 
@@ -213,7 +297,10 @@ public interface Selectable extends AssignmentTestable
                 // Also, COUNT(x) is equivalent to COUNT(*) for any non-null term x (since count(x) don't care about it's argument outside of check for nullness) and
                 // for backward compatibilty we want to support COUNT(1), but we actually have COUNT(x) method for every existing (simple) input types so currently COUNT(1)
                 // will throw as ambiguous (since 1 works for any type). So we have have to special case COUNT.
-                else if (functionName.equalsNativeFunction(FunctionName.nativeFunction("count")) && preparedArgs.size() == 1 && (preparedArgs.get(0) instanceof Constants.Literal))
+                else if (functionName.equalsNativeFunction(FunctionName.nativeFunction("count"))
+                        && preparedArgs.size() == 1
+                        && (preparedArgs.get(0) instanceof WithTerm)
+                        && (((WithTerm)preparedArgs.get(0)).rawTerm instanceof Constants.Literal))
                 {
                     // Note that 'null' isn't a Constants.Literal
                     name = AggregateFcts.countRowsFunction.name();

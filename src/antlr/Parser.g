@@ -287,8 +287,8 @@ selector returns [RawSelector s]
 unaliasedSelector returns [Selectable.Raw s]
     @init { Selectable.Raw tmp = null; }
     :  ( c=cident                                  { tmp = c; }
-       | v=value                                   { tmp = Selectable.forRawTerm(v); }
-       | '(' ct=comparatorType ')' v=value         { tmp = Selectable.forRawTerm(new TypeCast(ct, v)); }
+       | v=value                                   { tmp = new Selectable.WithTerm.Raw(v); }
+       | '(' ct=comparatorType ')' v=value         { tmp = new Selectable.WithTerm.Raw(new TypeCast(ct, v)); }
        | K_COUNT '(' '\*' ')'                      { tmp = Selectable.WithFunction.Raw.newCountRowsFunction(); }
        | K_WRITETIME '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, true); }
        | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, false); }
