@@ -418,9 +418,9 @@ public interface Selectable extends AssignmentTestable
     public static class WithFieldSelection implements Selectable
     {
         public final Selectable selected;
-        public final ByteBuffer field;
+        public final FieldIdentifier field;
 
-        public WithFieldSelection(Selectable selected, ByteBuffer field)
+        public WithFieldSelection(Selectable selected, FieldIdentifier field)
         {
             this.selected = selected;
             this.field = field;
@@ -472,9 +472,9 @@ public interface Selectable extends AssignmentTestable
         public static class Raw extends Selectable.Raw
         {
             private final Selectable.Raw selected;
-            private final ColumnIdentifier.Raw field;
+            private final FieldIdentifier field;
 
-            public Raw(Selectable.Raw selected, ColumnIdentifier.Raw field)
+            public Raw(Selectable.Raw selected, FieldIdentifier field)
             {
                 this.selected = selected;
                 this.field = field;
@@ -482,7 +482,7 @@ public interface Selectable extends AssignmentTestable
 
             public WithFieldSelection prepare(CFMetaData cfm)
             {
-                return new WithFieldSelection(selected.prepare(cfm), field.prepareAsUDTField(cfm));
+                return new WithFieldSelection(selected.prepare(cfm), field);
             }
         }
     }

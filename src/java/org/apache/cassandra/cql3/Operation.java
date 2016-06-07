@@ -249,10 +249,10 @@ public abstract class Operation
 
     public static class SetField implements RawUpdate
     {
-        private final ColumnIdentifier.Raw field;
+        private final FieldIdentifier field;
         private final Term.Raw value;
 
-        public SetField(ColumnIdentifier.Raw field, Term.Raw value)
+        public SetField(FieldIdentifier field, Term.Raw value)
         {
             this.field = field;
             this.value = value;
@@ -265,13 +265,12 @@ public abstract class Operation
             else if (!receiver.type.isMultiCell())
                 throw new InvalidRequestException(String.format("Invalid operation (%s) for frozen UDT column %s", toString(receiver), receiver.name));
 
-            ByteBuffer fieldIdentifier = field.prepareAsUDTField(cfm);
-            int fieldPosition = ((UserType) receiver.type).fieldPosition(fieldIdentifier);
+            int fieldPosition = ((UserType) receiver.type).fieldPosition(field);
             if (fieldPosition == -1)
                 throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, field));
 
             Term val = value.prepare(cfm.ksName, UserTypes.fieldSpecOf(receiver, fieldPosition));
-            return new UserTypes.SetterByField(receiver, fieldIdentifier, val);
+            return new UserTypes.SetterByField(receiver, field, val);
         }
 
         protected String toString(ColumnSpecification column)
@@ -476,9 +475,9 @@ public abstract class Operation
     public static class FieldDeletion implements RawDeletion
     {
         private final ColumnIdentifier.Raw id;
-        private final ColumnIdentifier.Raw field;
+        private final FieldIdentifier field;
 
-        public FieldDeletion(ColumnIdentifier.Raw id, ColumnIdentifier.Raw field)
+        public FieldDeletion(ColumnIdentifier.Raw id, FieldIdentifier field)
         {
             this.id = id;
             this.field = field;
@@ -496,11 +495,10 @@ public abstract class Operation
             else if (!receiver.type.isMultiCell())
                 throw new InvalidRequestException(String.format("Frozen UDT column %s does not support field deletions", receiver.name));
 
-            ByteBuffer fieldIdentifier = field.prepareAsUDTField(cfm);
-            if (((UserType) receiver.type).fieldPosition(fieldIdentifier) == -1)
+            if (((UserType) receiver.type).fieldPosition(field) == -1)
                 throw new InvalidRequestException(String.format("UDT column %s does not have a field named %s", receiver.name, field));
 
-            return new UserTypes.DeleterByField(receiver, fieldIdentifier);
+            return new UserTypes.DeleterByField(receiver, field);
         }
     }
 }

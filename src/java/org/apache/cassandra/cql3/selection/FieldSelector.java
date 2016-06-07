@@ -39,9 +39,7 @@ final class FieldSelector extends Selector
         {
             protected String getColumnName()
             {
-                return String.format("%s.%s",
-                                     factory.getColumnName(),
-                                     UTF8Type.instance.getString(type.fieldName(field)));
+                return String.format("%s.%s", factory.getColumnName(), type.fieldName(field));
             }
 
             protected AbstractType<?> getReturnType()
@@ -93,7 +91,7 @@ final class FieldSelector extends Selector
     @Override
     public String toString()
     {
-        return String.format("%s.%s", selected, UTF8Type.instance.getString(type.fieldName(field)));
+        return String.format("%s.%s", selected, type.fieldName(field));
     }
 
     private FieldSelector(UserType type, int field, Selector selected)

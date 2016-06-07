@@ -294,7 +294,7 @@ unaliasedSelector returns [Selectable.Raw s]
        | K_TTL       '(' c=cident ')'              { tmp = new Selectable.WritetimeOrTTL.Raw(c, false); }
        | K_CAST      '(' sn=unaliasedSelector K_AS t=native_type ')' {tmp = new Selectable.WithCast.Raw(sn, t);}
        | f=functionName args=selectionFunctionArgs { tmp = new Selectable.WithFunction.Raw(f, args); }
-       ) ( '.' fi=cident { tmp = new Selectable.WithFieldSelection.Raw(tmp, fi); } )* { $s = tmp; }
+       ) ( '.' fi=fident { tmp = new Selectable.WithFieldSelection.Raw(tmp, fi); } )* { $s = tmp; }
     ;
 
 selectionFunctionArgs returns [List<Selectable.Raw> a]
@@ -455,7 +455,7 @@ deleteSelection returns [List<Operation.RawDeletion> operations]
 deleteOp returns [Operation.RawDeletion op]
     : c=cident                { $op = new Operation.ColumnDeletion(c); }
     | c=cident '[' t=term ']' { $op = new Operation.ElementDeletion(c, t); }
-    | c=cident '.' field=cident { $op = new Operation.FieldDeletion(c, field); }
+    | c=cident '.' field=fident { $op = new Operation.FieldDeletion(c, field); }
     ;
 
 usingClauseDelete[Attributes.Raw attrs]
@@ -674,7 +674,7 @@ createTypeStatement returns [CreateTypeStatement expr]
     ;
 
 typeColumns[CreateTypeStatement expr]
-    : k=noncol_ident v=comparatorType { $expr.addDefinition(k, v); }
+    : k=fident v=comparatorType { $expr.addDefinition(k, v); }
     ;
 
 
@@ -822,12 +822,12 @@ alterMaterializedViewStatement returns [AlterViewStatement expr]
  */
 alterTypeStatement returns [AlterTypeStatement expr]
     : K_ALTER K_TYPE name=userTypeName
-          ( K_ALTER f=noncol_ident K_TYPE v=comparatorType { $expr = AlterTypeStatement.alter(name, f, v); }
-          | K_ADD   f=noncol_ident v=comparatorType        { $expr = AlterTypeStatement.addition(name, f, v); }
+          ( K_ALTER f=fident K_TYPE v=comparatorType { $expr = AlterTypeStatement.alter(name, f, v); }
+          | K_ADD   f=fident v=comparatorType        { $expr = AlterTypeStatement.addition(name, f, v); }
           | K_RENAME
-               { Map<ColumnIdentifier, ColumnIdentifier> renames = new HashMap<ColumnIdentifier, ColumnIdentifier>(); }
-                 id1=noncol_ident K_TO toId1=noncol_ident { renames.put(id1, toId1); }
-                 ( K_AND idn=noncol_ident K_TO toIdn=noncol_ident { renames.put(idn, toIdn); } )*
+               { Map<FieldIdentifier, FieldIdentifier> renames = new HashMap<>(); }
+                 id1=fident K_TO toId1=fident { renames.put(id1, toId1); }
+                 ( K_AND idn=fident K_TO toIdn=fident { renames.put(idn, toIdn); } )*
                { $expr = AlterTypeStatement.renames(name, renames); }
           )
     ;
@@ -1158,6 +1158,12 @@ ident returns [ColumnIdentifier id]
     | k=unreserved_keyword { $id = ColumnIdentifier.getInterned(k, false); }
     ;
 
+fident returns [FieldIdentifier id]
+    : t=IDENT              { $id = FieldIdentifier.forUnquoted($t.text); }
+    | t=QUOTED_NAME        { $id = FieldIdentifier.forQuoted($t.text); }
+    | k=unreserved_keyword { $id = FieldIdentifier.forUnquoted(k); }
+    ;
+
 // Identifiers that do not refer to columns
 noncol_ident returns [ColumnIdentifier id]
     : t=IDENT              { $id = new ColumnIdentifier($t.text, false); }
@@ -1255,10 +1261,10 @@ collectionLiteral returns [Term.Raw value]
     ;
 
 usertypeLiteral returns [UserTypes.Literal ut]
-    @init{ Map<ColumnIdentifier, Term.Raw> m = new HashMap<ColumnIdentifier, Term.Raw>(); }
+    @init{ Map<FieldIdentifier, Term.Raw> m = new HashMap<>(); }
     @after{ $ut = new UserTypes.Literal(m); }
     // We don't allow empty literals because that conflicts with sets/maps and is currently useless since we don't allow empty user types
-    : '{' k1=noncol_ident ':' v1=term { m.put(k1, v1); } ( ',' kn=noncol_ident ':' vn=term { m.put(kn, vn); } )* '}'
+    : '{' k1=fident ':' v1=term { m.put(k1, v1); } ( ',' kn=fident ':' vn=term { m.put(kn, vn); } )* '}'
     ;
 
 tupleLiteral returns [Tuples.Literal tt]
@@ -1319,7 +1325,7 @@ columnOperation[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> operations
 columnOperationDifferentiator[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> operations, ColumnIdentifier.Raw key]
     : '=' normalColumnOperation[operations, key]
     | '[' k=term ']' collectionColumnOperation[operations, key, k]
-    | '.' field=cident udtColumnOperation[operations, key, field]
+    | '.' field=fident udtColumnOperation[operations, key, field]
     ;
 
 normalColumnOperation[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> operations, ColumnIdentifier.Raw key]
@@ -1359,7 +1365,7 @@ collectionColumnOperation[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> 
       }
     ;
 
-udtColumnOperation[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> operations, ColumnIdentifier.Raw key, ColumnIdentifier.Raw field]
+udtColumnOperation[List<Pair<ColumnIdentifier.Raw, Operation.RawUpdate>> operations, ColumnIdentifier.Raw key, FieldIdentifier field]
     : '=' t=term
       {
           addRawUpdate(operations, key, new Operation.SetField(field, t));
@@ -1381,7 +1387,7 @@ columnCondition[List<Pair<ColumnIdentifier.Raw, ColumnCondition.Raw>> conditions
                 | marker=inMarker { conditions.add(Pair.create(key, ColumnCondition.Raw.collectionInCondition(element, marker))); }
                 )
             )
-        | '.' field=cident
+        | '.' field=fident
             ( op=relationType t=term { conditions.add(Pair.create(key, ColumnCondition.Raw.udtFieldCondition(t, field, op))); }
             | K_IN
                 ( values=singleColumnInValues { conditions.add(Pair.create(key, ColumnCondition.Raw.udtFieldInCondition(field, values))); }

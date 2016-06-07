@@ -207,8 +207,6 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
             return def;
         }
 
-        public abstract ByteBuffer prepareAsUDTField(CFMetaData cfm);
-
         public abstract ColumnIdentifier getIdentifier(CFMetaData cfm);
 
         /**
@@ -255,11 +253,6 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
             return getInterned(thriftColumnNameType.fromString(rawText), text);
         }
 
-        public ByteBuffer prepareAsUDTField(CFMetaData cfm)
-        {
-            return ByteBufferUtil.bytes(text);
-        }
-
         @Override
         public final int hashCode()
         {
@@ -300,11 +293,6 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
         public ColumnIdentifier getIdentifier(CFMetaData cfm)
         {
             return identifier;
-        }
-
-        public ByteBuffer prepareAsUDTField(CFMetaData cfm)
-        {
-            return identifier.bytes;
         }
 
         @Override
