@@ -949,23 +949,14 @@ public class SelectStatement implements CQLStatement
                                                           Selection selection,
                                                           boolean forView) throws InvalidRequestException
         {
-            try
-            {
-                return new StatementRestrictions(StatementType.SELECT,
-                                                 cfm,
-                                                 whereClause,
-                                                 boundNames,
-                                                 selection.containsOnlyStaticColumns(),
-                                                 selection.containsAComplexColumn(),
-                                                 parameters.allowFiltering,
-                                                 forView);
-            }
-            catch (UnrecognizedEntityException e)
-            {
-                if (containsAlias(e.entity))
-                    throw invalidRequest("Aliases aren't allowed in the where clause ('%s')", e.relation);
-                throw e;
-            }
+            return new StatementRestrictions(StatementType.SELECT,
+                                             cfm,
+                                             whereClause,
+                                             boundNames,
+                                             selection.containsOnlyStaticColumns(),
+                                             selection.containsAComplexColumn(),
+                                             parameters.allowFiltering,
+                                             forView);
         }
 
         /** Returns a Term for the limit or null if no limit is set */
@@ -1100,17 +1091,6 @@ public class SelectStatement implements CQLStatement
                 //  - Have no index expression and the row filter is not the identity
                 checkFalse(restrictions.needFiltering(), StatementRestrictions.REQUIRES_ALLOW_FILTERING_MESSAGE);
             }
-        }
-
-        private boolean containsAlias(final ColumnIdentifier name)
-        {
-            return Iterables.any(selectClause, new Predicate<RawSelector>()
-                                               {
-                                                   public boolean apply(RawSelector raw)
-                                                   {
-                                                       return name.equals(raw.alias);
-                                                   }
-                                               });
         }
 
         private ColumnSpecification limitReceiver()

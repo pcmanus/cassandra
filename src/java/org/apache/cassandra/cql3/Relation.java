@@ -25,7 +25,6 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.restrictions.Restriction;
 import org.apache.cassandra.cql3.statements.Bound;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.exceptions.UnrecognizedEntityException;
 
 import static org.apache.cassandra.cql3.statements.RequestValidations.invalidRequest;
 
