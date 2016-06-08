@@ -152,11 +152,9 @@ public final class TokenRelation extends Relation
      */
     private List<ColumnDefinition> getColumnDefinitions(CFMetaData cfm) throws InvalidRequestException
     {
-        List<ColumnDefinition> columnDefs = new ArrayList<>();
+        List<ColumnDefinition> columnDefs = new ArrayList<>(entities.size());
         for ( ColumnDefinition.Raw raw : entities)
-        {
-            columnDefs.add(toColumnDefinition(cfm, raw));
-        }
+            columnDefs.add(raw.prepare(cfm));
         return columnDefs;
     }
 

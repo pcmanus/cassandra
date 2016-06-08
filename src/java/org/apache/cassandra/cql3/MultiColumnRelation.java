@@ -205,7 +205,7 @@ public class MultiColumnRelation extends Relation
         int previousPosition = -1;
         for (ColumnDefinition.Raw raw : getEntities())
         {
-            ColumnDefinition def = toColumnDefinition(cfm, raw);
+            ColumnDefinition def = raw.prepare(cfm);
             checkTrue(def.isClusteringColumn(), "Multi-column relations can only be applied to clustering columns but was applied to: %s", def.name);
             checkFalse(names.contains(def), "Column \"%s\" appeared twice in a relation: %s", def.name, this);
 

@@ -28,8 +28,8 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 
 import static org.apache.cassandra.cql3.statements.RequestValidations.invalidRequest;
 
-public abstract class Relation {
-
+public abstract class Relation
+{
     protected Operator relationType;
 
     public Operator operator()
@@ -257,20 +257,6 @@ public abstract class Relation {
             terms.add(toTerm(receivers, raws.get(i), keyspace, boundNames));
 
         return terms;
-    }
-
-    /**
-     * Converts the specified entity into a column definition.
-     *
-     * @param cfm the column family meta data
-     * @param entity the entity to convert
-     * @return the column definition corresponding to the specified entity
-     * @throws InvalidRequestException if the entity cannot be recognized
-     */
-    protected final ColumnDefinition toColumnDefinition(CFMetaData cfm,
-                                                        ColumnDefinition.Raw entity) throws InvalidRequestException
-    {
-        return entity.prepare(cfm);
     }
 
     /**

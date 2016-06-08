@@ -158,7 +158,7 @@ public final class SingleColumnRelation extends Relation
     protected Restriction newEQRestriction(CFMetaData cfm,
                                            VariableSpecifications boundNames) throws InvalidRequestException
     {
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         if (mapKey == null)
         {
             Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
@@ -174,7 +174,7 @@ public final class SingleColumnRelation extends Relation
     protected Restriction newINRestriction(CFMetaData cfm,
                                            VariableSpecifications boundNames) throws InvalidRequestException
     {
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         List<? extends ColumnSpecification> receivers = toReceivers(columnDef, cfm.isDense());
         List<Term> terms = toTerms(receivers, inValues, cfm.ksName, boundNames);
         if (terms == null)
@@ -191,7 +191,7 @@ public final class SingleColumnRelation extends Relation
                                               Bound bound,
                                               boolean inclusive) throws InvalidRequestException
     {
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
         return new SingleColumnRestriction.SliceRestriction(columnDef, bound, inclusive, term);
     }
@@ -201,7 +201,7 @@ public final class SingleColumnRelation extends Relation
                                                  VariableSpecifications boundNames,
                                                  boolean isKey) throws InvalidRequestException
     {
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
         return new SingleColumnRestriction.ContainsRestriction(columnDef, term, isKey);
     }
@@ -210,7 +210,7 @@ public final class SingleColumnRelation extends Relation
     protected Restriction newIsNotRestriction(CFMetaData cfm,
                                               VariableSpecifications boundNames) throws InvalidRequestException
     {
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         // currently enforced by the grammar
         assert value == Constants.NULL_LITERAL : "Expected null literal for IS NOT relation: " + this.toString();
         return new SingleColumnRestriction.IsNotNullRestriction(columnDef);
@@ -222,7 +222,7 @@ public final class SingleColumnRelation extends Relation
         if (mapKey != null)
             throw invalidRequest("%s can't be used with collections.", operator());
 
-        ColumnDefinition columnDef = toColumnDefinition(cfm, entity);
+        ColumnDefinition columnDef = entity.prepare(cfm);
         Term term = toTerm(toReceivers(columnDef, cfm.isDense()), value, cfm.ksName, boundNames);
 
         return new SingleColumnRestriction.LikeRestriction(columnDef, operator, term);
