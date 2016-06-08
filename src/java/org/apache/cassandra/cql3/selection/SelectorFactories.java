@@ -178,11 +178,6 @@ final class SelectorFactories implements Iterable<Selector.Factory>
         return factories.iterator();
     }
 
-    public List<Factory> asList()
-    {
-        return factories;
-    }
-
     /**
      * Returns the names of the columns corresponding to the output values of the selector instances created by
      * these factories.
