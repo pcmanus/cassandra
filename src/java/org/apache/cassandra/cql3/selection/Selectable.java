@@ -215,10 +215,10 @@ public interface Selectable extends AssignmentTestable
 
         public static class Raw extends Selectable.Raw
         {
-            private final ColumnIdentifier.Raw id;
+            private final ColumnDefinition.Raw id;
             private final boolean isWritetime;
 
-            public Raw(ColumnIdentifier.Raw id, boolean isWritetime)
+            public Raw(ColumnDefinition.Raw id, boolean isWritetime)
             {
                 this.id = id;
                 this.isWritetime = isWritetime;

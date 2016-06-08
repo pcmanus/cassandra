@@ -51,8 +51,8 @@ public class CreateViewStatement extends SchemaAlteringStatement
     private final CFName baseName;
     private final List<RawSelector> selectClause;
     private final WhereClause whereClause;
-    private final List<ColumnIdentifier.Raw> partitionKeys;
-    private final List<ColumnIdentifier.Raw> clusteringKeys;
+    private final List<ColumnDefinition.Raw> partitionKeys;
+    private final List<ColumnDefinition.Raw> clusteringKeys;
     public final CFProperties properties = new CFProperties();
     private final boolean ifNotExists;
 
@@ -60,8 +60,8 @@ public class CreateViewStatement extends SchemaAlteringStatement
                                CFName baseName,
                                List<RawSelector> selectClause,
                                WhereClause whereClause,
-                               List<ColumnIdentifier.Raw> partitionKeys,
-                               List<ColumnIdentifier.Raw> clusteringKeys,
+                               List<ColumnDefinition.Raw> partitionKeys,
+                               List<ColumnDefinition.Raw> clusteringKeys,
                                boolean ifNotExists)
     {
         super(viewName);
@@ -170,8 +170,8 @@ public class CreateViewStatement extends SchemaAlteringStatement
             included.add(cdef.name);
         }
 
-        Set<ColumnIdentifier.Raw> targetPrimaryKeys = new HashSet<>();
-        for (ColumnIdentifier.Raw identifier : Iterables.concat(partitionKeys, clusteringKeys))
+        Set<ColumnDefinition.Raw> targetPrimaryKeys = new HashSet<>();
+        for (ColumnDefinition.Raw identifier : Iterables.concat(partitionKeys, clusteringKeys))
         {
             if (!targetPrimaryKeys.add(identifier))
                 throw new InvalidRequestException("Duplicate entry found in PRIMARY KEY: "+identifier);
@@ -186,7 +186,7 @@ public class CreateViewStatement extends SchemaAlteringStatement
         }
 
         // build the select statement
-        Map<ColumnIdentifier.Raw, Boolean> orderings = Collections.emptyMap();
+        Map<ColumnDefinition.Raw, Boolean> orderings = Collections.emptyMap();
         SelectStatement.Parameters parameters = new SelectStatement.Parameters(orderings, false, true, false);
         SelectStatement.RawStatement rawSelect = new SelectStatement.RawStatement(baseName, parameters, selectClause, whereClause, null, null);
 
@@ -222,10 +222,10 @@ public class CreateViewStatement extends SchemaAlteringStatement
 
         // This is only used as an intermediate state; this is to catch whether multiple non-PK columns are used
         boolean hasNonPKColumn = false;
-        for (ColumnIdentifier.Raw raw : partitionKeys)
+        for (ColumnDefinition.Raw raw : partitionKeys)
             hasNonPKColumn |= getColumnIdentifier(cfm, basePrimaryKeyCols, hasNonPKColumn, raw, targetPartitionKeys, restrictions);
 
-        for (ColumnIdentifier.Raw raw : clusteringKeys)
+        for (ColumnDefinition.Raw raw : clusteringKeys)
             hasNonPKColumn |= getColumnIdentifier(cfm, basePrimaryKeyCols, hasNonPKColumn, raw, targetClusteringColumns, restrictions);
 
         // We need to include all of the primary key columns from the base table in order to make sure that we do not
@@ -303,7 +303,7 @@ public class CreateViewStatement extends SchemaAlteringStatement
     private static boolean getColumnIdentifier(CFMetaData cfm,
                                                Set<ColumnIdentifier> basePK,
                                                boolean hasNonPKColumn,
-                                               ColumnIdentifier.Raw raw,
+                                               ColumnDefinition.Raw raw,
                                                List<ColumnIdentifier> columns,
                                                StatementRestrictions restrictions)
     {

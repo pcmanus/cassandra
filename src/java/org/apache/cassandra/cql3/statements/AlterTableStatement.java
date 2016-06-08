@@ -53,14 +53,14 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
     public final Type oType;
     private final TableAttributes attrs;
-    private final Map<ColumnIdentifier.Raw, ColumnIdentifier.Raw> renames;
+    private final Map<ColumnDefinition.Raw, ColumnDefinition.Raw> renames;
     private final List<AlterTableStatementColumn> colNameList;
 
     public AlterTableStatement(CFName name,
                                Type type,
                                List<AlterTableStatementColumn> colDataList,
                                TableAttributes attrs,
-                               Map<ColumnIdentifier.Raw, ColumnIdentifier.Raw> renames)
+                               Map<ColumnDefinition.Raw, ColumnDefinition.Raw> renames)
     {
         super(name);
         this.oType = type;
@@ -91,7 +91,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         CQL3Type.Raw dataType = null;
         boolean isStatic = false;
         CQL3Type validator = null;
-        ColumnIdentifier.Raw rawColumnName = null;
+        ColumnDefinition.Raw rawColumnName = null;
 
         List<ViewDefinition> viewUpdates = null;
         Iterable<ViewDefinition> views = View.findAll(keyspace(), columnFamily());
@@ -321,7 +321,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
                 break;
             case RENAME:
-                for (Map.Entry<ColumnIdentifier.Raw, ColumnIdentifier.Raw> entry : renames.entrySet())
+                for (Map.Entry<ColumnDefinition.Raw, ColumnDefinition.Raw> entry : renames.entrySet())
                 {
                     ColumnIdentifier from = entry.getKey().getIdentifier(cfm);
                     ColumnIdentifier to = entry.getValue().getIdentifier(cfm);

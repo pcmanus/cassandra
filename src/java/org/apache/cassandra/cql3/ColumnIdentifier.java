@@ -155,7 +155,7 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
 
     /**
      * Returns a string representation of the identifier that is safe to use directly in CQL queries.
-     * In necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
+     * If necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
      */
     public String toCQLString()
     {
@@ -189,137 +189,6 @@ public class ColumnIdentifier implements IMeasurableMemory, Comparable<ColumnIde
         if (this == that)
             return 0;
         return ByteBufferUtil.compareUnsigned(this.bytes, that.bytes);
-    }
-
-    /**
-     * Because Thrift-created tables may have a non-text comparator, we cannot determine the proper 'key' until
-     * we know the comparator. ColumnIdentifier.Raw is a placeholder that can be converted to a real ColumnIdentifier
-     * once the comparator is known with prepare(). This should only be used with identifiers that are actual
-     * column names. See CASSANDRA-8178 for more background.
-     */
-    public static abstract class Raw extends Selectable.Raw
-    {
-        public ColumnDefinition prepare(CFMetaData cfm)
-        {
-            ColumnDefinition def = cfm.getColumnDefinition(getIdentifier(cfm));
-            if (def == null)
-                throw new InvalidRequestException(String.format("Undefined column name %s", toCQLString()));
-            return def;
-        }
-
-        public abstract ColumnIdentifier getIdentifier(CFMetaData cfm);
-
-        /**
-         * Returns a string representation of the identifier that is safe to use directly in CQL queries.
-         * In necessary, the string will be double-quoted, and any quotes inside the string will be escaped.
-         */
-        public abstract String toCQLString();
-
-        @Override
-        public boolean processesSelection()
-        {
-            return false;
-        }
-    }
-
-    public static class Literal extends Raw
-    {
-        private final String rawText;
-        private final String text;
-
-        public Literal(String rawText, boolean keepCase)
-        {
-            this.rawText = rawText;
-            this.text =  keepCase ? rawText : rawText.toLowerCase(Locale.US);
-        }
-
-        public ColumnIdentifier getIdentifier(CFMetaData cfm)
-        {
-            if (!cfm.isStaticCompactTable())
-                return getInterned(text, true);
-
-            AbstractType<?> thriftColumnNameType = cfm.thriftColumnNameType();
-            if (thriftColumnNameType instanceof UTF8Type)
-                return getInterned(text, true);
-
-            // We have a Thrift-created table with a non-text comparator. Check if we have a match column, otherwise assume we should use
-            // thriftColumnNameType
-            ByteBuffer bufferName = ByteBufferUtil.bytes(text);
-            for (ColumnDefinition def : cfm.allColumns())
-            {
-                if (def.name.bytes.equals(bufferName))
-                    return def.name;
-            }
-            return getInterned(thriftColumnNameType.fromString(rawText), text);
-        }
-
-        @Override
-        public final int hashCode()
-        {
-            return text.hashCode();
-        }
-
-        @Override
-        public final boolean equals(Object o)
-        {
-            if(!(o instanceof Literal))
-                return false;
-
-            Literal that = (Literal) o;
-            return text.equals(that.text);
-        }
-
-        @Override
-        public String toString()
-        {
-            return text;
-        }
-
-        public String toCQLString()
-        {
-            return maybeQuote(text);
-        }
-    }
-
-    public static class ColumnIdentifierValue extends Raw
-    {
-        private final ColumnIdentifier identifier;
-
-        public ColumnIdentifierValue(ColumnIdentifier identifier)
-        {
-            this.identifier = identifier;
-        }
-
-        public ColumnIdentifier getIdentifier(CFMetaData cfm)
-        {
-            return identifier;
-        }
-
-        @Override
-        public final int hashCode()
-        {
-            return identifier.hashCode();
-        }
-
-        @Override
-        public final boolean equals(Object o)
-        {
-            if(!(o instanceof ColumnIdentifierValue))
-                return false;
-            ColumnIdentifierValue that = (ColumnIdentifierValue) o;
-            return identifier.equals(that.identifier);
-        }
-
-        @Override
-        public String toString()
-        {
-            return identifier.toString();
-        }
-
-        public String toCQLString()
-        {
-            return maybeQuote(identifier.text);
-        }
     }
 
     @VisibleForTesting

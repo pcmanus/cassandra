@@ -134,7 +134,7 @@ public abstract class Operation
         /**
          * The name of the column affected by this delete operation.
          */
-        public ColumnIdentifier.Raw affectedColumn();
+        public ColumnDefinition.Raw affectedColumn();
 
         /**
          * This method validates the operation (i.e. validate it is well typed)
@@ -414,14 +414,14 @@ public abstract class Operation
 
     public static class ColumnDeletion implements RawDeletion
     {
-        private final ColumnIdentifier.Raw id;
+        private final ColumnDefinition.Raw id;
 
-        public ColumnDeletion(ColumnIdentifier.Raw id)
+        public ColumnDeletion(ColumnDefinition.Raw id)
         {
             this.id = id;
         }
 
-        public ColumnIdentifier.Raw affectedColumn()
+        public ColumnDefinition.Raw affectedColumn()
         {
             return id;
         }
@@ -435,16 +435,16 @@ public abstract class Operation
 
     public static class ElementDeletion implements RawDeletion
     {
-        private final ColumnIdentifier.Raw id;
+        private final ColumnDefinition.Raw id;
         private final Term.Raw element;
 
-        public ElementDeletion(ColumnIdentifier.Raw id, Term.Raw element)
+        public ElementDeletion(ColumnDefinition.Raw id, Term.Raw element)
         {
             this.id = id;
             this.element = element;
         }
 
-        public ColumnIdentifier.Raw affectedColumn()
+        public ColumnDefinition.Raw affectedColumn()
         {
             return id;
         }
@@ -474,16 +474,16 @@ public abstract class Operation
 
     public static class FieldDeletion implements RawDeletion
     {
-        private final ColumnIdentifier.Raw id;
+        private final ColumnDefinition.Raw id;
         private final FieldIdentifier field;
 
-        public FieldDeletion(ColumnIdentifier.Raw id, FieldIdentifier field)
+        public FieldDeletion(ColumnDefinition.Raw id, FieldIdentifier field)
         {
             this.id = id;
             this.field = field;
         }
 
-        public ColumnIdentifier.Raw affectedColumn()
+        public ColumnDefinition.Raw affectedColumn()
         {
             return id;
         }

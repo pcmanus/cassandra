@@ -100,7 +100,7 @@ public class SelectStatement implements CQLStatement
     private final ColumnFilter queriedColumns;
 
     // Used by forSelection below
-    private static final Parameters defaultParameters = new Parameters(Collections.<ColumnIdentifier.Raw, Boolean>emptyMap(), false, false, false);
+    private static final Parameters defaultParameters = new Parameters(Collections.<ColumnDefinition.Raw, Boolean>emptyMap(), false, false, false);
 
     public SelectStatement(CFMetaData cfm,
                            int boundTerms,
@@ -1024,7 +1024,7 @@ public class SelectStatement implements CQLStatement
             List<Integer> idToSort = new ArrayList<Integer>();
             List<Comparator<ByteBuffer>> sorters = new ArrayList<Comparator<ByteBuffer>>();
 
-            for (ColumnIdentifier.Raw raw : parameters.orderings.keySet())
+            for (ColumnDefinition.Raw raw : parameters.orderings.keySet())
             {
                 ColumnDefinition orderingColumn = raw.prepare(cfm);
                 idToSort.add(orderingIndexes.get(orderingColumn.name));
@@ -1041,7 +1041,7 @@ public class SelectStatement implements CQLStatement
             // even if we don't
             // ultimately ship them to the client (CASSANDRA-4911).
             Map<ColumnIdentifier, Integer> orderingIndexes = new HashMap<>();
-            for (ColumnIdentifier.Raw raw : parameters.orderings.keySet())
+            for (ColumnDefinition.Raw raw : parameters.orderings.keySet())
             {
                 final ColumnDefinition def = raw.prepare(cfm);
                 int index = selection.getResultSetIndex(def);
@@ -1056,7 +1056,7 @@ public class SelectStatement implements CQLStatement
         {
             Boolean[] reversedMap = new Boolean[cfm.clusteringColumns().size()];
             int i = 0;
-            for (Map.Entry<ColumnIdentifier.Raw, Boolean> entry : parameters.orderings.entrySet())
+            for (Map.Entry<ColumnDefinition.Raw, Boolean> entry : parameters.orderings.entrySet())
             {
                 ColumnDefinition def = entry.getKey().prepare(cfm);
                 boolean reversed = entry.getValue();
@@ -1138,12 +1138,12 @@ public class SelectStatement implements CQLStatement
     public static class Parameters
     {
         // Public because CASSANDRA-9858
-        public final Map<ColumnIdentifier.Raw, Boolean> orderings;
+        public final Map<ColumnDefinition.Raw, Boolean> orderings;
         public final boolean isDistinct;
         public final boolean allowFiltering;
         public final boolean isJson;
 
-        public Parameters(Map<ColumnIdentifier.Raw, Boolean> orderings,
+        public Parameters(Map<ColumnDefinition.Raw, Boolean> orderings,
                           boolean isDistinct,
                           boolean allowFiltering,
                           boolean isJson)

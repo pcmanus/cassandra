@@ -43,12 +43,12 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.invalidReq
  */
 public final class SingleColumnRelation extends Relation
 {
-    private final ColumnIdentifier.Raw entity;
+    private final ColumnDefinition.Raw entity;
     private final Term.Raw mapKey;
     private final Term.Raw value;
     private final List<Term.Raw> inValues;
 
-    private SingleColumnRelation(ColumnIdentifier.Raw entity, Term.Raw mapKey, Operator type, Term.Raw value, List<Term.Raw> inValues)
+    private SingleColumnRelation(ColumnDefinition.Raw entity, Term.Raw mapKey, Operator type, Term.Raw value, List<Term.Raw> inValues)
     {
         this.entity = entity;
         this.mapKey = mapKey;
@@ -68,7 +68,7 @@ public final class SingleColumnRelation extends Relation
      * @param type the type that describes how this entity relates to the value.
      * @param value the value being compared.
      */
-    public SingleColumnRelation(ColumnIdentifier.Raw entity, Term.Raw mapKey, Operator type, Term.Raw value)
+    public SingleColumnRelation(ColumnDefinition.Raw entity, Term.Raw mapKey, Operator type, Term.Raw value)
     {
         this(entity, mapKey, type, value, null);
     }
@@ -80,7 +80,7 @@ public final class SingleColumnRelation extends Relation
      * @param type the type that describes how this entity relates to the value.
      * @param value the value being compared.
      */
-    public SingleColumnRelation(ColumnIdentifier.Raw entity, Operator type, Term.Raw value)
+    public SingleColumnRelation(ColumnDefinition.Raw entity, Operator type, Term.Raw value)
     {
         this(entity, null, type, value);
     }
@@ -95,12 +95,12 @@ public final class SingleColumnRelation extends Relation
         return inValues;
     }
 
-    public static SingleColumnRelation createInRelation(ColumnIdentifier.Raw entity, List<Term.Raw> inValues)
+    public static SingleColumnRelation createInRelation(ColumnDefinition.Raw entity, List<Term.Raw> inValues)
     {
         return new SingleColumnRelation(entity, null, Operator.IN, null, inValues);
     }
 
-    public ColumnIdentifier.Raw getEntity()
+    public ColumnDefinition.Raw getEntity()
     {
         return entity;
     }
@@ -134,7 +134,7 @@ public final class SingleColumnRelation extends Relation
         }
     }
 
-    public Relation renameIdentifier(ColumnIdentifier.Raw from, ColumnIdentifier.Raw to)
+    public Relation renameIdentifier(ColumnDefinition.Raw from, ColumnDefinition.Raw to)
     {
         return entity.equals(from)
                ? new SingleColumnRelation(to, mapKey, operator(), value, inValues)

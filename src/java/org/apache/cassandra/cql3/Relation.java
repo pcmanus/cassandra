@@ -269,7 +269,7 @@ public abstract class Relation {
      * @throws InvalidRequestException if the entity cannot be recognized
      */
     protected final ColumnDefinition toColumnDefinition(CFMetaData cfm,
-                                                        ColumnIdentifier.Raw entity) throws InvalidRequestException
+                                                        ColumnDefinition.Raw entity) throws InvalidRequestException
     {
         return entity.prepare(cfm);
     }
@@ -281,5 +281,5 @@ public abstract class Relation {
      * @return this object, if the old identifier is not in the set of entities that this relation covers; otherwise
      *         a new Relation with "from" replaced by "to" is returned.
      */
-    public abstract Relation renameIdentifier(ColumnIdentifier.Raw from, ColumnIdentifier.Raw to);
+    public abstract Relation renameIdentifier(ColumnDefinition.Raw from, ColumnDefinition.Raw to);
 }
