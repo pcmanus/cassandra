@@ -26,6 +26,7 @@ import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.functions.Function;
+import org.apache.cassandra.cql3.statements.RequestValidations;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -37,7 +38,7 @@ abstract class AbstractFunctionSelector<T extends Function> extends Selector
      * The list used to pass the function arguments is recycled to avoid the cost of instantiating a new list
      * with each function call.
      */
-    protected final List<ByteBuffer> args;
+    private final List<ByteBuffer> args;
     protected final List<Selector> argSelectors;
 
     public static Factory newFactory(final Function fun, final SelectorFactories factories) throws InvalidRequestException
@@ -109,6 +110,19 @@ abstract class AbstractFunctionSelector<T extends Function> extends Selector
         this.fun = fun;
         this.argSelectors = argSelectors;
         this.args = Arrays.asList(new ByteBuffer[argSelectors.size()]);
+    }
+
+    // Sets a given arg value. We should use that instead of directly setting the args list for the
+    // sake of validation.
+    protected void setArg(int i, ByteBuffer value) throws InvalidRequestException
+    {
+        RequestValidations.checkBindValueSet(value, "Invalid unset value for argument in call to function %s", fun.name().name);
+        args.set(i, value);
+    }
+
+    protected List<ByteBuffer> args()
+    {
+        return args;
     }
 
     public AbstractType<?> getType()

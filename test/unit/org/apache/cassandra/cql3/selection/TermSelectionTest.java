@@ -67,6 +67,12 @@ public class TermSelectionTest extends CQLTester
 
         assertInvalidMessage("Cannot infer type for term", "SELECT ck, t, {1: 'foo', 2: 'bar', 3: 'baz'} FROM %s");
         assertConstantResult(execute("SELECT ck, t, (map<int, text>){1: 'foo', 2: 'bar', 3: 'baz'} FROM %s"), map(1, "foo", 2, "bar", 3, "baz"));
+
+        assertColumnNames(execute("SELECT ck, t, (int)42, (int)43 FROM %s"), "ck", "t", "(int)42", "(int)43");
+        assertRows(execute("SELECT ck, t, (int) 42, (int) 43 FROM %s"),
+                   row(1, "one", 42, 43),
+                   row(2, "two", 42, 43),
+                   row(3, "three", 42, 43));
     }
 
     @Test
@@ -297,6 +303,8 @@ public class TermSelectionTest extends CQLTester
                    row(1, 2, 100),
                    row(1, 3, 150));
         assertRows(execute("SELECT pk, ck, " + fIntMax + "(i, (int)?) FROM %s WHERE pk = " + fIntMax + "((int)?,(int)1)", 0, 2));
+
+        assertInvalidMessage("Invalid unset value for argument", "SELECT pk, ck, " + fIntMax + "(i, (int)?) FROM %s WHERE pk = " + fIntMax + "((int)1,(int)1)", unset());
     }
 
     @Test
