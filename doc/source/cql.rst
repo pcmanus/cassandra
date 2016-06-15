@@ -16,14 +16,10 @@
 
 .. highlight:: sql
 
+.. _UUID: https://en.wikipedia.org/wiki/Universally_unique_identifier
+
 The Cassandra Query Language (CQL)
 ==================================
-
-CQL Syntax
-----------
-
-Preamble
-^^^^^^^^
 
 This document describes the Cassandra Query Language (CQL) [#]_. Note that this document describes the last version of
 the languages. However, the `changes <#changes>`_ section provides the diff between the different versions of CQL.
@@ -33,6 +29,13 @@ that reason, when used in this document, these terms (tables, rows and columns) 
 in SQL. But please note that as such, they do **not** refer to the concept of rows and columns found in the deprecated
 thrift API (and earlier version 1 and 2 of CQL).
 
+.. _definitions:
+
+Definitions
+-----------
+
+.. _conventions:
+
 Conventions
 ^^^^^^^^^^^
 
@@ -41,11 +44,18 @@ To aid in specifying the CQL syntax, we will use the following conventions in th
 - Language rules will be given in an informal `BNF variant
   <http://en.wikipedia.org/wiki/Backus%E2%80%93Naur_Form#Variants>`_ notation. In particular, we'll use square brakets
   (``[ item ]``) for optional items, ``*`` and ``+`` for repeated items (where ``+`` imply at least one).
-- The grammar is provided for documentation purposes and leave some minor details out (only conveniences that can be
-  ignored). For instance, the comma on the last column definition in a ``CREATE TABLE`` statement is optional but
-  supported if present even though the grammar in this document suggests otherwise. Also, not everything accepted by the
-  grammar will be valid CQL.
-- References to keywords or pieces of CQL code in running text will be shown in a ``fixed-width font``.
+- The grammar will also use the following convention for convenience: non-terminal term will be lowercase (and link to
+  their definition) while terminal keywords will be provided "all caps". Note however that keywords are
+  :ref:`identifiers` and are thus case insensitive in practice. We will also define some early construction using
+  regexp, which we'll indicate with ``re(<some regular expression>)``. Lastly, we'll use the ``∅`` symbol to designed a
+  potentially empty production.  - The grammar is provided for documentation purposes and leave some minor details out.
+  For instance, the comma on the last column definition in a ``CREATE TABLE`` statement is optional but supported if
+  present even though the grammar in this document suggests otherwise. Also, not everything accepted by the grammar is
+  necessarily valid CQL.  - References to keywords or pieces of CQL code in running text will be shown in a
+  ``fixed-width font``.
+
+
+.. _identifiers:
 
 Identifiers and keywords
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -54,7 +64,7 @@ The CQL language uses *identifiers* (or *names*) to identify tables, columns and
 matching the regular expression ``[a-zA-Z][a-zA-Z0-9_]*``.
 
 A number of such identifiers, like ``SELECT`` or ``WITH``, are *keywords*. They have a fixed meaning for the language
-and most are reserved. The list of those keywords can be found in `Appendix A <#appendixA>`__.
+and most are reserved. The list of those keywords can be found in :ref:`appendix-A`.
 
 Identifiers and (unquoted) keywords are case insensitive. Thus ``SELECT`` is the same than ``select`` or ``sElEcT``, and
 ``myId`` is the same than ``myid`` or ``MYID``. A convention often used (in particular by the samples of this
@@ -69,172 +79,639 @@ sensitive (``"My Quoted Id"`` is *different* from ``"my quoted id"``). A fully l
 ``"myid"`` is equivalent to ``myid`` and to ``myId`` but different from ``"myId"``).  Inside a quoted identifier, the
 double-quote character can be repeated to escape it, so ``"foo "" bar"`` is a valid identifier.
 
-**Warning**: *quoted identifiers* allows to declare columns with arbitrary names, and those can sometime clash with
-specific names used by the server. For instance, when using conditional update, the server will respond with a
-result-set containing a special result named ``"[applied]"``. If you’ve declared a column with such a name, this could
-potentially confuse some tools and should be avoided. In general, unquoted identifiers should be preferred but if you
-use quoted identifiers, it is strongly advised to avoid any name enclosed by squared brackets (like ``"[applied]"``) and
-any name that looks like a function call (like ``"f(x)"``).
+.. note:: *quoted identifiers* allows to declare columns with arbitrary names, and those can sometime clash with
+   specific names used by the server. For instance, when using conditional update, the server will respond with a
+   result-set containing a special result named ``"[applied]"``. If you’ve declared a column with such a name, this
+   could potentially confuse some tools and should be avoided. In general, unquoted identifiers should be preferred but
+   if you use quoted identifiers, it is strongly advised to avoid any name enclosed by squared brackets (like
+   ``"[applied]"``) and any name that looks like a function call (like ``"f(x)"``).
 
-To sum up, we have:
+More formally, we have:
 
 .. productionlist::
-   identifer: `unquoted_identifier` | `quoted_identifier`
-   unquoted_identifier: [a-zA-Z][a-zA-Z0-9_]*
-   quoted_identifier: "\"" [any character where " can appear if doubled]+ "\""
+   identifier: `unquoted_identifier` | `quoted_identifier`
+   unquoted_identifier: re('[a-zA-Z][a-zA-Z0-9_]*')
+   quoted_identifier: '"' (any character where " can appear if doubled)+ '"'
+
+.. _constants:
 
 Constants
 ^^^^^^^^^
 
-CQL defines the following kind of *constants*: strings, integers,
-floats, booleans, uuids and blobs:
+CQL defines the following kind of *constants*:
 
--  A string constant is an arbitrary sequence of characters characters
-   enclosed by single-quote(\ ``'``). One can include a single-quote in
-   a string by repeating it, e.g. ``'It''s raining today'``. Those are
-   not to be confused with quoted identifiers that use double-quotes.
--  An integer constant is defined by ``'-'?[0-9]+``.
--  A float constant is defined by
-   ``'-'?[0-9]+('.'[0-9]*)?([eE][+-]?[0-9+])?``. On top of that, ``NaN``
-   and ``Infinity`` are also float constants.
--  A boolean constant is either ``true`` or ``false`` up to
-   case-insensitivity (i.e. ``True`` is a valid boolean constant).
--  A
-   `UUID <http://en.wikipedia.org/wiki/Universally_unique_identifier>`__
-   constant is defined by ``hex{8}-hex{4}-hex{4}-hex{4}-hex{12}`` where
-   ``hex`` is an hexadecimal character, e.g. ``[0-9a-fA-F]`` and ``{4}``
-   is the number of such characters.
--  A blob constant is an hexadecimal number defined by ``0[xX](hex)+``
-   where ``hex`` is an hexadecimal character, e.g. ``[0-9a-fA-F]``.
+.. productionlist::
+   constant: `string` | `integer` | `float` | `boolean` | `uuid` | `blob` | NULL
+   string: '\'' (any character where ' can appear if doubled)+ '\''
+         : '$$' (any character other than '$$') '$$'
+   integer: re('-?[0-9]+')
+   float: re('-?[0-9]+(\.[0-9]*)?([eE][+-]?[0-9+])?') | NAN | INFINITY
+   boolean: TRUE | FALSE
+   uuid: `hex`{8}-`hex`{4}-`hex`{4}-`hex`{4}-`hex`{12}
+   hex: re("[0-9a-fA-F]")
+   blob: '0' ('x' | 'X') `hex`+
 
-For how these constants are typed, see the `data types
-section <#types>`__.
+In other words:
+
+- A string constant is an arbitrary sequence of characters enclosed by single-quote(``'``). A single-quote
+  can be included by repearing it, e.g. ``'It''s raining today'``. Those are not to be confused with quoted
+  :ref:`identifiers` that use double-quotes. Alternatively, a string can be defined by enclosing the arbitrary sequence
+  of characters by two dollar characters, in which case single-quote can be use without escaping (``$$It's raining
+  today$$``). That latter form is often used when defining :ref:`user-defined functions <udfs>` to avoid having to
+  escape single-quote characters in function body (as they are more likely to occur than ``$$``).
+- Integer, float and boolean constant are defined as expected. Note however than float allows the special ``NaN`` and
+  ``Infinity`` constants.
+- CQL supports UUID_ constants.
+- Blobs content are provided in hexadecimal and prefixed by ``0x``.
+- The special ``NULL`` constant denotes the absence of value.
+  
+For how these constants are typed, see the :ref:`data-types` section.
+
+Terms
+^^^^^
+
+CQL has the notion of a *term*, which denotes the kind of values that CQL support. Terms are defined by:
+
+.. productionlist::
+   term: `constant` | `literal` | `function_call` | `type_hint` | `bind_marker`
+   literal: `collection_literal` | `udt_literal` | `tuple_literal`
+   function_call: `identifier` '(' [ `term` (',' `term`)* ] ')'
+   type_hint: '(' `cql_type` `)` term
+   bind_marker: '?' | ':' `identifier`
+
+A term is thus one of:
+
+- A :ref:`constant <constants>`.
+- A literal for either :ref:`a collection <collections>`, :ref:`a user-defined type <udts>` or :ref:`a tuple <tuples>`
+  (see the linked sections for details).
+- A function call: see :ref:`the section on functions <functions>` for details on which :ref:`native function
+  <native-functions>` exists and how to define your own :ref:`user-defined ones <user-defined-functions>`.
+- A *type hint*: see the :ref:`related section <type-hints>` for details.
+- A bind marker, which denotes a variable to be bound at execution time. See the section on :ref:`prepared-statements`
+  for details. A bind marker can be either anonymous (``?``) or named (``:some_name``). The latter form provides a more
+  convenient way to refer to the variable for binding it and should generally be prefered.
+
 
 Comments
 ^^^^^^^^
 
-A comment in CQL is a line beginning by either double dashes (``--``) or
-double slash (``//``).
+A comment in CQL is a line beginning by either double dashes (``--``) or double slash (``//``).
 
-Multi-line comments are also supported through enclosure within ``/*``
-and ``*/`` (but nesting is not supported).
+Multi-line comments are also supported through enclosure within ``/*`` and ``*/`` (but nesting is not supported).
 
-| bc(sample).
-| — This is a comment
-| // This is a comment too
-| /\* This is
-|  a multi-line comment \*/
+::
+
+    — This is a comment
+    // This is a comment too
+    /* This is
+       a multi-line comment */
 
 Statements
 ^^^^^^^^^^
 
-CQL consists of statements. As in SQL, these statements can be divided
-in 3 categories:
+CQL consists of statements that can be divided in the following categories:
 
--  Data definition statements, that allow to set and change the way data
-   is stored.
--  Data manipulation statements, that allow to change data
--  Queries, to look up data
+- :ref:`data-definition` statements, to define and change how the data is stored (keyspaces and tables).
+- :ref:`data-manipulation` statements, for selecting, inserting and deleting data.
+- :ref:`index-and-views` statements.
+- :ref:`roles-and-permissions` statements.
+- :ref:`udfs` statements.
+- :ref:`udts` statements.
+- :ref:`triggers` statements.
 
-All statements end with a semicolon (``;``) but that semicolon can be
-omitted when dealing with a single statement. The supported statements
-are described in the following sections. When describing the grammar of
-said statements, we will reuse the non-terminal symbols defined below:
+All the statements are listed below and are described in the rest of this documentation (see links above):
 
-| bc(syntax)..
-|  ::= any quoted or unquoted identifier, excluding reserved keywords
-|  ::= ( ‘.’)? 
+.. productionlist::
+   cql_statement: `statement` [ ';' ]
+   statement: `ddl_statement`
+            : | `dml_statement`
+            : | `index_or_view_statement`
+            : | `role_or_permission_statement`
+            : | `udf_statement`
+            : | `udt_statement`
+            : | `trigger_statement`
+   ddl_statement: `use_statement`
+                : | `create_keyspace_statement`
+                : | `alter_keyspace_statement`
+                : | `drop_keyspace_statement`
+                : | `create_table_statement`
+                : | `alter_table_statement`
+                : | `drop_table_statement`
+                : | `truncate_statement`
+    dml_statement: `select_statement`
+                 : | `insert_statement`
+                 : | `update_statement`
+                 : | `delete_statement`
+                 : | `batch_statement`
+    index_or_view_statement: `create_index_statement`
+                           : | `drop_index_statement`
+                           : | `create_materialized_view_statement`
+                           : | `drop_materialized_view_statement`
+    role_or_permission_statement: `create_role_statement`
+                                : | `alter_role_statement`
+                                : | `drop_role_statement`
+                                : | `grant_role_statement`
+                                : | `revoke_role_statement`
+                                : | `list_role_statement`
+                                : | `grant_permission_statement`
+                                : | `revoke_permission_statement`
+                                : | `list_permission_statement`
+                                : | `create_user_statement`
+                                : | `alter_user_statement`
+                                : | `drop_user_statement`
+                                : | `list_user_statement`
+    udf_statement: `create_function_statement`
+                 : | `drop_function_statement`
+                 : | `create_aggregate_statement`
+                 : | `drop_aggregate_statement`
+    udt_statement: `create_type_statement`
+                 : | `alter_type_statement`
+                 : | `drop_type_statement`
+    trigger_statement: `create_trigger_statement`
+                     : | `drop_trigger_statement`
 
-|  ::= a string constant
-|  ::= an integer constant
-|  ::= a float constant
-|  ::= \| 
-|  ::= a uuid constant
-|  ::= a boolean constant
-|  ::= a blob constant
+.. _prepared-statements:
 
-|  ::= 
-|  \| 
-|  \| 
-|  \| 
-|  \| 
-|  ::= ‘?’
-|  \| ‘:’ 
-|  ::= 
-|  \| 
-|  \| 
-|  \| ‘(’ ( (‘,’ )\*)? ‘)’
+Prepared Statements
+^^^^^^^^^^^^^^^^^^^
 
-|  ::= 
-|  \| 
-|  \| 
-|  ::= ‘{’ ( ‘:’ ( ‘,’ ‘:’ )\* )? ‘}’
-|  ::= ‘{’ ( ( ‘,’ )\* )? ‘}’
-|  ::= ‘[’ ( ( ‘,’ )\* )? ‘]’
+CQL supports *prepared statements*. Prepared statements are an optimization that allows to parse a query only once but
+execute it multiple times with different concrete values.
 
- ::=
+Any statement that uses at least one bind marker (see :token:`bind_marker`) will need to be *prepared*. After which the statement
+can be *executed* by provided concrete values for each of its marker. The exact details of how a statement is prepared
+and and then executed depends on the CQL driver used and you should refer to your driver documentation.
 
-|  ::= (AND )\*
-|  ::= ‘=’ ( \| \| )
-| p.
-| Please note that not every possible productions of the grammar above
-  will be valid in practice. Most notably, ``<variable>`` and nested
-  ``<collection-literal>`` are currently not allowed inside
-  ``<collection-literal>``.
 
-A ``<variable>`` can be either anonymous (a question mark (``?``)) or
-named (an identifier preceded by ``:``). Both declare a bind variables
-for `prepared statements <#preparedStatement>`__. The only difference
-between an anymous and a named variable is that a named one will be
-easier to refer to (how exactly depends on the client driver used).
+.. _data-types:
 
-The ``<properties>`` production is use by statement that create and
-alter keyspaces and tables. Each ``<property>`` is either a *simple*
-one, in which case it just has a value, or a *map* one, in which case
-it’s value is a map grouping sub-options. The following will refer to
-one or the other as the *kind* (*simple* or *map*) of the property.
+Data Types
+----------
 
-A ``<tablename>`` will be used to identify a table. This is an
-identifier representing the table name that can be preceded by a
-keyspace name. The keyspace name, if provided, allow to identify a table
-in another keyspace than the currently active one (the currently active
-keyspace is set through the \ ``USE``\  statement).
+CQL is a typed language and supports a rich set of data types, including :ref:`native types <native-types>`,
+:ref:`collection types <collections>`, :ref:`user-defined types <udts>`, :ref:`tuple types <tuples>` and :ref:`custom
+types <custom-types>`:
 
-For supported ``<function>``, see the section on
-`functions <#functions>`__.
+.. productionlist::
+   cql_type: `native_type` | `collection_type` | `user_defined_type` | `tuple_type` | `custom_type`
 
-Strings can be either enclosed with single quotes or two dollar
-characters. The second syntax has been introduced to allow strings that
-contain single quotes. Typical candidates for such strings are source
-code fragments for user-defined functions.
+
+.. _native-types:
+
+Native Types
+^^^^^^^^^^^^
+
+The native types supported by CQL are:
+
+.. productionlist::
+   native_type: ASCII
+              : | BIGINT
+              : | BLOB
+              : | BOOLEAN
+              : | COUNTER
+              : | DATE
+              : | DECIMAL
+              : | DOUBLE
+              : | FLOAT
+              : | INET
+              : | INT
+              : | SMALLINT
+              : | TEXT
+              : | TIME
+              : | TIMESTAMP
+              : | TIMEUUID
+              : | TINYINT
+              : | UUID
+              : | VARCHAR
+              : | VARINT
+
+The following table gives additional informations on the native data types, and on which kind of :ref:`constants
+<constants>` each type supports:
+
+=============== ===================== ==================================================================================
+ type            constants supported   description
+=============== ===================== ==================================================================================
+ ``ascii``       :token:`string`       ASCII character string
+ ``bigint``      :token:`integer`      64-bit signed long
+ ``blob``        :token:`blob`         Arbitrary bytes (no validation)
+ ``boolean``     :token:`boolean`      Either ``true`` or ``false``
+ ``counter``     :token:`integer`      Counter column (64-bit signed value). See :ref:`counters` for details
+ ``date``        :token:`integer`,     A date (with no corresponding time value). See :ref:`dates` below for details
+                 :token:`string`
+ ``decimal``     :token:`integer`,     Variable-precision decimal
+                 :token:`float`
+ ``double``      :token:`integer`      64-bit IEEE-754 floating point
+                 :token:`float`
+ ``float``       :token:`integer`,     32-bit IEEE-754 floating point
+                 :token:`float`
+ ``inet``        :token:`string`       An IP address, either IPv4 (4 bytes long) or IPv6 (16 bytes long). Note that
+                                       there is no ``inet`` constant, IP address should be inputed as strings
+ ``int``         :token:`integer`      32-bit signed int
+ ``smallint``    :token:`integer`      16-bit signed int
+ ``text``        :token:`string`       UTF8 encoded string
+ ``time``        :token:`integer`,     A time (with no corresponding date value) with nanosecond precision. See
+                 :token:`string`       :ref:`times` below for details
+ ``timestamp``   :token:`integer`,     A timestamp (date and time) with millisecond precision. See :ref:`timestamps`
+                 :token:`string`       below for details
+ ``timeuuid``    :token:`uuid`         Version 1 UUID_, generally used as a “conflict-free” timestamp. Also see
+                                       :ref:`timeuuid-functions`
+ ``tinyint``     :token:`integer`      8-bit signed int
+ ``uuid``        :token:`uuid`         A UUID_ (of any version)
+ ``varchar``     :token:`string`       UTF8 encoded string
+ ``varint``      :token:`integer`      Arbitrary-precision integer
+=============== ===================== ==================================================================================
+
+.. _counters:
+
+Counters
+~~~~~~~~
+
+The ``counter`` type is used to define *counter columns*. A counter column is a column whose value is a 64-bit signed
+integer and on which 2 operations are supported: incrementing and decrementing (see the :ref:`UPDATE statement
+<update-statement>` for syntax). Note that the value of a counter cannot be set: a counter does not exist until first
+incremented/decremented, and that first increment/decrement is made as if the prior value was 0.
+
+.. _counter-limitations:
+
+Counters have a number of important limitations:
+
+- They cannot be used for columns part of the ``PRIMARY KEY`` of a table.
+- A table that contains a counter can only contain counters. In other words, either all the columns of a table outside
+  the ``PRIMARY KEY`` have the ``counter`` type, or none of them have it.
+- Counters do not support :ref:`expiration <ttls>`.
+- The deletion of counters is supported, but is only guaranteed to work the first time you delete a counter. In other
+  words, you should not re-update a counter that you have deleted (if you do, proper behavior is not guaranteed).
+- Counter updates are, by nature, not `idemptotent <https://en.wikipedia.org/wiki/Idempotence>`__. An important
+  consequence is that if a counter update fails unexpectedly (timeout or loss of connection to the coordinator node),
+  the client has no way to know if the update has been applied or not. In particular, replaying the update may or may
+  not lead to an over count.
+
+.. _timestamps:
+
+Working with timestamps
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Values of the ``timestamp`` type are encoded as 64-bit signed integers representing a number of milliseconds since the
+standard base time known as `the epoch <https://en.wikipedia.org/wiki/Unix_time>`__: January 1 1970 at 00:00:00 GMT.
+
+Timestamps can be input in CQL either using their value as an :token:`integer`, or using a :token:`string` that
+represents an `ISO 8601 <https://en.wikipedia.org/wiki/ISO_8601>`__ date. For instance, all of the values below are
+valid ``timestamp`` values for  Mar 2, 2011, at 04:05:00 AM, GMT:
+
+- ``1299038700000``
+- ``'2011-02-03 04:05+0000'``
+- ``'2011-02-03 04:05:00+0000'``
+- ``'2011-02-03 04:05:00.000+0000'``
+- ``'2011-02-03T04:05+0000'``
+- ``'2011-02-03T04:05:00+0000'``
+- ``'2011-02-03T04:05:00.000+0000'``
+
+The ``+0000`` above is an RFC 822 4-digit time zone specification; ``+0000`` refers to GMT. US Pacific Standard Time is
+``-0800``. The time zone may be omitted if desired (``'2011-02-03 04:05:00'``), and if so, the date will be interpreted
+as being in the time zone under which the coordinating Cassandra node is configured. There are however difficulties
+inherent in relying on the time zone configuration being as expected, so it is recommended that the time zone always be
+specified for timestamps when feasible.
+
+The time of day may also be omitted (``'2011-02-03'`` or ``'2011-02-03+0000'``), in which case the time of day will
+default to 00:00:00 in the specified or default time zone. However, if only the date part is relevant, consider using
+the :ref:`date <dates>` type.
+
+.. _dates:
+
+Working with dates
+^^^^^^^^^^^^^^^^^^
+
+Values of the ``date`` type are encoded as 32-bit unsigned integers representing a number of days with “the epoch” at
+the center of the range (2^31). Epoch is January 1st, 1970
+
+As for :ref:`timestamp <timestamps>`, a date can be input either as an :token:`integer` or using a date
+:token:`string`. In the later case, the format should be ``yyyy-mm-dd`` (so ``'2011-02-03'`` for instance).
+
+.. _times:
+
+Working with times
+^^^^^^^^^^^^^^^^^^
+
+Values of the ``time`` type are encoded as 64-bit signed integers representing the number of nanoseconds since midnight.
+
+As for :ref:`timestamp <timestamps>`, a time can be input either as an :token:`integer` or using a :token:`string`
+representing the time. In the later case, the format should be ``hh:mm:ss[.fffffffff]`` (where the sub-second precision
+is optional and if provided, can be less than the nanosecond). So for instance, the following are valid inputs for a
+time:
+
+-  ``'08:12:54'``
+-  ``'08:12:54.123'``
+-  ``'08:12:54.123456'``
+-  ``'08:12:54.123456789'``
+
+
+.. _collections:
+
+Collections
+^^^^^^^^^^^
+
+CQL supports 3 kind of collections: :ref:`maps`, :ref:`sets` and :ref:`lists`. The types of those collections is defined
+by:
+
+.. productionlist::
+   collection_type: MAP '<' `cql_type` ',' `cql_type` '>'
+                  : | SET '<' `cql_type` '>'
+                  : | LIST '<' `cql_type` '>'
+
+and their values can be inputed using collection literals:
+
+.. productionlist::
+   collection_literal: `map_literal` | `set_literal` | `list_literal`
+   map_literal: '{' [ `term` ':' `term` (',' `term` : `term`)* ] '}'
+   set_literal: '{' [ `term` (',' `term`)* ] '}'
+   list_literal: '[' [ `term` (',' `term`)* ] ']'
+
+Note however that neither :token:`bind_marker` nor ``NULL`` are supported inside collection literals.
+
+Noteworthy characteristics
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Collections are meant for storing/denormalizing relatively small amount of data. They work well for things like “the
+phone numbers of a given user”, “labels applied to an email”, etc. But when items are expected to grow unbounded (“all
+messages sent by a user”, “events registered by a sensor”...), then collections are not appropriate and a specific table
+(with clustering columns) should be used. Concretely, (non-frozen) collections have the following noteworthy
+characteristics and limitations:
+
+- Individual collections are not indexed internally. Which means that even to access a single element of a collection,
+  the while collection has to be read (and reading one is not paged internally).
+- While insertion operations on sets and maps never incur a read-before-write internally, some operations on lists do.
+  Further, some lists operations are not idempotent by nature (see the section on :ref:`lists <lists>` below for
+  details), making their retry in case of timeout problematic. It is thus advised to prefer sets over lists when
+  possible.
+
+Please note that while some of those limitations may or may not be removed/improved upon in the future, it is a
+anti-pattern to use a (single) collection to store large amounts of data.
+
+.. _maps:
+
+Maps
+~~~~
+
+A ``map`` is a (sorted) set of key-value pairs, where keys are unique and the map is sorted by its keys. You can define
+and insert a map with:::
+
+    CREATE TABLE users (
+        id text PRIMARY KEY,
+        name text,
+        favs map<text, text> // A map of text keys, and text values
+    );
+
+    INSERT INTO users (id, name, favs)
+               VALUES ('jsmith', 'John Smith', { 'fruit' : 'Apple', 'band' : 'Beatles' });
+
+    // Replace the existing map entirely.
+    UPDATE users SET favs = { 'fruit' : 'Banana' } WHERE id = 'jsmith';
+
+Further, maps support:
+
+- Updating or inserting one or more elements:::
+
+    UPDATE users SET favs['author'] = 'Ed Poe' WHERE id = 'jsmith';
+    UPDATE users SET favs = favs + { 'movie' : 'Cassablanca', 'band' : 'ZZ Top' } WHERE id = 'jsmith';
+
+- Removing one or more element (if an element doesn't exist, removing it is a no-op but no error is thrown):::
+
+    DELETE favs['author'] FROM users WHERE id = 'jsmith';
+    UPDATE users SET favs = favs - { 'movie', 'band'} WHERE id = 'jsmith';
+
+  Note that for removing multiple elements in a ``map``, you remove from it a ``set`` of keys.
+
+Lastly, TTLs are allowed for both ``INSERT`` and ``UPDATE``, but in both case the TTL set only apply to the newly
+inserted/updated elements. In other words::
+
+    UPDATE users USING TTL 10 SET favs['color'] = 'green' WHERE id = 'jsmith';
+
+will only apply the TTL to the ``{ 'color' : 'green' }`` record, the rest of the map remaining unaffected.
+
+
+.. _sets:
+
+Sets
+~~~~
+
+A ``set`` is a (sorted) collection of unique values. You can define and insert a map with:::
+
+    CREATE TABLE images (
+        name text PRIMARY KEY,
+        owner text,
+        tags set<text> // A set of text values
+    );
+
+    INSERT INTO images (name, owner, tags)
+                VALUES ('cat.jpg', 'jsmith', { 'pet', 'cute' });
+
+    // Replace the existing set entirely
+    UPDATE images SET tags = { 'kitten', 'cat’, 'lol' } WHERE id = 'jsmith';
+
+Further, sets support:
+
+- Adding one or multiple elements (as this is a set, inserting an already existing element is a no-op):::
+
+    UPDATE images SET tags = tags + { 'gray', 'cuddly' } WHERE name = 'cat.jpg';
+
+- Removing one or multiple elements (if an element doesn't exist, removing it is a no-op but no error is thrown):::
+
+    UPDATE images SET tags = tags - { 'cat' } WHERE name = 'cat.jpg';
+
+Lastly, as for :ref:`maps <maps>`, TTLs if used only apply to the newly inserted values.
+
+.. _lists:
+
+Lists
+~~~~~
+
+.. note:: As mentioned above and further discussed at the end of this section, lists have limitations and specific
+   performance considerations that you should take into account before using them. In general, if you can use a
+   :ref:`set <sets>` instead of list, always prefer a set.
+
+A ``list`` is a (sorted) collection of non-unique values where elements are ordered by there position in the list. You
+can define and insert a list with:::
+
+    CREATE TABLE plays (
+        id text PRIMARY KEY,
+        game text,
+        players int,
+        scores list<int> // A list of integers
+    )
+
+    INSERT INTO plays (id, game, players, scores)
+               VALUES ('123-afde', 'quake', 3, [17, 4, 2]);
+
+    // Replace the existing list entirely
+    UPDATE plays SET scores = [ 3, 9, 4] WHERE id = '123-afde';
+
+Further, lists support:
+
+- Appending and prepending values to a list:::
+
+    UPDATE plays SET players = 5, scores = scores + [ 14, 21 ] WHERE id = '123-afde';
+    UPDATE plays SET players = 6, scores = [ 3 ] + scores WHERE id = '123-afde';
+
+- Setting the value at a particular position in the list. This imply that the list has a pre-existing element for that
+  position or an error will be thrown that the list is too small:::
+
+    UPDATE plays SET scores[1] = 7 WHERE id = '123-afde';
+
+- Removing an element by its position in the list. This imply that the list has a pre-existing element for that position
+  or an error will be thrown that the list is too small. Further, as the operation removes an element from the list, the
+  list size will be diminished by 1, shifting the position of all the elements following the one deleted:::
+
+    DELETE scores[1] FROM plays WHERE id = '123-afde';
+
+- Deleting *all* the occurrences of particular values in the list (if a particular element doesn't occur at all in the
+  list, it is simply ignored and no error is thrown):::
+
+    UPDATE plays SET scores = scores - [ 12, 21 ] WHERE id = '123-afde';
+
+.. warning:: The append and prepend operations are not idempotent by nature. So in particular, if one of these operation
+   timeout, then retrying the operation is not safe and it may (or may not) lead to appending/prepending the value
+   twice.
+
+.. warning:: Setting and removing an element by position and removing occurences of particular values incur an internal
+   *read-before-write*. They will thus run more slowly and take more ressources than usual updates (with the exclusion
+   of conditional write that have their own cost).
+
+Lastly, as for :ref:`maps <maps>`, TTLs when used only apply to the newly inserted values.
+
+.. _udts:
+
+User-Defined Types
+^^^^^^^^^^^^^^^^^^
+
+CQL support the definition of user-defined types (UDT for short). Such a type can be created, modified and removed using
+the :token:`create_type_statement`, :token:`alter_type_statement` and :token:`drop_type_statement` described below. But
+once created, a UDT is simply referred to by its name:
+
+.. productionlist::
+   user_defined_type: `udt_name`
+   udt_name: [ `keyspace_name` '.' ] `identifier`
+
+
+Creating a UDT
+~~~~~~~~~~~~~~
+
+Creating a new user-defined type is done using a ``CREATE TYPE`` statement defined by:
+
+.. productionlist::
+   create_type_statement: CREATE TYPE [ IF NOT EXISTS ] `udt_name`
+                        :     '(' `field_definition` ( ',' `field_definition` )* ')'
+   field_definition: `identifier` `cql_type`
+
+...
+
 
 *Sample:*
 
 | bc(sample)..
-|  ‘some string value’
+| CREATE TYPE address (
+|  street\_name text,
+|  street\_number int,
+|  city text,
+|  state text,
+|  zip int
+| )
 
-| $$double-dollar string can contain single ’ quotes$$
+| CREATE TYPE work\_and\_home\_addresses (
+|  home\_address address,
+|  work\_address address
+| )
 | p.
+| The ``CREATE TYPE`` statement creates a new user-defined type. Each
+  type is a set of named, typed fields. Field types may be any valid
+  type, including collections and other existing user-defined types.
 
-Prepared Statement
-^^^^^^^^^^^^^^^^^^
+Attempting to create an already existing type will result in an error
+unless the ``IF NOT EXISTS`` option is used. If it is used, the
+statement will be a no-op if the type already exists.
 
-CQL supports *prepared statements*. Prepared statement is an
-optimization that allows to parse a query only once but execute it
-multiple times with different concrete values.
+``<typename>``
+^^^^^^^^^^^^^^
 
-In a statement, each time a column value is expected (in the data
-manipulation and query statements), a ``<variable>`` (see above) can be
-used instead. A statement with bind variables must then be *prepared*.
-Once it has been prepared, it can executed by providing concrete values
-for the bind variables. The exact procedure to prepare a statement and
-execute a prepared statement depends on the CQL driver used and is
-beyond the scope of this document.
+Valid type names are identifiers. The names of existing CQL types and
+`reserved type names <#appendixB>`__ may not be used.
 
-In addition to providing column values, bind markers may be used to
-provide values for ``LIMIT``, ``TIMESTAMP``, and ``TTL`` clauses. If
-anonymous bind markers are used, the names for the query parameters will
-be ``[limit]``, ``[timestamp]``, and ``[ttl]``, respectively.
+If the type name is provided alone, the type is created with the current
+keyspace (see \ ``USE``\ ). If it is prefixed by an existing keyspace
+name, the type is created within the specified keyspace instead of the
+current keyspace.
+
+Altering a UDT
+~~~~~~~~~~~~~~
+
+*Syntax:*
+
+| bc(syntax)..
+|  ::= ALTER TYPE 
+
+|  ::= ALTER TYPE 
+|  \| ADD 
+|  \| RENAME TO ( AND TO )\*
+| p.
+| *Sample:*
+
+| bc(sample)..
+| ALTER TYPE address ALTER zip TYPE varint
+
+ALTER TYPE address ADD country text
+
+| ALTER TYPE address RENAME zip TO zipcode AND street\_name TO street
+| p.
+| The ``ALTER TYPE`` statement is used to manipulate type definitions.
+  It allows for adding new fields, renaming existing fields, or changing
+  the type of existing fields.
+
+When altering the type of a column, the new type must be compatible with
+the previous type.
+
+Dropping a UDT
+~~~~~~~~~~~~~~
+
+*Syntax:*
+
+| bc(syntax)..
+|  ::= DROP TYPE ( IF EXISTS )? 
+| p.
+| The ``DROP TYPE`` statement results in the immediate, irreversible
+  removal of a type. Attempting to drop a type that is still in use by
+  another type or a table will result in an error.
+
+If the type does not exist, an error will be returned unless
+``IF EXISTS`` is used, in which case the operation is a no-op.
+
+.. _tuples:
+
+Tuples
+^^^^^^
+
+.. todo:: todo
+
+.. _custom-types:
+
+Custom Types
+^^^^^^^^^^^^
+
+.. note:: Custom types exists mostly for backward compatiliby purposes and their usage is discouraged. Their usage is
+   complex, not user friendly and the other provided types, particularly :ref:`user-defined types <udts>`, should almost
+   always be enough.
+
+A custom type is defined by:
+
+.. productionlist::
+   custom_type: `string`
+
+A custom type is a :token:`string` that contains the name of Java class that extends the server side ``AbstractType``
+class and that can be loaded by Cassandra (it should thus be in the ``CLASSPATH`` of every node running Cassandra). That
+class will define what values are valid for the type and how the time sorts when used for a clustering column. For any
+other purpose, a value of a custom type is the same than that of a ``blob``, and can in particular be input using the
+:token:`blob` literal syntax.
+
+
+.. _data-definition:
 
 Data Definition
 ---------------
@@ -920,96 +1397,6 @@ If the materialized view does not exists, the statement will return an
 error, unless ``IF EXISTS`` is used in which case the operation is a
 no-op.
 
-CREATE TYPE
-^^^^^^^^^^^
-
-*Syntax:*
-
-| bc(syntax)..
-|  ::= CREATE TYPE ( IF NOT EXISTS )? 
-|  ‘(’ ( ‘,’ )\* ‘)’
-
- ::= ( ‘.’ )?
-
- ::=
-
-*Sample:*
-
-| bc(sample)..
-| CREATE TYPE address (
-|  street\_name text,
-|  street\_number int,
-|  city text,
-|  state text,
-|  zip int
-| )
-
-| CREATE TYPE work\_and\_home\_addresses (
-|  home\_address address,
-|  work\_address address
-| )
-| p.
-| The ``CREATE TYPE`` statement creates a new user-defined type. Each
-  type is a set of named, typed fields. Field types may be any valid
-  type, including collections and other existing user-defined types.
-
-Attempting to create an already existing type will result in an error
-unless the ``IF NOT EXISTS`` option is used. If it is used, the
-statement will be a no-op if the type already exists.
-
-``<typename>``
-^^^^^^^^^^^^^^
-
-Valid type names are identifiers. The names of existing CQL types and
-`reserved type names <#appendixB>`__ may not be used.
-
-If the type name is provided alone, the type is created with the current
-keyspace (see \ ``USE``\ ). If it is prefixed by an existing keyspace
-name, the type is created within the specified keyspace instead of the
-current keyspace.
-
-ALTER TYPE
-^^^^^^^^^^
-
-*Syntax:*
-
-| bc(syntax)..
-|  ::= ALTER TYPE 
-
-|  ::= ALTER TYPE 
-|  \| ADD 
-|  \| RENAME TO ( AND TO )\*
-| p.
-| *Sample:*
-
-| bc(sample)..
-| ALTER TYPE address ALTER zip TYPE varint
-
-ALTER TYPE address ADD country text
-
-| ALTER TYPE address RENAME zip TO zipcode AND street\_name TO street
-| p.
-| The ``ALTER TYPE`` statement is used to manipulate type definitions.
-  It allows for adding new fields, renaming existing fields, or changing
-  the type of existing fields.
-
-When altering the type of a column, the new type must be compatible with
-the previous type.
-
-DROP TYPE
-^^^^^^^^^
-
-*Syntax:*
-
-| bc(syntax)..
-|  ::= DROP TYPE ( IF EXISTS )? 
-| p.
-| The ``DROP TYPE`` statement results in the immediate, irreversible
-  removal of a type. Attempting to drop a type that is still in use by
-  another type or a table will result in an error.
-
-If the type does not exist, an error will be returned unless
-``IF EXISTS`` is used, in which case the operation is a no-op.
 
 CREATE TRIGGER
 ^^^^^^^^^^^^^^
@@ -1264,8 +1651,287 @@ signature does not exist.
 Signatures for user-defined aggregates follow the `same
 rules <#functionSignature>`__ as for user-defined functions.
 
+.. _data-manipulation:
+
 Data Manipulation
 -----------------
+
+.. _queries:
+
+Queries
+-------
+
+SELECT
+^^^^^^
+
+*Syntax:*
+
+| bc(syntax)..
+|  ::= SELECT ( JSON )? 
+|  FROM 
+|  ( WHERE )?
+|  ( ORDER BY )?
+|  ( PER PARTITION LIMIT )?
+|  ( LIMIT )?
+|  ( ALLOW FILTERING )?
+
+|  ::= DISTINCT? 
+|  \| COUNT ‘(’ ( ‘\*’ \| ‘1’ ) ‘)’ (AS )?
+
+|  ::= (AS )? ( ‘,’ (AS )? )\*
+|  \| ‘\*’
+
+|  ::= 
+|  \| WRITETIME ‘(’ ‘)’
+|  \| TTL ‘(’ ‘)’
+|  \| CAST ‘(’ AS ‘)’
+|  \| ‘(’ ( (‘,’ )\*)? ‘)’
+
+ ::= ( AND )\*
+
+|  ::= 
+|  \| ‘(’ (‘,’ )\* ‘)’ 
+|  \| IN ‘(’ ( ( ‘,’ )\* )? ‘)’
+|  \| ‘(’ (‘,’ )\* ‘)’ IN ‘(’ ( ( ‘,’ )\* )? ‘)’
+|  \| TOKEN ‘(’ ( ‘,’ )\* ‘)’ 
+
+|  ::= ‘=’ \| ‘<’ \| ‘>’ \| ‘<=’ \| ‘>=’ \| CONTAINS \| CONTAINS KEY
+|  ::= ( ‘,’ )\*
+|  ::= ( ASC \| DESC )?
+|  ::= ‘(’ (‘,’ )\* ‘)’
+| p.
+| *Sample:*
+
+| bc(sample)..
+| SELECT name, occupation FROM users WHERE userid IN (199, 200, 207);
+
+SELECT JSON name, occupation FROM users WHERE userid = 199;
+
+SELECT name AS user\_name, occupation AS user\_occupation FROM users;
+
+| SELECT time, value
+| FROM events
+| WHERE event\_type = ‘myEvent’
+|  AND time > ‘2011-02-03’
+|  AND time <= ‘2012-01-01’
+
+SELECT COUNT (\*) FROM users;
+
+SELECT COUNT (\*) AS user\_count FROM users;
+
+The ``SELECT`` statements reads one or more columns for one or more rows
+in a table. It returns a result-set of rows, where each row contains the
+collection of columns corresponding to the query. If the ``JSON``
+keyword is used, the results for each row will contain only a single
+column named “json”. See the section on
+```SELECT JSON`` <#selectJson>`__ for more details.
+
+``<select-clause>``
+^^^^^^^^^^^^^^^^^^^
+
+The ``<select-clause>`` determines which columns needs to be queried and
+returned in the result-set. It consists of either the comma-separated
+list of or the wildcard character (``*``) to select all the columns
+defined for the table.
+
+A ``<selector>`` is either a column name to retrieve or a ``<function>``
+of one or more ``<term>``\ s. The function allowed are the same as for
+``<term>`` and are described in the `function section <#functions>`__.
+In addition to these generic functions, the ``WRITETIME`` (resp.
+``TTL``) function allows to select the timestamp of when the column was
+inserted (resp. the time to live (in seconds) for the column (or null if
+the column has no expiration set)) and the ```CAST`` <#castFun>`__
+function can be used to convert one data type to another.
+
+Any ``<selector>`` can be aliased using ``AS`` keyword (see examples).
+Please note that ``<where-clause>`` and ``<order-by>`` clause should
+refer to the columns by their original names and not by their aliases.
+
+The ``COUNT`` keyword can be used with parenthesis enclosing ``*``. If
+so, the query will return a single result: the number of rows matching
+the query. Note that ``COUNT(1)`` is supported as an alias.
+
+``<where-clause>``
+^^^^^^^^^^^^^^^^^^
+
+The ``<where-clause>`` specifies which rows must be queried. It is
+composed of relations on the columns that are part of the
+``PRIMARY KEY`` and/or have a `secondary index <#createIndexStmt>`__
+defined on them.
+
+Not all relations are allowed in a query. For instance, non-equal
+relations (where ``IN`` is considered as an equal relation) on a
+partition key are not supported (but see the use of the ``TOKEN`` method
+below to do non-equal queries on the partition key). Moreover, for a
+given partition key, the clustering columns induce an ordering of rows
+and relations on them is restricted to the relations that allow to
+select a **contiguous** (for the ordering) set of rows. For instance,
+given
+
+| bc(sample).
+| CREATE TABLE posts (
+|  userid text,
+|  blog\_title text,
+|  posted\_at timestamp,
+|  entry\_title text,
+|  content text,
+|  category int,
+|  PRIMARY KEY (userid, blog\_title, posted\_at)
+| )
+
+The following query is allowed:
+
+| bc(sample).
+| SELECT entry\_title, content FROM posts WHERE userid=‘john doe’ AND
+  blog\_title=‘John’‘s Blog’ AND posted\_at >= ‘2012-01-01’ AND
+  posted\_at < ‘2012-01-31’
+
+But the following one is not, as it does not select a contiguous set of
+rows (and we suppose no secondary indexes are set):
+
+| bc(sample).
+| // Needs a blog\_title to be set to select ranges of posted\_at
+| SELECT entry\_title, content FROM posts WHERE userid=‘john doe’ AND
+  posted\_at >= ‘2012-01-01’ AND posted\_at < ‘2012-01-31’
+
+When specifying relations, the ``TOKEN`` function can be used on the
+``PARTITION KEY`` column to query. In that case, rows will be selected
+based on the token of their ``PARTITION_KEY`` rather than on the value.
+Note that the token of a key depends on the partitioner in use, and that
+in particular the RandomPartitioner won’t yield a meaningful order. Also
+note that ordering partitioners always order token values by bytes (so
+even if the partition key is of type int, ``token(-1) > token(0)`` in
+particular). Example:
+
+| bc(sample).
+| SELECT \* FROM posts WHERE token(userid) > token(‘tom’) AND
+  token(userid) < token(‘bob’)
+
+Moreover, the ``IN`` relation is only allowed on the last column of the
+partition key and on the last column of the full primary key.
+
+It is also possible to “group” ``CLUSTERING COLUMNS`` together in a
+relation using the tuple notation. For instance:
+
+| bc(sample).
+| SELECT \* FROM posts WHERE userid=‘john doe’ AND (blog\_title,
+  posted\_at) > (‘John’‘s Blog’, ‘2012-01-01’)
+
+will request all rows that sorts after the one having “John’s Blog” as
+``blog_tile`` and ‘2012-01-01’ for ``posted_at`` in the clustering
+order. In particular, rows having a ``post_at <= '2012-01-01'`` will be
+returned as long as their ``blog_title > 'John''s Blog'``, which
+wouldn’t be the case for:
+
+| bc(sample).
+| SELECT \* FROM posts WHERE userid=‘john doe’ AND blog\_title >
+  ‘John’‘s Blog’ AND posted\_at > ‘2012-01-01’
+
+The tuple notation may also be used for ``IN`` clauses on
+``CLUSTERING COLUMNS``:
+
+| bc(sample).
+| SELECT \* FROM posts WHERE userid=‘john doe’ AND (blog\_title,
+  posted\_at) IN ((‘John’‘s Blog’, ‘2012-01-01), (’Extreme Chess’,
+  ‘2014-06-01’))
+
+The ``CONTAINS`` operator may only be used on collection columns (lists,
+sets, and maps). In the case of maps, ``CONTAINS`` applies to the map
+values. The ``CONTAINS KEY`` operator may only be used on map columns
+and applies to the map keys.
+
+``<order-by>``
+^^^^^^^^^^^^^^
+
+The ``ORDER BY`` option allows to select the order of the returned
+results. It takes as argument a list of column names along with the
+order for the column (``ASC`` for ascendant and ``DESC`` for descendant,
+omitting the order being equivalent to ``ASC``). Currently the possible
+orderings are limited (which depends on the table
+```CLUSTERING ORDER`` <#createTableOptions>`__ ):
+
+-  if the table has been defined without any specific
+   ``CLUSTERING ORDER``, then then allowed orderings are the order
+   induced by the clustering columns and the reverse of that one.
+-  otherwise, the orderings allowed are the order of the
+   ``CLUSTERING ORDER`` option and the reversed one.
+
+``LIMIT`` and ``PER PARTITION LIMIT``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``LIMIT`` option to a ``SELECT`` statement limits the number of rows
+returned by a query, while the ``PER PARTITION LIMIT`` option limits the
+number of rows returned for a given partition by the query. Note that
+both type of limit can used in the same statement.
+
+``ALLOW FILTERING``
+^^^^^^^^^^^^^^^^^^^
+
+By default, CQL only allows select queries that don’t involve
+“filtering” server side, i.e. queries where we know that all (live)
+record read will be returned (maybe partly) in the result set. The
+reasoning is that those “non filtering” queries have predictable
+performance in the sense that they will execute in a time that is
+proportional to the amount of data **returned** by the query (which can
+be controlled through ``LIMIT``).
+
+The ``ALLOW FILTERING`` option allows to explicitly allow (some) queries
+that require filtering. Please note that a query using
+``ALLOW FILTERING`` may thus have unpredictable performance (for the
+definition above), i.e. even a query that selects a handful of records
+**may** exhibit performance that depends on the total amount of data
+stored in the cluster.
+
+For instance, considering the following table holding user profiles with
+their year of birth (with a secondary index on it) and country of
+residence:
+
+| bc(sample)..
+| CREATE TABLE users (
+|  username text PRIMARY KEY,
+|  firstname text,
+|  lastname text,
+|  birth\_year int,
+|  country text
+| )
+
+| CREATE INDEX ON users(birth\_year);
+| p.
+
+Then the following queries are valid:
+
+| bc(sample).
+| SELECT \* FROM users;
+| SELECT firstname, lastname FROM users WHERE birth\_year = 1981;
+
+because in both case, Cassandra guarantees that these queries
+performance will be proportional to the amount of data returned. In
+particular, if no users are born in 1981, then the second query
+performance will not depend of the number of user profile stored in the
+database (not directly at least: due to secondary index implementation
+consideration, this query may still depend on the number of node in the
+cluster, which indirectly depends on the amount of data stored.
+Nevertheless, the number of nodes will always be multiple number of
+magnitude lower than the number of user profile stored). Of course, both
+query may return very large result set in practice, but the amount of
+data returned can always be controlled by adding a ``LIMIT``.
+
+However, the following query will be rejected:
+
+| bc(sample).
+| SELECT firstname, lastname FROM users WHERE birth\_year = 1981 AND
+  country = ‘FR’;
+
+because Cassandra cannot guarantee that it won’t have to scan large
+amount of data even if the result to those query is small. Typically, it
+will scan all the index entries for users born in 1981 even if only a
+handful are actually from France. However, if you “know what you are
+doing”, you can force the execution of this query by using
+``ALLOW FILTERING`` and so the following query is valid:
+
+| bc(sample).
+| SELECT firstname, lastname FROM users WHERE birth\_year = 1981 AND
+  country = ‘FR’ ALLOW FILTERING;
 
 INSERT
 ^^^^^^
@@ -1579,280 +2245,6 @@ to the one described in the ```UPDATE`` <#updateOptions>`__ statement
 if used, ``TIMESTAMP`` **must not** be used in the statements within the
 batch.
 
-Queries
--------
-
-SELECT
-^^^^^^
-
-*Syntax:*
-
-| bc(syntax)..
-|  ::= SELECT ( JSON )? 
-|  FROM 
-|  ( WHERE )?
-|  ( ORDER BY )?
-|  ( PER PARTITION LIMIT )?
-|  ( LIMIT )?
-|  ( ALLOW FILTERING )?
-
-|  ::= DISTINCT? 
-|  \| COUNT ‘(’ ( ‘\*’ \| ‘1’ ) ‘)’ (AS )?
-
-|  ::= (AS )? ( ‘,’ (AS )? )\*
-|  \| ‘\*’
-
-|  ::= 
-|  \| WRITETIME ‘(’ ‘)’
-|  \| TTL ‘(’ ‘)’
-|  \| CAST ‘(’ AS ‘)’
-|  \| ‘(’ ( (‘,’ )\*)? ‘)’
-
- ::= ( AND )\*
-
-|  ::= 
-|  \| ‘(’ (‘,’ )\* ‘)’ 
-|  \| IN ‘(’ ( ( ‘,’ )\* )? ‘)’
-|  \| ‘(’ (‘,’ )\* ‘)’ IN ‘(’ ( ( ‘,’ )\* )? ‘)’
-|  \| TOKEN ‘(’ ( ‘,’ )\* ‘)’ 
-
-|  ::= ‘=’ \| ‘<’ \| ‘>’ \| ‘<=’ \| ‘>=’ \| CONTAINS \| CONTAINS KEY
-|  ::= ( ‘,’ )\*
-|  ::= ( ASC \| DESC )?
-|  ::= ‘(’ (‘,’ )\* ‘)’
-| p.
-| *Sample:*
-
-| bc(sample)..
-| SELECT name, occupation FROM users WHERE userid IN (199, 200, 207);
-
-SELECT JSON name, occupation FROM users WHERE userid = 199;
-
-SELECT name AS user\_name, occupation AS user\_occupation FROM users;
-
-| SELECT time, value
-| FROM events
-| WHERE event\_type = ‘myEvent’
-|  AND time > ‘2011-02-03’
-|  AND time <= ‘2012-01-01’
-
-SELECT COUNT (\*) FROM users;
-
-SELECT COUNT (\*) AS user\_count FROM users;
-
-The ``SELECT`` statements reads one or more columns for one or more rows
-in a table. It returns a result-set of rows, where each row contains the
-collection of columns corresponding to the query. If the ``JSON``
-keyword is used, the results for each row will contain only a single
-column named “json”. See the section on
-```SELECT JSON`` <#selectJson>`__ for more details.
-
-``<select-clause>``
-^^^^^^^^^^^^^^^^^^^
-
-The ``<select-clause>`` determines which columns needs to be queried and
-returned in the result-set. It consists of either the comma-separated
-list of or the wildcard character (``*``) to select all the columns
-defined for the table.
-
-A ``<selector>`` is either a column name to retrieve or a ``<function>``
-of one or more ``<term>``\ s. The function allowed are the same as for
-``<term>`` and are described in the `function section <#functions>`__.
-In addition to these generic functions, the ``WRITETIME`` (resp.
-``TTL``) function allows to select the timestamp of when the column was
-inserted (resp. the time to live (in seconds) for the column (or null if
-the column has no expiration set)) and the ```CAST`` <#castFun>`__
-function can be used to convert one data type to another.
-
-Any ``<selector>`` can be aliased using ``AS`` keyword (see examples).
-Please note that ``<where-clause>`` and ``<order-by>`` clause should
-refer to the columns by their original names and not by their aliases.
-
-The ``COUNT`` keyword can be used with parenthesis enclosing ``*``. If
-so, the query will return a single result: the number of rows matching
-the query. Note that ``COUNT(1)`` is supported as an alias.
-
-``<where-clause>``
-^^^^^^^^^^^^^^^^^^
-
-The ``<where-clause>`` specifies which rows must be queried. It is
-composed of relations on the columns that are part of the
-``PRIMARY KEY`` and/or have a `secondary index <#createIndexStmt>`__
-defined on them.
-
-Not all relations are allowed in a query. For instance, non-equal
-relations (where ``IN`` is considered as an equal relation) on a
-partition key are not supported (but see the use of the ``TOKEN`` method
-below to do non-equal queries on the partition key). Moreover, for a
-given partition key, the clustering columns induce an ordering of rows
-and relations on them is restricted to the relations that allow to
-select a **contiguous** (for the ordering) set of rows. For instance,
-given
-
-| bc(sample).
-| CREATE TABLE posts (
-|  userid text,
-|  blog\_title text,
-|  posted\_at timestamp,
-|  entry\_title text,
-|  content text,
-|  category int,
-|  PRIMARY KEY (userid, blog\_title, posted\_at)
-| )
-
-The following query is allowed:
-
-| bc(sample).
-| SELECT entry\_title, content FROM posts WHERE userid=‘john doe’ AND
-  blog\_title=‘John’‘s Blog’ AND posted\_at >= ‘2012-01-01’ AND
-  posted\_at < ‘2012-01-31’
-
-But the following one is not, as it does not select a contiguous set of
-rows (and we suppose no secondary indexes are set):
-
-| bc(sample).
-| // Needs a blog\_title to be set to select ranges of posted\_at
-| SELECT entry\_title, content FROM posts WHERE userid=‘john doe’ AND
-  posted\_at >= ‘2012-01-01’ AND posted\_at < ‘2012-01-31’
-
-When specifying relations, the ``TOKEN`` function can be used on the
-``PARTITION KEY`` column to query. In that case, rows will be selected
-based on the token of their ``PARTITION_KEY`` rather than on the value.
-Note that the token of a key depends on the partitioner in use, and that
-in particular the RandomPartitioner won’t yield a meaningful order. Also
-note that ordering partitioners always order token values by bytes (so
-even if the partition key is of type int, ``token(-1) > token(0)`` in
-particular). Example:
-
-| bc(sample).
-| SELECT \* FROM posts WHERE token(userid) > token(‘tom’) AND
-  token(userid) < token(‘bob’)
-
-Moreover, the ``IN`` relation is only allowed on the last column of the
-partition key and on the last column of the full primary key.
-
-It is also possible to “group” ``CLUSTERING COLUMNS`` together in a
-relation using the tuple notation. For instance:
-
-| bc(sample).
-| SELECT \* FROM posts WHERE userid=‘john doe’ AND (blog\_title,
-  posted\_at) > (‘John’‘s Blog’, ‘2012-01-01’)
-
-will request all rows that sorts after the one having “John’s Blog” as
-``blog_tile`` and ‘2012-01-01’ for ``posted_at`` in the clustering
-order. In particular, rows having a ``post_at <= '2012-01-01'`` will be
-returned as long as their ``blog_title > 'John''s Blog'``, which
-wouldn’t be the case for:
-
-| bc(sample).
-| SELECT \* FROM posts WHERE userid=‘john doe’ AND blog\_title >
-  ‘John’‘s Blog’ AND posted\_at > ‘2012-01-01’
-
-The tuple notation may also be used for ``IN`` clauses on
-``CLUSTERING COLUMNS``:
-
-| bc(sample).
-| SELECT \* FROM posts WHERE userid=‘john doe’ AND (blog\_title,
-  posted\_at) IN ((‘John’‘s Blog’, ‘2012-01-01), (’Extreme Chess’,
-  ‘2014-06-01’))
-
-The ``CONTAINS`` operator may only be used on collection columns (lists,
-sets, and maps). In the case of maps, ``CONTAINS`` applies to the map
-values. The ``CONTAINS KEY`` operator may only be used on map columns
-and applies to the map keys.
-
-``<order-by>``
-^^^^^^^^^^^^^^
-
-The ``ORDER BY`` option allows to select the order of the returned
-results. It takes as argument a list of column names along with the
-order for the column (``ASC`` for ascendant and ``DESC`` for descendant,
-omitting the order being equivalent to ``ASC``). Currently the possible
-orderings are limited (which depends on the table
-```CLUSTERING ORDER`` <#createTableOptions>`__ ):
-
--  if the table has been defined without any specific
-   ``CLUSTERING ORDER``, then then allowed orderings are the order
-   induced by the clustering columns and the reverse of that one.
--  otherwise, the orderings allowed are the order of the
-   ``CLUSTERING ORDER`` option and the reversed one.
-
-``LIMIT`` and ``PER PARTITION LIMIT``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The ``LIMIT`` option to a ``SELECT`` statement limits the number of rows
-returned by a query, while the ``PER PARTITION LIMIT`` option limits the
-number of rows returned for a given partition by the query. Note that
-both type of limit can used in the same statement.
-
-``ALLOW FILTERING``
-^^^^^^^^^^^^^^^^^^^
-
-By default, CQL only allows select queries that don’t involve
-“filtering” server side, i.e. queries where we know that all (live)
-record read will be returned (maybe partly) in the result set. The
-reasoning is that those “non filtering” queries have predictable
-performance in the sense that they will execute in a time that is
-proportional to the amount of data **returned** by the query (which can
-be controlled through ``LIMIT``).
-
-The ``ALLOW FILTERING`` option allows to explicitly allow (some) queries
-that require filtering. Please note that a query using
-``ALLOW FILTERING`` may thus have unpredictable performance (for the
-definition above), i.e. even a query that selects a handful of records
-**may** exhibit performance that depends on the total amount of data
-stored in the cluster.
-
-For instance, considering the following table holding user profiles with
-their year of birth (with a secondary index on it) and country of
-residence:
-
-| bc(sample)..
-| CREATE TABLE users (
-|  username text PRIMARY KEY,
-|  firstname text,
-|  lastname text,
-|  birth\_year int,
-|  country text
-| )
-
-| CREATE INDEX ON users(birth\_year);
-| p.
-
-Then the following queries are valid:
-
-| bc(sample).
-| SELECT \* FROM users;
-| SELECT firstname, lastname FROM users WHERE birth\_year = 1981;
-
-because in both case, Cassandra guarantees that these queries
-performance will be proportional to the amount of data returned. In
-particular, if no users are born in 1981, then the second query
-performance will not depend of the number of user profile stored in the
-database (not directly at least: due to secondary index implementation
-consideration, this query may still depend on the number of node in the
-cluster, which indirectly depends on the amount of data stored.
-Nevertheless, the number of nodes will always be multiple number of
-magnitude lower than the number of user profile stored). Of course, both
-query may return very large result set in practice, but the amount of
-data returned can always be controlled by adding a ``LIMIT``.
-
-However, the following query will be rejected:
-
-| bc(sample).
-| SELECT firstname, lastname FROM users WHERE birth\_year = 1981 AND
-  country = ‘FR’;
-
-because Cassandra cannot guarantee that it won’t have to scan large
-amount of data even if the result to those query is small. Typically, it
-will scan all the index entries for users born in 1981 even if only a
-handful are actually from France. However, if you “know what you are
-doing”, you can force the execution of this query by using
-``ALLOW FILTERING`` and so the following query is valid:
-
-| bc(sample).
-| SELECT firstname, lastname FROM users WHERE birth\_year = 1981 AND
-  country = ‘FR’ ALLOW FILTERING;
 
 Database Roles
 --------------
@@ -2461,378 +2853,6 @@ or one of ``bob``\ ’s roles.
 Show any permissions granted to ``carlos`` or any of ``carlos``\ ’s
 roles, limited to ``SELECT`` permissions on any resource.
 
-Data Types
-----------
-
-CQL supports a rich set of data types for columns defined in a table,
-including collection types. On top of those native and collection types,
-users can also provide custom types (through a JAVA class extending
-``AbstractType`` loadable by Cassandra). The syntax of types is thus:
-
-| bc(syntax)..
-|  ::= 
-|  \| 
-|  \| 
-|  \| // Used for custom types. The fully-qualified name of a JAVA class
-
-|  ::= ascii
-|  \| bigint
-|  \| blob
-|  \| boolean
-|  \| counter
-|  \| date
-|  \| decimal
-|  \| double
-|  \| float
-|  \| inet
-|  \| int
-|  \| smallint
-|  \| text
-|  \| time
-|  \| timestamp
-|  \| timeuuid
-|  \| tinyint
-|  \| uuid
-|  \| varchar
-|  \| varint
-
-|  ::= list ‘<’ ‘>’
-|  \| set ‘<’ ‘>’
-|  \| map ‘<’ ‘,’ ‘>’
-|  ::= tuple ‘<’ (‘,’ )\* ‘>’
-| p. Note that the native types are keywords and as such are
-  case-insensitive. They are however not reserved ones.
-
-The following table gives additional informations on the native data
-types, and on which kind of `constants <#constants>`__ each type
-supports:
-
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| type            | constants supported   | description                                                                                                                                            |
-+=================+=======================+========================================================================================================================================================+
-| ``ascii``       | strings               | ASCII character string                                                                                                                                 |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``bigint``      | integers              | 64-bit signed long                                                                                                                                     |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``blob``        | blobs                 | Arbitrary bytes (no validation)                                                                                                                        |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``boolean``     | booleans              | true or false                                                                                                                                          |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``counter``     | integers              | Counter column (64-bit signed value). See `Counters <#counters>`__ for details                                                                         |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``date``        | integers, strings     | A date (with no corresponding time value). See `Working with dates <#usingdates>`__ below for more information.                                        |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``decimal``     | integers, floats      | Variable-precision decimal                                                                                                                             |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``double``      | integers              | 64-bit IEEE-754 floating point                                                                                                                         |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``float``       | integers, floats      | 32-bit IEEE-754 floating point                                                                                                                         |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``inet``        | strings               | An IP address. It can be either 4 bytes long (IPv4) or 16 bytes long (IPv6). There is no ``inet`` constant, IP address should be inputed as strings    |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``int``         | integers              | 32-bit signed int                                                                                                                                      |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``smallint``    | integers              | 16-bit signed int                                                                                                                                      |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``text``        | strings               | UTF8 encoded string                                                                                                                                    |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``time``        | integers, strings     | A time with nanosecond precision. See `Working with time <#usingtime>`__ below for more information.                                                   |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``timestamp``   | integers, strings     | A timestamp. Strings constant are allow to input timestamps as dates, see `Working with timestamps <#usingtimestamps>`__ below for more information.   |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``timeuuid``    | uuids                 | Type 1 UUID. This is generally used as a “conflict-free” timestamp. Also see the “functions on Timeuuid”:#timeuuidFun                                  |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``tinyint``     | integers              | 8-bit signed int                                                                                                                                       |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``uuid``        | uuids                 | Type 1 or type 4 UUID                                                                                                                                  |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``varchar``     | strings               | UTF8 encoded string                                                                                                                                    |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-| ``varint``      | integers              | Arbitrary-precision integer                                                                                                                            |
-+-----------------+-----------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
-
-For more information on how to use the collection types, see the
-`Working with collections <#collections>`__ section below.
-
-Working with timestamps
-^^^^^^^^^^^^^^^^^^^^^^^
-
-Values of the ``timestamp`` type are encoded as 64-bit signed integers
-representing a number of milliseconds since the standard base time known
-as `the epoch <>`__ January 1 1970 at 00:00:00 GMT.
-
-Timestamp can be input in CQL as simple long integers, giving the number
-of milliseconds since the epoch, as defined above.
-
-They can also be input as string literals in any of the following ISO
-8601 formats, each representing the time and date Mar 2, 2011, at
-04:05:00 AM, GMT.:
-
--  ``2011-02-03 04:05+0000``
--  ``2011-02-03 04:05:00+0000``
--  ``2011-02-03 04:05:00.000+0000``
--  ``2011-02-03T04:05+0000``
--  ``2011-02-03T04:05:00+0000``
--  ``2011-02-03T04:05:00.000+0000``
-
-The ``+0000`` above is an RFC 822 4-digit time zone specification;
-``+0000`` refers to GMT. US Pacific Standard Time is ``-0800``. The time
-zone may be omitted if desired— the date will be interpreted as being in
-the time zone under which the coordinating Cassandra node is configured.
-
--  ``2011-02-03 04:05``
--  ``2011-02-03 04:05:00``
--  ``2011-02-03 04:05:00.000``
--  ``2011-02-03T04:05``
--  ``2011-02-03T04:05:00``
--  ``2011-02-03T04:05:00.000``
-
-There are clear difficulties inherent in relying on the time zone
-configuration being as expected, though, so it is recommended that the
-time zone always be specified for timestamps when feasible.
-
-The time of day may also be omitted, if the date is the only piece that
-matters:
-
--  ``2011-02-03``
--  ``2011-02-03+0000``
-
-In that case, the time of day will default to 00:00:00, in the specified
-or default time zone.
-
-Working with dates
-^^^^^^^^^^^^^^^^^^
-
-Values of the ``date`` type are encoded as 32-bit unsigned integers
-representing a number of days with “the epoch” at the center of the
-range (2^31). Epoch is January 1st, 1970
-
-A date can be input in CQL as an unsigned integer as defined above.
-
-They can also be input as string literals in the following format:
-
--  ``2014-01-01``
-
-Working with time
-^^^^^^^^^^^^^^^^^
-
-Values of the ``time`` type are encoded as 64-bit signed integers
-representing the number of nanoseconds since midnight.
-
-A time can be input in CQL as simple long integers, giving the number of
-nanoseconds since midnight.
-
-They can also be input as string literals in any of the following
-formats:
-
--  ``08:12:54``
--  ``08:12:54.123``
--  ``08:12:54.123456``
--  ``08:12:54.123456789``
-
-Counters
-^^^^^^^^
-
-The ``counter`` type is used to define *counter columns*. A counter
-column is a column whose value is a 64-bit signed integer and on which 2
-operations are supported: incrementation and decrementation (see
-```UPDATE`` <#updateStmt>`__ for syntax). Note the value of a counter
-cannot be set. A counter doesn’t exist until first
-incremented/decremented, and the first incrementation/decrementation is
-made as if the previous value was 0. Deletion of counter columns is
-supported but have some limitations (see the `Cassandra
-Wiki <http://wiki.apache.org/cassandra/Counters>`__ for more
-information).
-
-The use of the counter type is limited in the following way:
-
--  It cannot be used for column that is part of the ``PRIMARY KEY`` of a
-   table.
--  A table that contains a counter can only contain counters. In other
-   words, either all the columns of a table outside the ``PRIMARY KEY``
-   have the counter type, or none of them have it.
-
-Working with collections
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-Noteworthy characteristics
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Collections are meant for storing/denormalizing relatively small amount
-of data. They work well for things like “the phone numbers of a given
-user”, “labels applied to an email”, etc. But when items are expected to
-grow unbounded (“all the messages sent by a given user”, “events
-registered by a sensor”, …), then collections are not appropriate
-anymore and a specific table (with clustering columns) should be used.
-Concretely, collections have the following limitations:
-
--  Collections are always read in their entirety (and reading one is not
-   paged internally).
--  Collections cannot have more than 65535 elements. More precisely,
-   while it may be possible to insert more than 65535 elements, it is
-   not possible to read more than the 65535 first elements (see
-   `CASSANDRA-5428 <https://issues.apache.org/jira/browse/CASSANDRA-5428>`__
-   for details).
--  While insertion operations on sets and maps never incur a
-   read-before-write internally, some operations on lists do (see the
-   section on lists below for details). It is thus advised to prefer
-   sets over lists when possible.
-
-Please note that while some of those limitations may or may not be
-loosen in the future, the general rule that collections are for
-denormalizing small amount of data is meant to stay.
-
-Maps
-^^^^
-
-A ``map`` is a `typed <#types>`__ set of key-value pairs, where keys are
-unique. Furthermore, note that the map are internally sorted by their
-keys and will thus always be returned in that order. To create a column
-of type ``map``, use the ``map`` keyword suffixed with comma-separated
-key and value types, enclosed in angle brackets. For example:
-
-| bc(sample).
-| CREATE TABLE users (
-|  id text PRIMARY KEY,
-|  given text,
-|  surname text,
-|  favs map // A map of text keys, and text values
-| )
-
-Writing ``map`` data is accomplished with a JSON-inspired syntax. To
-write a record using ``INSERT``, specify the entire map as a JSON-style
-associative array. *Note: This form will always replace the entire map.*
-
-| bc(sample).
-| // Inserting (or Updating)
-| INSERT INTO users (id, given, surname, favs)
-|  VALUES (‘jsmith’, ‘John’, ‘Smith’, { ‘fruit’ : ‘apple’, ‘band’ :
-  ‘Beatles’ })
-
-Adding or updating key-values of a (potentially) existing map can be
-accomplished either by subscripting the map column in an ``UPDATE``
-statement or by adding a new map literal:
-
-| bc(sample).
-| // Updating (or inserting)
-| UPDATE users SET favs[‘author’] = ‘Ed Poe’ WHERE id = ‘jsmith’
-| UPDATE users SET favs = favs + { ‘movie’ : ‘Cassablanca’ } WHERE id =
-  ‘jsmith’
-
-Note that TTLs are allowed for both ``INSERT`` and ``UPDATE``, but in
-both case the TTL set only apply to the newly inserted/updated *values*.
-In other words,
-
-| bc(sample).
-| // Updating (or inserting)
-| UPDATE users USING TTL 10 SET favs[‘color’] = ‘green’ WHERE id =
-  ‘jsmith’
-
-will only apply the TTL to the ``{ 'color' : 'green' }`` record, the
-rest of the map remaining unaffected.
-
-Deleting a map record is done with:
-
-| bc(sample).
-| DELETE favs[‘author’] FROM users WHERE id = ‘jsmith’
-
-Sets
-^^^^
-
-A ``set`` is a `typed <#types>`__ collection of unique values. Sets are
-ordered by their values. To create a column of type ``set``, use the
-``set`` keyword suffixed with the value type enclosed in angle brackets.
-For example:
-
-| bc(sample).
-| CREATE TABLE images (
-|  name text PRIMARY KEY,
-|  owner text,
-|  date timestamp,
-|  tags set
-| );
-
-Writing a ``set`` is accomplished by comma separating the set values,
-and enclosing them in curly braces. *Note: An ``INSERT`` will always
-replace the entire set.*
-
-| bc(sample).
-| INSERT INTO images (name, owner, date, tags)
-|  VALUES (‘cat.jpg’, ‘jsmith’, ‘now’, { ‘kitten’, ‘cat’, ‘pet’ });
-
-Adding and removing values of a set can be accomplished with an
-``UPDATE`` by adding/removing new set values to an existing ``set``
-column.
-
-| bc(sample).
-| UPDATE images SET tags = tags + { ‘cute’, ‘cuddly’ } WHERE name =
-  ‘cat.jpg’;
-| UPDATE images SET tags = tags - { ‘lame’ } WHERE name = ‘cat.jpg’;
-
-As with `maps <#map>`__, TTLs if used only apply to the newly
-inserted/updated *values*.
-
-Lists
-^^^^^
-
-A ``list`` is a `typed <#types>`__ collection of non-unique values where
-elements are ordered by there position in the list. To create a column
-of type ``list``, use the ``list`` keyword suffixed with the value type
-enclosed in angle brackets. For example:
-
-| bc(sample).
-| CREATE TABLE plays (
-|  id text PRIMARY KEY,
-|  game text,
-|  players int,
-|  scores list
-| )
-
-Do note that as explained below, lists have some limitations and
-performance considerations to take into account, and it is advised to
-prefer `sets <#set>`__ over lists when this is possible.
-
-Writing ``list`` data is accomplished with a JSON-style syntax. To write
-a record using ``INSERT``, specify the entire list as a JSON array.
-*Note: An ``INSERT`` will always replace the entire list.*
-
-| bc(sample).
-| INSERT INTO plays (id, game, players, scores)
-|  VALUES (‘123-afde’, ‘quake’, 3, [17, 4, 2]);
-
-Adding (appending or prepending) values to a list can be accomplished by
-adding a new JSON-style array to an existing ``list`` column.
-
-| bc(sample).
-| UPDATE plays SET players = 5, scores = scores + [ 14, 21 ] WHERE id =
-  ‘123-afde’;
-| UPDATE plays SET players = 5, scores = [ 12 ] + scores WHERE id =
-  ‘123-afde’;
-
-It should be noted that append and prepend are not idempotent
-operations. This means that if during an append or a prepend the
-operation timeout, it is not always safe to retry the operation (as this
-could result in the record appended or prepended twice).
-
-Lists also provides the following operation: setting an element by its
-position in the list, removing an element by its position in the list
-and remove all the occurrence of a given value in the list. *However,
-and contrarily to all the other collection operations, these three
-operations induce an internal read before the update, and will thus
-typically have slower performance characteristics*. Those operations
-have the following syntax:
-
-| bc(sample).
-| UPDATE plays SET scores[1] = 7 WHERE id = ‘123-afde’; // sets the 2nd
-  element of scores to 7 (raises an error is scores has less than 2
-  elements)
-| DELETE scores[1] FROM plays WHERE id = ‘123-afde’; // deletes the 2nd
-  element of scores (raises an error is scores has less than 2 elements)
-| UPDATE plays SET scores = scores - [ 12, 21 ] WHERE id = ‘123-afde’;
-  // removes all occurrences of 12 and 21 from scores
-
-As with `maps <#map>`__, TTLs if used only apply to the newly
-inserted/updated *values*.
 
 Functions
 ---------
@@ -3384,6 +3404,9 @@ The ``toJson()`` function may be used similarly to ``SELECT JSON``, but
 for a single column value. It may only be used in the selection clause
 of a ``SELECT`` statement.
 
+
+.. _appendix-A:
+
 Appendix A: CQL Keywords
 ------------------------
 
@@ -3392,7 +3415,7 @@ Reserved keywords cannot be used as identifier, they are truly reserved
 for the language (but one can enclose a reserved keyword by
 double-quotes to use it as an identifier). Non-reserved keywords however
 only have a specific meaning in certain context but can used as
-identifer otherwise. The only *raison d’être* of these non-reserved
+identifier otherwise. The only *raison d’être* of these non-reserved
 keywords is convenience: some keyword are non-reserved when it was
 always easy for the parser to decide whether they were used as keywords
 or not.
