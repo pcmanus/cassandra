@@ -749,6 +749,52 @@ Advanced Use
 Advanced users can provide their own compression class by implementing the interface at
 ``org.apache.cassandra.io.compress.ICompressor``.
 
+Change Data Capture
+-------------------
+
+Overview
+^^^^^^^^
+
+Change data capture provides a mechanism to flag specific tables for archival as well as rejecting writes to those tables once a configurable size-on-disk for the combined flushed and unflushed CDC-log is reached. An operator uses DDL to enable CDC on a table, after which any CommitLogSegments containing data for a CDC-enabled table are moved to the directory specified in cassandra.yaml on segment discard. A threshold of total disk space allowed is specified in the yaml at which time newly allocated CommitLogSegments will not allow CDC data until a consumer parses and removes data from the destination archival directory.
+
+Configuration
+^^^^^^^^^^^^^
+
+DDL Syntax
+~~~~~~~~~~
+CREATE TABLE foo (a int, b text, PRIMARY KEY(a)) WITH cdc=true;
+
+ALTER TABLE foo WITH cdc=true;
+
+ALTER TABLE foo WITH cdc=false;
+
+cassandra.yaml parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~
+cdc_enabled: [true|false]
+   *enable or disable CDC operations node-wide*
+cdc_raw_directory: [$CASSANDRA_HOME/data/cdc_raw]
+   *Destination for CommitLogSegments to be moved after all corresponding memtables are flushed*
+cdc_free_space_in_mb: [min of 4096 and 1/8th volume space]
+   *Calculated as sum of all active CommitLogSegments that permit CDC + all flushed CDC segments in cdc_raw_directory*
+cdc_free_space_check_interval_ms: [250]
+   *When at capacity, we limit the frequency with which we re-calculate the space taken up by cdc_raw_directory to prevent burning CPU cycles unnecessarily. Default is to check 4 times per second.*
+
+Reading CommitLogSegments
+^^^^^^^^^^^^^^^^^^^^^^^^^
+This implementation included a refactor of CommitLogReplayer into `CommitLogReader.java <https://github.com/apache/cassandra/blob/e31e216234c6b57a531cae607e0355666007deb2/src/java/org/apache/cassandra/db/commitlog/CommitLogReader.java>`_. Usage is `fairly straightforward <https://github.com/apache/cassandra/blob/e31e216234c6b57a531cae607e0355666007deb2/src/java/org/apache/cassandra/db/commitlog/CommitLogReplayer.java#L132-L140>`_ with a `variety of signatures <https://github.com/apache/cassandra/blob/e31e216234c6b57a531cae607e0355666007deb2/src/java/org/apache/cassandra/db/commitlog/CommitLogReader.java#L71-L103>`_ available for use. In order to handle mutations read from disk, implement `CommitLogReadHandler <https://github.com/apache/cassandra/blob/e31e216234c6b57a531cae607e0355666007deb2/src/java/org/apache/cassandra/db/commitlog/CommitLogReadHandler.java>`_.
+
+Warnings
+^^^^^^^^
+**Do not enable CDC without some kind of consumption process in-place.**
+
+The initial implementation of Change Data Capture does not include a parser (see "Reading CommitLogSegments" above) so, if CDC is enabled on a node and then on a table, the cdc_free_space_in_mb will fill up and then writes to CDC-enabled tables will be rejected unless some consumption process is in place.
+
+Further Reading
+^^^^^^^^^^^^^^^
+`Design doc <https://docs.google.com/document/d/1ZxCWYkeZTquxsvf5hdPc0fiUnUHna8POvgt6TIzML4Y/edit>`_
+
+`JIRA ticket <https://issues.apache.org/jira/browse/CASSANDRA-8844>`_
+
 Backups
 -------
 
