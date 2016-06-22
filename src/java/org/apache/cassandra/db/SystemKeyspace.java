@@ -939,7 +939,7 @@ public class SystemKeyspace
                         proposal.update.id());
     }
 
-    private static int paxosTtl(CFMetaData metadata)
+    public static int paxosTtl(CFMetaData metadata)
     {
         // keep paxos state around for at least 3h
         return Math.max(3 * 3600, metadata.getGcGraceSeconds());
