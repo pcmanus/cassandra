@@ -89,7 +89,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         latch.countDown();
     }
 
-    public Iterable<InetAddress> replicasMissingMostRecentCommit(CFMetaData metadata)
+    public Iterable<InetAddress> replicasMissingMostRecentCommit(CFMetaData metadata, long now)
     {
         // In general, we need every replicas that have answered to the prepare (a quorum) to agree on the MRC (see
         // coment in StorageProxy.beginAndRepairPaxos(), but basically we need to make sure at least a quorum of nodes
@@ -100,8 +100,8 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         // explained on CASSANDRA-12043. To avoid that, we ignore a MRC that is too old, i.e. older than the TTL we set
         // on paxos tables. For such old commit, we rely on hints and repair to ensure the commit has indeed be
         // propagated to all nodes.
-        int paxosTtlMillis = SystemKeyspace.paxosTtl(metadata) * 1000;
-        if (UUIDGen.unixTimestamp(mostRecentCommit.ballot) + paxosTtlMillis < now)
+        long paxosTtlMicros = SystemKeyspace.paxosTtl(metadata) * 1000 * 1000;
+        if (UUIDGen.microsTimestamp(mostRecentCommit.ballot) + paxosTtlMicros < now)
             return Collections.emptySet();
 
         return Iterables.filter(commitsByReplica.keySet(), new Predicate<InetAddress>()
