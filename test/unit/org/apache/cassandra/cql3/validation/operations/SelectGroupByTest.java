@@ -144,16 +144,16 @@ public class SelectGroupByTest extends CQLTester
                        row(2, 1L),
                        row(4, 1L));
 
-            assertInvalid("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
-                          "SELECT DISTINCT a, count(a)FROM %s GROUP BY a, b");
+            assertInvalidMessage("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
+                                 "SELECT DISTINCT a, count(a)FROM %s GROUP BY a, b");
 
             // Range query with DISTINCT and LIMIT
             assertRows(execute("SELECT DISTINCT a, count(a)FROM %s GROUP BY a LIMIT 2"),
                        row(1, 1L),
                        row(2, 1L));
 
-            assertInvalid("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
-                          "SELECT DISTINCT a, count(a)FROM %s GROUP BY a, b LIMIT 2");
+            assertInvalidMessage("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
+                                 "SELECT DISTINCT a, count(a)FROM %s GROUP BY a, b LIMIT 2");
 
             // Range query with ORDER BY
             assertInvalidMessage("ORDER BY is only supported when the partition key is restricted by an EQ or an IN",
@@ -206,8 +206,8 @@ public class SelectGroupByTest extends CQLTester
             assertRows(execute("SELECT DISTINCT a, count(a)FROM %s WHERE a = 1 GROUP BY a"),
                        row(1, 1L));
 
-            assertInvalid("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
-                          "SELECT DISTINCT a, count(a)FROM %s WHERE a = 1 GROUP BY a, b");
+            assertInvalidMessage("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
+                                 "SELECT DISTINCT a, count(a)FROM %s WHERE a = 1 GROUP BY a, b");
 
             // Single partition queries with LIMIT
             assertRows(execute("SELECT a, b, e, count(b), max(e) FROM %s WHERE a = 1 GROUP BY a, b, c LIMIT 10"),
@@ -310,8 +310,8 @@ public class SelectGroupByTest extends CQLTester
                        row(2, 1L),
                        row(4, 1L));
 
-            assertInvalid("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
-                          "SELECT DISTINCT a, count(a)FROM %s WHERE a IN (1, 2, 4) GROUP BY a, b");
+            assertInvalidMessage("Grouping on clustering columns is not allowed for SELECT DISTINCT queries",
+                                 "SELECT DISTINCT a, count(a)FROM %s WHERE a IN (1, 2, 4) GROUP BY a, b");
 
             // Multi-partitions query with DISTINCT and LIMIT
             assertRows(execute("SELECT DISTINCT a, count(a)FROM %s WHERE a IN (1, 2, 4) GROUP BY a LIMIT 2"),
