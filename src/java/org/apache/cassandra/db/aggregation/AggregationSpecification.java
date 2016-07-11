@@ -127,8 +127,13 @@ public abstract class AggregationSpecification
             out.writeByte(aggregationSpec.kind().ordinal());
             switch (aggregationSpec.kind())
             {
-            case AGGREGATE_BY_PK_PREFIX:
-                out.writeUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
+                case AGGREGATE_EVERYTHING:
+                    break;
+                case AGGREGATE_BY_PK_PREFIX:
+                    out.writeUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
+                    break;
+                default: 
+                    throw new AssertionError();
             }
         }
 
@@ -137,13 +142,14 @@ public abstract class AggregationSpecification
             Kind kind = Kind.values()[in.readUnsignedByte()];
             switch (kind)
             {
-            case AGGREGATE_EVERYTHING:
-                return AggregationSpecification.AGGREGATE_EVERYTHING;
-            case AGGREGATE_BY_PK_PREFIX:
-                int clusteringPrefixSize = (int) in.readUnsignedVInt();
-                return AggregationSpecification.aggregatePkPrefix(clusteringPrefixSize);
+                case AGGREGATE_EVERYTHING:
+                    return AggregationSpecification.AGGREGATE_EVERYTHING;
+                case AGGREGATE_BY_PK_PREFIX:
+                    int clusteringPrefixSize = (int) in.readUnsignedVInt();
+                    return AggregationSpecification.aggregatePkPrefix(clusteringPrefixSize);
+                default: 
+                    throw new AssertionError();
             }
-            throw new AssertionError();
         }
 
         public long serializedSize(AggregationSpecification aggregationSpec, int version)
@@ -151,8 +157,13 @@ public abstract class AggregationSpecification
             long size = TypeSizes.sizeof((byte) aggregationSpec.kind().ordinal());
             switch (aggregationSpec.kind())
             {
-            case AGGREGATE_BY_PK_PREFIX:
-                size += TypeSizes.sizeofUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
+                case AGGREGATE_EVERYTHING:
+                    break;
+                case AGGREGATE_BY_PK_PREFIX:
+                    size += TypeSizes.sizeofUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
+                    break;
+                default: 
+                    throw new AssertionError();
             }
             return size;
         }
