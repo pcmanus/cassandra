@@ -407,8 +407,8 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
         try
         {
-            resultIterator = withStateTracking(withoutPurgeableTombstones(resultIterator, cfs));
-            resultIterator = withMetricsRecording(resultIterator, cfs.metric, startTimeNanos);
+            resultIterator = withStateTracking(resultIterator);
+            resultIterator = withMetricsRecording(withoutPurgeableTombstones(resultIterator, cfs), cfs.metric, startTimeNanos);
 
             // If we've used a 2ndary index, we know the result already satisfy the primary expression used, so
             // no point in checking it again.
