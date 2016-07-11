@@ -22,7 +22,7 @@ import java.util.NoSuchElementException;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.aggregation.GroupMaker;
+import org.apache.cassandra.db.aggregation.GroupingState;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.rows.Row;
@@ -256,7 +256,7 @@ public final class AggregationQueryPager implements QueryPager
                                               ByteBuffer lastPartitionKey,
                                               Clustering lastClustering)
         {
-            GroupMaker.State state = new GroupMaker.State(lastPartitionKey, lastClustering);
+            GroupingState state = new GroupingState(lastPartitionKey, lastClustering);
             DataLimits newLimits = limits.forGroupByInternalPaging(state);
             return pager.withUpdatedLimit(newLimits);
         }

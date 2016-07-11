@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.aggregation.GroupMaker;
+import org.apache.cassandra.db.aggregation.GroupingState;
 import org.apache.cassandra.db.aggregation.AggregationSpecification;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;
@@ -141,7 +142,7 @@ public abstract class DataLimits
      * @param state the <code>GroupMaker</code> state
      * @return a <code>DataLimits</code> instance to be used for paginating internally GROUP BY queries
      */
-    public DataLimits forGroupByInternalPaging(GroupMaker.State state)
+    public DataLimits forGroupByInternalPaging(GroupingState state)
     {
         throw new UnsupportedOperationException();
     }
@@ -581,7 +582,7 @@ public abstract class DataLimits
         /**
          * The <code>GroupMaker</code> state
          */
-        protected final GroupMaker.State state;
+        protected final GroupingState state;
 
         /**
          * The GROUP BY specification
@@ -604,7 +605,7 @@ public abstract class DataLimits
                                 int rowLimit,
                                 AggregationSpecification groupBySpec)
         {
-            this(isRangeQuery, groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec, GroupMaker.State.EMPTY_STATE);
+            this(isRangeQuery, groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec, GroupingState.EMPTY_STATE);
         }
 
         private CQLGroupByLimits(boolean isRangeQuery,
@@ -612,7 +613,7 @@ public abstract class DataLimits
                                  int groupPerPartitionLimit,
                                  int rowLimit,
                                  AggregationSpecification groupBySpec,
-                                 GroupMaker.State state)
+                                 GroupingState state)
         {
             super(rowLimit, NO_LIMIT, false);
             this.isRangeQuery = isRangeQuery;
@@ -678,7 +679,7 @@ public abstract class DataLimits
         }
 
         @Override
-        public DataLimits forGroupByInternalPaging(GroupMaker.State state)
+        public DataLimits forGroupByInternalPaging(GroupingState state)
         {
             return new CQLGroupByLimits(isRangeQuery,
                                         rowLimit,
@@ -805,7 +806,7 @@ public abstract class DataLimits
             private GroupByAwareCounter(int nowInSec,
                                         boolean assumeLiveData,
                                         AggregationSpecification groupBySpec,
-                                        GroupMaker.State state,
+                                        GroupingState state,
                                         boolean onReplica)
             {
                 this.nowInSec = nowInSec;
@@ -1028,7 +1029,7 @@ public abstract class DataLimits
                                       int groupPerPartitionLimit,
                                       int rowLimit,
                                       AggregationSpecification groupBySpec,
-                                      GroupMaker.State state,
+                                      GroupingState state,
                                       ByteBuffer lastReturnedKey,
                                       int lastReturnedKeyRemaining)
         {
@@ -1062,7 +1063,7 @@ public abstract class DataLimits
         }
 
         @Override
-        public DataLimits forGroupByInternalPaging(GroupMaker.State state)
+        public DataLimits forGroupByInternalPaging(GroupingState state)
         {
             throw new UnsupportedOperationException();
         }
@@ -1077,7 +1078,7 @@ public abstract class DataLimits
 
         public Counter newCounter(int nowInSec, boolean assumeLiveData, boolean onReplica)
         {
-            assert state == GroupMaker.State.EMPTY_STATE || lastReturnedKey.equals(state.partitionKey());
+            assert state == GroupingState.EMPTY_STATE || lastReturnedKey.equals(state.partitionKey());
             return new PagingGroupByAwareCounter(nowInSec,
                                                  assumeLiveData,
                                                  groupBySpec,
@@ -1090,7 +1091,7 @@ public abstract class DataLimits
             private PagingGroupByAwareCounter(int nowInSec,
                                               boolean assumeLiveData,
                                               AggregationSpecification groupBySpec,
-                                              GroupMaker.State state,
+                                              GroupingState state,
                                               boolean onReplica)
             {
                 super(nowInSec, assumeLiveData, groupBySpec, state, onReplica);
@@ -1359,7 +1360,7 @@ public abstract class DataLimits
 
     public static class Serializer
     {
-        public void serialize(DataLimits limits, DataOutputPlus out, int version) throws IOException
+        public void serialize(DataLimits limits, DataOutputPlus out, int version, ClusteringComparator comparator) throws IOException
         {
             out.writeByte(limits.kind().ordinal());
             switch (limits.kind())
@@ -1387,7 +1388,7 @@ public abstract class DataLimits
                     AggregationSpecification groupBySpec = groupByLimits.groupBySpec;
                     AggregationSpecification.serializer.serialize(groupBySpec, out, version);
 
-                    GroupMaker.State.serializer.serialize(groupByLimits.state, out, version);
+                    GroupingState.serializer.serialize(groupByLimits.state, out, version, comparator);
 
                     if (limits.kind() == Kind.CQL_GROUP_BY_PAGING_LIMIT)
                     {
@@ -1405,7 +1406,7 @@ public abstract class DataLimits
             }
         }
 
-        public DataLimits deserialize(DataInputPlus in, int version, boolean isRangeQuery) throws IOException
+        public DataLimits deserialize(DataInputPlus in, int version, ClusteringComparator comparator, boolean isRangeQuery) throws IOException
         {
             Kind kind = Kind.values()[in.readUnsignedByte()];
             switch (kind)
@@ -1431,7 +1432,7 @@ public abstract class DataLimits
 
                     AggregationSpecification groupBySpec = AggregationSpecification.serializer.deserialize(in, version);
 
-                    GroupMaker.State state = GroupMaker.State.serializer.deserialize(in, version);
+                    GroupingState state = GroupingState.serializer.deserialize(in, version, comparator);
 
                     if (kind == Kind.CQL_GROUP_BY_LIMIT)
                         return new CQLGroupByLimits(isRangeQuery,
@@ -1463,7 +1464,7 @@ public abstract class DataLimits
             throw new AssertionError();
         }
 
-        public long serializedSize(DataLimits limits, int version)
+        public long serializedSize(DataLimits limits, int version, ClusteringComparator comparator)
         {
             long size = TypeSizes.sizeof((byte) limits.kind().ordinal());
             switch (limits.kind())
@@ -1491,7 +1492,7 @@ public abstract class DataLimits
                     AggregationSpecification groupBySpec = groupByLimits.groupBySpec;
                     size += AggregationSpecification.serializer.serializedSize(groupBySpec, version);
 
-                    size += GroupMaker.State.serializer.serializedSize(groupByLimits.state, version);
+                    size += GroupingState.serializer.serializedSize(groupByLimits.state, version, comparator);
 
                     if (limits.kind() == Kind.CQL_GROUP_BY_PAGING_LIMIT)
                     {

@@ -20,7 +20,6 @@ package org.apache.cassandra.db.aggregation;
 import java.io.IOException;
 
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.db.aggregation.GroupMaker.State;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
@@ -37,7 +36,7 @@ public abstract class AggregationSpecification
     public static final AggregationSpecification AGGREGATE_EVERYTHING = new AggregationSpecification(Kind.AGGREGATE_EVERYTHING)
     {
         @Override
-        public GroupMaker newGroupMaker(State state)
+        public GroupMaker newGroupMaker(GroupingState state)
         {
             return GroupMaker.GROUP_EVERYTHING;
         }
@@ -77,7 +76,7 @@ public abstract class AggregationSpecification
      */
     public final GroupMaker newGroupMaker()
     {
-        return newGroupMaker(State.EMPTY_STATE);
+        return newGroupMaker(GroupingState.EMPTY_STATE);
     }
 
     /**
@@ -86,7 +85,7 @@ public abstract class AggregationSpecification
      * @param state <code>GroupMaker</code> state
      * @return a new <code>GroupMaker</code> instance
      */
-    public abstract GroupMaker newGroupMaker(State state);
+    public abstract GroupMaker newGroupMaker(GroupingState state);
 
     /**
      * Creates a new <code>AggregationSpecification</code> instance that will build aggregates based on primary key
@@ -115,7 +114,7 @@ public abstract class AggregationSpecification
         }
 
         @Override
-        public GroupMaker newGroupMaker(GroupMaker.State state)
+        public GroupMaker newGroupMaker(GroupingState state)
         {
             return GroupMaker.newInstance(clusteringPrefixSize, state);
         }

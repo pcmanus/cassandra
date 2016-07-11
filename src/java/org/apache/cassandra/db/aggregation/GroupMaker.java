@@ -17,143 +17,17 @@
  */
 package org.apache.cassandra.db.aggregation;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * A <code>GroupMaker</code> can be used to determine if some sorted rows belongs to the same group or not.
  */
 public abstract class GroupMaker
 {
-    /**
-     * <code>GroupMaker</code> state.
-     *
-     * <p>The state contains the primary key of the last row that has been processed by the previous
-     * <code>GroupMaker</code> used. It can be passed to a <code>GroupMaker</code> to allow to resuming the grouping.
-     * </p>
-     */
-    public static final class State
-    {
-        public static final Serializer serializer = new Serializer();
-
-        public static final State EMPTY_STATE = new State(null, null);
-
-        /**
-         * The last row partition key.
-         */
-        private final ByteBuffer partitionKey;
-
-        /**
-         * The last row clustering
-         */
-        private final Clustering clustering;
-
-        public State(ByteBuffer partitionKey, Clustering clustering)
-        {
-            this.partitionKey = partitionKey;
-            this.clustering = clustering;
-        }
-
-        /**
-         * Returns the last row partition key or <code>null</code> if no rows has been processed yet.
-         * @return the last row partition key or <code>null</code> if no rows has been processed yet
-         */
-        public ByteBuffer partitionKey()
-        {
-            return partitionKey;
-        }
-
-        /**
-         * Returns the last row partition key or <code>null</code> if either no rows has been processed yet or the last
-         * row was a static row.
-         * @return he last row partition key or <code>null</code> if either no rows has been processed yet or the last
-         * row was a static row
-         */
-        public Clustering clustering()
-        {
-            return clustering;
-        }
-
-        /**
-         * Checks if the state contains a Clustering for the last row that has been processed.
-         * @return <code>true</code> if the state contains a Clustering for the last row that has been processed,
-         * <code>false</code> otherwise.
-         */
-        public boolean hasClustering()
-        {
-            return clustering != null;
-        }
-
-        public static class Serializer
-        {
-            public void serialize(State state, DataOutputPlus out, int version) throws IOException
-            {
-                boolean hasPartitionKey = state.partitionKey != null;
-                out.writeBoolean(hasPartitionKey);
-                if (hasPartitionKey)
-                {
-                    ByteBufferUtil.writeWithVIntLength(state.partitionKey, out);
-                    boolean hasClustering = state.hasClustering();
-                    out.writeBoolean(hasClustering);
-                    if (hasClustering)
-                    {
-                        ByteBuffer[] values = state.clustering.getRawValues();
-                        int size = values.length;
-                        out.writeUnsignedVInt(size);
-                        for (ByteBuffer value : values)
-                            ByteBufferUtil.writeWithVIntLength(value, out);
-                    }
-                }
-            }
-
-            public State deserialize(DataInputPlus in, int version) throws IOException
-            {
-                if (!in.readBoolean())
-                    return State.EMPTY_STATE;
-
-                ByteBuffer partitionKey = ByteBufferUtil.readWithVIntLength(in);
-                Clustering clustering = null;
-                if (in.readBoolean())
-                {
-                    int size = (int) in.readUnsignedVInt();
-                    ByteBuffer[] values = new ByteBuffer[size];
-                    for (int i = 0; i < size; i++)
-                        values[i] = ByteBufferUtil.readWithVIntLength(in);
-                    clustering = Clustering.make(values);
-                }
-                return new State(partitionKey, clustering);
-            }
-
-            public long serializedSize(State state, int version)
-            {
-                boolean hasPartitionKey = state.partitionKey != null;
-                long size = TypeSizes.sizeof(hasPartitionKey);
-                if (hasPartitionKey)
-                {
-                    size += ByteBufferUtil.serializedSizeWithVIntLength(state.partitionKey);
-                    boolean hasClustering = state.hasClustering();
-                    size += TypeSizes.sizeof(hasClustering);
-                    if (hasClustering)
-                    {
-                        ByteBuffer[] values = state.clustering.getRawValues();
-                        size += TypeSizes.sizeofUnsignedVInt(values.length);
-                        for (ByteBuffer value : values)
-                            size += ByteBufferUtil.serializedSizeWithVIntLength(value);
-                    }
-                }
-                return size;
-            }
-        }
-    }
-
     /**
      * <code>GroupMaker</code> that groups all the rows together.
      */
@@ -170,7 +44,7 @@ public abstract class GroupMaker
         }
     };
 
-    public static GroupMaker newInstance(int clusteringPrefixSize, State state)
+    public static GroupMaker newInstance(int clusteringPrefixSize, GroupingState state)
     {
         return new PkPrefixGroupMaker(clusteringPrefixSize, state);
     }
@@ -213,7 +87,7 @@ public abstract class GroupMaker
          */
         private final ByteBuffer[] lastClusteringPrefix;
 
-        public PkPrefixGroupMaker(int clusteringPrefixSize, State state)
+        public PkPrefixGroupMaker(int clusteringPrefixSize, GroupingState state)
         {
             this(clusteringPrefixSize);
             this.lastPartitionKey = state.partitionKey();
