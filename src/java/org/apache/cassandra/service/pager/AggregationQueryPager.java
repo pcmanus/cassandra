@@ -56,16 +56,9 @@ public final class AggregationQueryPager implements QueryPager
                                        ClientState clientState)
     {
         if (limits.isGroupByLimit())
-            return new GroupByPartitionIterator(handlePagingOff(pageSize), consistency, clientState);
+            return new GroupByPartitionIterator(pageSize, consistency, clientState);
 
         return new AggregationPartitionIterator(pageSize, consistency, clientState);
-    }
-
-    private int handlePagingOff(int pageSize)
-    {
-        // If the query has a GROUP BY clause and the paging is off, the pageSize will be <= 0. So we need to replace
-        // it by DataLimits.NO_LIMIT
-        return pageSize <= 0 ? DataLimits.NO_LIMIT : pageSize;
     }
 
     @Override
@@ -78,7 +71,7 @@ public final class AggregationQueryPager implements QueryPager
     public PartitionIterator fetchPageInternal(int pageSize, ReadExecutionController executionController)
     {
         if (limits.isGroupByLimit())
-            return new GroupByPartitionIterator(handlePagingOff(pageSize), executionController);
+            return new GroupByPartitionIterator(pageSize, executionController);
 
         return new AggregationPartitionIterator(pageSize, executionController);
     }
@@ -182,6 +175,13 @@ public final class AggregationQueryPager implements QueryPager
             this.consistency = consistency;
             this.clientState = clientState;
             this.executionController = executionController;
+        }
+
+        private int handlePagingOff(int pageSize)
+        {
+            // If the paging is off, the pageSize will be <= 0. So we need to replace
+            // it by DataLimits.NO_LIMIT
+            return pageSize <= 0 ? DataLimits.NO_LIMIT : pageSize;
         }
 
         public final void close()

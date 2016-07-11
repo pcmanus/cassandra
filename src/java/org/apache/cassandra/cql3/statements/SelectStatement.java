@@ -432,7 +432,7 @@ public class SelectStatement implements CQLStatement
     {
         QueryPager pager = query.getPager(options.getPagingState(), options.getProtocolVersion());
 
-        if (aggregationSpec == null)
+        if (aggregationSpec == null || query == ReadQuery.EMPTY)
             return pager;
 
         return new AggregationQueryPager(pager, query.limits());
