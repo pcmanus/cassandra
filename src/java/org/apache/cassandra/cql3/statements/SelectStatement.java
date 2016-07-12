@@ -1079,7 +1079,7 @@ public class SelectStatement implements CQLStatement
             checkFalse(clusteringPrefixSize > 0 && isDistinct,
                        "Grouping on clustering columns is not allowed for SELECT DISTINCT queries");
 
-            return AggregationSpecification.aggregatePkPrefix(clusteringPrefixSize);
+            return AggregationSpecification.aggregatePkPrefix(cfm.comparator, clusteringPrefixSize);
         }
 
         private Comparator<List<ByteBuffer>> getOrderingComparator(CFMetaData cfm,

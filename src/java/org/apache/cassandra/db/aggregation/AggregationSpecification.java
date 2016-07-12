@@ -19,6 +19,7 @@ package org.apache.cassandra.db.aggregation;
 
 import java.io.IOException;
 
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -91,13 +92,14 @@ public abstract class AggregationSpecification
      * Creates a new <code>AggregationSpecification</code> instance that will build aggregates based on primary key
      * columns.
      *
+     * @param comparator the comparator used to compare the clustering prefixes
      * @param clusteringPrefixSize the number of clustering columns used to create the aggregates
      * @return a new <code>AggregationSpecification</code> instance that will build aggregates based on primary key
      * columns
      */
-    public static AggregationSpecification aggregatePkPrefix(int clusteringPrefixSize)
+    public static AggregationSpecification aggregatePkPrefix(ClusteringComparator comparator, int clusteringPrefixSize)
     {
-        return new AggregateByPkPrefix(clusteringPrefixSize);
+        return new AggregateByPkPrefix(comparator, clusteringPrefixSize);
     }
 
     /**
@@ -105,18 +107,27 @@ public abstract class AggregationSpecification
      */
     private static final class AggregateByPkPrefix extends AggregationSpecification
     {
+        /**
+         * The number of clustering component to compare.
+         */
         private final int clusteringPrefixSize;
 
-        public AggregateByPkPrefix(int clusteringPrefixSize)
+        /**
+         * The comparator used to compare the clustering prefixes.
+         */
+        private final ClusteringComparator comparator;
+
+        public AggregateByPkPrefix(ClusteringComparator comparator, int clusteringPrefixSize)
         {
             super(Kind.AGGREGATE_BY_PK_PREFIX);
+            this.comparator = comparator;
             this.clusteringPrefixSize = clusteringPrefixSize;
         }
 
         @Override
         public GroupMaker newGroupMaker(GroupingState state)
         {
-            return GroupMaker.newInstance(clusteringPrefixSize, state);
+            return GroupMaker.newInstance(comparator, clusteringPrefixSize, state);
         }
     }
 
@@ -137,7 +148,7 @@ public abstract class AggregationSpecification
             }
         }
 
-        public AggregationSpecification deserialize(DataInputPlus in, int version) throws IOException
+        public AggregationSpecification deserialize(DataInputPlus in, int version, ClusteringComparator comparator) throws IOException
         {
             Kind kind = Kind.values()[in.readUnsignedByte()];
             switch (kind)
@@ -146,7 +157,7 @@ public abstract class AggregationSpecification
                     return AggregationSpecification.AGGREGATE_EVERYTHING;
                 case AGGREGATE_BY_PK_PREFIX:
                     int clusteringPrefixSize = (int) in.readUnsignedVInt();
-                    return AggregationSpecification.aggregatePkPrefix(clusteringPrefixSize);
+                    return AggregationSpecification.aggregatePkPrefix(comparator, clusteringPrefixSize);
                 default: 
                     throw new AssertionError();
             }

@@ -21,7 +21,9 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * A <code>GroupMaker</code> can be used to determine if some sorted rows belongs to the same group or not.
@@ -44,14 +46,14 @@ public abstract class GroupMaker
         }
     };
 
-    public static GroupMaker newInstance(int clusteringPrefixSize, GroupingState state)
+    public static GroupMaker newInstance(ClusteringComparator comparator, int clusteringPrefixSize, GroupingState state)
     {
-        return new PkPrefixGroupMaker(clusteringPrefixSize, state);
+        return new PkPrefixGroupMaker(comparator, clusteringPrefixSize, state);
     }
 
-    public static GroupMaker newInstance(int clusteringPrefixSize)
+    public static GroupMaker newInstance(ClusteringComparator comparator, int clusteringPrefixSize)
     {
-        return new PkPrefixGroupMaker(clusteringPrefixSize);
+        return new PkPrefixGroupMaker(comparator, clusteringPrefixSize);
     }
 
     /**
@@ -78,32 +80,36 @@ public abstract class GroupMaker
     private static final class PkPrefixGroupMaker extends GroupMaker
     {
         /**
+         * The size of the clustering prefix used to make the groups
+         */
+        private final int clusteringPrefixSize;
+
+        /**
+         * The comparator used to compare the clustering prefixes.
+         */
+        private final ClusteringComparator comparator;
+
+        /**
          * The last partition key seen
          */
         private ByteBuffer lastPartitionKey;
 
         /**
-         * The last clustering prefix seen
+         * The last clustering seen
          */
-        private final ByteBuffer[] lastClusteringPrefix;
+        private Clustering lastClustering;
 
-        public PkPrefixGroupMaker(int clusteringPrefixSize, GroupingState state)
+        public PkPrefixGroupMaker(ClusteringComparator comparator, int clusteringPrefixSize, GroupingState state)
         {
-            this(clusteringPrefixSize);
+            this(comparator, clusteringPrefixSize);
             this.lastPartitionKey = state.partitionKey();
-            if (state.hasClustering())
-            {
-                ByteBuffer[] clustering = state.clustering.getRawValues();
-                for (int i = 0; i < clusteringPrefixSize; i++)
-                {
-                    lastClusteringPrefix[i] = clustering[i];
-                }
-            }
+            this.lastClustering = state.clustering;
         }
 
-        public PkPrefixGroupMaker(int clusteringPrefixSize)
+        public PkPrefixGroupMaker(ClusteringComparator comparator, int clusteringPrefixSize)
         {
-            this.lastClusteringPrefix = new ByteBuffer[clusteringPrefixSize];
+            this.comparator = comparator;
+            this.clusteringPrefixSize = clusteringPrefixSize;
         }
 
         @Override
@@ -111,31 +117,25 @@ public abstract class GroupMaker
         {
             boolean isNew = false;
 
+            // We are entering a new group if:
+            // - the partition key is a new one
+            // - the last clustering was not null and does not have the same prefix as the new clustering one
             if (!partitionKey.getKey().equals(lastPartitionKey))
             {
-                isNew = true;
                 lastPartitionKey = partitionKey.getKey();
+                isNew = true;
                 if (Clustering.STATIC_CLUSTERING == clustering)
                 {
-                    Arrays.fill(lastClusteringPrefix, null);
+                    lastClustering = null;
                     return true;
                 }
             }
-
-            for (int i = 0; i < lastClusteringPrefix.length; i++)
+            else if (lastClustering != null && comparator.compare(lastClustering, clustering, clusteringPrefixSize) != 0)
             {
-                ByteBuffer byteBuffer = clustering.get(i);
-
-                if (isNew)
-                {
-                    lastClusteringPrefix[i] = byteBuffer;
-                }
-                else if (!byteBuffer.equals(lastClusteringPrefix[i]))
-                {
-                    isNew = true;
-                    lastClusteringPrefix[i] = byteBuffer;
-                }
+                isNew = true;
             }
+
+            lastClustering = clustering;
             return isNew;
         }
     }

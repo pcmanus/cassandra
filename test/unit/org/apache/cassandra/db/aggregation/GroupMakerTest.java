@@ -23,8 +23,11 @@ import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.marshal.ReversedType;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -34,7 +37,8 @@ public class GroupMakerTest
     @Test
     public void testIsNewGroupWithClusteringColumns()
     {
-        GroupMaker groupMaker = GroupMaker.newInstance(2);
+        ClusteringComparator comparator = newComparator(false, false, false);
+        GroupMaker groupMaker = GroupMaker.newInstance(comparator, 2);
 
         assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 1)));
         assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 2)));
@@ -49,9 +53,68 @@ public class GroupMakerTest
     }
 
     @Test
+    public void testIsNewGroupWithOneClusteringColumnsPrefix()
+    {
+        ClusteringComparator comparator = newComparator(false, false, false);
+        GroupMaker groupMaker = GroupMaker.newInstance(comparator, 1);
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 2)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 3)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 2, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 2)));
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 2)));
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(2), clustering(2, 2, 1)));
+    }
+
+    @Test
+    public void testIsNewGroupWithReversedClusteringColumns()
+    {
+        ClusteringComparator comparator = newComparator(true, true, true);
+
+        GroupMaker groupMaker = GroupMaker.newInstance(comparator, 2);
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 2)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 1)));
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 2, 1)));
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 3)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 2)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 1)));
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 2)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 1)));
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(2), clustering(2, 2, 1)));
+    }
+
+    @Test
+    public void testIsNewGroupWithOneReversedClusteringColumns()
+    {
+        ClusteringComparator comparator = newComparator(true, false, false);
+
+        GroupMaker groupMaker = GroupMaker.newInstance(comparator, 2);
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 3, 2)));
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 2, 1)));
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 2)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 3)));
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 1)));
+        assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(2, 1, 2)));
+
+        assertTrue(groupMaker.isNewGroup(partitionKey(2), clustering(2, 2, 1)));
+    }
+
+    @Test
     public void testIsNewGroupWithStaticClusteringColumns()
     {
-        GroupMaker groupMaker = GroupMaker.newInstance(2);
+        ClusteringComparator comparator = newComparator(false, false, false);
+        GroupMaker groupMaker = GroupMaker.newInstance(comparator, 2);
 
         assertTrue(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 1)));
         assertFalse(groupMaker.isNewGroup(partitionKey(1), clustering(1, 1, 2)));
@@ -64,7 +127,8 @@ public class GroupMakerTest
     @Test
     public void testIsNewGroupWithOnlyPartitionKeyComponents()
     {
-        GroupMaker goupMaker = GroupMaker.newInstance(2);
+        ClusteringComparator comparator = newComparator(false, false, false);
+        GroupMaker goupMaker = GroupMaker.newInstance(comparator, 2);
 
         assertTrue(goupMaker.isNewGroup(partitionKey(1, 1), clustering(1, 1, 1)));
         assertFalse(goupMaker.isNewGroup(partitionKey(1, 1), clustering(1, 1, 2)));
@@ -97,9 +161,18 @@ public class GroupMakerTest
 
         for (int i = 0; i < values.length; i++)
         {
-            buffers[i] = ByteBufferUtil.bytes(values[i]);
+            buffers[i] = Int32Type.instance.decompose(values[i]);
         }
 
         return buffers;
+    }
+
+    private static ClusteringComparator newComparator(boolean... reversed)
+    {
+        AbstractType<?>[] types = new AbstractType<?>[reversed.length];
+        for (int i = 0, m = reversed.length; i < m; i++)
+            types[i] = reversed[i] ? ReversedType.getInstance(Int32Type.instance) : Int32Type.instance;
+
+        return new ClusteringComparator(types);
     }
 }

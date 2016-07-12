@@ -1430,7 +1430,7 @@ public abstract class DataLimits
                     int groupPerPartitionLimit = (int) in.readUnsignedVInt();
                     int rowLimit = (int) in.readUnsignedVInt();
 
-                    AggregationSpecification groupBySpec = AggregationSpecification.serializer.deserialize(in, version);
+                    AggregationSpecification groupBySpec = AggregationSpecification.serializer.deserialize(in, version, comparator);
 
                     GroupingState state = GroupingState.serializer.deserialize(in, version, comparator);
 
