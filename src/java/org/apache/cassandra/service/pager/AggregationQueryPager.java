@@ -30,7 +30,11 @@ import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.service.ClientState;
 
 /**
- * <code>QueryPager</code> that takes care of fetching the pages for aggregation queries.
+ * {@code QueryPager} that takes care of fetching the pages for aggregation queries.
+ * 
+ * <p>For aggregation/group by queries, the user page size is in number of groups. Due to that the number of rows
+ * to fetch might exceed the page size. To avoid running into an OOM error this pager will page the queries internally 
+ * into sub-pages.</p>
  */
 public final class AggregationQueryPager implements QueryPager
 {
@@ -101,13 +105,13 @@ public final class AggregationQueryPager implements QueryPager
     }
 
     /**
-     * <code>PartitionIterator</code> that automatically fetch new page of data if needed when the current iterator is
+     * <code>PartitionIterator</code> that automatically fetch a new sub-page of data if needed when the current iterator is
      * exhausted.
      */
     public class GroupByPartitionIterator implements PartitionIterator
     {
         /**
-         * The page size in number of groups.
+         * The top-level page size in number of groups.
          */
         private final int pageSize;
 
@@ -214,7 +218,7 @@ public final class AggregationQueryPager implements QueryPager
             if (partitionIterator == null)
             {
                 initialMaxRemaining = pager.maxRemaining();
-                partitionIterator = fetchPage(pageSize);
+                partitionIterator = fetchSubPage(pageSize);
             }
 
             while (!partitionIterator.hasNext())
@@ -231,7 +235,7 @@ public final class AggregationQueryPager implements QueryPager
                 }
 
                 pager = updatePagerLimit(pager, limits, lastPartitionKey, lastClustering);
-                partitionIterator = fetchPage(computePageSize(pageSize, counted));
+                partitionIterator = fetchSubPage(computeSubPageSize(pageSize, counted));
             }
 
             next = partitionIterator.next();
@@ -262,27 +266,27 @@ public final class AggregationQueryPager implements QueryPager
         }
 
         /**
-         * Computes the size of the next page to retrieve.
+         * Computes the size of the next sub-page to retrieve.
          *
-         * @param pageSize the original page size
-         * @param counted the number of result returned so far
-         * @return the size of the next page to retrieve
+         * @param pageSize the top-level page size
+         * @param counted the number of result returned so far by the previous sub-pages
+         * @return the size of the next sub-page to retrieve
          */
-        protected int computePageSize(int pageSize, int counted)
+        protected int computeSubPageSize(int pageSize, int counted)
         {
             return pageSize - counted;
         }
 
         /**
-         * Fetchs the next page of data.
+         * Fetchs the next sub-page.
          *
-         * @param newPageSize the new page size in number of groups
-         * @return the next page of data
+         * @param subPageSize the sub-page size in number of groups
+         * @return the next sub-page
          */
-        private final PartitionIterator fetchPage(int newPageSize)
+        private final PartitionIterator fetchSubPage(int subPageSize)
         {
-            return consistency != null ? pager.fetchPage(newPageSize, consistency, clientState)
-                                       : pager.fetchPageInternal(newPageSize, executionController);
+            return consistency != null ? pager.fetchPage(subPageSize, consistency, clientState)
+                                       : pager.fetchPageInternal(subPageSize, executionController);
         }
 
         public final RowIterator next()
@@ -421,7 +425,7 @@ public final class AggregationQueryPager implements QueryPager
         }
 
         @Override
-        protected int computePageSize(int pageSize, int counted)
+        protected int computeSubPageSize(int pageSize, int counted)
         {
             return pageSize;
         }
