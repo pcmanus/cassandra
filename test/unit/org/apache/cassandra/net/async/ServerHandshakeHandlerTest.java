@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -43,6 +44,8 @@ public class ServerHandshakeHandlerTest
     static final String SHH_HANDLER_NAME = "ServerHandshakeHandler#0";
     private static final Consumer<MessageInWrapper> NOP_CONSUMER = msg -> {};
 
+    ServerHandshakeHandler handler;
+    EmbeddedChannel channel;
     private ByteBuf buf;
 
     @BeforeClass
@@ -51,18 +54,26 @@ public class ServerHandshakeHandlerTest
         ServerHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
     }
 
+    @Before
+    public void setUp()
+    {
+        handler = new ServerHandshakeHandler(new TestAuthenticator(false));
+        channel = new EmbeddedChannel(handler);
+    }
+
     @After
     public void tearDown()
     {
         if (buf != null)
             buf.release();
+        Assert.assertFalse(channel.finish());
     }
 
     @Test
     public void handleAuthenticate_Good()
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(true));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
+        handler = new ServerHandshakeHandler(new TestAuthenticator(true));
+        channel = new EmbeddedChannel(handler);
         boolean result = handler.handleAuthenticate(addr, channel.pipeline().firstContext());
         Assert.assertTrue(result);
         Assert.assertTrue(channel.isOpen());
@@ -71,8 +82,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleAuthenticate_Bad()
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         boolean result = handler.handleAuthenticate(addr, channel.pipeline().firstContext());
         Assert.assertFalse(result);
         Assert.assertFalse(channel.isOpen());
@@ -82,8 +91,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleStart_NotEnoughInputBytes() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         ByteBuf buf = Unpooled.EMPTY_BUFFER;
         State state = handler.handleStart(channel.pipeline().firstContext(), buf);
         Assert.assertEquals(State.START, state);
@@ -105,8 +112,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleStart_VersionTooHigh() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         channel.eventLoop();
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
@@ -121,8 +126,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleStart_VersionLessThan2_0() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
         buf.writeInt(ClientHandshakeHandler.createHeader(MessagingService.VERSION_12, true, NettyFactory.Mode.MESSAGING));
@@ -136,8 +139,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleStart_HappyPath_Messaging() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
         buf.writeInt(ClientHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING));
@@ -147,13 +148,12 @@ public class ServerHandshakeHandlerTest
         Assert.assertTrue(channel.isOpen());
         Assert.assertTrue(channel.isActive());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
+        channel.outboundMessages().clear();
     }
 
     @Test
     public void handleMessagingStartResponse_NotEnoughInputBytes() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         ByteBuf buf = Unpooled.EMPTY_BUFFER;
         State state = handler.handleMessagingStartResponse(channel.pipeline().firstContext(), buf);
         Assert.assertEquals(State.AWAIT_MESSAGING_START_RESPONSE, state);
@@ -164,8 +164,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleMessagingStartResponse_BadMaxVersion() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MESSAGING_VERSION + 1);
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
@@ -178,8 +176,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleMessagingStartResponse_HappyPath() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MESSAGING_VERSION);
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
@@ -192,7 +188,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void setupPipeline_NoCompression()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ServerHandshakeHandler(new TestAuthenticator(false)));
         ChannelPipeline pipeline = channel.pipeline();
         ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), false, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
@@ -202,7 +197,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void setupPipeline_WithCompression()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ServerHandshakeHandler(new TestAuthenticator(false)));
         ChannelPipeline pipeline = channel.pipeline();
         ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNotNull(pipeline.get(Lz4FrameDecoder.class));
@@ -212,7 +206,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void setupPipeline_WithModernMessageHandler()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ServerHandshakeHandler(new TestAuthenticator(false)));
         ChannelPipeline pipeline = channel.pipeline();
         ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNotNull(pipeline.get(MessageInHandler.class));
@@ -222,7 +215,6 @@ public class ServerHandshakeHandlerTest
     @Test
     public void setupPipeline_WithLegacyMessageHandler()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ServerHandshakeHandler(new TestAuthenticator(false)));
         ChannelPipeline pipeline = channel.pipeline();
         ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MessagingService.VERSION_12, NOP_CONSUMER));
         Assert.assertNull(pipeline.get(MessageInHandler.class));

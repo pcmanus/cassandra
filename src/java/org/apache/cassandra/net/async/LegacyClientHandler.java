@@ -136,7 +136,8 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
     void close(ChannelHandlerContext ctx)
     {
         closed = true;
-        blockingIOThread.interrupt();
+        if (blockingIOThread != null)
+            blockingIOThread.interrupt();
         ctx.close();
     }
 
@@ -158,8 +159,9 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
     /**
      * An {@link InputStream} that blocks on a {@link #queue} for {@link ByteBuf}s.
      */
-    static class AppendingByteBufInputStream extends InputStream
+        static class AppendingByteBufInputStream extends InputStream
     {
+        private final byte[] oneByteArray = new byte[1];
         private final BlockingQueue<ByteBuf> queue;
         private ByteBuf currentBuf;
 
@@ -178,17 +180,38 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
         @Override
         public int read() throws IOException
         {
+            if (read(oneByteArray, 0, 1) != 1)
+                throw new IOException("failed to read");
+            return oneByteArray[0];
+        }
+
+        public int read(byte out[], int off, final int len) throws IOException
+        {
+            if (out == null)
+                throw new NullPointerException();
+            else if (off < 0 || len < 0 || len > out.length - off)
+                throw new IndexOutOfBoundsException();
+            else if (len == 0)
+                return 0;
+
+            int remaining = len;
             while (true)
             {
                 if (currentBuf != null)
                 {
                     if (currentBuf.isReadable())
-                        return currentBuf.readByte();
-                    else
                     {
-                        currentBuf.release();
-                        currentBuf = null;
+                        int toReadCount = Math.min(remaining, currentBuf.readableBytes());
+                        currentBuf.readBytes(out, off, toReadCount);
+                        remaining -= toReadCount;
+
+                        if (remaining == 0)
+                            return len;
+                        off += toReadCount;
                     }
+
+                    currentBuf.release();
+                    currentBuf = null;
                 }
 
                 try

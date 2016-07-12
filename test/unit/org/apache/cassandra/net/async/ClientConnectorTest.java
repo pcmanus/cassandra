@@ -23,7 +23,9 @@ import java.net.InetSocketAddress;
 
 import javax.net.ssl.SSLHandshakeException;
 
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import io.netty.channel.ChannelFuture;
@@ -36,12 +38,25 @@ public class ClientConnectorTest
     private final static InetSocketAddress local = InetSocketAddress.createUnresolved("127.0.0.1", 9876);
     private final static InetSocketAddress remote = InetSocketAddress.createUnresolved("127.0.0.2", 9876);
 
+    EmbeddedChannel channel;
+    ClientConnector connector;
+
+    @Before
+    public void setUp()
+    {
+        channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        connector = new ClientConnector(null, local, remote);
+    }
+
+    @After
+    public void tearDown()
+    {
+        Assert.assertFalse(channel.finish());
+    }
+
     @Test
     public void connectComplete_FutureIsSuccess()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelPromise promise = channel.newPromise();
         promise.setSuccess();
         Assert.assertTrue(connector.connectComplete(promise));
@@ -50,9 +65,6 @@ public class ClientConnectorTest
     @Test
     public void connectComplete_FutureIsCancelled()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelFuture future = channel.newPromise();
         future.cancel(false);
         Assert.assertFalse(connector.connectComplete(future));
@@ -61,9 +73,6 @@ public class ClientConnectorTest
     @Test
     public void connectComplete_ConnectorIsCancelled()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelPromise promise = channel.newPromise();
         connector.cancel();
         Assert.assertFalse(connector.connectComplete(promise));
@@ -72,9 +81,6 @@ public class ClientConnectorTest
     @Test
     public void connectComplete_FailCauseIsSslHandshake()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new SSLHandshakeException("test is only a test"));
         Assert.assertFalse(connector.connectComplete(promise));
@@ -83,9 +89,6 @@ public class ClientConnectorTest
     @Test
     public void connectComplete_FailCauseIsNPE()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new NullPointerException("test is only a test"));
         Assert.assertFalse(connector.connectComplete(promise));
@@ -94,9 +97,6 @@ public class ClientConnectorTest
     @Test
     public void connectComplete_FailCauseIsIOException()
     {
-        EmbeddedChannel channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        ClientConnector connector = new ClientConnector(null, local, remote);
-
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("test is only a test"));
         Assert.assertFalse(connector.connectComplete(promise));

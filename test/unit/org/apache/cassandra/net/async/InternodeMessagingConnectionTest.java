@@ -30,6 +30,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -70,6 +71,12 @@ public class InternodeMessagingConnectionTest
         handler = new CountingHandler();
         channel = new EmbeddedChannel(handler);
         imc.setChannel(channel);
+    }
+
+    @After
+    public void tearDown()
+    {
+        Assert.assertFalse(channel.finish());
     }
 
     @Test

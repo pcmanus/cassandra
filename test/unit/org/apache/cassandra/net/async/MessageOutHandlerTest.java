@@ -25,9 +25,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
-import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -40,25 +37,14 @@ public class MessageOutHandlerTest
     @Test
     public void serializeMessage() throws IOException
     {
-        MessageOutHandler handler = new MessageOutHandler(MESSAGING_VERSION, new AtomicLong(0), 16);
-        SinkHandler sinkHandler = new SinkHandler();
-        EmbeddedChannel channel = new EmbeddedChannel(sinkHandler, handler);
+        MessageOutHandler handler = new MessageOutHandler(MESSAGING_VERSION, new AtomicLong(0), 8);
+        EmbeddedChannel channel = new EmbeddedChannel(handler);
         QueuedMessage msg = new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), 1);
-        ChannelFuture future = channel.write(msg);
+        ChannelFuture future = channel.writeAndFlush(msg);
 
-        channel.flush();
-        Assert.assertTrue(1 <= sinkHandler.count);
         Assert.assertTrue(future.isSuccess());
-    }
-
-    private static class SinkHandler extends ChannelOutboundHandlerAdapter
-    {
-        int count;
-
-        public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
-        {
-            count++;
-            promise.setSuccess();
-        }
+        Assert.assertTrue(1 <= channel.outboundMessages().size());
+        channel.outboundMessages().clear();
+        Assert.assertFalse(channel.finish());
     }
 }

@@ -56,7 +56,7 @@ public class HandshakeHandlersTest
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.2", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
-    int receivedMessages;
+    private int receivedMessages;
     private final Consumer<MessageInWrapper> COUNTING_CONSUMER = messageInWrapper -> receivedMessages++;
 
     @BeforeClass
@@ -106,17 +106,18 @@ public class HandshakeHandlersTest
     @Test
     public void lotsOfMutations_NoCompression() throws IOException
     {
-        lotsOfMutations(buildChannels(false));
+        lotsOfMutations(false);
     }
 
     @Test
     public void lotsOfMutations_WithCompression() throws IOException
     {
-        lotsOfMutations(buildChannels(true));
+        lotsOfMutations(true);
     }
 
-    private void lotsOfMutations(TestChannels channels)
+    private void lotsOfMutations(boolean compress)
     {
+        TestChannels channels = buildChannels(compress);
         EmbeddedChannel clientChannel = channels.clientChannel;
         EmbeddedChannel serverChannel = channels.serverChannel;
 
@@ -151,12 +152,19 @@ public class HandshakeHandlersTest
         // move the messages to the server channel
         serverChannel.writeInbound(clientChannel.readOutbound());
         for (Object o : clientChannel.outboundMessages())
-            serverChannel.writeInbound(o);
+            Assert.assertTrue(serverChannel.writeInbound(o));
 
         Assert.assertEquals(count, receivedMessages);
+
+
+
+        Assert.assertTrue(clientChannel.outboundMessages().isEmpty());
+        // if compress, LZ4FrameEncoder will send 'close' packet to peer (thus a message is in the channel)
+        Assert.assertEquals(compress, clientChannel.finish());
+        Assert.assertFalse(serverChannel.finish());
     }
 
-    private TestChannels buildChannels(boolean compress) throws IOException
+    private TestChannels buildChannels(boolean compress)
     {
         EmbeddedChannel clientChannel = new EmbeddedChannel(new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
         InternodeMessagingConnection imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));

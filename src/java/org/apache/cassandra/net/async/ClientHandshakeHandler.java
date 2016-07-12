@@ -18,7 +18,7 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.IOException;
+import java.io.DataOutput;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -34,7 +34,6 @@ import io.netty.buffer.ByteBufOutputStream;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
-import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
@@ -148,7 +147,10 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
             return;
 
         if (handshakeResponse != null)
+        {
             handshakeResponse.cancel(false);
+            handshakeResponse = null;
+        }
         int peerMessagingVersion = in.readInt();
 
         Result result;
@@ -168,11 +170,9 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
         {
             ByteBuf buf = ctx.alloc().ioBuffer(4 + CompactEndpointSerializationHelper.serializedSize(remoteAddr.getAddress()));
             buf.writeInt(MessagingService.current_version);
-
-            try (ByteBufOutputStream bbos = new ByteBufOutputStream(buf))
-            {
-                CompactEndpointSerializationHelper.serialize(remoteAddr.getAddress(), bbos);
-            }
+            @SuppressWarnings("resource")
+            DataOutput bbos = new ByteBufOutputStream(buf);
+            CompactEndpointSerializationHelper.serialize(remoteAddr.getAddress(), bbos);
             ctx.writeAndFlush(buf);
             result = Result.GOOD;
         }
@@ -193,11 +193,13 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
         callback.accept(ConnectionHandshakeResult.failed());
     }
 
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
     {
         logger.error("exeption in negotiating internode handshake", cause);
         ctx.close();
         callback.accept(ConnectionHandshakeResult.failed());
+        ctx.fireExceptionCaught(cause);
     }
 
     @VisibleForTesting

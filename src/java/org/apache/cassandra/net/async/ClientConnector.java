@@ -63,7 +63,7 @@ class ClientConnector
     /**
      * A reference to the {@link Future} that is returned from the {@link Bootstrap#connect()} attempt.
      */
-    private ChannelFuture connectFuture;
+    private volatile ChannelFuture connectFuture;
 
     @VisibleForTesting
     ClientConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
@@ -96,9 +96,7 @@ class ClientConnector
         ChannelFuture channelFuture = (ChannelFuture)future;
         if (channelFuture.isCancelled() || isCancelled)
         {
-            Channel channel = channelFuture.channel();
-            if (channel != null)
-                channel.close();
+            channelFuture.channel().close();
             return false;
         }
 
@@ -108,8 +106,7 @@ class ClientConnector
         Throwable cause = future.cause();
         if (cause instanceof IOException)
         {
-            if (logger.isTraceEnabled())
-                logger.trace("unable to connect to " + remoteAddr, cause);
+            logger.trace("unable to connect to {}: {}", remoteAddr, cause);
 
             // it's safe to get a reference to the channel from the Future instance, thus we can get the executor
             channelFuture.channel().eventLoop().schedule(this::connect, OutboundTcpConnection.OPEN_RETRY_DELAY * connectAttemptCount, TimeUnit.MILLISECONDS);
@@ -129,8 +126,9 @@ class ClientConnector
      */
     public void cancel()
     {
-        if (connectFuture != null)
-            connectFuture.cancel(false);
+        ChannelFuture future = connectFuture;
+        if (future != null)
+            future.cancel(false);
         isCancelled = true;
     }
 

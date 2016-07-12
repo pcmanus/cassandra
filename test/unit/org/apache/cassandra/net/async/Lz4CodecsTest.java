@@ -50,6 +50,8 @@ public class Lz4CodecsTest
     {
         if (buf != null && buf.refCnt() > 0)
             buf.release();
+
+        Assert.assertTrue(embeddedChannel.finish());
     }
 
     @Test
@@ -69,15 +71,16 @@ public class Lz4CodecsTest
         buf = Unpooled.buffer(1024);
         buf.writeBytes(s.getBytes(Charsets.UTF_8));
 
-        embeddedChannel.writeOutbound(buf);
+        Assert.assertTrue(embeddedChannel.writeOutbound(buf));
         Assert.assertFalse(embeddedChannel.outboundMessages().isEmpty());
 
-        embeddedChannel.writeInbound(embeddedChannel.readOutbound());
+        Assert.assertTrue(embeddedChannel.writeInbound(embeddedChannel.readOutbound()));
         Assert.assertFalse(embeddedChannel.inboundMessages().isEmpty());
 
         ByteBuf uncompressed = (ByteBuf) embeddedChannel.readInbound();
         byte[] b = new byte[uncompressed.readableBytes()];
         uncompressed.getBytes(uncompressed.readerIndex(), b);
         Assert.assertEquals(s, new String(b, Charsets.UTF_8));
+        uncompressed.release();
     }
 }

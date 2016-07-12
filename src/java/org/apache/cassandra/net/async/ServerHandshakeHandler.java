@@ -1,5 +1,6 @@
 package org.apache.cassandra.net.async;
 
+import java.io.DataInput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -217,13 +218,11 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
         }
 
         // record the (true) version of the endpoint
-        final InetAddress from;
-        try (ByteBufInputStream bbis = new ByteBufInputStream(in))
-        {
-            from = CompactEndpointSerializationHelper.deserialize(bbis);
-            MessagingService.instance().setVersion(from, maxVersion);
-            logger.trace("Set version for {} to {} (will use {})", from, maxVersion, MessagingService.instance().getVersion(from));
-        }
+        @SuppressWarnings("resource")
+        DataInput inputStream = new ByteBufInputStream(in);
+        final InetAddress from = CompactEndpointSerializationHelper.deserialize(inputStream);
+        MessagingService.instance().setVersion(from, maxVersion);
+        logger.trace("Set version for {} to {} (will use {})", from, maxVersion, MessagingService.instance().getVersion(from));
 
         setupMessagingPipeline(ctx.pipeline(), createHandlers(from, compressed, version, MessageInProcessingHandler.MESSAGING_SERVICE_CONSUMER));
         return State.MESSAGING_HANDSHAKE_COMPLETE;

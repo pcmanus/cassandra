@@ -500,6 +500,9 @@ public class InternodeMessagingConnection
         }
     }
 
+    /**
+     * Get pending messages count; not guaranteed to be a constant-time call.
+     */
     public Integer getPendingMessages()
     {
         return (int)(backlog.size() + outboundCount.get());

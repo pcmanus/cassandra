@@ -51,7 +51,7 @@ import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
  * {@link RateLimiter#tryAcquire()} semantics as well as a callback specific to the {@link CoalescingStrategy}.
  *
  * Flushing is the tricky part here. In the previous implementation in {@link OutboundTcpConnection}, we could look to the
- * local backlog queue to see if there were any more messages in the queu, and then flush is there were none. There is no similar
+ * local backlog queue to see if there were any more messages in the queue, and then flush is there were none. There is no similar
  * API in netty that exposes the current count of 'unprocessed' messages in the channel. Hence, we use an {@link AtomicLong} counter
  * that is shared with the {@link InternodeMessagingConnection} that owns the channel this handler instance belongs to.
  */
@@ -105,8 +105,8 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
     {
         if (closed)
         {
-            promise.setFailure(new ClosedChannelException());
             ReferenceCountUtil.release(msg);
+            promise.setFailure(new ClosedChannelException());
             return;
         }
 
@@ -121,8 +121,9 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
             return;
         }
 
+        boolean empty = queue.isEmpty();
         queue.add(msg, promise);
-        if (queue.size() == 1)
+        if (empty)
         {
             long sleepTime = coalescingStrategy.coalesceNonBlocking(queuedMessage.timestampNanos(), outboundCount.intValue());
             if (sleepTime <= 0)
@@ -149,7 +150,9 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
     }
 
     /**
-     * The function to be executed that sends out the coalesced messages.
+     * The function to be executed that sends out the coalesced messages. If the message has not timed out, it will
+     * be written to the channel for downstream consumers.
+     *
      */
     @VisibleForTesting
     int doCoalesce(ChannelHandlerContext ctx)
@@ -219,11 +222,13 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         }
         if (queue != null)
         {
-            while (!queue.isEmpty())
+            while (true)
             {
-                outboundCount.decrementAndGet();
                 ChannelPromise p = queue.remove();
+                if (p == null)
+                    break;
                 p.cancel(false);
+                outboundCount.decrementAndGet();
             }
         }
 

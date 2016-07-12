@@ -29,6 +29,7 @@ import java.util.List;
 import com.google.common.base.Function;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
@@ -47,21 +48,29 @@ public class MessageInHandlerTest
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.1", 0);
     private static final MessageOut msgOut = new MessageOut(REMOTE_ADDR.getAddress(), MessagingService.Verb.ECHO, null, null, Collections.<String, byte[]>emptyMap());
 
+    private MessageInHandler handler;
+    private EmbeddedChannel channel;
     private ByteBuf buf;
+
+    @Before
+    public void setUp()
+    {
+        handler = new MessageInHandler(REMOTE_ADDR.getAddress(), MESSAGING_VERSION);
+        channel = new EmbeddedChannel(handler);
+        buf = Unpooled.buffer(128, 128);
+    }
 
     @After
     public void tearDown()
     {
         if (buf != null)
             buf.release();
+        Assert.assertFalse(channel.finish());
     }
 
     @Test
     public void decode_NotEnoughBytesToReadSerailizedMessage() throws Exception
     {
-        MessageInHandler handler = new MessageInHandler(REMOTE_ADDR.getAddress(), MESSAGING_VERSION);
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
-        buf = Unpooled.buffer(128, 128);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
         buf.writeInt(1);
         List<Object> out = new ArrayList<>(1);
@@ -72,10 +81,6 @@ public class MessageInHandlerTest
     @Test
     public void decode_ReadSerailizedMessage() throws Exception
     {
-        MessageInHandler handler = new MessageInHandler(REMOTE_ADDR.getAddress(), MESSAGING_VERSION);
-        EmbeddedChannel channel = new EmbeddedChannel(handler);
-
-        buf = Unpooled.buffer(128, 128);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
         buf.writeInt(frameSize(msgOut));
         buf.writeInt(1); // this is the id

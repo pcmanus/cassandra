@@ -86,7 +86,6 @@ public final class NettyFactory
                                                          .channel(transport)
                                                          .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                                                          .option(ChannelOption.SO_BACKLOG, 500)
-                                                         .option(ChannelOption.SO_TIMEOUT, 2 * OutboundTcpConnection.WAIT_FOR_VERSION_MAX_TIME)
                                                          .childOption(ChannelOption.SO_KEEPALIVE, true)
                                                          .childOption(ChannelOption.TCP_NODELAY, true)
                                                          .childOption(ChannelOption.SO_REUSEADDR, true)

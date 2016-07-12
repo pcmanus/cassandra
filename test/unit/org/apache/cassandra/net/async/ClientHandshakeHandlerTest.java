@@ -30,10 +30,8 @@ import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.util.concurrent.DefaultPromise;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 
@@ -63,6 +61,7 @@ public class ClientHandshakeHandlerTest
     {
         if (buf != null && buf.refCnt() > 0)
             buf.release();
+        Assert.assertFalse(channel.finish());
     }
 
     @Test
@@ -114,6 +113,7 @@ public class ClientHandshakeHandlerTest
         channel.writeInbound(buf);
         Assert.assertEquals(buf.writerIndex(), buf.readerIndex());
         Assert.assertEquals(1, channel.outboundMessages().size());
+        channel.releaseOutbound(); // throw away any responses from decode()
 
         Assert.assertEquals(MESSAGING_VERSION, result.negotiatedMessagingVersion);
         Assert.assertEquals(ConnectionHandshakeResult.Result.GOOD, result.result);
@@ -154,10 +154,5 @@ public class ClientHandshakeHandlerTest
     {
         result = connectionHandshakeResult;
         return null;
-    }
-
-    private static class TestPromise extends DefaultPromise<Channel>
-    {
-
     }
 }
