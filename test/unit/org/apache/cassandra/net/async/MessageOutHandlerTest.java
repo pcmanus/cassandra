@@ -44,7 +44,7 @@ public class MessageOutHandlerTest
 
         Assert.assertTrue(future.isSuccess());
         Assert.assertTrue(1 <= channel.outboundMessages().size());
-        channel.outboundMessages().clear();
-        Assert.assertFalse(channel.finish());
+        channel.releaseOutbound();
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 }

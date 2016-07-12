@@ -76,7 +76,7 @@ public class InternodeMessagingConnectionTest
     @After
     public void tearDown()
     {
-        Assert.assertFalse(channel.finish());
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 
     @Test

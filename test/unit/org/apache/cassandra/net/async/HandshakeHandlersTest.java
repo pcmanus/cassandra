@@ -160,8 +160,8 @@ public class HandshakeHandlersTest
 
         Assert.assertTrue(clientChannel.outboundMessages().isEmpty());
         // if compress, LZ4FrameEncoder will send 'close' packet to peer (thus a message is in the channel)
-        Assert.assertEquals(compress, clientChannel.finish());
-        Assert.assertFalse(serverChannel.finish());
+        Assert.assertEquals(compress, clientChannel.finishAndReleaseAll());
+        Assert.assertFalse(serverChannel.finishAndReleaseAll());
     }
 
     private TestChannels buildChannels(boolean compress)

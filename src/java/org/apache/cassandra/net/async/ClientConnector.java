@@ -106,7 +106,7 @@ class ClientConnector
         Throwable cause = future.cause();
         if (cause instanceof IOException)
         {
-            logger.trace("unable to connect to {}: {}", remoteAddr, cause);
+            logger.trace("unable to connect to {}", remoteAddr, cause);
 
             // it's safe to get a reference to the channel from the Future instance, thus we can get the executor
             channelFuture.channel().eventLoop().schedule(this::connect, OutboundTcpConnection.OPEN_RETRY_DELAY * connectAttemptCount, TimeUnit.MILLISECONDS);

@@ -61,7 +61,7 @@ public class ClientHandshakeHandlerTest
     {
         if (buf != null && buf.refCnt() > 0)
             buf.release();
-        Assert.assertFalse(channel.finish());
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 
     @Test

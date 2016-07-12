@@ -65,7 +65,7 @@ public class MessageInHandlerTest
     {
         if (buf != null)
             buf.release();
-        Assert.assertFalse(channel.finish());
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 
     @Test

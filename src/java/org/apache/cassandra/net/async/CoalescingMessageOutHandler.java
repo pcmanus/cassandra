@@ -222,11 +222,9 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         }
         if (queue != null)
         {
-            while (true)
+            ChannelPromise p;
+            while ((p = queue.remove()) != null)
             {
-                ChannelPromise p = queue.remove();
-                if (p == null)
-                    break;
                 p.cancel(false);
                 outboundCount.decrementAndGet();
             }

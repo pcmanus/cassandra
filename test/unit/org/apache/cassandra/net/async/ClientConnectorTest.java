@@ -51,7 +51,7 @@ public class ClientConnectorTest
     @After
     public void tearDown()
     {
-        Assert.assertFalse(channel.finish());
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 
     @Test

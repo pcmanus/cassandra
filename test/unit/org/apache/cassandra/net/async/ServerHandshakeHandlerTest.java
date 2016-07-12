@@ -66,7 +66,7 @@ public class ServerHandshakeHandlerTest
     {
         if (buf != null)
             buf.release();
-        Assert.assertFalse(channel.finish());
+        Assert.assertFalse(channel.finishAndReleaseAll());
     }
 
     @Test
@@ -106,7 +106,7 @@ public class ServerHandshakeHandlerTest
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC << 2);
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
-        State state = handler.handleStart(channel.pipeline().firstContext(), buf);
+        handler.handleStart(channel.pipeline().firstContext(), buf);
     }
 
     @Test
@@ -148,7 +148,7 @@ public class ServerHandshakeHandlerTest
         Assert.assertTrue(channel.isOpen());
         Assert.assertTrue(channel.isActive());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
-        channel.outboundMessages().clear();
+        channel.releaseOutbound();
     }
 
     @Test

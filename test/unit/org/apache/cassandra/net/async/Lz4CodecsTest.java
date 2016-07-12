@@ -51,7 +51,9 @@ public class Lz4CodecsTest
         if (buf != null && buf.refCnt() > 0)
             buf.release();
 
-        Assert.assertTrue(embeddedChannel.finish());
+        // finish() calls close() on the codecs, and LZ4FRameEncoder sends a last message on close.
+        // so there will be a message in the outbound part of the channel (this is ok!)
+        Assert.assertTrue(embeddedChannel.finishAndReleaseAll());
     }
 
     @Test
@@ -82,5 +84,7 @@ public class Lz4CodecsTest
         uncompressed.getBytes(uncompressed.readerIndex(), b);
         Assert.assertEquals(s, new String(b, Charsets.UTF_8));
         uncompressed.release();
+        embeddedChannel.releaseInbound();
+        embeddedChannel.releaseOutbound();
     }
 }
