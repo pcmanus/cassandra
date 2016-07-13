@@ -407,6 +407,37 @@ public class SelectGroupByTest extends CQLTester
     }
 
     @Test
+    public void testGroupByWithoutPagingWithDeletions() throws Throwable
+    {
+        for (String compactOption : new String[] { "", " WITH COMPACT STORAGE" })
+        {
+            createTable("CREATE TABLE %s (a int, b int, c int, d int, e int, primary key (a, b, c, d))"
+                    + compactOption);
+
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 1, 3, 6)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 1, 6, 12)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 1, 9, 18)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 1, 12, 24)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 2, 3, 6)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 2, 6, 12)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 2, 9, 18)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 2, 12, 24)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 3, 3, 6)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 3, 6, 12)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 3, 9, 18)");
+            execute("INSERT INTO %s (a, b, c, d, e) VALUES (1, 2, 3, 12, 24)");
+
+            execute("DELETE FROM %s WHERE a = 1 AND b = 2 AND c = 1 AND d = 12");
+            execute("DELETE FROM %s WHERE a = 1 AND b = 2 AND c = 2 AND d = 9");
+
+            assertRows(execute("SELECT a, b, c, count(b), max(d) FROM %s GROUP BY a, b, c"),
+                       row(1, 2, 1, 3L, 9),
+                       row(1, 2, 2, 3L, 12),
+                       row(1, 2, 3, 4L, 12));
+        }
+    }
+
+    @Test
     public void testGroupByWithRangeNamesQueryWithoutPaging() throws Throwable
     {
         for (String compactOption : new String[] { "", " WITH COMPACT STORAGE" })

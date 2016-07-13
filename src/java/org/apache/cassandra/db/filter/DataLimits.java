@@ -172,6 +172,16 @@ public abstract class DataLimits
 
     public abstract int perPartitionCount();
 
+    public UnfilteredPartitionIterator filterOnReplica(UnfilteredPartitionIterator iter, int nowInSec)
+    {
+        return filter(iter, nowInSec);
+    }
+
+    public UnfilteredRowIterator filterOnReplica(UnfilteredRowIterator iter, int nowInSec)
+    {
+        return filter(iter, nowInSec);
+    }
+
     public UnfilteredPartitionIterator filter(UnfilteredPartitionIterator iter, int nowInSec)
     {
         return this.newCounter(nowInSec, false).applyTo(iter);
@@ -195,8 +205,17 @@ public abstract class DataLimits
 
     public static abstract class Counter extends StoppingTransformation<BaseRowIterator<?>>
     {
+        protected final int nowInSec;
+        protected final boolean assumeLiveData;
+
         // false means we do not propagate our stop signals onto the iterator, we only count
         private boolean enforceLimits = true;
+
+        protected Counter(int nowInSec, boolean assumeLiveData)
+        {
+            this.nowInSec = nowInSec;
+            this.assumeLiveData = assumeLiveData;
+        }
 
         public Counter onlyCount()
         {
@@ -251,6 +270,11 @@ public abstract class DataLimits
 
         public abstract boolean isDone();
         public abstract boolean isDoneForPartition();
+
+        protected boolean isLive(Row row)
+        {
+            return assumeLiveData || row.hasLiveData(nowInSec);
+        }
 
         @Override
         protected BaseRowIterator<?> applyToPartition(BaseRowIterator<?> partition)
@@ -405,9 +429,6 @@ public abstract class DataLimits
 
         protected class CQLCounter extends Counter
         {
-            protected final int nowInSec;
-            protected final boolean assumeLiveData;
-
             protected int rowCounted;
             protected int rowInCurrentPartition;
 
@@ -415,21 +436,20 @@ public abstract class DataLimits
 
             public CQLCounter(int nowInSec, boolean assumeLiveData)
             {
-                this.nowInSec = nowInSec;
-                this.assumeLiveData = assumeLiveData;
+                super(nowInSec, assumeLiveData);
             }
 
             @Override
             public void applyToPartition(DecoratedKey partitionKey, Row staticRow)
             {
                 rowInCurrentPartition = 0;
-                hasLiveStaticRow = !staticRow.isEmpty() && (assumeLiveData || staticRow.hasLiveData(nowInSec));
+                hasLiveStaticRow = !staticRow.isEmpty() && isLive(staticRow);
             }
 
             @Override
             public Row applyToRow(Row row)
             {
-                if (assumeLiveData || row.hasLiveData(nowInSec))
+                if (isLive(row))
                     incrementRowCount();
                 return row;
             }
@@ -690,7 +710,7 @@ public abstract class DataLimits
         }
 
         @Override
-        public UnfilteredPartitionIterator filter(UnfilteredPartitionIterator iter, int nowInSec)
+        public UnfilteredPartitionIterator filterOnReplica(UnfilteredPartitionIterator iter, int nowInSec)
         {
             // For range queries, the groups on the replicas need to be counted on a different way than on
             // the coordinator. By consequence we need to keep track of the fact that this call is performed
@@ -715,7 +735,7 @@ public abstract class DataLimits
 
         public Counter newCounter(int nowInSec, boolean assumeLiveData, boolean onReplica)
         {
-            return new GroupByAwareCounter(nowInSec, assumeLiveData, groupBySpec, state, onReplica);
+            return new GroupByAwareCounter(nowInSec, assumeLiveData, onReplica);
         }
 
         @Override
@@ -766,9 +786,6 @@ public abstract class DataLimits
 
         protected class GroupByAwareCounter extends Counter
         {
-            protected final int nowInSec;
-            protected final boolean assumeLiveData;
-
             private final GroupMaker groupMaker;
 
             /**
@@ -805,12 +822,9 @@ public abstract class DataLimits
 
             private GroupByAwareCounter(int nowInSec,
                                         boolean assumeLiveData,
-                                        AggregationSpecification groupBySpec,
-                                        GroupingState state,
                                         boolean onReplica)
             {
-                this.nowInSec = nowInSec;
-                this.assumeLiveData = assumeLiveData;
+                super(nowInSec, assumeLiveData);
                 this.groupMaker = groupBySpec.newGroupMaker(state);
 
                 // If the end of the partition was reached at the same time that the row limit, the last group might
@@ -828,9 +842,11 @@ public abstract class DataLimits
             {
                 if (partitionKey.getKey().equals(state.partitionKey()))
                 {
-                    // partitionKey is the last key for which we're returned rows in the previous page.
-                    // So, since we know we have returned rows, we know we have accounted for the static row
-                    // if any already, so force hasLiveStaticRow to false so we make sure to not count it
+                    // The only case were we could have state.partitionKey() equals to the partition key
+                    // is if the some of the partition rows have been returned in the previous page but the
+                    // partition was not exhausted (as the state partition key has not been updated yet).
+                    // Since we know we have returned rows, we know we have accounted for
+                    // the static row if any already, so force hasLiveStaticRow to false so we make sure to not count it
                     // once more.
                     hasLiveStaticRow = false;
                     hasReturnedRowsFromCurrentPartition = true;
@@ -855,9 +871,11 @@ public abstract class DataLimits
                         hasGroupStarted = false;
                     }
                     hasReturnedRowsFromCurrentPartition = false;
-                    hasLiveStaticRow = !staticRow.isEmpty() && (assumeLiveData || staticRow.hasLiveData(nowInSec));
+                    hasLiveStaticRow = !staticRow.isEmpty() && isLive(staticRow);
                 }
                 currentPartitionKey = partitionKey;
+                // If we are done we need to preserve the groupInCurrentPartition and rowCountedInCurrentPartition
+                // because the pager need to retrieve the count associated to the last value it has returned.  
                 if (!isDone())
                 {
                     groupInCurrentPartition = 0;
@@ -871,16 +889,12 @@ public abstract class DataLimits
                 // Transformation is calling applyToStatic for every partition even if staticRow() has not been called.
                 // If the static row is not empty , we need to make sure that the row is not returned if it belongs
                 // to a new group that should be excluded in the page returned to the user
-                if (!row.isEmpty() && (assumeLiveData || row.hasLiveData(nowInSec)))
+                if (!row.isEmpty()
+                     && hasLiveStaticRow   // check that the row is live and has not already been returned
+                     && isDone())
                 {
-                    if (hasLiveStaticRow)
-                    {
-                        if (isDone())
-                        {
-                            hasLiveStaticRow = false; // The row has not been returned
-                            return Rows.EMPTY_STATIC_ROW;
-                        }
-                    }
+                    hasLiveStaticRow = false; // The row has not been returned
+                    return Rows.EMPTY_STATIC_ROW;
                 }
 
                 return row;
@@ -899,9 +913,10 @@ public abstract class DataLimits
                         incrementGroupCount();
                         incrementGroupInCurrentPartitionCount();
                     }
+                    hasGroupStarted = false;
                 }
 
-                if ((assumeLiveData || row.hasLiveData(nowInSec)))
+                if (isLive(row))
                 {
                     if (isDoneForPartition())
                     {
@@ -911,10 +926,6 @@ public abstract class DataLimits
                     hasGroupStarted = true;
                     incrementRowCount();
                     hasReturnedRowsFromCurrentPartition = true;
-                }
-                else
-                {
-                    hasGroupStarted = false;
                 }
 
                 return row;
@@ -1002,11 +1013,6 @@ public abstract class DataLimits
                 // 2) the end of the data is reached
                 // We know that the end of the data is reached if the group limit has not been reached
                 // and the number of rows counted is smaller that the internal page size.
-
-                // The last group might have already been counted if :
-                // * the partition limit was reached for the previous partition
-                // * the previous partition was containing only one static row
-                // * the rows of the last group of the previous partition were marked as deleted
                 if (hasGroupStarted && groupCounted < groupLimit && rowCounted < rowLimit)
                 {
                     incrementGroupCount();
@@ -1081,8 +1087,6 @@ public abstract class DataLimits
             assert state == GroupingState.EMPTY_STATE || lastReturnedKey.equals(state.partitionKey());
             return new PagingGroupByAwareCounter(nowInSec,
                                                  assumeLiveData,
-                                                 groupBySpec,
-                                                 state,
                                                  onReplica);
         }
 
@@ -1090,11 +1094,9 @@ public abstract class DataLimits
         {
             private PagingGroupByAwareCounter(int nowInSec,
                                               boolean assumeLiveData,
-                                              AggregationSpecification groupBySpec,
-                                              GroupingState state,
                                               boolean onReplica)
             {
-                super(nowInSec, assumeLiveData, groupBySpec, state, onReplica);
+                super(nowInSec, assumeLiveData, onReplica);
             }
 
             @Override
@@ -1216,17 +1218,13 @@ public abstract class DataLimits
 
         protected class ThriftCounter extends Counter
         {
-            protected final int nowInSec;
-            protected final boolean assumeLiveData;
-
             protected int partitionsCounted;
             protected int cellsCounted;
             protected int cellsInCurrentPartition;
 
             public ThriftCounter(int nowInSec, boolean assumeLiveData)
             {
-                this.nowInSec = nowInSec;
-                this.assumeLiveData = assumeLiveData;
+                super(nowInSec, assumeLiveData);
             }
 
             @Override
@@ -1347,7 +1345,7 @@ public abstract class DataLimits
             public Row applyToRow(Row row)
             {
                 // In the internal format, a row == a super column, so that's what we want to count.
-                if (assumeLiveData || row.hasLiveData(nowInSec))
+                if (isLive(row))
                 {
                     ++cellsCounted;
                     if (++cellsInCurrentPartition >= cellPerPartitionLimit)
