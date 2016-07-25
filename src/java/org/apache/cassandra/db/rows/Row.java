@@ -488,6 +488,94 @@ public interface Row extends Unfiltered, Collection<ColumnData>
     }
 
     /**
+     * Row builder interface geared towards human.
+     * <p>
+     * Where the {@link Builder} deals with building rows efficiently from internal objects ({@code Cell}, {@code
+     * LivenessInfo}, ...), the {@code SimpleBuilder} is geared towards building rows from string column name and
+     * 'native' values (string for text, ints for numbers, et...). In particular, it is meant to be convenient, not
+     * efficient, and should be used only in place where performance is not of the utmost importance (it is used to
+     * build schema mutation for instance).
+     * <p>
+     * Also note that contrarily to {@link Builder}, the {@code SimpleBuilder} API has no {@code newRow()} method: it is
+     * expected that the clustering of the row built is provided by the constructor of the builder.
+     */
+    public interface SimpleBuilder
+    {
+        /**
+         * Sets the timestamp to use for the following additions.
+         * <p>
+         * Note that the for non-compact tables, this method must be called before any column addition for this
+         * timestamp to be used for the row {@code LivenessInfo}.
+         *
+         * @param timestamp the timestamp to use for following additions. If that timestamp hasn't been set, the current
+         * time in microseconds will be used.
+         * @return this builder.
+         */
+        public SimpleBuilder timestamp(long timestamp);
+
+        /**
+         * Sets the ttl to use for the following additions.
+         * <p>
+         * Note that the for non-compact tables, this method must be called before any column addition for this
+         * ttl to be used for the row {@code LivenessInfo}.
+         *
+         * @param ttl the ttl to use for following additions. If that ttl hasn't been set, no ttl will be used.
+         * @return this builder.
+         */
+        public SimpleBuilder ttl(int ttl);
+
+        /**
+         * Adds a value to a given column.
+         *
+         * @param columnName the name of the column for which to add a new value.
+         * @param value the value to add, which must be of the proper type for {@code columnName}. This can be {@code
+         * null} in which case the this is equivalent to {@code delete(columnName)}.
+         * @return this builder.
+         */
+        public SimpleBuilder add(String columnName, Object value);
+
+        /**
+         * Adds a value to a given column, without overwriting pre-existing values for collection.
+         * <p>
+         * This method is exactly the same than {@code add()} for non-collection and frozen column.
+         * For non-frozen collection columns however, it differs in that {@code add()} deletes any previous value (it
+         * inserts a complex deletion), which this method doesn't. This method is to be used when either new values for
+         * the collection must be "appended", or if you know there can't be pre-existing value for that column (in which
+         * case this is an ever so slightly less expensive call than {@code add()}).
+         *
+         * @param columnName the name of the column for which to add a new value.
+         * @param value the value to add, which must be of the proper type for {@code columnName}. This can be {@code
+         * null} in which case the this is equivalent to {@code delete(columnName)}.
+         * @return this builder.
+         */
+        public SimpleBuilder addNoOverwrite(String columnName, Object value);
+
+        /**
+         * Deletes the whole row.
+         * <p>
+         * If called, this is generally the only method called on the builder (outside of {@code timestamp()}.
+         *
+         * @return this builder.
+         */
+        public SimpleBuilder delete();
+
+        /**
+         * Removes the value for a given column (creating a tombstone).
+         *
+         * @param columnName the name of the column to delete.
+         * @return this builder.
+         */
+        public SimpleBuilder delete(String columnName);
+
+        /**
+         * Returns the built row.
+         *
+         * @return the built row.
+         */
+        public Row build();
+    }
+
+    /**
      * Utility class to help merging rows from multiple inputs (UnfilteredRowIterators).
      */
     public static class Merger

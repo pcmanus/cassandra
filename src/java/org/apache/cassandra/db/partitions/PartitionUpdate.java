@@ -618,6 +618,81 @@ public class PartitionUpdate extends AbstractBTreePartition
         return sb.toString();
     }
 
+    /**
+     * Creates a new simple partition update builder.
+     *
+     * @param metadata the metadata for the table this is a partition of.
+     * @param partitionKeyValues the values for partition key columns identifying this partition. The values for each
+     * partition key column can be passed either directly as {@code ByteBuffer} or using a "native" value (int for
+     * Int32Type, string for UTF8Type, ...). It is also allowed to pass a single {@code DecoratedKey} value directly.
+     * @return a newly created builder.
+     */
+    public static SimpleBuilder simpleBuilder(CFMetaData metadata, Object... partitionKeyValues)
+    {
+        return new SimpleBuilders.PartitionUpdateBuilder(metadata, partitionKeyValues);
+    }
+
+    /**
+     * Interface for building partition updates geared towards human.
+     * <p>
+     * This should generally not be used when performance matters too much, but provides a more convenient interface to
+     * build an update than using the class constructor when performance is not of the utmost importance.
+     */
+    public interface SimpleBuilder
+    {
+        /**
+         * Sets the timestamp to use for the following additions to this builder or any derived (row) builder.
+         *
+         * @param timestamp the timestamp to use for following additions. If that timestamp hasn't been set, the current
+         * time in microseconds will be used.
+         * @return this builder.
+         */
+        public SimpleBuilder timestamp(long timestamp);
+
+        /**
+         * Sets the ttl to use for the following additions to this builder or any derived (row) builder.
+         * <p>
+         * Note that the for non-compact tables, this method must be called before any column addition for this
+         * ttl to be used for the row {@code LivenessInfo}.
+         *
+         * @param ttl the ttl to use for following additions. If that ttl hasn't been set, no ttl will be used.
+         * @return this builder.
+         */
+        public SimpleBuilder ttl(int ttl);
+
+        /**
+         * Adds the row identifier by the provided clustering and return a builder for that row.
+         *
+         * @param clusteringValues the value for the clustering columns of the row to add to this build. There may be no
+         * values if either the table has no clustering column, or if you want to edit the static row. Note that as a
+         * shortcut it is also allowed to pass a {@code Clustering} object directly, in which case that should be the
+         * only argument.
+         * @return a builder for the row identified by {@code clusteringValues}.
+         */
+        public Row.SimpleBuilder row(Object... clusteringValues);
+
+        /**
+         * Deletes the partition identified by this builder (using a partition level deletion).
+         *
+         * @return this builder.
+         */
+        public SimpleBuilder delete();
+
+        /**
+         * Build the update represented by this builder.
+         *
+         * @return the built update.
+         */
+        public PartitionUpdate build();
+
+        /**
+         * As shortcut for {@code new Mutation(build())}.
+         *
+         * @return the built update, wrapped in a {@code Mutation}.
+         */
+        public Mutation buildAsMutation();
+    }
+
     public static class PartitionUpdateSerializer
     {
         public void serialize(PartitionUpdate update, DataOutputPlus out, int version) throws IOException
