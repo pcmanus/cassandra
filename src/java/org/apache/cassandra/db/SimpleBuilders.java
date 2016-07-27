@@ -157,6 +157,7 @@ public abstract class SimpleBuilders
         private final CFMetaData metadata;
         private final DecoratedKey key;
         private final Map<Clustering, RowBuilder> rowBuilders = new HashMap<>();
+        private List<RTBuilder> rangeBuilders = null; // We use that rarely, so create lazily
 
         private DeletionTime partitionDeletion = DeletionTime.LIVE;
 
@@ -164,6 +165,11 @@ public abstract class SimpleBuilders
         {
             this.metadata = metadata;
             this.key = makePartitonKey(metadata, partitionKeyValues);
+        }
+
+        public CFMetaData metadata()
+        {
+            return metadata;
         }
 
         public Row.SimpleBuilder row(Object... clusteringValues)
@@ -187,6 +193,16 @@ public abstract class SimpleBuilders
             return this;
         }
 
+        public RangeTombstoneBuilder addRangeTombstone()
+        {
+            if (rangeBuilders == null)
+                rangeBuilders = new ArrayList<>();
+
+            RTBuilder builder = new RTBuilder(metadata.comparator, new DeletionTime(timestamp, nowInSec));
+            rangeBuilders.add(builder);
+            return builder;
+        }
+
         public PartitionUpdate build()
         {
             // Collect all updated columns
@@ -199,6 +215,12 @@ public abstract class SimpleBuilders
             PartitionUpdate update = new PartitionUpdate(metadata, key, columns.build(), rowBuilders.size());
 
             update.addPartitionDeletion(partitionDeletion);
+            if (rangeBuilders != null)
+            {
+                for (RTBuilder builder : rangeBuilders)
+                    update.add(builder.build());
+            }
+
             for (RowBuilder builder : rowBuilders.values())
                 update.add(builder.build());
 
@@ -208,6 +230,67 @@ public abstract class SimpleBuilders
         public Mutation buildAsMutation()
         {
             return new Mutation(build());
+        }
+
+        private static class RTBuilder implements RangeTombstoneBuilder
+        {
+            private final ClusteringComparator comparator;
+            private final DeletionTime deletionTime;
+
+            private Object[] start;
+            private Object[] end;
+
+            private boolean startInclusive;
+            private boolean endInclusive;
+
+            private RTBuilder(ClusteringComparator comparator, DeletionTime deletionTime)
+            {
+                this.comparator = comparator;
+                this.deletionTime = deletionTime;
+            }
+
+            public RangeTombstoneBuilder start(Object... values)
+            {
+                this.start = values;
+                return this;
+            }
+
+            public RangeTombstoneBuilder end(Object... values)
+            {
+                this.end = values;
+                return this;
+            }
+
+            public RangeTombstoneBuilder inclStart()
+            {
+                this.startInclusive = true;
+                return this;
+            }
+
+            public RangeTombstoneBuilder exclStart()
+            {
+                this.startInclusive = false;
+                return this;
+            }
+
+            public RangeTombstoneBuilder inclEnd()
+            {
+                this.endInclusive = true;
+                return this;
+            }
+
+            public RangeTombstoneBuilder exclEnd()
+            {
+                this.endInclusive = false;
+                return this;
+            }
+
+            private RangeTombstone build()
+            {
+                ClusteringBound startBound = ClusteringBound.create(comparator, true, startInclusive, start);
+                ClusteringBound endBound = ClusteringBound.create(comparator, true, endInclusive, end);
+                return new RangeTombstone(Slice.make(startBound, endBound), deletionTime);
+            }
         }
     }
 
@@ -219,6 +302,7 @@ public abstract class SimpleBuilders
         private final Row.Builder builder;
 
         private boolean initiated;
+        private boolean noPrimaryKeyLivenessInfo;
 
         public RowBuilder(CFMetaData metadata, Object... clusteringColumns)
         {
@@ -242,7 +326,7 @@ public abstract class SimpleBuilders
                 return;
 
             // If a CQL table, add the "row marker"
-            if (metadata.isCQLTable())
+            if (metadata.isCQLTable() && !noPrimaryKeyLivenessInfo)
                 builder.addPrimaryKeyLivenessInfo(LivenessInfo.create(timestamp, ttl, nowInSec));
 
             initiated = true;
@@ -319,6 +403,12 @@ public abstract class SimpleBuilders
         public Row.SimpleBuilder delete(String columnName)
         {
             return add(columnName, null);
+        }
+
+        public Row.SimpleBuilder noPrimaryKeyLivenessInfo()
+        {
+            this.noPrimaryKeyLivenessInfo = true;
+            return this;
         }
 
         public Row build()

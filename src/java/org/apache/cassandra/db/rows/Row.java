@@ -568,6 +568,13 @@ public interface Row extends Unfiltered, Collection<ColumnData>
         public SimpleBuilder delete(String columnName);
 
         /**
+         * Don't include any primary key {@code LivenessInfo} in the built row.
+         *
+         * @return this builder.
+         */
+        public SimpleBuilder noPrimaryKeyLivenessInfo();
+
+        /**
          * Returns the built row.
          *
          * @return the built row.

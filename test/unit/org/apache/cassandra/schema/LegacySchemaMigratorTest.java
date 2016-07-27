@@ -626,12 +626,14 @@ public class LegacySchemaMigratorTest
              .add("read_repair_chance", table.params.readRepairChance)
              .add("speculative_retry", table.params.speculativeRetry.toString());
 
+        Map<String, Long> dropped = new HashMap<>();
         for (Map.Entry<ByteBuffer, CFMetaData.DroppedColumn> entry : table.getDroppedColumns().entrySet())
         {
             String name = UTF8Type.instance.getString(entry.getKey());
             CFMetaData.DroppedColumn column = entry.getValue();
-            adder.addMapEntry("dropped_columns", name, column.droppedTime);
+            dropped.put(name, column.droppedTime);
         }
+        adder.add("dropped_columns", dropped);
 
         adder.add("is_dense", table.isDense());
 
@@ -717,7 +719,7 @@ public class LegacySchemaMigratorTest
     {
         new RowUpdateBuilder(SystemKeyspace.LegacyTriggers, timestamp, mutation)
             .clustering(table.cfName, trigger.name)
-            .addMapEntry("trigger_options", "class", trigger.classOption)
+            .add("trigger_options", Collections.singletonMap("class", trigger.classOption))
             .build();
     }
 
@@ -730,14 +732,16 @@ public class LegacySchemaMigratorTest
         RowUpdateBuilder adder = new RowUpdateBuilder(SystemKeyspace.LegacyUsertypes, timestamp, mutation)
                                  .clustering(type.getNameAsString());
 
-        adder.resetCollection("field_names")
-             .resetCollection("field_types");
-
+        List<String> names = new ArrayList<>();
+        List<String> types = new ArrayList<>();
         for (int i = 0; i < type.size(); i++)
         {
-            adder.addListEntry("field_names", type.fieldName(i).toString())
-                 .addListEntry("field_types", type.fieldType(i).toString());
+            names.add(type.fieldName(i).toString());
+            types.add(type.fieldType(i).toString());
         }
+
+        adder.add("field_names", names)
+             .add("field_types", types);
 
         adder.build();
     }
@@ -756,14 +760,15 @@ public class LegacySchemaMigratorTest
              .add("return_type", function.returnType().toString())
              .add("called_on_null_input", function.isCalledOnNullInput());
 
-        adder.resetCollection("argument_names")
-             .resetCollection("argument_types");
-
+        List<ByteBuffer> names = new ArrayList<>();
+        List<String> types = new ArrayList<>();
         for (int i = 0; i < function.argNames().size(); i++)
         {
-            adder.addListEntry("argument_names", function.argNames().get(i).bytes)
-                 .addListEntry("argument_types", function.argTypes().get(i).toString());
+            names.add(function.argNames().get(i).bytes);
+            types.add(function.argTypes().get(i).toString());
         }
+        adder.add("argument_names", names)
+             .add("argument_types", types);
 
         adder.build();
     }
@@ -777,8 +782,6 @@ public class LegacySchemaMigratorTest
         RowUpdateBuilder adder = new RowUpdateBuilder(SystemKeyspace.LegacyAggregates, timestamp, mutation)
                                  .clustering(aggregate.name().name, functionSignatureWithTypes(aggregate));
 
-        adder.resetCollection("argument_types");
-
         adder.add("return_type", aggregate.returnType().toString())
              .add("state_func", aggregate.stateFunction().name().name);
 
@@ -789,9 +792,11 @@ public class LegacySchemaMigratorTest
         if (aggregate.initialCondition() != null)
             adder.add("initcond", aggregate.initialCondition());
 
+        List<String> types = new ArrayList<>();
         for (AbstractType<?> argType : aggregate.argTypes())
-            adder.addListEntry("argument_types", argType.toString());
+            types.add(argType.toString());
 
+        adder.add("argument_types", types);
         adder.build();
     }
 

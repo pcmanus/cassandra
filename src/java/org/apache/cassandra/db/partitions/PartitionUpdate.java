@@ -641,6 +641,11 @@ public class PartitionUpdate extends AbstractBTreePartition
     public interface SimpleBuilder
     {
         /**
+         * The metadata of the table this is a builder on.
+         */
+        public CFMetaData metadata();
+
+        /**
          * Sets the timestamp to use for the following additions to this builder or any derived (row) builder.
          *
          * @param timestamp the timestamp to use for following additions. If that timestamp hasn't been set, the current
@@ -651,14 +656,20 @@ public class PartitionUpdate extends AbstractBTreePartition
 
         /**
          * Sets the ttl to use for the following additions to this builder or any derived (row) builder.
-         * <p>
-         * Note that the for non-compact tables, this method must be called before any column addition for this
-         * ttl to be used for the row {@code LivenessInfo}.
          *
          * @param ttl the ttl to use for following additions. If that ttl hasn't been set, no ttl will be used.
          * @return this builder.
          */
         public SimpleBuilder ttl(int ttl);
+
+        /**
+         * Sets the current time to use for the following additions to this builder or any derived (row) builder.
+         *
+         * @param nowInSec the current time to use for following additions. If the current time hasn't been set, the current
+         * time in seconds will be used.
+         * @return this builder.
+         */
+        public SimpleBuilder nowInSec(int nowInSec);
 
         /**
          * Adds the row identifier by the provided clustering and return a builder for that row.
@@ -679,6 +690,13 @@ public class PartitionUpdate extends AbstractBTreePartition
         public SimpleBuilder delete();
 
         /**
+         * Adds a new range tombstone to this update, returning a builder for that range.
+         *
+         * @return the range tombstone builder for the newly added range.
+         */
+        public RangeTombstoneBuilder addRangeTombstone();
+
+        /**
          * Build the update represented by this builder.
          *
          * @return the built update.
@@ -691,6 +709,67 @@ public class PartitionUpdate extends AbstractBTreePartition
          * @return the built update, wrapped in a {@code Mutation}.
          */
         public Mutation buildAsMutation();
+
+        /**
+         * Interface to build range tombstone.
+         *
+         * By default, if no other methods are called, the represented range is inclusive of both start and end and
+         * includes everything (its start is {@code BOTTOM} and it's end is {@code TOP}).
+         */
+        public interface RangeTombstoneBuilder
+        {
+            /**
+             * Sets the start for the built range using the provided values.
+             *
+             * @param values the value for the start of the range. They act like the {@code clusteringValues} argument
+             * of the {@link PartitionUpdate.SimpleBuilder#row()} method, except that it doesn't have to be a full
+             * clustering, it can only be a prefix.
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder start(Object... values);
+
+            /**
+             * Sets the end for the built range using the provided values.
+             *
+             * @param values the value for the end of the range. They act like the {@code clusteringValues} argument
+             * of the {@link PartitionUpdate.SimpleBuilder#row()} method, except that it doesn't have to be a full
+             * clustering, it can only be a prefix.
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder end(Object... values);
+
+            /**
+             * Sets the start of this range as inclusive.
+             * <p>
+             * This is the default and don't need to be called, but can for explicitness.
+             *
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder inclStart();
+
+            /**
+             * Sets the start of this range as exclusive.
+             *
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder exclStart();
+
+            /**
+             * Sets the end of this range as inclusive.
+             * <p>
+             * This is the default and don't need to be called, but can for explicitness.
+             *
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder inclEnd();
+
+            /**
+             * Sets the end of this range as exclusive.
+             *
+             * @return this builder.
+             */
+            public RangeTombstoneBuilder exclEnd();
+        }
     }
 
     public static class PartitionUpdateSerializer
