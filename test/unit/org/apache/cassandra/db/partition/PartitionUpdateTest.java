@@ -35,17 +35,14 @@ public class PartitionUpdateTest extends CQLTester
         createTable("CREATE TABLE %s (key text, clustering int, a int, s int static, PRIMARY KEY(key, clustering))");
         CFMetaData cfm = currentTableMetadata();
 
-        long timestamp = FBUtilities.timestampMicros();
-
-        UpdateBuilder builder = UpdateBuilder.create(cfm, timestamp, "key0");
+        UpdateBuilder builder = UpdateBuilder.create(cfm, "key0");
         Assert.assertEquals(0, builder.build().operationCount());
         Assert.assertEquals(1, builder.newRow(1).add("a", 1).build().operationCount());
 
-
-        builder = UpdateBuilder.create(cfm, timestamp, "key0");
+        builder = UpdateBuilder.create(cfm, "key0");
         Assert.assertEquals(1, builder.newRow().add("s", 1).build().operationCount());
 
-        builder = UpdateBuilder.create(cfm, timestamp, "key0");
+        builder = UpdateBuilder.create(cfm, "key0");
         builder.newRow().add("s", 1);
         builder.newRow(1).add("a", 1);
         Assert.assertEquals(2, builder.build().operationCount());

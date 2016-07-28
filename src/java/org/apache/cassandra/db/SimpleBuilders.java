@@ -240,8 +240,8 @@ public abstract class SimpleBuilders
             private Object[] start;
             private Object[] end;
 
-            private boolean startInclusive;
-            private boolean endInclusive;
+            private boolean startInclusive = true;
+            private boolean endInclusive = true;
 
             private RTBuilder(ClusteringComparator comparator, DeletionTime deletionTime)
             {
@@ -288,7 +288,7 @@ public abstract class SimpleBuilders
             private RangeTombstone build()
             {
                 ClusteringBound startBound = ClusteringBound.create(comparator, true, startInclusive, start);
-                ClusteringBound endBound = ClusteringBound.create(comparator, true, endInclusive, end);
+                ClusteringBound endBound = ClusteringBound.create(comparator, false, endInclusive, end);
                 return new RangeTombstone(Slice.make(startBound, endBound), deletionTime);
             }
         }
