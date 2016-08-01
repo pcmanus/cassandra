@@ -420,7 +420,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             // we'll probably want to optimize by pushing it down the layer (like for dropped columns) as it
             // would be more efficient (the sooner we discard stuff we know we don't care, the less useless
             // processing we do on it).
-            return limits().filterOnReplica(updatedFilter.filter(resultIterator, nowInSec()), nowInSec());
+            return limits().filter(updatedFilter.filter(resultIterator, nowInSec()), nowInSec());
         }
         catch (RuntimeException | Error e)
         {
@@ -696,7 +696,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             int nowInSec = in.readInt();
             ColumnFilter columnFilter = ColumnFilter.serializer.deserialize(in, version, metadata);
             RowFilter rowFilter = RowFilter.serializer.deserialize(in, version, metadata);
-            DataLimits limits = DataLimits.serializer.deserialize(in, version,  metadata.comparator, kind == Kind.PARTITION_RANGE);
+            DataLimits limits = DataLimits.serializer.deserialize(in, version,  metadata.comparator);
             Optional<IndexMetadata> index = hasIndex
                                             ? deserializeIndexMetadata(in, version, metadata)
                                             : Optional.empty();

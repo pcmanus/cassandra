@@ -258,7 +258,7 @@ public class SelectStatement implements CQLStatement
     {
         boolean isPartitionRangeQuery = restrictions.isKeyRange() || restrictions.usesSecondaryIndexing();
 
-        DataLimits limit = getDataLimits(isPartitionRangeQuery, userLimit, perPartitionLimit, pageSize);
+        DataLimits limit = getDataLimits(userLimit, perPartitionLimit, pageSize);
 
         if (isPartitionRangeQuery)
             return getRangeCommand(options, limit, nowInSec);
@@ -637,7 +637,7 @@ public class SelectStatement implements CQLStatement
         return builder.build();
     }
 
-    private DataLimits getDataLimits(boolean isPartitionRangeQuery, int userLimit, int perPartitionLimit, int pageSize)
+    private DataLimits getDataLimits(int userLimit, int perPartitionLimit, int pageSize)
     {
         int cqlRowLimit = DataLimits.NO_LIMIT;
         int cqlPerPartitionLimit = DataLimits.NO_LIMIT;
@@ -662,8 +662,7 @@ public class SelectStatement implements CQLStatement
             if (parameters.isDistinct)
                 return DataLimits.distinctLimits(cqlRowLimit);
 
-            return DataLimits.groupByLimits(isPartitionRangeQuery,
-                                            cqlRowLimit,
+            return DataLimits.groupByLimits(cqlRowLimit,
                                             cqlPerPartitionLimit,
                                             pageSize,
                                             aggregationSpec);

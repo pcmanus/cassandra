@@ -92,13 +92,12 @@ public abstract class DataLimits
              : new CQLLimits(cqlRowLimit, perPartitionLimit, isDistinct);
     }
 
-    public static DataLimits groupByLimits(boolean isRangeQuery,
-                                           int groupLimit,
+    public static DataLimits groupByLimits(int groupLimit,
                                            int groupPerPartitionLimit,
                                            int rowLimit,
                                            AggregationSpecification groupBySpec)
     {
-        return new CQLGroupByLimits(isRangeQuery, groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec);
+        return new CQLGroupByLimits(groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec);
     }
 
     public static DataLimits distinctLimits(int cqlRowLimit)
@@ -172,15 +171,11 @@ public abstract class DataLimits
 
     public abstract int perPartitionCount();
 
-    public UnfilteredPartitionIterator filterOnReplica(UnfilteredPartitionIterator iter, int nowInSec)
-    {
-        return filter(iter, nowInSec);
-    }
-
-    public UnfilteredRowIterator filterOnReplica(UnfilteredRowIterator iter, int nowInSec)
-    {
-        return filter(iter, nowInSec);
-    }
+    /**
+     * Returns equivalent limits but where any internal state kept to track where we are of paging and/or grouping is
+     * discarded.
+     */
+    public abstract DataLimits withoutState();
 
     public UnfilteredPartitionIterator filter(UnfilteredPartitionIterator iter, int nowInSec)
     {
@@ -419,6 +414,11 @@ public abstract class DataLimits
             return perPartitionLimit;
         }
 
+        public DataLimits withoutState()
+        {
+            return this;
+        }
+
         public float estimateTotalResults(ColumnFamilyStore cfs)
         {
             // TODO: we should start storing stats on the number of rows (instead of the number of cells, which
@@ -554,6 +554,12 @@ public abstract class DataLimits
         }
 
         @Override
+        public DataLimits withoutState()
+        {
+            return new CQLLimits(rowLimit, perPartitionLimit, isDistinct);
+        }
+
+        @Override
         public Counter newCounter(int nowInSec, boolean assumeLiveData)
         {
             return new PagingAwareCounter(nowInSec, assumeLiveData);
@@ -595,11 +601,6 @@ public abstract class DataLimits
     private static class CQLGroupByLimits extends CQLLimits
     {
         /**
-         * true if the query is a range query
-         */
-        protected boolean isRangeQuery;
-
-        /**
          * The <code>GroupMaker</code> state
          */
         protected final GroupingState state;
@@ -619,24 +620,21 @@ public abstract class DataLimits
          */
         protected final int groupPerPartitionLimit;
 
-        public CQLGroupByLimits(boolean isRangeQuery,
-                                int groupLimit,
+        public CQLGroupByLimits(int groupLimit,
                                 int groupPerPartitionLimit,
                                 int rowLimit,
                                 AggregationSpecification groupBySpec)
         {
-            this(isRangeQuery, groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec, GroupingState.EMPTY_STATE);
+            this(groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec, GroupingState.EMPTY_STATE);
         }
 
-        private CQLGroupByLimits(boolean isRangeQuery,
-                                 int groupLimit,
+        private CQLGroupByLimits(int groupLimit,
                                  int groupPerPartitionLimit,
                                  int rowLimit,
                                  AggregationSpecification groupBySpec,
                                  GroupingState state)
         {
             super(rowLimit, NO_LIMIT, false);
-            this.isRangeQuery = isRangeQuery;
             this.groupLimit = groupLimit;
             this.groupPerPartitionLimit = groupPerPartitionLimit;
             this.groupBySpec = groupBySpec;
@@ -677,8 +675,7 @@ public abstract class DataLimits
         @Override
         public DataLimits forPaging(int pageSize)
         {
-            return new CQLGroupByLimits(isRangeQuery,
-                                        pageSize,
+            return new CQLGroupByLimits(pageSize,
                                         groupPerPartitionLimit,
                                         rowLimit,
                                         groupBySpec,
@@ -688,8 +685,7 @@ public abstract class DataLimits
         @Override
         public DataLimits forPaging(int pageSize, ByteBuffer lastReturnedKey, int lastReturnedKeyRemaining)
         {
-            return new CQLGroupByPagingLimits(isRangeQuery,
-                                              pageSize,
+            return new CQLGroupByPagingLimits(pageSize,
                                               groupPerPartitionLimit,
                                               rowLimit,
                                               groupBySpec,
@@ -701,8 +697,7 @@ public abstract class DataLimits
         @Override
         public DataLimits forGroupByInternalPaging(GroupingState state)
         {
-            return new CQLGroupByLimits(isRangeQuery,
-                                        rowLimit,
+            return new CQLGroupByLimits(rowLimit,
                                         groupPerPartitionLimit,
                                         rowLimit,
                                         groupBySpec,
@@ -710,32 +705,9 @@ public abstract class DataLimits
         }
 
         @Override
-        public UnfilteredPartitionIterator filterOnReplica(UnfilteredPartitionIterator iter, int nowInSec)
-        {
-            // For range queries, the groups on the replicas need to be counted on a different way than on
-            // the coordinator. By consequence we need to keep track of the fact that this call is performed
-            // on the replica.
-            return this.newCounter(nowInSec, false, true).applyTo(iter);
-        }
-
-        @Override
-        public UnfilteredRowIterator filter(UnfilteredRowIterator iter, int nowInSec)
-        {
-            // For range queries, the groups on the replicas need to be counted on a different way than on
-            // the coordinator. By consequence we need to keep track of the fact that this call is performed
-            // on the replica.
-            return this.newCounter(nowInSec, false, true).applyTo(iter);
-        }
-
-        @Override
         public Counter newCounter(int nowInSec, boolean assumeLiveData)
         {
-            return newCounter(nowInSec, assumeLiveData, false);
-        }
-
-        public Counter newCounter(int nowInSec, boolean assumeLiveData, boolean onReplica)
-        {
-            return new GroupByAwareCounter(nowInSec, assumeLiveData, onReplica);
+            return new GroupByAwareCounter(nowInSec, assumeLiveData);
         }
 
         @Override
@@ -748,6 +720,14 @@ public abstract class DataLimits
         public int perPartitionCount()
         {
             return groupPerPartitionLimit;
+        }
+
+        @Override
+        public DataLimits withoutState()
+        {
+            return state == GroupingState.EMPTY_STATE
+                 ? this
+                 : new CQLGroupByLimits(groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec);
         }
 
         @Override
@@ -820,9 +800,7 @@ public abstract class DataLimits
 
             protected boolean hasReturnedRowsFromCurrentPartition;
 
-            private GroupByAwareCounter(int nowInSec,
-                                        boolean assumeLiveData,
-                                        boolean onReplica)
+            private GroupByAwareCounter(int nowInSec, boolean assumeLiveData)
             {
                 super(nowInSec, assumeLiveData);
                 this.groupMaker = groupBySpec.newGroupMaker(state);
@@ -830,11 +808,7 @@ public abstract class DataLimits
                 // If the end of the partition was reached at the same time than the row limit, the last group might
                 // not have been counted yet. Due to that we need to guess, based on the state, if the previous group
                 // is still open.
-                // For range queries, the SP might choose to send multiple requests at the same time, so we need to
-                // ignore that logic on the replicas (as it will result in a wrong number of rows being return for
-                // some partitions) and rely on the filtering on the coordinator to get the correct number of groups.
-                if (!(isRangeQuery && onReplica))
-                    hasGroupStarted = state.hasClustering();
+                hasGroupStarted = state.hasClustering();
             }
 
             @Override
@@ -1030,8 +1004,7 @@ public abstract class DataLimits
 
         private final int lastReturnedKeyRemaining;
 
-        public CQLGroupByPagingLimits(boolean isRangeQuery,
-                                      int groupLimit,
+        public CQLGroupByPagingLimits(int groupLimit,
                                       int groupPerPartitionLimit,
                                       int rowLimit,
                                       AggregationSpecification groupBySpec,
@@ -1039,8 +1012,7 @@ public abstract class DataLimits
                                       ByteBuffer lastReturnedKey,
                                       int lastReturnedKeyRemaining)
         {
-            super(isRangeQuery,
-                  groupLimit,
+            super(groupLimit,
                   groupPerPartitionLimit,
                   rowLimit,
                   groupBySpec,
@@ -1077,26 +1049,21 @@ public abstract class DataLimits
         @Override
         public Counter newCounter(int nowInSec, boolean assumeLiveData)
         {
-            return newCounter(nowInSec,
-                              assumeLiveData,
-                              false);
+            assert state == GroupingState.EMPTY_STATE || lastReturnedKey.equals(state.partitionKey());
+            return new PagingGroupByAwareCounter(nowInSec, assumeLiveData);
         }
 
-        public Counter newCounter(int nowInSec, boolean assumeLiveData, boolean onReplica)
+        @Override
+        public DataLimits withoutState()
         {
-            assert state == GroupingState.EMPTY_STATE || lastReturnedKey.equals(state.partitionKey());
-            return new PagingGroupByAwareCounter(nowInSec,
-                                                 assumeLiveData,
-                                                 onReplica);
+            return new CQLGroupByLimits(groupLimit, groupPerPartitionLimit, rowLimit, groupBySpec);
         }
 
         private class PagingGroupByAwareCounter extends GroupByAwareCounter
         {
-            private PagingGroupByAwareCounter(int nowInSec,
-                                              boolean assumeLiveData,
-                                              boolean onReplica)
+            private PagingGroupByAwareCounter(int nowInSec, boolean assumeLiveData)
             {
-                super(nowInSec, assumeLiveData, onReplica);
+                super(nowInSec, assumeLiveData);
             }
 
             @Override
@@ -1207,6 +1174,11 @@ public abstract class DataLimits
         public int perPartitionCount()
         {
             return cellPerPartitionLimit;
+        }
+
+        public DataLimits withoutState()
+        {
+            return this;
         }
 
         public float estimateTotalResults(ColumnFamilyStore cfs)
@@ -1404,7 +1376,7 @@ public abstract class DataLimits
             }
         }
 
-        public DataLimits deserialize(DataInputPlus in, int version, ClusteringComparator comparator, boolean isRangeQuery) throws IOException
+        public DataLimits deserialize(DataInputPlus in, int version, ClusteringComparator comparator) throws IOException
         {
             Kind kind = Kind.values()[in.readUnsignedByte()];
             switch (kind)
@@ -1433,8 +1405,7 @@ public abstract class DataLimits
                     GroupingState state = GroupingState.serializer.deserialize(in, version, comparator);
 
                     if (kind == Kind.CQL_GROUP_BY_LIMIT)
-                        return new CQLGroupByLimits(isRangeQuery,
-                                                    groupLimit,
+                        return new CQLGroupByLimits(groupLimit,
                                                     groupPerPartitionLimit,
                                                     rowLimit,
                                                     groupBySpec,
@@ -1442,8 +1413,7 @@ public abstract class DataLimits
 
                     ByteBuffer lastKey = ByteBufferUtil.readWithVIntLength(in);
                     int lastRemaining = (int) in.readUnsignedVInt();
-                    return new CQLGroupByPagingLimits(isRangeQuery,
-                                                      groupLimit,
+                    return new CQLGroupByPagingLimits(groupLimit,
                                                       groupPerPartitionLimit,
                                                       rowLimit,
                                                       groupBySpec,
