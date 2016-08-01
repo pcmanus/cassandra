@@ -827,13 +827,13 @@ public abstract class DataLimits
                 super(nowInSec, assumeLiveData);
                 this.groupMaker = groupBySpec.newGroupMaker(state);
 
-                // If the end of the partition was reached at the same time that the row limit, the last group might
+                // If the end of the partition was reached at the same time than the row limit, the last group might
                 // not have been counted yet. Due to that we need to guess, based on the state, if the previous group
                 // is still open.
                 // For range queries, the SP might choose to send multiple requests at the same time, so we need to
                 // ignore that logic on the replicas (as it will result in a wrong number of rows being return for
                 // some partitions) and rely on the filtering on the coordinator to get the correct number of groups.
-                if (!isRangeQuery || (isRangeQuery && !onReplica))
+                if (!(isRangeQuery && onReplica))
                     hasGroupStarted = state.hasClustering();
             }
 
@@ -843,7 +843,7 @@ public abstract class DataLimits
                 if (partitionKey.getKey().equals(state.partitionKey()))
                 {
                     // The only case were we could have state.partitionKey() equals to the partition key
-                    // is if the some of the partition rows have been returned in the previous page but the
+                    // is if some of the partition rows have been returned in the previous page but the
                     // partition was not exhausted (as the state partition key has not been updated yet).
                     // Since we know we have returned rows, we know we have accounted for
                     // the static row if any already, so force hasLiveStaticRow to false so we make sure to not count it
@@ -854,12 +854,12 @@ public abstract class DataLimits
                 }
                 else
                 {
-                    // We need to increment our count of groups if we have reached a new one unless it has
-                    // already been done.
-                    // The cases where it could have been done are:
+                    // We need to increment our count of groups if we have reached a new one and unless we had no new
+                    // content added since we closed our last group (that is, if hasGroupStarted). Note that we may get
+                    // here with hasGroupStarted == false in the following cases:
                     // * the partition limit was reached for the previous partition
                     // * the previous partition was containing only one static row
-                    // * the rows of the last group of the previous partition were marked as deleted
+                    // * the rows of the last group of the previous partition were all marked as deleted
                     if (hasGroupStarted && groupMaker.isNewGroup(partitionKey, Clustering.STATIC_CLUSTERING))
                     {
                         incrementGroupCount();
@@ -875,7 +875,7 @@ public abstract class DataLimits
                 }
                 currentPartitionKey = partitionKey;
                 // If we are done we need to preserve the groupInCurrentPartition and rowCountedInCurrentPartition
-                // because the pager need to retrieve the count associated to the last value it has returned.  
+                // because the pager need to retrieve the count associated to the last value it has returned.
                 if (!isDone())
                 {
                     groupInCurrentPartition = 0;
@@ -886,17 +886,14 @@ public abstract class DataLimits
             @Override
             protected Row applyToStatic(Row row)
             {
-                // Transformation is calling applyToStatic for every partition even if staticRow() has not been called.
-                // If the static row is not empty , we need to make sure that the row is not returned if it belongs
-                // to a new group that should be excluded in the page returned to the user
-                if (!row.isEmpty()
-                     && hasLiveStaticRow   // check that the row is live and has not already been returned
-                     && isDone())
+                // It's possible that we're "done" if the partition we just started bumped the number of groups (in
+                // applyToPartition() above), in which case Transformation will still call this method. In that case, we
+                // want to ignore the static row, it should (and will) be returned with the next page/group if needs be.
+                if (isDone())
                 {
                     hasLiveStaticRow = false; // The row has not been returned
                     return Rows.EMPTY_STATIC_ROW;
                 }
-
                 return row;
             }
 
@@ -916,13 +913,16 @@ public abstract class DataLimits
                     hasGroupStarted = false;
                 }
 
+                // That row may have made us increment the group count, which may mean we're done for this partition, in
+                // which case we shouldn't count this row (it won't be returned).
+                if (isDoneForPartition())
+                {
+                    hasGroupStarted = false;
+                    return null;
+                }
+
                 if (isLive(row))
                 {
-                    if (isDoneForPartition())
-                    {
-                        hasGroupStarted = false;
-                        return null;
-                    }
                     hasGroupStarted = true;
                     incrementRowCount();
                     hasReturnedRowsFromCurrentPartition = true;
@@ -1012,7 +1012,7 @@ public abstract class DataLimits
                 // 1) a new group is reached
                 // 2) the end of the data is reached
                 // We know that the end of the data is reached if the group limit has not been reached
-                // and the number of rows counted is smaller that the internal page size.
+                // and the number of rows counted is smaller than the internal page size.
                 if (hasGroupStarted && groupCounted < groupLimit && rowCounted < rowLimit)
                 {
                     incrementGroupCount();

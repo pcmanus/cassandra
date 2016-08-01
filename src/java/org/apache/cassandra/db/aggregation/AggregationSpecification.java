@@ -143,7 +143,7 @@ public abstract class AggregationSpecification
                 case AGGREGATE_BY_PK_PREFIX:
                     out.writeUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
                     break;
-                default: 
+                default:
                     throw new AssertionError();
             }
         }
@@ -158,7 +158,7 @@ public abstract class AggregationSpecification
                 case AGGREGATE_BY_PK_PREFIX:
                     int clusteringPrefixSize = (int) in.readUnsignedVInt();
                     return AggregationSpecification.aggregatePkPrefix(comparator, clusteringPrefixSize);
-                default: 
+                default:
                     throw new AssertionError();
             }
         }
@@ -173,7 +173,7 @@ public abstract class AggregationSpecification
                 case AGGREGATE_BY_PK_PREFIX:
                     size += TypeSizes.sizeofUnsignedVInt(((AggregateByPkPrefix) aggregationSpec).clusteringPrefixSize);
                     break;
-                default: 
+                default:
                     throw new AssertionError();
             }
             return size;

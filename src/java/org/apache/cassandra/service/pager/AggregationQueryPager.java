@@ -31,26 +31,21 @@ import org.apache.cassandra.service.ClientState;
 
 /**
  * {@code QueryPager} that takes care of fetching the pages for aggregation queries.
- * 
- * <p>For aggregation/group by queries, the user page size is in number of groups. Due to that the number of rows
- * to fetch might exceed the page size. To avoid running into an OOM error this pager will page the queries internally 
- * into sub-pages.</p>
+ * <p>
+ * For aggregation/group by queries, the user page size is in number of groups. But each group could be composed of very
+ * many rows so to avoid running into OOMs, this pager will page internal queries into sub-pages. So each call to
+ * {@link fetchPage} may (transparently) yield multiple internal queries (sub-pages).
  */
 public final class AggregationQueryPager implements QueryPager
 {
-    /**
-     * The limits
-     */
     private final DataLimits limits;
 
-    /**
-     * The pager used to retrieve the next page.
-     */
-    private QueryPager pager;
+    // The sub-pager, used to retrieve the next sub-page.
+    private QueryPager subPager;
 
-    public AggregationQueryPager(QueryPager pager, DataLimits limits)
+    public AggregationQueryPager(QueryPager subPager, DataLimits limits)
     {
-        this.pager = pager;
+        this.subPager = subPager;
         this.limits = limits;
     }
 
@@ -68,7 +63,7 @@ public final class AggregationQueryPager implements QueryPager
     @Override
     public ReadExecutionController executionController()
     {
-        return pager.executionController();
+        return subPager.executionController();
     }
 
     @Override
@@ -83,19 +78,19 @@ public final class AggregationQueryPager implements QueryPager
     @Override
     public boolean isExhausted()
     {
-        return pager.isExhausted();
+        return subPager.isExhausted();
     }
 
     @Override
     public int maxRemaining()
     {
-        return pager.maxRemaining();
+        return subPager.maxRemaining();
     }
 
     @Override
     public PagingState state()
     {
-        return pager.state();
+        return subPager.state();
     }
 
     @Override
@@ -217,7 +212,7 @@ public final class AggregationQueryPager implements QueryPager
         {
             if (partitionIterator == null)
             {
-                initialMaxRemaining = pager.maxRemaining();
+                initialMaxRemaining = subPager.maxRemaining();
                 partitionIterator = fetchSubPage(pageSize);
             }
 
@@ -225,16 +220,16 @@ public final class AggregationQueryPager implements QueryPager
             {
                 partitionIterator.close();
 
-                int counted = initialMaxRemaining - pager.maxRemaining();
+                int counted = initialMaxRemaining - subPager.maxRemaining();
 
-                if (isDone(pageSize, counted) || pager.isExhausted())
+                if (isDone(pageSize, counted) || subPager.isExhausted())
                 {
                     endOfData = true;
                     closed = true;
                     return;
                 }
 
-                pager = updatePagerLimit(pager, limits, lastPartitionKey, lastClustering);
+                subPager = updatePagerLimit(subPager, limits, lastPartitionKey, lastClustering);
                 partitionIterator = fetchSubPage(computeSubPageSize(pageSize, counted));
             }
 
@@ -285,8 +280,8 @@ public final class AggregationQueryPager implements QueryPager
          */
         private final PartitionIterator fetchSubPage(int subPageSize)
         {
-            return consistency != null ? pager.fetchPage(subPageSize, consistency, clientState)
-                                       : pager.fetchPageInternal(subPageSize, executionController);
+            return consistency != null ? subPager.fetchPage(subPageSize, consistency, clientState)
+                                       : subPager.fetchPageInternal(subPageSize, executionController);
         }
 
         public final RowIterator next()
