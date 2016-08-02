@@ -95,7 +95,7 @@ public final class TraceKeyspace
                .add("request", request)
                .add("started_at", new Date(startedAt))
                .add("command", command)
-               .addNoOverwrite("parameters", parameters);
+               .appendAll("parameters", parameters);
 
         return builder.buildAsMutation();
     }

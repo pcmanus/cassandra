@@ -535,20 +535,24 @@ public interface Row extends Unfiltered, Collection<ColumnData>
         public SimpleBuilder add(String columnName, Object value);
 
         /**
-         * Adds a value to a given column, without overwriting pre-existing values for collection.
+         * Appends new values to a given non-frozen collection column.
          * <p>
-         * This method is exactly the same than {@code add()} for non-collection and frozen column.
-         * For non-frozen collection columns however, it differs in that {@code add()} deletes any previous value (it
-         * inserts a complex deletion), which this method doesn't. This method is to be used when either new values for
-         * the collection must be "appended", or if you know there can't be pre-existing value for that column (in which
-         * case this is an ever so slightly less expensive call than {@code add()}).
+         * This method is similar to {@code add()} but the collection elements added through this method are "appended"
+         * to any pre-exising elements. In other words, this is like {@code add()} except that it doesn't delete the
+         * previous value of the collection. This can only be called on non-frozen collection columns.
+         * <p>
+         * Note that this method can be used in replacement of {@code add()} if you know that there can't be any
+         * pre-existing value for that column, in which case this is slightly less expensive as it avoid the collection
+         * tombstone inherent to {@code add()}.
          *
-         * @param columnName the name of the column for which to add a new value.
-         * @param value the value to add, which must be of the proper type for {@code columnName}. This can be {@code
-         * null} in which case the this is equivalent to {@code delete(columnName)}.
+         * @param columnName the name of the column for which to add a new value, which must be a non-frozen collection.
+         * @param value the value to add, which must be of the proper type for {@code columnName} (in other words, it
+         * <b>must</b> be a collection).
          * @return this builder.
+         *
+         * @throws IllegalArgumentException if columnName is not a non-frozen collection column.
          */
-        public SimpleBuilder addNoOverwrite(String columnName, Object value);
+        public SimpleBuilder appendAll(String columnName, Object value);
 
         /**
          * Deletes the whole row.

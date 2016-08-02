@@ -95,7 +95,7 @@ public abstract class SimpleBuilders
             return (T)this;
         }
 
-        public T nowInSec(int ttl)
+        public T nowInSec(int nowInSec)
         {
             this.nowInSec = nowInSec;
             return (T)this;
@@ -337,7 +337,7 @@ public abstract class SimpleBuilders
             return add(columnName, value, true);
         }
 
-        public Row.SimpleBuilder addNoOverwrite(String columnName, Object value)
+        public Row.SimpleBuilder appendAll(String columnName, Object value)
         {
             return add(columnName, value, false);
         }
@@ -346,6 +346,10 @@ public abstract class SimpleBuilders
         {
             maybeInit();
             ColumnDefinition column = getColumn(columnName);
+
+            if (!overwriteForCollection && !(column.type.isMultiCell() && column.type.isCollection()))
+                throw new IllegalArgumentException("appendAll() can only be called on non-frozen colletions");
+
             columns.add(column);
 
             if (!column.type.isMultiCell())
@@ -377,7 +381,7 @@ public abstract class SimpleBuilders
                     SetType st = (SetType)column.type;
                     assert value instanceof Set;
                     for (Object elt : (Set)value)
-                        builder.addCell(cell(column, ByteBufferUtil.EMPTY_BYTE_BUFFER, CellPath.create(toByteBuffer(value, st.getElementsType()))));
+                        builder.addCell(cell(column, ByteBufferUtil.EMPTY_BYTE_BUFFER, CellPath.create(toByteBuffer(elt, st.getElementsType()))));
                     break;
                 case MAP:
                     MapType mt = (MapType)column.type;

@@ -142,7 +142,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         builder.row()
                .timestamp(batch.creationTime)
                .add("version", MessagingService.current_version)
-               .addNoOverwrite("mutations", mutations);
+               .appendAll("mutations", mutations);
 
         builder.buildAsMutation().apply(durableWrites);
     }
