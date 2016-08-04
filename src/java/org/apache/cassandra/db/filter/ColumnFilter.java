@@ -79,6 +79,10 @@ public class ColumnFilter
     {
         assert !isFetchAll || metadata != null;
         assert isFetchAll || queried != null;
+        // We should never "skip" values for counters as that breaks merge (see #11726). So me must have _fetched_ ==
+        // _queried_ for every counter table, which mean that if isFetchAll and it's a counter table, queried must be
+        // null.
+        assert !isFetchAll || !metadata.isCounter() || queried == null;
         this.isFetchAll = isFetchAll;
         this.metadata = metadata;
         this.queried = queried;
@@ -293,6 +297,12 @@ public class ColumnFilter
 
         public Builder add(ColumnDefinition c)
         {
+            // If we're fetching all columns, then we must consider all columns queried as the optimizations we do for
+            // fetched but not queried columns (using an empty ByteBuffer for their value) breaks for counters (#11726).
+            // So just ignore any "queried" columns for counter tables, making _fetched_ == _queried_ always.
+            if (metadata != null && metadata.isCounter())
+                return this;
+
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
             queriedBuilder.add(c);
@@ -301,6 +311,10 @@ public class ColumnFilter
 
         public Builder addAll(Iterable<ColumnDefinition> columns)
         {
+            // See comment in add() above
+            if (metadata != null && metadata.isCounter())
+                return this;
+
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
             queriedBuilder.addAll(columns);
@@ -309,6 +323,11 @@ public class ColumnFilter
 
         private Builder addSubSelection(ColumnSubselection subSelection)
         {
+            // The same argument as in add() stands for subSelection (we actually don't allow collections on counters,
+            // but better safe than sorry)
+            if (metadata != null && metadata.isCounter())
+                return this;
+
             add(subSelection.column());
             if (subSelections == null)
                 subSelections = new ArrayList<>();
