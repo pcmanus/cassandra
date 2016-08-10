@@ -28,6 +28,8 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.filter.DataLimits;
+import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.FilteredPartition;
 import org.apache.cassandra.db.partitions.Partition;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
@@ -123,7 +125,9 @@ public class CQL3CasRequest implements CASRequest
         // if an insert only static columns, then the existence condition applies only to the
         // static columns themselves, and so we don't want to include regular columns in that
         // case.
-        if (hasExists)
+        // If static row is updated, in order to maintain backward compatibility with 2.x
+        // we have to read at least one row to return failure result with filled clustering.
+        if (hasExists || updatesStaticRow)
         {
             PartitionColumns allColumns = cfm.partitionColumns();
             Columns statics = updatesStaticRow ? allColumns.statics : Columns.NONE;
@@ -144,10 +148,14 @@ public class CQL3CasRequest implements CASRequest
         {
             if (clustering != Clustering.STATIC_CLUSTERING)
                 builder.add(Slice.make(clustering));
+            // In order to make distinction between non-existing partition and partition without statics on static condition,
+            // we have to read at least one row (see #12060).
+            else if (conditions.size() == 1)
+                builder.add(Slice.ALL);
         }
 
         ClusteringIndexSliceFilter filter = new ClusteringIndexSliceFilter(builder.build(), false);
-        return SinglePartitionReadCommand.create(cfm, nowInSec, key, ColumnFilter.selection(columnsToRead()), filter);
+        return SinglePartitionReadCommand.create(false, cfm, nowInSec, ColumnFilter.selection(columnsToRead()), RowFilter.NONE, DataLimits.cqlLimits(conditions.size()), key, filter);
     }
 
     public boolean appliesTo(FilteredPartition current) throws InvalidRequestException
