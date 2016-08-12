@@ -30,9 +30,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.util.concurrent.PromiseCombiner;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
@@ -49,7 +49,7 @@ import org.apache.cassandra.utils.UUIDGen;
  * A Netty {@link ChannelHandler} for serializing outbound messages. To optimize outbound buffers,
  * we pack as many messages into each buffer as we can; see {@link SwappingByteBufDataOutputStreamPlus} for details.
  */
-class MessageOutHandler extends ChannelOutboundHandlerAdapter
+class MessageOutHandler extends ChannelDuplexHandler
 {
     private static final Logger logger = LoggerFactory.getLogger(CoalescingMessageOutHandler.class);
 
@@ -79,12 +79,31 @@ class MessageOutHandler extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public void write(ChannelHandlerContext ctx, Object outboundMsg, ChannelPromise promise) throws Exception
+    public void write(ChannelHandlerContext ctx, Object outboundMsg, ChannelPromise promise)
     {
+        if (!(outboundMsg instanceof QueuedMessage))
+        {
+            promise.setFailure(new IllegalArgumentException("msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
+            return;
+        }
+
         QueuedMessage msg = (QueuedMessage)outboundMsg;
         captureTracingInfo(ctx, msg);
-        serializeMessage(msg, promise);
-        completedMessageCount.incrementAndGet();
+        try
+        {
+            serializeMessage(msg, promise);
+            completedMessageCount.incrementAndGet();
+        }
+        catch(Throwable cause)
+        {
+            if (dataOutputPlus != null && dataOutputPlus.writeState != null)
+            {
+                dataOutputPlus.writeState.buf.release();
+                dataOutputPlus.writeState.promise.tryFailure(cause);
+            }
+            promise.setFailure(cause);
+            ctx.close();
+        }
     }
 
     /**
@@ -93,25 +112,32 @@ class MessageOutHandler extends ChannelOutboundHandlerAdapter
      */
     private static void captureTracingInfo(ChannelHandlerContext ctx, QueuedMessage msg)
     {
-        byte[] sessionBytes = msg.message.parameters.get(Tracing.TRACE_HEADER);
-        if (sessionBytes != null)
+        try
         {
-            UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
-            TraceState state = Tracing.instance.get(sessionId);
-            String message = String.format("Sending %s message to %s", msg.message.verb, ctx.channel().remoteAddress());
-            // session may have already finished; see CASSANDRA-5668
-            if (state == null)
+            byte[] sessionBytes = msg.message.parameters.get(Tracing.TRACE_HEADER);
+            if (sessionBytes != null)
             {
-                byte[] traceTypeBytes = msg.message.parameters.get(Tracing.TRACE_TYPE);
-                Tracing.TraceType traceType = traceTypeBytes == null ? Tracing.TraceType.QUERY : Tracing.TraceType.deserialize(traceTypeBytes[0]);
-                Tracing.instance.trace(ByteBuffer.wrap(sessionBytes), message, traceType.getTTL());
+                UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
+                TraceState state = Tracing.instance.get(sessionId);
+                String message = String.format("Sending %s message to %s", msg.message.verb, ctx.channel().remoteAddress());
+                // session may have already finished; see CASSANDRA-5668
+                if (state == null)
+                {
+                    byte[] traceTypeBytes = msg.message.parameters.get(Tracing.TRACE_TYPE);
+                    Tracing.TraceType traceType = traceTypeBytes == null ? Tracing.TraceType.QUERY : Tracing.TraceType.deserialize(traceTypeBytes[0]);
+                    Tracing.instance.trace(ByteBuffer.wrap(sessionBytes), message, traceType.getTTL());
+                }
+                else
+                {
+                    state.trace(message);
+                    if (msg.message.verb == MessagingService.Verb.REQUEST_RESPONSE)
+                        Tracing.instance.doneWithNonLocalSession(state);
+                }
             }
-            else
-            {
-                state.trace(message);
-                if (msg.message.verb == MessagingService.Verb.REQUEST_RESPONSE)
-                    Tracing.instance.doneWithNonLocalSession(state);
-            }
+        }
+        catch (Exception e)
+        {
+            logger.warn("failed to capture the tracing info for an outbound message, ignoring", e);
         }
     }
 
@@ -160,17 +186,27 @@ class MessageOutHandler extends ChannelOutboundHandlerAdapter
     }
 
     @Override
+    public void channelInactive(ChannelHandlerContext ctx)
+    {
+        if (dataOutputPlus != null)
+        {
+            dataOutputPlus.close();
+            dataOutputPlus = null;
+        }
+        ctx.fireChannelInactive();
+    }
+
+    @Override
     public void close(ChannelHandlerContext ctx, ChannelPromise promise) throws IOException
     {
-        // we could get here via two paths: normal close of the channel (due to app shutdown), or the socket closes or other error
-        // In the latter case, don't bother to write/flush any further data ('cuz the socket is dead).
         if (ctx.channel().isActive())
-        {
             flush(ctx);
-        }
 
-        dataOutputPlus.close();
-        dataOutputPlus = null;
+        if (dataOutputPlus != null)
+        {
+            dataOutputPlus.close();
+            dataOutputPlus = null;
+        }
         ctx.close(promise);
     }
 
@@ -277,7 +313,8 @@ class MessageOutHandler extends ChannelOutboundHandlerAdapter
         @Override
         public void flush()
         {
-            if (writeState != null)
+            // only flush() if we have any data to flush
+            if (writeState != null && writeState.buf.isReadable())
             {
                 ctx.writeAndFlush(writeState.buf, writeState.promise);
                 writeState = null;
@@ -291,10 +328,11 @@ class MessageOutHandler extends ChannelOutboundHandlerAdapter
             {
                 flush();
             }
-            else
+            else if (writeState != null)
             {
                 writeState.buf.release();
-                writeState.promise.setFailure(new ClosedChannelException());
+                writeState.promise.tryFailure(new ClosedChannelException());
+                writeState = null;
             }
         }
 

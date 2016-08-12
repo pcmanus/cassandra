@@ -188,17 +188,29 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
      */
     private void handshakeTimeout(ChannelHandlerContext ctx)
     {
+        if (isCancelled)
+            return;
+
         isCancelled = true;
         ctx.close();
         callback.accept(ConnectionHandshakeResult.failed());
+
+        if (handshakeResponse != null)
+            handshakeResponse.cancel(false);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx)
+    {
+        handshakeTimeout(ctx);
+        ctx.fireChannelInactive();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
     {
-        logger.error("exeption in negotiating internode handshake", cause);
-        ctx.close();
-        callback.accept(ConnectionHandshakeResult.failed());
+        logger.error("exception in negotiating internode handshake", cause);
+        handshakeTimeout(ctx);
         ctx.fireExceptionCaught(cause);
     }
 

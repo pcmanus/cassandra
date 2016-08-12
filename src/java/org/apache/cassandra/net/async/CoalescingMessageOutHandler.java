@@ -35,7 +35,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.PendingWriteQueue;
-import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ScheduledFuture;
 import org.apache.cassandra.net.OutboundTcpConnection;
@@ -105,8 +104,12 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
     {
         if (closed)
         {
-            ReferenceCountUtil.release(msg);
             promise.setFailure(new ClosedChannelException());
+            return;
+        }
+        if (!(msg instanceof QueuedMessage))
+        {
+            promise.setFailure(new IllegalArgumentException("msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
             return;
         }
 
@@ -209,6 +212,7 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
     {
         closed = true;
     }
+
 
     @Override
     public void close(ChannelHandlerContext ctx, ChannelPromise promise)

@@ -44,7 +44,6 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
 
     private static final int FIRST_MESSAGE_LENGTH = 8;
 
-
     /**
      * The length of the third message in the internode message handshake protocol. We need to receive an int (version)
      * and an IP addr. If IPv4, that's 5 more bytes; if IPv6, it's 17 more bytes. Since we can't know apriori if the IP address
@@ -188,7 +187,7 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
 
             ctx.writeAndFlush(outBuf).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
             long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
-            handshakeResponse = ctx.executor().schedule((Runnable) ctx::close, timeout, TimeUnit.MILLISECONDS);
+            handshakeResponse = ctx.executor().schedule(() -> handshakeTimeout(ctx), timeout, TimeUnit.MILLISECONDS);
             return State.AWAIT_MESSAGING_START_RESPONSE;
         }
     }
@@ -272,12 +271,31 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
         pipeline.remove(handshakeHandlerChannelHandlerName);
     }
 
+    private void handshakeTimeout(ChannelHandlerContext ctx)
+    {
+        if (state == State.MESSAGING_HANDSHAKE_COMPLETE)
+            return;
+
+        state = State.HANDSHAKE_FAIL;
+        ctx.close();
+
+        if (handshakeResponse != null)
+            handshakeResponse.cancel(false);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx)
+    {
+        logger.error("Failed to properly handshake with peer {}. Closing the channel.", ctx.channel().remoteAddress());
+        handshakeTimeout(ctx);
+        ctx.fireChannelInactive();
+    }
+
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
     {
         logger.error("Failed to properly handshake with peer {}. Closing the channel.", ctx.channel().remoteAddress(), cause);
-        state = State.HANDSHAKE_FAIL;
-        ctx.close();
+        handshakeTimeout(ctx);
     }
 
     @VisibleForTesting
