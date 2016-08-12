@@ -31,7 +31,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.LegacyClientHandler.AppendingByteBufInputStream;
 
 public class LegacyClientHandlerTest
 {

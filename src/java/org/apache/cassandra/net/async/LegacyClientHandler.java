@@ -65,7 +65,7 @@ import static org.apache.cassandra.net.IncomingTcpConnection.receiveMessage;
  * that pulls from that queue via an intermediary {@link AppendingByteBufInputStream}, and ultimately passes it to
  * {@link IncomingTcpConnection#receiveMessage(InetAddress, DataInputPlus, int)}.
  *
- * Closing the channel will invoke {@link #close(ChannelHandlerContext)}, which interrupts the {@link #blockingIOThread}.
+ * Closing the channel will invoke {@link #close()}, which interrupts the {@link #blockingIOThread}.
  * If the {@link #blockingIOThread} is blocked waiting on data from the {@link #queue}, it will stop blocking and throw
  * an {@link InterruptedException}, which we catch. The {@link #closed} field is also updated.
  */
@@ -126,27 +126,27 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
     }
 
     @Override
-    public void channelUnregistered(ChannelHandlerContext ctx)
+    public void channelInactive(ChannelHandlerContext ctx)
     {
-        if (!closed)
-            close(ctx);
-        ctx.fireChannelUnregistered();
+        close();
+        ctx.fireChannelInactive();
     }
 
-    void close(ChannelHandlerContext ctx)
+    void close()
     {
+        if (closed)
+            return;
+
         closed = true;
         if (blockingIOThread != null)
             blockingIOThread.interrupt();
-        ctx.close();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
     {
         logger.error("exception occurred while in processing internode messages", cause);
-        if (!closed)
-            close(ctx);
+        close();
         ctx.fireExceptionCaught(cause);
     }
 
@@ -154,91 +154,6 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
     void setClosed(boolean closed)
     {
         this.closed = closed;
-    }
-
-    /**
-     * An {@link InputStream} that blocks on a {@link #queue} for {@link ByteBuf}s.
-     */
-        static class AppendingByteBufInputStream extends InputStream
-    {
-        private final byte[] oneByteArray = new byte[1];
-        private final BlockingQueue<ByteBuf> queue;
-        private ByteBuf currentBuf;
-
-        AppendingByteBufInputStream(BlockingQueue<ByteBuf> queue)
-        {
-            this.queue = queue;
-        }
-
-        @VisibleForTesting
-        AppendingByteBufInputStream(BlockingQueue<ByteBuf> queue, ByteBuf buf)
-        {
-            this.queue = queue;
-            currentBuf = buf;
-        }
-
-        @Override
-        public int read() throws IOException
-        {
-            if (read(oneByteArray, 0, 1) != 1)
-                throw new IOException("failed to read");
-            return oneByteArray[0];
-        }
-
-        public int read(byte out[], int off, final int len) throws IOException
-        {
-            if (out == null)
-                throw new NullPointerException();
-            else if (off < 0 || len < 0 || len > out.length - off)
-                throw new IndexOutOfBoundsException();
-            else if (len == 0)
-                return 0;
-
-            int remaining = len;
-            while (true)
-            {
-                if (currentBuf != null)
-                {
-                    if (currentBuf.isReadable())
-                    {
-                        int toReadCount = Math.min(remaining, currentBuf.readableBytes());
-                        currentBuf.readBytes(out, off, toReadCount);
-                        remaining -= toReadCount;
-
-                        if (remaining == 0)
-                            return len;
-                        off += toReadCount;
-                    }
-
-                    currentBuf.release();
-                    currentBuf = null;
-                }
-
-                try
-                {
-                    currentBuf = queue.take();
-                }
-                catch (InterruptedException e)
-                {
-                    // we get notified (via interrupt) when the netty channel closes.
-                    throw new EOFException();
-                }
-            }
-        }
-
-        @Override
-        public void close()
-        {
-            if (currentBuf != null)
-            {
-                currentBuf.release();
-                currentBuf = null;
-            }
-
-            ByteBuf buf;
-            while ((buf = queue.poll()) != null)
-                buf.release();
-        }
     }
 
     private final class BlockingIODeserialier implements Runnable
