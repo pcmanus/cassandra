@@ -193,7 +193,8 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
 
         isCancelled = true;
         ctx.close();
-        callback.accept(ConnectionHandshakeResult.failed());
+        if (callback != null)
+            callback.accept(ConnectionHandshakeResult.failed());
 
         if (handshakeResponse != null)
             handshakeResponse.cancel(false);

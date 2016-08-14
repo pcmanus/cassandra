@@ -332,7 +332,7 @@ public class InternodeMessagingConnectionTest
     @Test
     public void finishHandshake_GOOD()
     {
-        channel.pipeline().addLast(new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, true, null, NettyFactory.Mode.MESSAGING));
+        channel.pipeline().addLast(new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, true, result -> {}, NettyFactory.Mode.MESSAGING));
         ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, GOOD);
         imc.finishHandshake(result);
         Assert.assertEquals(channel, imc.getChannel());

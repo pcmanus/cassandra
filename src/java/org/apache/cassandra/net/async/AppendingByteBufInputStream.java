@@ -22,38 +22,49 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import com.google.common.annotations.VisibleForTesting;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCountUtil;
 
 /**
- * An {@link InputStream} that blocks on a {@link #queue} for {@link ByteBuf}s.
+ * An {@link InputStream} that blocks on a {@link #queue} for {@link ByteBuf}s. An instance is responsibile for the reference
+ * counting of any {@link ByteBuf}s passed to {@link #append(ByteBuf)}.
  */
 public class AppendingByteBufInputStream extends InputStream
 {
     private final byte[] oneByteArray = new byte[1];
     private final BlockingQueue<ByteBuf> queue;
     private ByteBuf currentBuf;
+    private volatile boolean closed;
 
-    public AppendingByteBufInputStream(BlockingQueue<ByteBuf> queue)
+    public AppendingByteBufInputStream()
     {
-        this.queue = queue;
+        queue = new LinkedBlockingQueue<>();
     }
 
-    @VisibleForTesting
-    public AppendingByteBufInputStream(BlockingQueue<ByteBuf> queue, ByteBuf buf)
+    public void append(ByteBuf buf) throws IllegalStateException
     {
-        this.queue = queue;
-        currentBuf = buf;
+        if (closed)
+        {
+            ReferenceCountUtil.release(buf);
+            throw new IllegalStateException("stream is already closed, so cannot add another buffer");
+        }
+        queue.add(buf);
     }
 
     @Override
     public int read() throws IOException
     {
-        if (read(oneByteArray, 0, 1) != 1)
-            throw new IOException("failed to read");
-        return oneByteArray[0];
+        int result = read(oneByteArray, 0, 1);
+        if (result == 1)
+            return oneByteArray[0] & 0xFF;
+        if (result == -1)
+            return -1;
+
+        throw new IOException("failed to read from stream");
     }
 
     public int read(byte out[], int off, final int len) throws IOException
@@ -97,9 +108,19 @@ public class AppendingByteBufInputStream extends InputStream
         }
     }
 
+    @VisibleForTesting
+    public int buffersInQueue()
+    {
+        return queue.size();
+    }
+
     @Override
     public void close()
     {
+        if (closed)
+            return;
+        closed = true;
+
         if (currentBuf != null)
         {
             currentBuf.release();

@@ -24,8 +24,6 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.nio.channels.Channels;
 import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.zip.Checksum;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -35,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.ReferenceCountUtil;
 import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
@@ -66,7 +65,7 @@ import static org.apache.cassandra.net.IncomingTcpConnection.receiveMessage;
  * {@link IncomingTcpConnection#receiveMessage(InetAddress, DataInputPlus, int)}.
  *
  * Closing the channel will invoke {@link #close()}, which interrupts the {@link #blockingIOThread}.
- * If the {@link #blockingIOThread} is blocked waiting on data from the {@link #queue}, it will stop blocking and throw
+ * If the {@link #blockingIOThread} is blocked waiting on data from the {@link #inputStream}, it will stop blocking and throw
  * an {@link InterruptedException}, which we catch. The {@link #closed} field is also updated.
  */
 class LegacyClientHandler extends ChannelInboundHandlerAdapter
@@ -75,7 +74,7 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
 
     private final boolean compressed;
     private final int messagingVersion;
-    private final BlockingQueue<ByteBuf> queue;
+    private final AppendingByteBufInputStream inputStream;
 
     /**
      * The address of the node we are receiving messages from on this channel.
@@ -90,23 +89,22 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
 
     LegacyClientHandler(InetAddress peer, boolean compressed, int messagingVersion)
     {
-        this(peer, compressed, messagingVersion, new LinkedBlockingQueue<>());
+        this(peer, compressed, messagingVersion, new AppendingByteBufInputStream());
     }
 
     @VisibleForTesting
-    LegacyClientHandler(InetAddress peer, boolean compressed, int messagingVersion, BlockingQueue<ByteBuf> queue)
+    LegacyClientHandler(InetAddress peer, boolean compressed, int messagingVersion, AppendingByteBufInputStream inputStream)
     {
         this.peer = peer;
         this.compressed = compressed;
         this.messagingVersion = messagingVersion;
-        this.queue = queue;
+        this.inputStream = inputStream;
     }
 
     @Override
     @SuppressWarnings("resource")
     public void channelActive(ChannelHandlerContext ctx)
     {
-        InputStream inputStream = new AppendingByteBufInputStream(queue);
         blockingIOThread = new Thread(new BlockingIODeserialier(ctx, inputStream, compressed, messagingVersion));
         blockingIOThread.start();
         ctx.fireChannelActive();
@@ -115,13 +113,20 @@ class LegacyClientHandler extends ChannelInboundHandlerAdapter
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg)
     {
-        if (!closed)
+        if (!closed && msg instanceof ByteBuf)
         {
-            queue.add((ByteBuf) msg);
+            try
+            {
+                inputStream.append((ByteBuf) msg);
+            }
+            catch(IllegalStateException ise)
+            {
+                closed = true;
+            }
         }
         else
         {
-            ((ByteBuf) msg).release();
+            ReferenceCountUtil.release(msg);
         }
     }
 
