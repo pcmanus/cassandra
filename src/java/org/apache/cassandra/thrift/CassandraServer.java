@@ -2554,8 +2554,8 @@ public class CassandraServer implements Cassandra.Iface
         public boolean appliesTo(FilteredPartition current)
         {
             if (expected.isEmpty())
-                return current.isEmpty();
-            else if (current.isEmpty())
+                return current == null;
+            else if (current == null)
                 return false;
 
             // Push the expected results through ThriftResultsMerger to translate any static
