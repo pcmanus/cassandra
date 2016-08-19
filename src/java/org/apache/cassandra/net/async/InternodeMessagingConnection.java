@@ -228,7 +228,7 @@ public class InternodeMessagingConnection
     {
         outboundCount.incrementAndGet();
         ChannelFuture future = channel.write(msg);
-        future.addListener(f -> handleMessagePromise(f, msg));
+        future.addListener(f -> handleMessageFuture(f, msg));
     }
 
     /**
@@ -239,9 +239,10 @@ public class InternodeMessagingConnection
      *
      * Note: this is called from the netty event loop, so it's safe to perform actions on the channel.
      */
-    void handleMessagePromise(io.netty.util.concurrent.Future<? super Void> future, QueuedMessage msg)
+    void handleMessageFuture(io.netty.util.concurrent.Future<? super Void> future, QueuedMessage msg)
     {
-        if (!future.isDone() || future.isSuccess() || future.isCancelled())
+        // only handle failures, for now
+        if (future.cause() == null)
             return;
 
         Throwable cause = future.cause();

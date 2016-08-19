@@ -35,6 +35,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.PendingWriteQueue;
+import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ScheduledFuture;
 import org.apache.cassandra.net.OutboundTcpConnection;
@@ -109,12 +110,12 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         }
         if (!(msg instanceof QueuedMessage))
         {
-            promise.setFailure(new IllegalArgumentException("msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
+            promise.setFailure(new UnsupportedMessageTypeException("msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
             return;
         }
 
         QueuedMessage queuedMessage = (QueuedMessage)msg;
-        promise.addListener(future -> handleMessagePromise(future, coalesceCallback, queuedMessage));
+        promise.addListener(future -> handleMessageFuture(future, coalesceCallback, queuedMessage));
 
         if (!coalescingStrategy.isCoalescing())
         {
@@ -143,7 +144,7 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         }
     }
 
-    private void handleMessagePromise(Future<? super Void> future, Consumer<Long> coalesceCallback, QueuedMessage msg)
+    private void handleMessageFuture(Future<? super Void> future, Consumer<Long> coalesceCallback, QueuedMessage msg)
     {
         if (future.isSuccess())
         {

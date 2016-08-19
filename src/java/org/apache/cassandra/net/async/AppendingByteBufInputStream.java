@@ -27,11 +27,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 import com.google.common.annotations.VisibleForTesting;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.util.ReferenceCountUtil;
 
 /**
  * An {@link InputStream} that blocks on a {@link #queue} for {@link ByteBuf}s. An instance is responsibile for the reference
  * counting of any {@link ByteBuf}s passed to {@link #append(ByteBuf)}.
+ *
+ * WRT threading, the intended use of this class is that any thread may invoke the {@link #append(ByteBuf)} method,
+ * but only a single thread performs reads (as in message or stream deserialization).
  */
 public class AppendingByteBufInputStream extends InputStream
 {
@@ -47,12 +49,18 @@ public class AppendingByteBufInputStream extends InputStream
 
     public void append(ByteBuf buf) throws IllegalStateException
     {
+        queue.add(buf);
+
         if (closed)
         {
-            ReferenceCountUtil.release(buf);
-            throw new IllegalStateException("stream is already closed, so cannot add another buffer");
+            while (!queue.isEmpty())
+            {
+                ByteBuf b = queue.poll();
+                if (b != null)
+                    b.release();
+            }
+            throw new IllegalStateException("stream is already closed, cannot add another buffer");
         }
-        queue.add(buf);
     }
 
     @Override
@@ -72,7 +80,7 @@ public class AppendingByteBufInputStream extends InputStream
         if (out == null)
             throw new NullPointerException();
         else if (off < 0 || len < 0 || len > out.length - off)
-            throw new IndexOutOfBoundsException();
+            throw new IndexOutOfBoundsException(String.format("bad buffer parameters: offset = %d, len = %d, out.length = %d", off, len, out.length));
         else if (len == 0)
             return 0;
 

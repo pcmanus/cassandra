@@ -34,6 +34,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.util.concurrent.PromiseCombiner;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.UnbufferedDataOutputStreamPlus;
@@ -83,7 +84,7 @@ class MessageOutHandler extends ChannelDuplexHandler
     {
         if (!(outboundMsg instanceof QueuedMessage))
         {
-            promise.setFailure(new IllegalArgumentException("msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
+            promise.setFailure(new UnsupportedMessageTypeException("msg must be an instance of " + QueuedMessage.class.getSimpleName()));
             return;
         }
 

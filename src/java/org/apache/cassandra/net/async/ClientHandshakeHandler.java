@@ -169,12 +169,21 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
         else
         {
             ByteBuf buf = ctx.alloc().ioBuffer(4 + CompactEndpointSerializationHelper.serializedSize(remoteAddr.getAddress()));
-            buf.writeInt(MessagingService.current_version);
-            @SuppressWarnings("resource")
-            DataOutput bbos = new ByteBufOutputStream(buf);
-            CompactEndpointSerializationHelper.serialize(remoteAddr.getAddress(), bbos);
-            ctx.writeAndFlush(buf);
-            result = Result.GOOD;
+            try
+            {
+                buf.writeInt(MessagingService.current_version);
+                @SuppressWarnings("resource")
+                DataOutput bbos = new ByteBufOutputStream(buf);
+                CompactEndpointSerializationHelper.serialize(remoteAddr.getAddress(), bbos);
+                ctx.writeAndFlush(buf);
+                result = Result.GOOD;
+            }
+            catch (Exception e)
+            {
+                logger.info("failed to write last internode messaging handshake message", e);
+                buf.release();
+                result = Result.NEGOTIATION_FAILURE;
+            }
         }
 
         callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, result));

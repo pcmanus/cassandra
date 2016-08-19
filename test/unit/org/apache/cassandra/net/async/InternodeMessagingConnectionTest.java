@@ -179,7 +179,7 @@ public class InternodeMessagingConnectionTest
     public void handleMessagePromise_FutureNotDone()
     {
         ChannelPromise promise = channel.newPromise();
-        imc.handleMessagePromise(promise, null);
+        imc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());
     }
@@ -189,7 +189,7 @@ public class InternodeMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setSuccess();
-        imc.handleMessagePromise(promise, null);
+        imc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());
     }
@@ -199,7 +199,7 @@ public class InternodeMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.cancel(false);
-        imc.handleMessagePromise(promise, null);
+        imc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());
     }
@@ -209,7 +209,7 @@ public class InternodeMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new NullPointerException("this is a test"));
-        imc.handleMessagePromise(promise, null);
+        imc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());
     }
@@ -221,7 +221,7 @@ public class InternodeMessagingConnectionTest
         imc.setState(CLOSED);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
-        imc.handleMessagePromise(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
+        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
         Assert.assertEquals(1, imc.backlogSize());
     }
 
@@ -232,7 +232,7 @@ public class InternodeMessagingConnectionTest
         imc.setState(CLOSED);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
-        imc.handleMessagePromise(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
+        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
         Assert.assertEquals(0, imc.backlogSize());
     }
 
@@ -243,7 +243,7 @@ public class InternodeMessagingConnectionTest
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
         channel.close();
-        imc.handleMessagePromise(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
+        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
 
         Assert.assertFalse(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());

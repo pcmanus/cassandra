@@ -126,10 +126,10 @@ class ClientConnector
      */
     public void cancel()
     {
+        isCancelled = true;
         ChannelFuture future = connectFuture;
         if (future != null)
             future.cancel(false);
-        isCancelled = true;
     }
 
     public static class Builder
