@@ -187,7 +187,7 @@ public abstract class LegacyLayout
             return isStart ? LegacyBound.BOTTOM : LegacyBound.TOP;
 
         List<CompositeType.CompositeComponent> components = metadata.isCompound()
-                                                          ? CompositeType.deconstruct(bound)
+                                                          ? CompositeType.deconstruct(bound, metadata, isStart)
                                                           : Collections.singletonList(new CompositeType.CompositeComponent(bound, (byte) 0));
 
         // Either it's a prefix of the clustering, or it's the bound of a collection range tombstone (and thus has
