@@ -27,7 +27,6 @@ import java.util.concurrent.ConcurrentMap;
 
 import com.google.common.collect.ImmutableList;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -226,41 +225,6 @@ public class CompositeType extends AbstractCompositeType
             ++i;
         }
         return null;
-    }
-
-    public static class CompositeComponent
-    {
-        public ByteBuffer value;
-        public byte eoc;
-
-        public CompositeComponent(ByteBuffer value, byte eoc)
-        {
-            this.value = value;
-            this.eoc = eoc;
-        }
-    }
-
-    public static List<CompositeComponent> deconstruct(ByteBuffer bytes, CFMetaData metaData, boolean isStart)
-    {
-        List<CompositeComponent> list = new ArrayList<>();
-        ByteBuffer bb = bytes.duplicate();
-        readStatic(bb);
-        byte eoc = 0;
-        while (bb.remaining() > 0)
-        {
-            ByteBuffer value = ByteBufferUtil.readBytesWithShortLength(bb);
-            eoc = bb.get();
-            list.add(new CompositeComponent(value, eoc));
-        }
-
-        if (!isStart && !list.isEmpty() && list.size() < metaData.comparator.size() && eoc == 0)
-        {   // for an end bound, if we only have a prefix of all the components and the final EOC is zero,
-            // then it should only match up to the prefix but no futher, that is it is an inclusive bound
-            // of the exact prefix but an exclusive bound of anything beyond it, so adding an empty
-            // composite value with EOC = -1 ensures this behavior, see CASSANDRA-12423 for more details
-            list.add(new CompositeComponent(ByteBufferUtil.EMPTY_BYTE_BUFFER, (byte)-1));
-        }
-        return list;
     }
 
     // Extract CQL3 column name from the full column name.

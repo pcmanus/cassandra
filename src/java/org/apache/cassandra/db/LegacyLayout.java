@@ -186,40 +186,61 @@ public abstract class LegacyLayout
         if (!bound.hasRemaining())
             return isStart ? LegacyBound.BOTTOM : LegacyBound.TOP;
 
-        List<CompositeType.CompositeComponent> components = metadata.isCompound()
-                                                          ? CompositeType.deconstruct(bound, metadata, isStart)
-                                                          : Collections.singletonList(new CompositeType.CompositeComponent(bound, (byte) 0));
+        List<ByteBuffer> components = metadata.isCompound() ? CompositeType.splitName(bound) : Collections.singletonList(bound);
+        byte eoc = metadata.isCompound() ? CompositeType.lastEOC(bound) : 0;
+
+        Slice.Bound.Kind boundKind;
+        if (isStart)
+        {
+            if (eoc > 0)
+            {
+                boundKind = Slice.Bound.Kind.EXCL_START_BOUND;
+            }
+            else
+            {
+                boundKind = Slice.Bound.Kind.INCL_START_BOUND;
+            }
+        }
+        else
+        {
+            if (eoc < 0)
+            {
+                boundKind = Slice.Bound.Kind.EXCL_END_BOUND;
+            }
+            else if (eoc == 0)
+            {
+                if (components.size() < metadata.comparator.size())
+                {
+                    // for an end bound, if we only have a prefix of all the components and the final EOC is zero,
+                    // then it should only match up to the prefix but no futher, that is it is an inclusive bound
+                    // of the exact prefix but an exclusive bound of anything beyond it, so adding an empty
+                    // composite value ensures this behavior, see CASSANDRA-12423 for more details
+                    components.add(ByteBufferUtil.EMPTY_BYTE_BUFFER);
+                    boundKind = Slice.Bound.Kind.EXCL_END_BOUND;
+                }
+                else
+                {
+                    boundKind = Slice.Bound.Kind.INCL_END_BOUND;
+                }
+            }
+            else
+            {
+                boundKind = Slice.Bound.Kind.INCL_END_BOUND;
+            }
+        }
 
         // Either it's a prefix of the clustering, or it's the bound of a collection range tombstone (and thus has
         // the collection column name)
         assert components.size() <= metadata.comparator.size() || (!metadata.isCompactTable() && components.size() == metadata.comparator.size() + 1);
 
-        List<CompositeType.CompositeComponent> prefix = components.size() <= metadata.comparator.size()
-                                                      ? components
-                                                      : components.subList(0, metadata.comparator.size());
-        Slice.Bound.Kind boundKind;
-        if (isStart)
-        {
-            if (components.get(components.size() - 1).eoc > 0)
-                boundKind = Slice.Bound.Kind.EXCL_START_BOUND;
-            else
-                boundKind = Slice.Bound.Kind.INCL_START_BOUND;
-        }
-        else
-        {
-            if (components.get(components.size() - 1).eoc < 0)
-                boundKind = Slice.Bound.Kind.EXCL_END_BOUND;
-            else
-                boundKind = Slice.Bound.Kind.INCL_END_BOUND;
-        }
+        ByteBuffer[] prefixValues = components.size() <= metadata.comparator.size()
+                                  ? components.toArray(new ByteBuffer[components.size()])
+                                  : components.subList(0, metadata.comparator.size()).toArray(new ByteBuffer[metadata.comparator.size()]);
 
-        ByteBuffer[] prefixValues = new ByteBuffer[prefix.size()];
-        for (int i = 0; i < prefix.size(); i++)
-            prefixValues[i] = prefix.get(i).value;
         Slice.Bound sb = Slice.Bound.create(boundKind, prefixValues);
 
         ColumnDefinition collectionName = components.size() == metadata.comparator.size() + 1
-                                        ? metadata.getColumnDefinition(components.get(metadata.comparator.size()).value)
+                                        ? metadata.getColumnDefinition(components.get(metadata.comparator.size()))
                                         : null;
         return new LegacyBound(sb, metadata.isCompound() && CompositeType.isStaticName(bound), collectionName);
     }
