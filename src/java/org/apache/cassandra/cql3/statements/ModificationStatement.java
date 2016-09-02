@@ -587,11 +587,8 @@ public abstract class ModificationStatement implements CQLStatement
             current = FilteredPartition.create(PartitionIterators.getOnlyElement(iter, readCommand));
         }
 
-        // If partition is effectively empty (no rows, no statics, not live), we pass null to indicate it does not exist
-        if (!request.appliesTo(current.isEmpty() ? null : current))
-        {
+        if (!request.appliesTo(current))
             return current.rowIterator();
-        }
 
         PartitionUpdate updates = request.makeUpdates(current);
         updates = TriggerExecutor.instance.execute(updates);

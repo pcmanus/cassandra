@@ -27,6 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
+import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.partitions.FilteredPartition;
 import org.apache.cassandra.db.partitions.Partition;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
@@ -176,6 +177,15 @@ public class CQL3CasRequest implements CASRequest
         return SinglePartitionReadCommand.create(cfm, nowInSec, key, ColumnFilter.selection(columnsToRead()), filter);
     }
 
+    /**
+     * Checks whether the conditions represented by this object applies provided the current state of the partition on
+     * which those conditions are.
+     *
+     * @param current the partition with current data corresponding to these conditions. More precisely, this must be
+     * the result of executing the command returned by {@link #readCommand}. This can be empty but it should not be
+     * {@code null}.
+     * @return whether the conditions represented by this object applies or not.
+     */
     public boolean appliesTo(FilteredPartition current) throws InvalidRequestException
     {
         if (staticConditions != null && !staticConditions.appliesTo(current))
@@ -261,7 +271,7 @@ public class CQL3CasRequest implements CASRequest
 
         public boolean appliesTo(FilteredPartition current)
         {
-            return current == null || current.getRow(clustering) == null;
+            return current.getRow(clustering) == null;
         }
     }
 
@@ -274,7 +284,7 @@ public class CQL3CasRequest implements CASRequest
 
         public boolean appliesTo(FilteredPartition current)
         {
-            return current != null && current.getRow(clustering) != null;
+            return current.getRow(clustering) != null;
         }
     }
 
@@ -298,12 +308,13 @@ public class CQL3CasRequest implements CASRequest
 
         public boolean appliesTo(FilteredPartition current) throws InvalidRequestException
         {
-            if (current == null)
+            if (current.isEmpty())
                 return conditions.isEmpty();
 
+            Row row = current.getRow(clustering);
             for (ColumnCondition.Bound condition : conditions.values())
             {
-                if (!condition.appliesTo(current.getRow(clustering)))
+                if (!condition.appliesTo(row))
                     return false;
             }
             return true;

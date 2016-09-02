@@ -251,7 +251,7 @@ public class StorageProxy implements StorageProxyMBean
                     current = FilteredPartition.create(rowIter);
                 }
 
-                if (!request.appliesTo(current.isEmpty() ? null : current))
+                if (!request.appliesTo(current))
                 {
                     Tracing.trace("CAS precondition does not match current values {}", current);
                     casWriteMetrics.conditionNotMet.inc();
