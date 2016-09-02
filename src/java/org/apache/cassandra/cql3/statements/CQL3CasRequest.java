@@ -125,9 +125,7 @@ public class CQL3CasRequest implements CASRequest
         // if an insert only static columns, then the existence condition applies only to the
         // static columns themselves, and so we don't want to include regular columns in that
         // case.
-        // If static row is updated, in order to maintain backward compatibility with 2.x
-        // we have to read at least one row to return failure result with filled clustering.
-        if (hasExists || updatesStaticRow)
+        if (hasExists)
         {
             PartitionColumns allColumns = cfm.partitionColumns();
             Columns statics = updatesStaticRow ? allColumns.statics : Columns.NONE;
