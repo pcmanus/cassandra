@@ -113,7 +113,7 @@ public class InsertUpdateIfConditionTest extends CQLTester
 
         // Shouldn't apply
         assertEmpty(execute("SELECT * FROM %s WHERE k = 0"));
-        assertRows(execute("DELETE FROM %s WHERE k = 0 IF v1 IN (null)"), row(false));
+        assertRows(execute("DELETE FROM %s WHERE k = 0 IF v1 IN (null)"), row(true));
 
         createTable(" CREATE TABLE %s (k int, c int, v1 text, PRIMARY KEY(k, c))");
         assertInvalidMessage("IN on the clustering key columns is not supported with conditional updates",
@@ -255,7 +255,7 @@ public class InsertUpdateIfConditionTest extends CQLTester
                            "UPDATE %1$s SET v='barfoo' WHERE id=0 AND k='k2'; " +
                            "UPDATE %1$s SET version=3 WHERE id=0 IF version=1; " +
                            "APPLY BATCH "),
-                   row(false, 0, "k1", 2));
+                   row(false, 0, null, 2));
 
         assertRows(execute("BEGIN BATCH " +
                            "UPDATE %1$s SET v = 'foobar' WHERE id = 0 AND k = 'k1'; " +
@@ -490,10 +490,8 @@ public class InsertUpdateIfConditionTest extends CQLTester
         createTable("CREATE TABLE %s (partition text, key text, owner text, PRIMARY KEY (partition, key) ) WITH COMPACT STORAGE");
 
         execute("INSERT INTO %s (partition, key, owner) VALUES ('a', 'b', null)");
-        assertEmpty(execute("SELECT * FROM %s"));
-        assertRows(execute("UPDATE %s SET owner='z' WHERE partition='a' AND key='b' IF owner=null"), row(false)); // CASSANDRA-12426
+        assertRows(execute("UPDATE %s SET owner='z' WHERE partition='a' AND key='b' IF owner=null"), row(true));
 
-        execute("INSERT INTO %s (partition, key, owner) VALUES ('a', 'b', 'z')");
         assertRows(execute("UPDATE %s SET owner='b' WHERE partition='a' AND key='b' IF owner='a'"), row(false, "z"));
         assertRows(execute("UPDATE %s SET owner='b' WHERE partition='a' AND key='b' IF owner='z'"), row(true));
 
@@ -1057,8 +1055,9 @@ public class InsertUpdateIfConditionTest extends CQLTester
         // deleting row before CAS makes it effectively non-existing
         execute("DELETE FROM %s WHERE a = 8;");
         assertRows(execute("UPDATE %s SET s = 8 WHERE a = 8 IF s = NULL"),
-                   row(false));
-        assertRows(execute("SELECT * FROM %s WHERE a = 8"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 8"),
+                   row(8, null, 8, null));
     }
 
     @Test
@@ -1098,12 +1097,6 @@ public class InsertUpdateIfConditionTest extends CQLTester
                    row(4, 1, 400, null),
                    row(4, 2, 400, null));
 
-        assertRows(execute("UPDATE %s SET s = 500 WHERE a = 500 IF s != 5"),
-                   row(false));
-        assertRows(execute("SELECT a, b, s, d FROM %s WHERE a = 5"),
-                   row(5, 1, null, null),
-                   row(5, 2, null, null));
-
         // rejected: comparing number with NULL always returns false
         for (String operator: new String[] { ">", "<", ">=", "<=", "="})
         {
@@ -1113,6 +1106,12 @@ public class InsertUpdateIfConditionTest extends CQLTester
                        row(5, 1, null, null),
                        row(5, 2, null, null));
         }
+
+        assertRows(execute("UPDATE %s SET s = 500 WHERE a = 5 IF s != 5"),
+                   row(true));
+        assertRows(execute("SELECT a, b, s, d FROM %s WHERE a = 5"),
+                   row(5, 1, 500, null),
+                   row(5, 2, 500, null));
 
         // Similar test, although with two static columns to test limits
         createTable("CREATE TABLE %s (a int, b int, s1 int static, s2 int static, d int, PRIMARY KEY (a, b))");
@@ -1176,39 +1175,6 @@ public class InsertUpdateIfConditionTest extends CQLTester
     }
 
     @Test
-    public void testConditionalUpdatesWithNonExistingValues() throws Throwable
-    {
-        createTable("CREATE TABLE %s (a int, b int, s int static, d text, PRIMARY KEY (a, b))");
-
-        // "s = NULL" means "the container of x exists but x itself is null", if container does not
-        // exist, LWT should not be applied
-        assertRows(execute("UPDATE %s SET s = 1 WHERE a = 1 IF s = NULL"),
-                   row(false));
-        assertEmpty(execute("SELECT a, s, d FROM %s WHERE a = 1"));
-
-        assertRows(execute("UPDATE %s SET s = 2 WHERE a = 2 IF s IN (10,20,NULL)"),
-                   row(false));
-        assertEmpty(execute("SELECT a, s, d FROM %s WHERE a = 2"));
-
-        assertRows(execute("UPDATE %s SET s = 4 WHERE a = 4 IF s != 4"),
-                   row(false));
-        assertEmpty(execute("SELECT a, s, d FROM %s WHERE a = 4"));
-
-        // rejected: IN doesn't contain null
-        assertRows(execute("UPDATE %s SET s = 3 WHERE a = 3 IF s IN (10,20,30)"),
-                   row(false));
-        assertEmpty(execute("SELECT a, s, d FROM %s WHERE a = 3"));
-
-        // rejected: comparing number with NULL always returns false
-        for (String operator : new String[]{ ">", "<", ">=", "<=", "=" })
-        {
-            assertRows(execute("UPDATE %s SET s = 50 WHERE a = 5 IF s " + operator + " 3"),
-                       row(false));
-            assertEmpty(execute("SELECT * FROM %s WHERE a = 5"));
-        }
-    }
-
-    @Test
     public void testConditionalUpdatesWithNullValuesWithBatch() throws Throwable
     {
         createTable("CREATE TABLE %s (a int, b int, s int static, d text, PRIMARY KEY (a, b))");
@@ -1263,15 +1229,6 @@ public class InsertUpdateIfConditionTest extends CQLTester
                    row(false, 6, 6, null));
         assertRows(execute("SELECT * FROM %s WHERE a = 6"),
                    row(6, 6, null, null));
-
-        // "s != 7" means "container exists and the value within that container is not equal to 7"
-        assertRows(execute("BEGIN BATCH\n"
-                           + "INSERT INTO %1$s (a, b, s, d) values (7, 7, 7, 'a');\n"
-                           + "UPDATE %1$s SET s = 8 WHERE a = 7 IF s != 7;\n"
-                           + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 7"));
-
     }
 
     @Test
@@ -1283,30 +1240,34 @@ public class InsertUpdateIfConditionTest extends CQLTester
                            + "INSERT INTO %1$s (a, b, d) values (2, 2, 'a');\n"
                            + "UPDATE %1$s SET s = 2 WHERE a = 2 IF s = null;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 2"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 2"),
+                   row(2, 2, 2, "a"));
 
         // applied: lwt condition is executed before INSERT, update is applied after it
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s, d) values (4, 4, 4, 'a');\n"
                            + "UPDATE %1$s SET s = 5 WHERE a = 4 IF s = null;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 4"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 4"),
+                   row(4, 4, 5, "a")); // Note that the update wins because 5 > 4 (we have a timestamp tie, so values are used)
 
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s, d) values (5, 5, 5, 'a');\n"
                            + "UPDATE %1$s SET s = 6 WHERE a = 5 IF s IN (1,2,null);\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 5"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 5"),
+                   row(5, 5, 6, "a")); // Same as above
 
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s, d) values (7, 7, 7, 'a');\n"
                            + "UPDATE %1$s SET s = 8 WHERE a = 7 IF s != 7;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertRows(execute("SELECT * FROM %s WHERE a = 7"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 7"),
+                   row(7, 7, 8, "a")); // Same as above
 
         // rejected: comparing number with non-existing value always returns false
         for (String operator: new String[] { ">", "<", ">=", "<=", "="})
@@ -1376,8 +1337,9 @@ public class InsertUpdateIfConditionTest extends CQLTester
                            + "INSERT INTO %1$s (a, b, s1, v) values (2, 2, 2, 2);\n"
                            + "DELETE s1 FROM %1$s WHERE a = 2 IF s2 = null;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 2"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 2"),
+                   row(2, 2, null, null, 2));
 
         // rejected: comparing number with non-existing value always returns false
         for (String operator: new String[] { ">", "<", ">=", "<=", "="})
@@ -1398,25 +1360,31 @@ public class InsertUpdateIfConditionTest extends CQLTester
                    row(false));
         assertEmpty(execute("SELECT * FROM %s WHERE a = 6"));
 
+        // Note that on equal timestamp, tombstone wins so the DELETE wins
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s1, v) values (4, 4, 4, 4);\n"
                            + "DELETE s1 FROM %1$s WHERE a = 4 IF s2 = null;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 4"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 4"),
+                   row(4, 4, null, null, 4));
 
+        // Note that on equal timestamp, tombstone wins so the DELETE wins
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s1, v) VALUES (5, 5, 5, 5);\n"
                            + "DELETE s1 FROM %1$s WHERE a = 5 IF s1 IN (1,2,null);\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 5"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 5"),
+                   row(5, 5, null, null, 5));
 
+        // Note that on equal timestamp, tombstone wins so the DELETE wins
         assertRows(execute("BEGIN BATCH\n"
                            + "INSERT INTO %1$s (a, b, s1, v) values (7, 7, 7, 7);\n"
                            + "DELETE s1 FROM %1$s WHERE a = 7 IF s2 != 7;\n"
                            + "APPLY BATCH"),
-                   row(false));
-        assertEmpty(execute("SELECT * FROM %s WHERE a = 7"));
+                   row(true));
+        assertRows(execute("SELECT * FROM %s WHERE a = 7"),
+                   row(7, 7, null, null, 7));
     }
 }
