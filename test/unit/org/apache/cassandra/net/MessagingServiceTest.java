@@ -37,6 +37,7 @@ import com.google.common.collect.Iterables;
 
 import com.codahale.metrics.Timer;
 
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
@@ -44,6 +45,7 @@ import org.caffinitas.ohc.histo.EstimatedHistogram;
 
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -337,5 +339,26 @@ public class MessagingServiceTest
         {
             throw new UnsupportedOperationException("Not supported.");
         }
+    }
+
+    public void switchIpAddr() throws UnknownHostException
+    {
+        InetAddress publicIp = InetAddress.getByName("127.0.0.2");
+        InetAddress privateIp = InetAddress.getByName("127.0.0.3");
+
+        // reset the preferred IP value, for good test hygene
+        SystemKeyspace.updatePreferredIP(publicIp, publicIp);
+
+        // create pool/conn with public addr
+        messagingService.createConnection(publicIp);
+        Assert.assertEquals(publicIp, messagingService.getCurrentEndpoint(publicIp));
+        messagingService.switchIpAddress(publicIp, privateIp);
+        Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
+
+        messagingService.destroyConnectionPool(publicIp);
+
+        // recreate the pool/conn, and make sure the preferred ip addr is used
+        messagingService.createConnection(publicIp);
+        Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
     }
 }

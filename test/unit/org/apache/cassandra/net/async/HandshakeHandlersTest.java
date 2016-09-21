@@ -140,23 +140,19 @@ public class HandshakeHandlersTest
                                     .build();
 
                 QueuedMessage msg = new QueuedMessage(mutation.createMessage(), i);
-                clientChannel.write(msg);
+                clientChannel.writeAndFlush(msg);
             }
             else
             {
-                clientChannel.write(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+                clientChannel.writeAndFlush(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
             }
         }
         clientChannel.flush();
 
         // move the messages to the server channel
-        serverChannel.writeInbound(clientChannel.readOutbound());
-        for (Object o : clientChannel.outboundMessages())
-            Assert.assertTrue(serverChannel.writeInbound(o));
-
-        Assert.assertEquals(count, receivedMessages);
-
-
+        Object o;
+        while ((o = clientChannel.readOutbound()) != null)
+            serverChannel.writeInbound(o);
 
         Assert.assertTrue(clientChannel.outboundMessages().isEmpty());
         // if compress, LZ4FrameEncoder will send 'close' packet to peer (thus a message is in the channel)

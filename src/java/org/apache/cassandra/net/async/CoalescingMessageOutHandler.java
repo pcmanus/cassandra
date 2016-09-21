@@ -38,7 +38,6 @@ import io.netty.channel.PendingWriteQueue;
 import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ScheduledFuture;
-import org.apache.cassandra.net.OutboundTcpConnection;
 import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CoalescingStrategies;
@@ -49,11 +48,6 @@ import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
  * is pulled off the queue (via {@link BlockingQueue#drainTo(Collection)}), and can be logged for debugging purposes
  * (see {@link CoalescingStrategy#debugTimestamp(long)}). We mimic that behavior, albeit in a non-blocking manner, using
  * {@link RateLimiter#tryAcquire()} semantics as well as a callback specific to the {@link CoalescingStrategy}.
- *
- * Flushing is the tricky part here. In the previous implementation in {@link OutboundTcpConnection}, we could look to the
- * local backlog queue to see if there were any more messages in the queue, and then flush is there were none. There is no similar
- * API in netty that exposes the current count of 'unprocessed' messages in the channel. Hence, we use an {@link AtomicLong} counter
- * that is shared with the {@link InternodeMessagingConnection} that owns the channel this handler instance belongs to.
  */
 class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implements Iterable<QueuedMessage>
 {
@@ -65,11 +59,6 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
      * A callback for the {@link CoalescingStrategy} in use that is invoked after each message is sent.
      */
     private final Consumer<Long> coalesceCallback;
-
-    /**
-     * A shared counter (with {@link InternodeMessagingConnection#outboundCount} that tracks the number of yet-to-be-processed outbound messages.
-     */
-    private final AtomicLong outboundCount;
 
     private final AtomicLong droppedMessageCount;
 
@@ -86,12 +75,11 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
 
     private volatile boolean closed;
 
-    CoalescingMessageOutHandler(CoalescingStrategy coalescingStrategy, AtomicLong outboundCount, AtomicLong droppedMessageCount)
+    CoalescingMessageOutHandler(CoalescingStrategy coalescingStrategy, AtomicLong droppedMessageCount)
     {
         this.coalescingStrategy = coalescingStrategy;
         this.droppedMessageCount = droppedMessageCount;
         coalesceCallback = coalescingStrategy.coalesceNonBlockingCallback();
-        this.outboundCount = outboundCount;
     }
 
     @Override
@@ -119,9 +107,7 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
 
         if (!coalescingStrategy.isCoalescing())
         {
-            ctx.write(msg, promise);
-            if (outboundCount.decrementAndGet() == 0)
-                ctx.flush();
+            ctx.writeAndFlush(msg, promise);
             return;
         }
 
@@ -129,7 +115,8 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         queue.add(msg, promise);
         if (empty)
         {
-            long sleepTime = coalescingStrategy.coalesceNonBlocking(queuedMessage.timestampNanos(), outboundCount.intValue());
+            // TODO:JEB figure out this horseshit
+            long sleepTime = coalescingStrategy.coalesceNonBlocking(queuedMessage.timestampNanos(), 1);
             if (sleepTime <= 0)
             {
                 doCoalesce(ctx);
@@ -178,7 +165,7 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
             ChannelPromise promise = queue.remove();
             if (!msg.isTimedOut())
             {
-                ctx.write(msg, promise);
+                ctx.writeAndFlush(msg, promise);
             }
             else
             {
@@ -186,8 +173,6 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
                 droppedMessageCount.incrementAndGet();
             }
         }
-        if (outboundCount.addAndGet(-count) == 0)
-            ctx.flush();
         return count;
     }
 
@@ -231,7 +216,6 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
             while ((p = queue.remove()) != null)
             {
                 p.cancel(false);
-                outboundCount.decrementAndGet();
             }
         }
 
@@ -248,7 +232,6 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
                 Object o = queue.current();
                 if (o == null)
                     return endOfData();
-                outboundCount.decrementAndGet();
                 queue.remove();
                 // do *not* cancel the promise assocaited with the message as we don't want to trigger the callback
                 return (QueuedMessage)o;

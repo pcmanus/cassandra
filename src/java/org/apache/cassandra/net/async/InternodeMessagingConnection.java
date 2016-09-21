@@ -40,6 +40,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelPipeline;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.util.internal.PlatformDependent;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
@@ -73,6 +74,13 @@ public class InternodeMessagingConnection
     private static final int DEFAULT_BUFFER_SIZE = OutboundTcpConnection.BUFFER_SIZE;
 
     /**
+     * As we use netty's {@link FlushConsolidationHandler}, we can configure a max number of flush() events before it actually
+     * flushes; see {@link FlushConsolidationHandler}'s docs for full details.
+     */
+    // TODO make this configurable? yet more config :-/
+    private static final int MAX_MESSAGES_BEFORE_FLUSH = 32;
+
+    /**
      * Describes this instance's ability to send messages into it's Netty {@link Channel}.
      */
     enum State { NOT_READY, CREATING_CHANNEL, READY, CLOSED }
@@ -83,15 +91,6 @@ public class InternodeMessagingConnection
     private final Queue<QueuedMessage> backlog;
 
     private final ScheduledExecutorService scheduledExecutor;
-
-    /**
-     * A shared counter that tracks the number of yet-to-be-processed outbound messages.
-     * Note: Acts similar to {@link OutboundTcpConnection#backlog#size} in that we look to see if there are
-     * any more messages to be processed, and if not, flush any open buffer(s).
-     *
-     * To a degree, this can be seen as a proxy for the depth of the netty channel's message queue (which is not exposed).
-     */
-    private final AtomicLong outboundCount;
 
     private final AtomicLong droppedMessageCount;
     private final AtomicLong completedMessageCount;
@@ -157,7 +156,6 @@ public class InternodeMessagingConnection
         this.encryptionOptions = encryptionOptions;
         this.coalescingStrategy = coalescingStrategy;
         backlog = new ConcurrentLinkedQueue<>();
-        outboundCount = new AtomicLong(0);
         droppedMessageCount = new AtomicLong(0);
         completedMessageCount = new AtomicLong(0);
         channelBufferSize = DEFAULT_BUFFER_SIZE;
@@ -202,16 +200,23 @@ public class InternodeMessagingConnection
             if (!channel.isActive())
                 return false;
 
-            QueuedMessage backlogged = backlog.poll();
+            final QueuedMessage backlogged = backlog.poll();
             if (backlogged == null)
                 return true;
 
             // check to see if message has timed out, before shoveling it into the channel.
-            if (backlogged.isTimedOut())
+            if (!backlogged.isTimedOut())
+            {
+                ChannelFuture future = channel.write(backlogged);
+                future.addListener(f -> handleMessageFuture(f, backlogged));
+            }
+            else
             {
                 if (backlogged.shouldRetry())
                 {
-                    backlogged = new RetriedQueuedMessage(backlogged);
+                    final RetriedQueuedMessage retriedQueuedMessage = new RetriedQueuedMessage(backlogged);
+                    ChannelFuture future = channel.write(retriedQueuedMessage);
+                    future.addListener(f -> handleMessageFuture(f, retriedQueuedMessage));
                 }
                 else
                 {
@@ -219,16 +224,7 @@ public class InternodeMessagingConnection
                     continue;
                 }
             }
-
-            writeAndCount(backlogged);
         }
-    }
-
-    void writeAndCount(QueuedMessage msg)
-    {
-        outboundCount.incrementAndGet();
-        ChannelFuture future = channel.write(msg);
-        future.addListener(f -> handleMessageFuture(f, msg));
     }
 
     /**
@@ -405,7 +401,7 @@ public class InternodeMessagingConnection
                 stateUpdater.set(this, State.NOT_READY);
                 break;
             default:
-                throw new IllegalArgumentException("unhndled result type: " + result.result);
+                throw new IllegalArgumentException("unhandled result type: " + result.result);
         }
     }
 
@@ -414,8 +410,9 @@ public class InternodeMessagingConnection
         if (compress)
             pipeline.addLast("outboundCompressor", new Lz4FrameEncoder());
 
+        pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(messagingVersion, completedMessageCount, channelBufferSize));
-        pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(coalescingStrategy, outboundCount, droppedMessageCount));
+        pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount));
     }
 
     private static boolean shouldCompressConnection(InetAddress addr)
@@ -506,7 +503,8 @@ public class InternodeMessagingConnection
      */
     public Integer getPendingMessages()
     {
-        return (int)(backlog.size() + outboundCount.get());
+        //TODO:JEB this might not be completely accurate now :-/
+        return backlog.size();
     }
 
     public Long getCompletedMesssages()
@@ -557,12 +555,6 @@ public class InternodeMessagingConnection
     State getState()
     {
         return state;
-    }
-
-    @VisibleForTesting
-    int getOutboundCount()
-    {
-        return outboundCount.intValue();
     }
 
     @VisibleForTesting

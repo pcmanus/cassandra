@@ -24,6 +24,7 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.metrics.ConnectionMetrics;
+import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.OutboundTcpConnectionPool;
 import org.apache.cassandra.utils.CoalescingStrategies;
@@ -35,6 +36,7 @@ import org.apache.cassandra.utils.CoalescingStrategies;
 public class InternodeMessagingPool
 {
     private final ConnectionMetrics metrics;
+    private final BackPressureState backPressureState;
 
     public InternodeMessagingConnection gossipChannel;
     public InternodeMessagingConnection largeMessageChannel;
@@ -46,9 +48,10 @@ public class InternodeMessagingPool
      */
     private InetSocketAddress preferredRemoteAddr;
 
-    public InternodeMessagingPool(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions)
+    public InternodeMessagingPool(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, BackPressureState backPressureState)
     {
         preferredRemoteAddr = remoteAddr;
+        this.backPressureState = backPressureState;
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
         String displayName = preferredRemoteAddr.getAddress().getHostAddress();
@@ -69,6 +72,11 @@ public class InternodeMessagingPool
                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
                                                           InternodeMessagingConnection.logger,
                                                           displayName);
+    }
+
+    public BackPressureState getBackPressureState()
+    {
+        return backPressureState;
     }
 
     public void sendMessage(MessageOut msg, int id)
@@ -119,6 +127,11 @@ public class InternodeMessagingPool
     public void incrementTimeout()
     {
         metrics.timeouts.mark();
+    }
+
+    public long getTimeouts()
+    {
+        return metrics.timeouts.getCount();
     }
 
     public InetSocketAddress getPreferredRemoteAddr()

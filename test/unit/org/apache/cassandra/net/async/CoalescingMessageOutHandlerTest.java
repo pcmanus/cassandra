@@ -36,7 +36,6 @@ public class CoalescingMessageOutHandlerTest
 {
     private final AtomicLong droppedMessageCount = new AtomicLong(0);
     private FakeCoalescingStrategy coalescingStrategy;
-    private AtomicLong queueSize;
     private CoalescingMessageOutHandler handler;
     private EmbeddedChannel channel;
 
@@ -45,8 +44,7 @@ public class CoalescingMessageOutHandlerTest
     {
         coalescingStrategy = new FakeCoalescingStrategy(true);
         droppedMessageCount.set(0);
-        queueSize = new AtomicLong(1);
-        handler = new CoalescingMessageOutHandler(coalescingStrategy, queueSize, droppedMessageCount);
+        handler = new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount);
         channel = new EmbeddedChannel(handler);
     }
 
@@ -68,7 +66,6 @@ public class CoalescingMessageOutHandlerTest
         Assert.assertFalse(promise.isSuccess());
         Assert.assertNotNull(promise.cause());
         Assert.assertFalse(coalescingStrategy.coalesceCallbackInvoked);
-        Assert.assertEquals(1, queueSize.intValue());
         Assert.assertEquals(0, droppedMessageCount.intValue());
     }
 
@@ -76,7 +73,7 @@ public class CoalescingMessageOutHandlerTest
     public void write_NonCoalescingWrite() throws Exception
     {
         coalescingStrategy = new FakeCoalescingStrategy(false);
-        handler = new CoalescingMessageOutHandler(coalescingStrategy, queueSize, droppedMessageCount);
+        handler = new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount);
         channel = new EmbeddedChannel(handler);
 
         QueuedMessage queuedMessage = new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), 1);
@@ -85,7 +82,6 @@ public class CoalescingMessageOutHandlerTest
         Assert.assertTrue(promise.isSuccess());
         Assert.assertTrue(coalescingStrategy.coalesceCallbackInvoked);
         Assert.assertEquals(0, droppedMessageCount.intValue());
-        Assert.assertEquals(0, queueSize.intValue());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
         channel.releaseOutbound(); // throw away any outbound messages
     }
@@ -97,7 +93,6 @@ public class CoalescingMessageOutHandlerTest
         ChannelPromise promise = (ChannelPromise)channel.write(queuedMessage);
         Assert.assertTrue(promise.isSuccess());
         Assert.assertTrue(coalescingStrategy.coalesceCallbackInvoked);
-        Assert.assertEquals(0, queueSize.intValue());
         Assert.assertEquals(0, droppedMessageCount.intValue());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
         channel.releaseOutbound(); // throw away any outbound messages
@@ -106,9 +101,7 @@ public class CoalescingMessageOutHandlerTest
     @Test
     public void doCoalesce_EmptyQueue()
     {
-        queueSize.set(0);
         handler.doCoalesce(channel.pipeline().firstContext());
-        Assert.assertEquals(0, queueSize.intValue());
         Assert.assertEquals(0, droppedMessageCount.intValue());
         Assert.assertTrue(channel.outboundMessages().isEmpty());
     }
@@ -117,7 +110,6 @@ public class CoalescingMessageOutHandlerTest
     public void doCoalesce_PopulatedQueue()
     {
         int backLogSize = 16;
-        queueSize.set(backLogSize);
 
         for (int i = 0; i < backLogSize; i++)
             handler.addToQueue(new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), i), channel.newPromise());
@@ -134,7 +126,6 @@ public class CoalescingMessageOutHandlerTest
     public void doCoalesce_PopulatedQueueWithSomeExpired()
     {
         int backLogSize = 16;
-        queueSize.set(backLogSize);
 
         for (int i = 0; i < backLogSize; i++)
         {
@@ -156,7 +147,6 @@ public class CoalescingMessageOutHandlerTest
     public void iterator()
     {
         int backLogSize = 16;
-        queueSize.set(backLogSize);
 
         for (int i = 0; i < backLogSize; i++)
             handler.addToQueue(new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), i), channel.newPromise());

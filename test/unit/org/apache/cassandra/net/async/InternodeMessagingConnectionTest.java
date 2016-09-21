@@ -80,15 +80,6 @@ public class InternodeMessagingConnectionTest
     }
 
     @Test
-    public void writeAndCount()
-    {
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
-        imc.writeAndCount(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
-        Assert.assertEquals(1, imc.getPendingMessages().intValue());
-        Assert.assertEquals(1, handler.writeCount);
-    }
-
-    @Test
     public void clearBacklog_InactiveChannel()
     {
         channel.close();
@@ -110,7 +101,7 @@ public class InternodeMessagingConnectionTest
     {
         imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
         Assert.assertTrue(imc.writeBacklogToChannel());
-        Assert.assertEquals(1, imc.getPendingMessages().intValue());
+        Assert.assertEquals(0, imc.getPendingMessages().intValue());
         Assert.assertEquals(1, handler.writeCount);
     }
 
@@ -128,7 +119,7 @@ public class InternodeMessagingConnectionTest
 
         Assert.assertTrue(imc.writeBacklogToChannel());
         int half = 32 >> 1;
-        Assert.assertEquals(half, imc.getPendingMessages().intValue());
+        Assert.assertEquals(0, imc.getPendingMessages().intValue());
         Assert.assertEquals(half, handler.writeCount);
         Assert.assertEquals(half, imc.getDroppedMessages().intValue());
     }
@@ -158,7 +149,7 @@ public class InternodeMessagingConnectionTest
         imc.setState(READY);
         imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
         Assert.assertEquals(0, imc.backlogSize());
-        Assert.assertEquals(1, imc.getPendingMessages().intValue());
+        Assert.assertEquals(0, imc.getPendingMessages().intValue());
         Assert.assertEquals(1, handler.writeCount);
     }
 
@@ -171,7 +162,6 @@ public class InternodeMessagingConnectionTest
         channel.pipeline().fireChannelWritabilityChanged();
         imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
         Assert.assertEquals(1, imc.backlogSize());
-        Assert.assertEquals(0, imc.getOutboundCount());
         Assert.assertEquals(0, handler.writeCount);
     }
 

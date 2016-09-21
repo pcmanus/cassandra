@@ -306,7 +306,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         void realloc()
         {
             assert writeState != null : "write buf is null";
-            ctx.write(writeState.buf, writeState.promise);
+            ctx.writeAndFlush(writeState.buf, writeState.promise);
             writeState = null;
             alloc();
         }
