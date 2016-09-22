@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.DecoderException;
 import org.apache.cassandra.db.UnknownColumnFamilyException;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -58,6 +59,9 @@ class MessageInProcessingHandler extends SimpleChannelInboundHandler<MessageInWr
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
     {
+        if (cause instanceof DecoderException)
+            cause = cause.getCause();
+
         if (cause instanceof EOFException)
             logger.trace("eof reading from socket; closing", cause);
         else if (cause instanceof UnknownColumnFamilyException)

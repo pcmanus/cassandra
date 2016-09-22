@@ -155,9 +155,6 @@ class MessageOutHandler extends ChannelDuplexHandler
         int currentFrameSize = MESSAGE_PREFIX_SIZE + msg.message.serializedSize(targetMessagingVersion);
         dataOutputPlus.writeInt(MessagingService.PROTOCOL_MAGIC);
 
-        if (targetMessagingVersion >= MessagingService.VERSION_40)
-            dataOutputPlus.writeInt(currentFrameSize);
-
         dataOutputPlus.writeInt(msg.id);
 
         // int cast cuts off the high-order half of the timestamp, which we can assume remains

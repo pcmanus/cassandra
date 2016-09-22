@@ -232,22 +232,12 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
      */
     static List<Pair<String, ChannelHandler>> createHandlers(InetAddress peer, boolean compressed, int messagingVersion, Consumer<MessageInWrapper> messageConsumer)
     {
-        List<Pair<String, ChannelHandler>> namesToHandlers;
-        if (messagingVersion >= MessagingService.VERSION_40)
-        {
-            namesToHandlers = new ArrayList<>(4);
-            if (compressed)
-                namesToHandlers.add(Pair.create(NettyFactory.INBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameDecoder()));
+        List<Pair<String, ChannelHandler>> namesToHandlers = new ArrayList<>(4);
+        if (compressed)
+            namesToHandlers.add(Pair.create(NettyFactory.INBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameDecoder()));
 
-            final int maxSize = 1 << 27; // 128MB as the largest frame (?)
-            namesToHandlers.add(Pair.create("frameDecoder", new LengthFieldBasedFrameDecoder(maxSize, 4, 4)));
-            namesToHandlers.add(Pair.create("messageInHandler", new MessageInHandler(peer, messagingVersion)));
-            namesToHandlers.add(Pair.create("messageInProcessor", new MessageInProcessingHandler(messageConsumer)));
-        }
-        else
-        {
-            namesToHandlers = Collections.singletonList(Pair.create("messageInHandler", new LegacyClientHandler(peer, compressed, messagingVersion)));
-        }
+        namesToHandlers.add(Pair.create("messageReceiveHandler", new MessageReceiveHandler(peer, messagingVersion)));
+        namesToHandlers.add(Pair.create("messageInProcessor", new MessageInProcessingHandler(messageConsumer)));
 
         return namesToHandlers;
     }

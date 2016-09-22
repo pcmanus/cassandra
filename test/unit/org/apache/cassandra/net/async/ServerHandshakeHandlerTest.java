@@ -204,20 +204,10 @@ public class ServerHandshakeHandlerTest
     }
 
     @Test
-    public void setupPipeline_WithModernMessageHandler()
+    public void setupPipeline()
     {
         ChannelPipeline pipeline = channel.pipeline();
         ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
-        Assert.assertNotNull(pipeline.get(MessageInHandler.class));
-        Assert.assertNull(pipeline.get(LegacyClientHandler.class));
-    }
-
-    @Test
-    public void setupPipeline_WithLegacyMessageHandler()
-    {
-        ChannelPipeline pipeline = channel.pipeline();
-        ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MessagingService.VERSION_12, NOP_CONSUMER));
-        Assert.assertNull(pipeline.get(MessageInHandler.class));
-        Assert.assertNotNull(pipeline.get(LegacyClientHandler.class));
+        Assert.assertNotNull(pipeline.get(MessageReceiveHandler.class));
     }
 }
