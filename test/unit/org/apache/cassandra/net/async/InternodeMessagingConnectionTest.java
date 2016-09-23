@@ -33,6 +33,7 @@ import java.util.concurrent.TimeoutException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.channel.ChannelHandlerContext;
@@ -40,15 +41,17 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
+import org.apache.cassandra.net.OutboundTcpConnection.RetriedQueuedMessage;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.State;
 
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE;
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.DISCONNECT;
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.GOOD;
+import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE;
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.CLOSED;
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.CREATING_CHANNEL;
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.NOT_READY;
@@ -63,6 +66,12 @@ public class InternodeMessagingConnectionTest
     private InternodeMessagingConnection imc;
     private CountingHandler handler;
     private EmbeddedChannel channel;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @Before
     public void setup()
@@ -114,7 +123,7 @@ public class InternodeMessagingConnectionTest
             if (i % 2 == 0)
                 imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
             else
-                imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i, 0, true));
+                imc.addToBacklog(new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i), Long.MIN_VALUE, true));
         }
 
         Assert.assertTrue(imc.writeBacklogToChannel());
@@ -222,7 +231,7 @@ public class InternodeMessagingConnectionTest
         imc.setState(CLOSED);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
-        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
+        imc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
         Assert.assertEquals(0, imc.backlogSize());
     }
 
@@ -233,7 +242,7 @@ public class InternodeMessagingConnectionTest
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
         channel.close();
-        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true));
+        imc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
 
         Assert.assertFalse(channel.isActive());
         Assert.assertEquals(0, imc.backlogSize());

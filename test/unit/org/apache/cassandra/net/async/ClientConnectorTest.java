@@ -26,12 +26,14 @@ import javax.net.ssl.SSLHandshakeException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.apache.cassandra.config.DatabaseDescriptor;
 
 public class ClientConnectorTest
 {
@@ -40,6 +42,12 @@ public class ClientConnectorTest
 
     EmbeddedChannel channel;
     ClientConnector connector;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @Before
     public void setUp()

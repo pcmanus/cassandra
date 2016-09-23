@@ -339,9 +339,6 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     {
         out.writeInt(MessagingService.PROTOCOL_MAGIC);
 
-        if (targetVersion >= MessagingService.VERSION_40)
-            out.writeInt(message.serializedSize(targetVersion));
-
         if (targetVersion < MessagingService.VERSION_20)
             out.writeUTF(String.valueOf(id));
         else
@@ -604,6 +601,12 @@ public class OutboundTcpConnection extends FastThreadLocalThread
         public RetriedQueuedMessage(QueuedMessage msg)
         {
             super(msg.message, msg.id);
+        }
+
+        @VisibleForTesting
+        public RetriedQueuedMessage(QueuedMessage msg, long timestampNanos, boolean droppable)
+        {
+            super(msg.message, msg.id, timestampNanos, droppable);
         }
 
         public boolean shouldRetry()

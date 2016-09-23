@@ -182,10 +182,6 @@ public class IncomingTcpConnection extends FastThreadLocalThread implements Clos
 
     public static InetAddress receiveMessage(InetAddress from, DataInputPlus input, int version) throws IOException
     {
-        // throw away the frame size int as we don't use it here
-        if (version >= MessagingService.VERSION_40)
-            input.readInt();
-
         int id;
         if (version < MessagingService.VERSION_20)
             id = Integer.parseInt(input.readUTF());

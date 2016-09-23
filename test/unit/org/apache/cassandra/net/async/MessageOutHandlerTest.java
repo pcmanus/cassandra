@@ -22,10 +22,12 @@ import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
@@ -33,6 +35,12 @@ import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
 public class MessageOutHandlerTest
 {
     private static final int MESSAGING_VERSION = MessagingService.current_version;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @Test
     public void serializeMessage() throws IOException

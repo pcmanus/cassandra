@@ -24,10 +24,12 @@ import com.google.common.collect.Iterators;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
@@ -38,6 +40,12 @@ public class CoalescingMessageOutHandlerTest
     private FakeCoalescingStrategy coalescingStrategy;
     private CoalescingMessageOutHandler handler;
     private EmbeddedChannel channel;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @Before
     public void setup()

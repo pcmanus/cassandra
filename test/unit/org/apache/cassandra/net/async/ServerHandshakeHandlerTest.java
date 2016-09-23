@@ -33,6 +33,7 @@ import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.ServerHandshakeHandler.State;
@@ -52,6 +53,7 @@ public class ServerHandshakeHandlerTest
     public static void beforeClass()
     {
         ServerHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
+        DatabaseDescriptor.daemonInitialization();
     }
 
     @Before
