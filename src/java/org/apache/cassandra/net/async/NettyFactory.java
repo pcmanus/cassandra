@@ -60,7 +60,7 @@ public final class NettyFactory
     static
     {
         if (WIRETRACE)
-            InternalLoggerFactory.setDefaultFactory(new Slf4JLoggerFactory());
+            InternalLoggerFactory.setDefaultFactory(Slf4JLoggerFactory.INSTANCE);
     }
 
     private static final boolean useEpoll = NativeTransportService.useEpoll();

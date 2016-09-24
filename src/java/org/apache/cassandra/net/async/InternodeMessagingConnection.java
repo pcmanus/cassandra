@@ -37,8 +37,12 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandler;
+import io.netty.channel.ChannelOutboundHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.util.internal.PlatformDependent;
@@ -413,6 +417,22 @@ public class InternodeMessagingConnection
         pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(messagingVersion, completedMessageCount, channelBufferSize));
         pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount));
+        pipeline.addLast("lameoLogger", new ErrorLoggingHandler());
+    }
+
+    class ErrorLoggingHandler extends ChannelDuplexHandler
+    {
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
+        {
+            if (cause instanceof IOException)
+                logger.debug("IOException from {}", remoteAddr, cause);
+            else
+                logger.warn("error on channel from {}", remoteAddr, cause);
+
+            ctx.close();
+        }
+
     }
 
     private static boolean shouldCompressConnection(InetAddress addr)

@@ -54,7 +54,7 @@ class MessageOutHandler extends ChannelDuplexHandler
 {
     private static final Logger logger = LoggerFactory.getLogger(CoalescingMessageOutHandler.class);
 
-    private static final int MESSAGE_PREFIX_SIZE = 8;
+    private static final int MESSAGE_PREFIX_SIZE = 12;
 
     /**
      * The version of the messaging protocol we're communicating at.
@@ -143,7 +143,7 @@ class MessageOutHandler extends ChannelDuplexHandler
     }
 
     /**
-     * Frames and serializes a message to the {@code #dataOutputPlus}. If a message will span several outbound buffers,
+     * Serializes a message to the {@code #dataOutputPlus}. If a message will span several outbound buffers,
      * the {@link #dataOutputPlus} will end up with several {@link ChannelPromise}s, one for each one of those buffers.
      * A {@link PromiseCombiner} is used to aggregate the results of those {@link ChannelPromise}s and link it to the message's
      * promise (the one that is a parameter to this method).
@@ -151,10 +151,9 @@ class MessageOutHandler extends ChannelDuplexHandler
     private void serializeMessage(QueuedMessage msg, ChannelPromise promise) throws IOException
     {
         dataOutputPlus.startMessage();
-        // frame size does *not* include the magic and frame size int the value
+        // frame size includes the magic and and other values *before* the actaul serialized message
         int currentFrameSize = MESSAGE_PREFIX_SIZE + msg.message.serializedSize(targetMessagingVersion);
         dataOutputPlus.writeInt(MessagingService.PROTOCOL_MAGIC);
-
         dataOutputPlus.writeInt(msg.id);
 
         // int cast cuts off the high-order half of the timestamp, which we can assume remains
@@ -168,8 +167,8 @@ class MessageOutHandler extends ChannelDuplexHandler
         promiseCombiner.finish(promise);
 
         // next few lines are for debugging ... massively helpful!!
-        int writeSize = dataOutputPlus.currentMessageByteCount - MESSAGE_PREFIX_SIZE;
-        if (currentFrameSize != writeSize)
+        int writeSize = dataOutputPlus.currentMessageByteCount - currentFrameSize;
+        if (writeSize != 0)
             logger.error("reported message size {}, actual message size {}, msg {}", currentFrameSize, writeSize, msg.message);
 
         dataOutputPlus.endMessage();
