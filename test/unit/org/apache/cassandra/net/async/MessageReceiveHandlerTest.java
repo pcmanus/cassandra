@@ -29,10 +29,12 @@ import java.util.Map;
 import com.google.common.base.Charsets;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.MessageReceiveHandler.MessageHeader;
@@ -46,6 +48,12 @@ public class MessageReceiveHandlerTest
     private static final int MSG_ID = 42;
 
     private ByteBuf buf;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @After
     public void tearDown()
