@@ -54,6 +54,20 @@ public class PrepareMessage extends RepairMessage
         this.isGlobal = isGlobal;
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof PrepareMessage))
+            return false;
+        PrepareMessage other = (PrepareMessage)o;
+        return messageType == other.messageType &&
+               parentRepairSession.equals(other.parentRepairSession) &&
+               isIncremental == other.isIncremental &&
+               isGlobal == other.isGlobal &&
+               timestamp == other.timestamp &&
+               cfIds.equals(other.cfIds) &&
+               ranges.equals(other.ranges);
+    }
+
     public static class PrepareMessageSerializer implements MessageSerializer<PrepareMessage>
     {
         public void serialize(PrepareMessage message, DataOutputPlus out, int version) throws IOException

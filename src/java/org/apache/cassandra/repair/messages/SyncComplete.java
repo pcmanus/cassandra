@@ -53,6 +53,17 @@ public class SyncComplete extends RepairMessage
         this.success = success;
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof SyncComplete))
+            return false;
+        SyncComplete other = (SyncComplete)o;
+        return messageType == other.messageType &&
+               desc.equals(other.desc) &&
+               success == other.success &&
+               nodes.equals(other.nodes);
+    }
+
     private static class SyncCompleteSerializer implements MessageSerializer<SyncComplete>
     {
         public void serialize(SyncComplete message, DataOutputPlus out, int version) throws IOException

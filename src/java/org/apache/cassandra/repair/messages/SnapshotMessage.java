@@ -32,6 +32,14 @@ public class SnapshotMessage extends RepairMessage
         super(Type.SNAPSHOT, desc);
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof SnapshotMessage))
+            return false;
+        SnapshotMessage other = (SnapshotMessage) o;
+        return messageType == other.messageType;
+    }
+
     public static class SnapshotMessageSerializer implements MessageSerializer<SnapshotMessage>
     {
         public void serialize(SnapshotMessage message, DataOutputPlus out, int version) throws IOException

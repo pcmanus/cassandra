@@ -55,6 +55,16 @@ public class ValidationComplete extends RepairMessage
         return trees != null;
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof ValidationComplete))
+            return false;
+
+        ValidationComplete other = (ValidationComplete)o;
+        return messageType == other.messageType &&
+               desc.equals(other.desc);
+    }
+
     private static class ValidationCompleteSerializer implements MessageSerializer<ValidationComplete>
     {
         public void serialize(ValidationComplete message, DataOutputPlus out, int version) throws IOException

@@ -46,6 +46,16 @@ public class AnticompactionRequest extends RepairMessage
         this.successfulRanges = ranges;
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof AnticompactionRequest))
+            return false;
+        AnticompactionRequest other = (AnticompactionRequest)o;
+        return messageType == other.messageType &&
+               parentRepairSession.equals(other.parentRepairSession) &&
+               successfulRanges.equals(other.successfulRanges);
+    }
+
     public static class AnticompactionRequestSerializer implements MessageSerializer<AnticompactionRequest>
     {
         public void serialize(AnticompactionRequest message, DataOutputPlus out, int version) throws IOException
@@ -72,6 +82,7 @@ public class AnticompactionRequest extends RepairMessage
         public long serializedSize(AnticompactionRequest message, int version)
         {
             long size = UUIDSerializer.serializer.serializedSize(message.parentRepairSession, version);
+            size += Integer.BYTES; // count of items in successfulRanges
             for (Range<Token> r : message.successfulRanges)
                 size += Range.tokenSerializer.serializedSize(r, version);
             return size;

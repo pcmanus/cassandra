@@ -40,6 +40,15 @@ public class CleanupMessage extends RepairMessage
         this.parentRepairSession = parentRepairSession;
     }
 
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof CleanupMessage))
+            return false;
+        CleanupMessage other = (CleanupMessage) o;
+        return messageType == other.messageType &&
+               parentRepairSession.equals(other.parentRepairSession);
+    }
+
     public static class CleanupMessageSerializer implements MessageSerializer<CleanupMessage>
     {
         public void serialize(CleanupMessage message, DataOutputPlus out, int version) throws IOException

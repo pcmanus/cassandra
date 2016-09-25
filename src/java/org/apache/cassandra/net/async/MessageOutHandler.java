@@ -169,7 +169,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         // next few lines are for debugging ... massively helpful!!
         int writeSize = dataOutputPlus.currentMessageByteCount - currentFrameSize;
         if (writeSize != 0)
-            logger.error("reported message size {}, actual message size {}, msg {}", currentFrameSize, writeSize, msg.message);
+            logger.error("reported message size {}, actual message size {}, msg {}", currentFrameSize, dataOutputPlus.currentMessageByteCount, msg.message);
 
         dataOutputPlus.endMessage();
     }
