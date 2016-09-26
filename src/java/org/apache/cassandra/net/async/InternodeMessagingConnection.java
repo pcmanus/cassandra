@@ -23,6 +23,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
 import java.util.Queue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -249,6 +250,8 @@ public class InternodeMessagingConnection
         JVMStabilityInspector.inspectThrowable(cause);
 
         // all netty "connection" related exceptions seem to derive from IOException, so this is probably a safe check
+
+        // TODO:JEB handle "cause instanceof CancellationException"
         if (cause instanceof IOException || cause.getCause() instanceof IOException)
         {
             if (logger.isTraceEnabled())
