@@ -42,6 +42,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
+import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.util.internal.PlatformDependent;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
