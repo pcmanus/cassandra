@@ -212,8 +212,7 @@ public class FileMessageHeader
             out.writeLong(header.repairedAt);
             out.writeInt(header.sstableLevel);
 
-            if (version >= StreamMessage.VERSION_30 && header.version.storeRows())
-                SerializationHeader.serializer.serialize(header.version, header.header, out);
+            SerializationHeader.serializer.serialize(header.version, header.header, out);
             return compressionInfo;
         }
 
@@ -235,9 +234,7 @@ public class FileMessageHeader
             CompressionInfo compressionInfo = CompressionInfo.serializer.deserialize(in, MessagingService.current_version);
             long repairedAt = in.readLong();
             int sstableLevel = in.readInt();
-            SerializationHeader.Component header = version >= StreamMessage.VERSION_30 && sstableVersion.storeRows()
-                                                 ? SerializationHeader.serializer.deserialize(sstableVersion, in)
-                                                 : null;
+            SerializationHeader.Component header =  SerializationHeader.serializer.deserialize(sstableVersion, in);
 
             return new FileMessageHeader(cfId, sequenceNumber, sstableVersion, format, estimatedKeys, sections, compressionInfo, repairedAt, sstableLevel, header);
         }

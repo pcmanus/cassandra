@@ -152,12 +152,6 @@ public class CommitLogTest
     }
 
     @Test
-    public void testRecoveryWithEmptyLog20() throws Exception
-    {
-        CommitLog.instance.recoverFiles(tmpFile(CommitLogDescriptor.VERSION_20));
-    }
-
-    @Test
     public void testRecoveryWithZeroLog() throws Exception
     {
         testRecovery(new byte[10], null);
@@ -174,7 +168,7 @@ public class CommitLogTest
     public void testRecoveryWithShortSize() throws Exception
     {
         runExpecting(() -> {
-            testRecovery(new byte[2], CommitLogDescriptor.VERSION_20);
+            testRecovery(new byte[2], CommitLogDescriptor.current_version);
             return null;
         }, CommitLogReplayException.class);
     }
@@ -531,7 +525,7 @@ public class CommitLogTest
     {
         ParameterizedClass commitLogCompression = DatabaseDescriptor.getCommitLogCompression();
         EncryptionContext encryptionContext = DatabaseDescriptor.getEncryptionContext();
-        runExpecting(() -> testRecovery(logData, CommitLogDescriptor.VERSION_20), expected);
+        runExpecting(() -> testRecovery(logData, CommitLogDescriptor.current_version), expected);
         runExpecting(() -> testRecovery(new CommitLogDescriptor(4, commitLogCompression, encryptionContext), logData), expected);
     }
 

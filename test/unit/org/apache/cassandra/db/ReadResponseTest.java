@@ -54,29 +54,6 @@ public class ReadResponseTest extends CQLTester
         DatabaseDescriptor.setPartitionerUnsafe(partitionerToRestore);
     }
 
-    @Test
-    public void testLegacyResponseSkipWrongBounds()
-    {
-        createTable("CREATE TABLE %s (k text PRIMARY KEY)");
-
-        ColumnFamilyStore cfs = getCurrentColumnFamilyStore();
-
-        // Test that if a legacy response contains keys at the boundary of the requested key range that shouldn't be present, those
-        // are properly skipped. See CASSANDRA-9857 for context.
-
-        List<ImmutableBTreePartition> responses = Arrays.asList(makePartition(cfs.metadata, "k1"),
-                                                                makePartition(cfs.metadata, "k2"),
-                                                                makePartition(cfs.metadata, "k3"));
-        ReadResponse.LegacyRemoteDataResponse response = new ReadResponse.LegacyRemoteDataResponse(responses);
-
-        assertPartitions(response.makeIterator(Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k3").build()), "k2");
-        assertPartitions(response.makeIterator(Util.cmd(cfs).fromKeyExcl("k0").toKeyExcl("k3").build()), "k1", "k2");
-        assertPartitions(response.makeIterator(Util.cmd(cfs).fromKeyExcl("k1").toKeyExcl("k4").build()), "k2", "k3");
-
-        assertPartitions(response.makeIterator(Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k3").build()), "k1", "k2");
-        assertPartitions(response.makeIterator(Util.cmd(cfs).fromKeyIncl("k1").toKeyExcl("k4").build()), "k1", "k2", "k3");
-    }
-
     private void assertPartitions(UnfilteredPartitionIterator actual, String... expectedKeys)
     {
         int i = 0;

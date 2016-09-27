@@ -1130,18 +1130,27 @@ public final class SystemKeyspace
         if (results.isEmpty())
             return new PaxosState(key, metadata);
         UntypedResultSet.Row row = results.one();
+
+        // Note: Pre-3.0, we used to not store the versions at which things were serialized. As 3.0 is a mandatory
+        // upgrade to 4.0+ and the paxos table is TTLed, it's _very_ unlikely we'll ever read a proposal or MRC without
+        // a version. But if we do (say gc_grace, on which the TTL is based, happens to be super large), we consider
+        // the commit too old and ignore it.
+        if (!row.has("proposal_version") || !row.has("most_recent_commit_version"))
+            return new PaxosState(key, metadata);
+
+
         Commit promised = row.has("in_progress_ballot")
                         ? new Commit(row.getUUID("in_progress_ballot"), new PartitionUpdate(metadata, key, metadata.partitionColumns(), 1))
                         : Commit.emptyCommit(key, metadata);
         // either we have both a recently accepted ballot and update or we have neither
-        int proposalVersion = row.has("proposal_version") ? row.getInt("proposal_version") : MessagingService.VERSION_21;
-        Commit accepted = row.has("proposal")
-                        ? new Commit(row.getUUID("proposal_ballot"), PartitionUpdate.fromBytes(row.getBytes("proposal"), proposalVersion, key))
+        Commit accepted = row.has("proposal_version") && row.has("proposal")
+                        ? new Commit(row.getUUID("proposal_ballot"),
+                                     PartitionUpdate.fromBytes(row.getBytes("proposal"), row.getInt("proposal_version")))
                         : Commit.emptyCommit(key, metadata);
         // either most_recent_commit and most_recent_commit_at will both be set, or neither
-        int mostRecentVersion = row.has("most_recent_commit_version") ? row.getInt("most_recent_commit_version") : MessagingService.VERSION_21;
-        Commit mostRecent = row.has("most_recent_commit")
-                          ? new Commit(row.getUUID("most_recent_commit_at"), PartitionUpdate.fromBytes(row.getBytes("most_recent_commit"), mostRecentVersion, key))
+        Commit mostRecent = row.has("most_recent_commit_version") && row.has("most_recent_commit")
+                          ? new Commit(row.getUUID("most_recent_commit_at"),
+                                       PartitionUpdate.fromBytes(row.getBytes("most_recent_commit"), row.getInt("most_recent_commit_version")))
                           : Commit.emptyCommit(key, metadata);
         return new PaxosState(promised, accepted, mostRecent);
     }
@@ -1441,7 +1450,13 @@ public final class SystemKeyspace
     {
         try (DataOutputBuffer out = new DataOutputBuffer())
         {
-            Range.tokenSerializer.serialize(range, out, MessagingService.VERSION_22);
+            // The format with which token ranges are serialized in the system tables is the pre-3.0 serialization
+            // formot for ranges, so we should maintain that for now. And while we don't really support pre-3.0
+            // messaging versions, we know AbstractBounds.Serializer still support it _exactly_ for this use case, so we
+            // pass 0 as the version to trigger that legacy code.
+            // In the future, it might be worth switching to a stable text format for the ranges to 1) save that and 2)
+            // be more user friendly (the serialization format we currently use is pretty custom).
+            Range.tokenSerializer.serialize(range, out, 0);
             return out.buffer();
         }
         catch (IOException e)
@@ -1455,9 +1470,10 @@ public final class SystemKeyspace
     {
         try
         {
+            // See rangeToBytes above for why version is 0.
             return (Range<Token>) Range.tokenSerializer.deserialize(ByteStreams.newDataInput(ByteBufferUtil.getArray(rawRange)),
                                                                     partitioner,
-                                                                    MessagingService.VERSION_22);
+                                                                    0);
         }
         catch (IOException e)
         {

@@ -242,10 +242,7 @@ public class LegacySSTableTest
         CacheService.instance.invalidateKeyCache();
         Assert.assertEquals(startCount, CacheService.instance.keyCache.size());
         CacheService.instance.keyCache.loadSaved();
-        if (BigFormat.instance.getVersion(legacyVersion).storeRows())
-            Assert.assertEquals(endCount, CacheService.instance.keyCache.size());
-        else
-            Assert.assertEquals(startCount, CacheService.instance.keyCache.size());
+        Assert.assertEquals(endCount, CacheService.instance.keyCache.size());
     }
 
     private static void verifyReads(String legacyVersion)

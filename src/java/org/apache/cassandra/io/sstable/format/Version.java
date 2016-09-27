@@ -60,8 +60,6 @@ public abstract class Version
 
     public abstract boolean hasNewFileName();
 
-    public abstract boolean storeRows();
-
     public abstract int correspondingMessagingVersion(); // Only use by storage that 'storeRows' so far
 
     public abstract boolean hasOldBfHashOrder();
