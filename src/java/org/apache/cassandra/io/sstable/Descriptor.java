@@ -31,7 +31,6 @@ import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.sstable.metadata.IMetadataSerializer;
-import org.apache.cassandra.io.sstable.metadata.LegacyMetadataSerializer;
 import org.apache.cassandra.io.sstable.metadata.MetadataSerializer;
 import org.apache.cassandra.utils.Pair;
 
@@ -139,11 +138,6 @@ public class Descriptor
 
     private void appendFileName(StringBuilder buff)
     {
-        if (!version.hasNewFileName())
-        {
-            buff.append(ksname).append(separator);
-            buff.append(cfname).append(separator);
-        }
         buff.append(version).append(separator);
         buff.append(generation);
         if (formatType != SSTableFormat.Type.LEGACY)
@@ -282,35 +276,26 @@ public class Descriptor
 
         Version version = fmt.info.getVersion(nexttok);
 
-        // ks/cf names
-        String ksname, cfname;
-        if (version.hasNewFileName())
+        // for 2.1+ read ks and cf names from directory
+        File cfDirectory = parentDirectory;
+        // check if this is secondary index
+        String indexName = "";
+        if (cfDirectory.getName().startsWith(Directories.SECONDARY_INDEX_NAME_SEPARATOR))
         {
-            // for 2.1+ read ks and cf names from directory
-            File cfDirectory = parentDirectory;
-            // check if this is secondary index
-            String indexName = "";
-            if (cfDirectory.getName().startsWith(Directories.SECONDARY_INDEX_NAME_SEPARATOR))
-            {
-                indexName = cfDirectory.getName();
-                cfDirectory = cfDirectory.getParentFile();
-            }
-            if (cfDirectory.getName().equals(Directories.BACKUPS_SUBDIR))
-            {
-                cfDirectory = cfDirectory.getParentFile();
-            }
-            else if (cfDirectory.getParentFile().getName().equals(Directories.SNAPSHOT_SUBDIR))
-            {
-                cfDirectory = cfDirectory.getParentFile().getParentFile();
-            }
-            cfname = cfDirectory.getName().split("-")[0] + indexName;
-            ksname = cfDirectory.getParentFile().getName();
+            indexName = cfDirectory.getName();
+            cfDirectory = cfDirectory.getParentFile();
         }
-        else
+        if (cfDirectory.getName().equals(Directories.BACKUPS_SUBDIR))
         {
-            cfname = tokenStack.pop();
-            ksname = tokenStack.pop();
+            cfDirectory = cfDirectory.getParentFile();
         }
+        else if (cfDirectory.getParentFile().getName().equals(Directories.SNAPSHOT_SUBDIR))
+        {
+            cfDirectory = cfDirectory.getParentFile().getParentFile();
+        }
+        String cfname = cfDirectory.getName().split("-")[0] + indexName;
+        String ksname = cfDirectory.getParentFile().getName();
+
         assert tokenStack.isEmpty() : "Invalid file name " + name + " in " + directory;
 
         return Pair.create(new Descriptor(version, parentDirectory, ksname, cfname, generation, fmt,
@@ -321,10 +306,7 @@ public class Descriptor
 
     public IMetadataSerializer getMetadataSerializer()
     {
-        if (version.hasNewStatsFile())
-            return new MetadataSerializer();
-        else
-            return new LegacyMetadataSerializer();
+        return new MetadataSerializer();
     }
 
     /**

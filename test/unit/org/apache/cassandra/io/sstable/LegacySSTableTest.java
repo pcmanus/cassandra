@@ -122,8 +122,7 @@ public class LegacySSTableTest
     protected Descriptor getDescriptor(String legacyVersion, String table)
     {
         return new Descriptor(legacyVersion, getTableDir(legacyVersion, table), "legacy_tables", table, 1,
-                              BigFormat.instance.getVersion(legacyVersion).hasNewFileName()?
-                              SSTableFormat.Type.BIG :SSTableFormat.Type.LEGACY);
+                              SSTableFormat.Type.BIG);
     }
 
     @Test

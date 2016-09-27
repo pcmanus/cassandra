@@ -144,18 +144,6 @@ public class BigFormat implements SSTableFormat
         }
 
         @Override
-        public boolean hasSamplingLevel()
-        {
-            return true;
-        }
-
-        @Override
-        public boolean hasNewStatsFile()
-        {
-            return true;
-        }
-
-        @Override
         public ChecksumType compressedChecksumType()
         {
             return ChecksumType.CRC32;
@@ -165,36 +153,6 @@ public class BigFormat implements SSTableFormat
         public ChecksumType uncompressedChecksumType()
         {
             return ChecksumType.CRC32;
-        }
-
-        @Override
-        public boolean hasRepairedAt()
-        {
-            return true;
-        }
-
-        @Override
-        public boolean tracksLegacyCounterShards()
-        {
-            return true;
-        }
-
-        @Override
-        public boolean hasOldBfHashOrder()
-        {
-            return false;
-        }
-
-        @Override
-        public boolean hasCompactionAncestors()
-        {
-            return false;
-        }
-
-        @Override
-        public boolean hasNewFileName()
-        {
-            return true;
         }
 
         @Override
@@ -213,12 +171,6 @@ public class BigFormat implements SSTableFormat
         public int correspondingMessagingVersion()
         {
             return correspondingMessagingVersion;
-        }
-
-        @Override
-        public boolean hasBoundaries()
-        {
-            return false;
         }
 
         @Override

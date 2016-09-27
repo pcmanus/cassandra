@@ -303,9 +303,7 @@ public class StatsMetadata extends MetadataComponent
             double compressionRatio = in.readDouble();
             StreamingHistogram tombstoneHistogram = StreamingHistogram.serializer.deserialize(in);
             int sstableLevel = in.readInt();
-            long repairedAt = 0;
-            if (version.hasRepairedAt())
-                repairedAt = in.readLong();
+            long repairedAt = in.readLong();
 
             int colCount = in.readInt();
             List<ByteBuffer> minClusteringValues = new ArrayList<>(colCount);
@@ -317,9 +315,7 @@ public class StatsMetadata extends MetadataComponent
             for (int i = 0; i < colCount; i++)
                 maxClusteringValues.add(ByteBufferUtil.readWithShortLength(in));
 
-            boolean hasLegacyCounterShards = true;
-            if (version.tracksLegacyCounterShards())
-                hasLegacyCounterShards = in.readBoolean();
+            boolean hasLegacyCounterShards = in.readBoolean();
 
             long totalColumnsSet = in.readLong();
             long totalRows = in.readLong();
