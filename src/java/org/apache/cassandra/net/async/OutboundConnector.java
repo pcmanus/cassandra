@@ -90,7 +90,7 @@ class OutboundConnector
         connectAttemptCount++;
         logger.debug("attempting to connect to {}", remoteAddr);
         connectFuture = localAddr == null ? bootstrap.connect(remoteAddr) : bootstrap.connect(remoteAddr, localAddr);
-        connectFuture.addListener(this::connectComplete);
+        connectFuture.addListener(this::connectCallback);
     }
 
     /**
@@ -98,7 +98,8 @@ class OutboundConnector
      * (which should disconnect the socket, if connected). If there was an {@link IOException} while trying to connect,
      * the connection will be retried after a short delay.
      */
-    boolean connectComplete(Future<? super Void> future)
+    @VisibleForTesting
+    boolean connectCallback(Future<? super Void> future)
     {
         if (!future.isDone())
             return false;

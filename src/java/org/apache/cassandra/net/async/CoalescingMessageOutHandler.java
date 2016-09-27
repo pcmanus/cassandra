@@ -102,7 +102,8 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
         }
 
         QueuedMessage queuedMessage = (QueuedMessage)msg;
-        promise.addListener(future -> handleMessageFuture(future, coalesceCallback, queuedMessage));
+        if (coalesceCallback != null)
+            promise.addListener(future -> handleMessageFuture(future, coalesceCallback, queuedMessage));
 
         if (!coalescingStrategy.isCoalescing())
         {
@@ -134,8 +135,7 @@ class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implemen
     {
         if (future.isSuccess())
         {
-            if (coalesceCallback != null)
-                coalesceCallback.accept(msg.timestampNanos());
+            coalesceCallback.accept(msg.timestampNanos());
         }
     }
 

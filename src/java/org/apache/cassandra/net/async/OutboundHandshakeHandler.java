@@ -55,12 +55,17 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     private static final Logger logger = LoggerFactory.getLogger(OutboundHandshakeHandler.class);
 
     /**
+     * The length of the first message of the internode messaging handshake.
+     */
+    private static final int FIRST_MESSAGE_LENGTH = 8;
+
+    /**
      * The length of the second message of the internode messaging handshake.
      */
     private static final int SECOND_MESSAGE_LENGTH = 4;
 
     /**
-     * The address to tell the peer we are. Passing in and memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
+     * The IP address to identify this node to the peer. Memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
      */
     private final InetSocketAddress remoteAddr;
 
@@ -84,7 +89,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
      * A future that places a timeout on how long we'll wait for the peer to respond
      * so we can move on to the next step of the handshake or just fail.
      */
-    private Future<?> handshakeResponse;
+    private Future<?> timeoutFuture;
 
     private volatile boolean isCancelled;
 
@@ -101,9 +106,9 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception
     {
-        ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().ioBuffer(8), createHeader(messagingVersion, compress, mode)));
+        ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().buffer(FIRST_MESSAGE_LENGTH), createHeader(messagingVersion, compress, mode)));
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
-        handshakeResponse = ctx.executor().schedule(() -> handshakeTimeout(ctx), timeout, TimeUnit.MILLISECONDS);
+        timeoutFuture = ctx.executor().schedule(() -> abortHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
         ctx.fireChannelActive();
     }
 
@@ -146,29 +151,32 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         if (in.readableBytes() < SECOND_MESSAGE_LENGTH)
             return;
 
-        if (handshakeResponse != null)
+        if (timeoutFuture != null)
         {
-            handshakeResponse.cancel(false);
-            handshakeResponse = null;
+            timeoutFuture.cancel(false);
+            timeoutFuture = null;
         }
         int peerMessagingVersion = in.readInt();
 
         Result result;
         if (messagingVersion > peerMessagingVersion)
         {
-            if (logger.isTraceEnabled())
-                logger.trace("Target max version is {}; will reconnect with that version", peerMessagingVersion);
+            logger.trace("Target max version is {}; will reconnect with that version", peerMessagingVersion);
             result = Result.DISCONNECT;
+            // OTC.disconnect(); -- close socket, do *not* return any message
+//            ctx.close();
         }
         else if (messagingVersion < peerMessagingVersion && messagingVersion < MessagingService.current_version)
         {
-            if (logger.isTraceEnabled())
-                logger.trace("Detected higher max version {} (using {}); will reconnect when queued messages are done", peerMessagingVersion, messagingVersion);
+            logger.trace("Detected higher max version {} (using {}); will reconnect when queued messages are done", peerMessagingVersion, messagingVersion);
             result = Result.DISCONNECT;
+
+            // OTC.softCloseSocket() - enqueue CLOSE_SENTINEL, *and* send 3rd message of internode messaging protocol handshake
+//            ctx.pipeline().close();
         }
         else
         {
-            ByteBuf buf = ctx.alloc().ioBuffer(4 + CompactEndpointSerializationHelper.serializedSize(remoteAddr.getAddress()));
+            ByteBuf buf = ctx.alloc().buffer(Integer.BYTES + CompactEndpointSerializationHelper.serializedSize(remoteAddr.getAddress()));
             try
             {
                 buf.writeInt(MessagingService.current_version);
@@ -191,11 +199,11 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     }
 
     /**
-     * Handles the timeout for receiving a response to the handshake request.
+     * Handles the timeout when we do not receive a response to the handshake request.
      *
      * Note: This will happen on the netty IO thread, so there no races with {@link #decode(ChannelHandlerContext, ByteBuf, List)}.
      */
-    private void handshakeTimeout(ChannelHandlerContext ctx)
+    private void abortHandshake(ChannelHandlerContext ctx)
     {
         if (isCancelled)
             return;
@@ -205,14 +213,14 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         if (callback != null)
             callback.accept(ConnectionHandshakeResult.failed());
 
-        if (handshakeResponse != null)
-            handshakeResponse.cancel(false);
+        if (timeoutFuture != null)
+            timeoutFuture.cancel(false);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx)
     {
-        handshakeTimeout(ctx);
+        abortHandshake(ctx);
         ctx.fireChannelInactive();
     }
 
@@ -220,7 +228,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
     {
         logger.error("exception in negotiating internode handshake", cause);
-        handshakeTimeout(ctx);
+        abortHandshake(ctx);
         ctx.fireExceptionCaught(cause);
     }
 

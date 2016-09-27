@@ -793,21 +793,23 @@ public final class MessagingService implements MessagingServiceMBean
         return listenGate.isSignaled();
     }
 
-    // ONLY FOR TESTING!!!!
-    @VisibleForTesting
-    void createConnection(InetAddress to)
-    {
-        messageSender.createConnection(to);
-    }
 
     public void destroyConnectionPool(InetAddress to)
     {
         messageSender.destroyConnectionPool(to);
     }
 
-    public void switchIpAddress(InetAddress publicAddress, InetAddress localAddress)
+    /**
+     * Reconnect to the peer using the given {@code addr}. Outstanding messages in each channel will be sent on the
+     * current channel. Typically this function is used for something like EC2 public IP addresses which need to be used
+     * for communication between EC2 regions.
+     *
+     * @param address IP Address to identify the peer
+     * @param preferredAddress IP Address to use (and prefer) going forward for connecting to the peer
+     */
+    public void reconnectWithNewIp(InetAddress address, InetAddress preferredAddress)
     {
-        messageSender.switchIpAddress(publicAddress, localAddress);
+        messageSender.reconnectWithNewIp(address, preferredAddress);
     }
 
     private void reset(InetAddress address)
@@ -1379,14 +1381,11 @@ public final class MessagingService implements MessagingServiceMBean
         void markTimeout(InetAddress addr);
         void listen(InetAddress localEp) throws ConfigurationException;
         void destroyConnectionPool(InetAddress to);
-        void switchIpAddress(InetAddress publicAddress, InetAddress localAddress);
+        void reconnectWithNewIp(InetAddress address, InetAddress preferredAddress);
         void reset(InetAddress address);
         InetAddress getCurrentEndpoint(InetAddress publicAddress);
         BackPressureState getBackPressureState(InetAddress host);
         void shutdown() throws IOException;
-
-        @VisibleForTesting
-        void createConnection(InetAddress to);
 
         Map<String, Integer> getLargeMessagePendingTasks();
         Map<String, Long> getLargeMessageCompletedTasks();
@@ -1433,11 +1432,6 @@ public final class MessagingService implements MessagingServiceMBean
             return pool;
         }
 
-        public void createConnection(InetAddress to)
-        {
-            getMessagingConnection(to);
-        }
-
         public void markTimeout(InetAddress addr)
         {
             OutboundMessagingPool conn = channelManagers.get(addr);
@@ -1464,14 +1458,14 @@ public final class MessagingService implements MessagingServiceMBean
                 pool.close();
         }
 
-        public void switchIpAddress(InetAddress publicAddress, InetAddress localAddress)
+        public void reconnectWithNewIp(InetAddress address, InetAddress preferredAddress)
         {
-            OutboundMessagingPool messagingPool = channelManagers.get(publicAddress);
+            OutboundMessagingPool messagingPool = channelManagers.get(address);
             if (messagingPool != null)
             {
-                boolean secure = ConnectionUtils.isEncryptedChannel(publicAddress);
-                InetSocketAddress remote = new InetSocketAddress(localAddress, secure ? DatabaseDescriptor.getSSLStoragePort() : DatabaseDescriptor.getStoragePort());
-                messagingPool.switchIpAddress(remote);
+                boolean secure = ConnectionUtils.isEncryptedChannel(address);
+                InetSocketAddress remote = new InetSocketAddress(preferredAddress, secure ? DatabaseDescriptor.getSSLStoragePort() : DatabaseDescriptor.getStoragePort());
+                messagingPool.reconnectWithNewIp(remote);
             }
         }
 
@@ -1484,7 +1478,7 @@ public final class MessagingService implements MessagingServiceMBean
 
         public InetAddress getCurrentEndpoint(InetAddress publicAddress)
         {
-            OutboundMessagingPool messagingPool = channelManagers.get(publicAddress);
+            OutboundMessagingPool messagingPool = getMessagingConnection(publicAddress);
             return messagingPool != null ? messagingPool.getPreferredRemoteAddr().getAddress() : null;
         }
 

@@ -350,15 +350,13 @@ public class MessagingServiceTest
         SystemKeyspace.updatePreferredIP(publicIp, publicIp);
 
         // create pool/conn with public addr
-        messagingService.createConnection(publicIp);
         Assert.assertEquals(publicIp, messagingService.getCurrentEndpoint(publicIp));
-        messagingService.switchIpAddress(publicIp, privateIp);
+        messagingService.reconnectWithNewIp(publicIp, privateIp);
         Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
 
         messagingService.destroyConnectionPool(publicIp);
 
         // recreate the pool/conn, and make sure the preferred ip addr is used
-        messagingService.createConnection(publicIp);
         Assert.assertEquals(privateIp, messagingService.getCurrentEndpoint(publicIp));
     }
 }

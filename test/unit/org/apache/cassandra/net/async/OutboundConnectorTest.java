@@ -67,7 +67,7 @@ public class OutboundConnectorTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setSuccess();
-        Assert.assertTrue(connector.connectComplete(promise));
+        Assert.assertTrue(connector.connectCallback(promise));
     }
 
     @Test
@@ -75,7 +75,7 @@ public class OutboundConnectorTest
     {
         ChannelFuture future = channel.newPromise();
         future.cancel(false);
-        Assert.assertFalse(connector.connectComplete(future));
+        Assert.assertFalse(connector.connectCallback(future));
     }
 
     @Test
@@ -83,7 +83,7 @@ public class OutboundConnectorTest
     {
         ChannelPromise promise = channel.newPromise();
         connector.cancel();
-        Assert.assertFalse(connector.connectComplete(promise));
+        Assert.assertFalse(connector.connectCallback(promise));
     }
 
     @Test
@@ -91,7 +91,7 @@ public class OutboundConnectorTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new SSLHandshakeException("test is only a test"));
-        Assert.assertFalse(connector.connectComplete(promise));
+        Assert.assertFalse(connector.connectCallback(promise));
     }
 
     @Test
@@ -99,7 +99,7 @@ public class OutboundConnectorTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new NullPointerException("test is only a test"));
-        Assert.assertFalse(connector.connectComplete(promise));
+        Assert.assertFalse(connector.connectCallback(promise));
     }
 
     @Test
@@ -107,6 +107,6 @@ public class OutboundConnectorTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("test is only a test"));
-        Assert.assertFalse(connector.connectComplete(promise));
+        Assert.assertFalse(connector.connectCallback(promise));
     }
 }

@@ -51,7 +51,7 @@ import org.apache.cassandra.utils.UUIDGen;
  */
 class MessageOutHandler extends ChannelDuplexHandler
 {
-    private static final Logger logger = LoggerFactory.getLogger(CoalescingMessageOutHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(MessageOutHandler.class);
 
     private static final int MESSAGE_PREFIX_SIZE = 12;
 

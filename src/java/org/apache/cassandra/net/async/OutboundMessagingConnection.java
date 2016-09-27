@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -102,7 +103,7 @@ public class OutboundMessagingConnection
     private final InetSocketAddress remoteAddr;
     private final InetSocketAddress localAddr;
     private final ServerEncryptionOptions encryptionOptions;
-    private final CoalescingStrategy coalescingStrategy;
+    private final Optional<CoalescingStrategy> coalescingStrategy;
     private final int channelBufferSize;
 
     /**
@@ -146,13 +147,13 @@ public class OutboundMessagingConnection
      */
     private int targetVersion;
 
-    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, Optional<CoalescingStrategy> coalescingStrategy)
     {
         this(remoteAddr, localAddr, encryptionOptions, coalescingStrategy, ScheduledExecutors.scheduledTasks);
     }
 
     @VisibleForTesting
-    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy, ScheduledExecutorService sceduledExecutor)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, Optional<CoalescingStrategy> coalescingStrategy, ScheduledExecutorService sceduledExecutor)
     {
         this.remoteAddr = remoteAddr;
         this.localAddr = localAddr;
@@ -418,7 +419,7 @@ public class OutboundMessagingConnection
 
         pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(messagingVersion, completedMessageCount, channelBufferSize));
-        pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount));
+        coalescingStrategy.map(cs -> pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(cs, droppedMessageCount)));
         pipeline.addLast("lameoLogger", new ErrorLoggingHandler());
     }
 
@@ -455,7 +456,7 @@ public class OutboundMessagingConnection
      * in the existing {@link #channel} will still be sent to the previous address (we won't/can't move them from
      * one channel to another).
      */
-    void switchIpAddress(InetSocketAddress newAddr)
+    void reconnectWithNewIp(InetSocketAddress newAddr)
     {
         // capture a reference to the current channel, in case it gets swapped out before we can call close() on it
         Channel currentChannel = channel;

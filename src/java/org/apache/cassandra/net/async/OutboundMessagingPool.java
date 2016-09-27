@@ -19,6 +19,7 @@
 package org.apache.cassandra.net.async;
 
 import java.net.InetSocketAddress;
+import java.util.Optional;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.Config;
@@ -29,6 +30,7 @@ import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.utils.CoalescingStrategies;
+import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 
 /**
  * Groups a set of outbound connections to a given peer, and routes outgoing messages to the appropriate connection
@@ -63,18 +65,18 @@ public class OutboundMessagingPool
         largeMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
                                                               newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
 
-        // don't coalesce the gossip messages, just ship them out asap (let's not piss off the FD on any peer node by any artificial delays)
-        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                        newCoalescingStrategy("DISABLED", displayName));
-
+        // don't coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
+        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, Optional.empty());
     }
 
-    private static CoalescingStrategies.CoalescingStrategy newCoalescingStrategy(String strategyName, String displayName)
+    private static Optional<CoalescingStrategy> newCoalescingStrategy(String strategyName, String displayName)
     {
-        return CoalescingStrategies.newCoalescingStrategy(strategyName,
-                                                          DatabaseDescriptor.getOtcCoalescingWindow(),
-                                                          OutboundMessagingConnection.logger,
-                                                          displayName);
+        CoalescingStrategy coalescingStrategy = CoalescingStrategies.newCoalescingStrategy(strategyName,
+                                                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
+                                                                                           OutboundMessagingConnection.logger,
+                                                                                           displayName);
+
+        return coalescingStrategy.isCoalescing() ? Optional.of(coalescingStrategy) : Optional.empty();
     }
 
     public BackPressureState getBackPressureState()
@@ -97,7 +99,7 @@ public class OutboundMessagingPool
              : smallMessageChannel;
     }
 
-    // TODO:JEB add better comment;  this is just lifted from OTCP
+    // TODO:JEB add better comment; this is just lifted from OTCP
     /**
      * Reconnect to {@link #preferredRemoteAddr} after the current message backlog is exhausted.
      * Used by classes like {@link Ec2MultiRegionSnitch} to force nodes in the same region to communicate over their private IPs.
@@ -114,12 +116,12 @@ public class OutboundMessagingPool
      *
      * @param addr IP Address to use (and prefer) going forward for connecting to the peer
      */
-    public void switchIpAddress(InetSocketAddress addr)
+    public void reconnectWithNewIp(InetSocketAddress addr)
     {
         preferredRemoteAddr = addr;
-        gossipChannel.switchIpAddress(addr);
-        largeMessageChannel.switchIpAddress(addr);
-        smallMessageChannel.switchIpAddress(addr);
+        gossipChannel.reconnectWithNewIp(addr);
+        largeMessageChannel.reconnectWithNewIp(addr);
+        smallMessageChannel.reconnectWithNewIp(addr);
     }
 
     public void close()
