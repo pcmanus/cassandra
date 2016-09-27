@@ -21,6 +21,7 @@ package org.apache.cassandra.net.async;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
@@ -80,23 +81,27 @@ public class HandshakeHandlersTest
     {
         // beacuse both CHH & SHH are ChannelInboundHandlers, we can't use the same EmbeddedChannel to handle them
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
-        EmbeddedChannel serverChannel = new EmbeddedChannel(inboundHandshakeHandler);
+        EmbeddedChannel inboundChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(true)));
         OutboundHandshakeHandler clientHandshakeHandler = new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, false, imc::finishHandshake, NettyFactory.Mode.MESSAGING);
-        EmbeddedChannel clientChannel = new EmbeddedChannel(clientHandshakeHandler);
-        Assert.assertEquals(1, clientChannel.outboundMessages().size());
+        EmbeddedChannel outboundChannel = new EmbeddedChannel(clientHandshakeHandler);
+        Assert.assertEquals(1, outboundChannel.outboundMessages().size());
 
         // move internode protocol Msg1 to the server's channel
-        serverChannel.writeInbound(clientChannel.readOutbound());
-        Assert.assertEquals(1, serverChannel.outboundMessages().size());
+        Object o;
+        while ((o = outboundChannel.readOutbound()) != null)
+            inboundChannel.writeInbound(o);
+        Assert.assertEquals(1, inboundChannel.outboundMessages().size());
 
         // move internode protocol Msg2 to the client's channel
-        clientChannel.writeInbound(serverChannel.readOutbound());
-        Assert.assertEquals(1, clientChannel.outboundMessages().size());
+        while ((o = inboundChannel.readOutbound()) != null)
+            outboundChannel.writeInbound(o);
+        Assert.assertEquals(1, outboundChannel.outboundMessages().size());
 
         // move internode protocol Msg3 to the server's channel
-        serverChannel.writeInbound(clientChannel.readOutbound());
+        while ((o = outboundChannel.readOutbound()) != null)
+            inboundChannel.writeInbound(o);
 
         Assert.assertEquals(READY, imc.getState());
         Assert.assertEquals(MESSAGING_HANDSHAKE_COMPLETE, inboundHandshakeHandler.getState());
@@ -117,8 +122,8 @@ public class HandshakeHandlersTest
     private void lotsOfMutations(boolean compress)
     {
         TestChannels channels = buildChannels(compress);
-        EmbeddedChannel clientChannel = channels.clientChannel;
-        EmbeddedChannel serverChannel = channels.serverChannel;
+        EmbeddedChannel outboundChannel = channels.outboundChannel;
+        EmbeddedChannel inboundChannel = channels.inboundChannel;
 
         // now the actual test!
         ByteBuffer buf = ByteBuffer.allocate(1 << 10);
@@ -139,50 +144,50 @@ public class HandshakeHandlersTest
                                     .build();
 
                 QueuedMessage msg = new QueuedMessage(mutation.createMessage(), i);
-                clientChannel.writeAndFlush(msg);
+                outboundChannel.writeAndFlush(msg);
             }
             else
             {
-                clientChannel.writeAndFlush(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+                outboundChannel.writeAndFlush(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
             }
         }
-        clientChannel.flush();
+        outboundChannel.flush();
 
-        // move the messages to the server channel
+        // move the messages to the other channel
         Object o;
-        while ((o = clientChannel.readOutbound()) != null)
-            serverChannel.writeInbound(o);
+        while ((o = outboundChannel.readOutbound()) != null)
+            inboundChannel.writeInbound(o);
 
-        Assert.assertTrue(clientChannel.outboundMessages().isEmpty());
+        Assert.assertTrue(outboundChannel.outboundMessages().isEmpty());
         // if compress, LZ4FrameEncoder will send 'close' packet to peer (thus a message is in the channel)
-        Assert.assertEquals(compress, clientChannel.finishAndReleaseAll());
-        Assert.assertFalse(serverChannel.finishAndReleaseAll());
+        Assert.assertEquals(compress, outboundChannel.finishAndReleaseAll());
+        Assert.assertFalse(inboundChannel.finishAndReleaseAll());
     }
 
     private TestChannels buildChannels(boolean compress)
     {
-        EmbeddedChannel clientChannel = new EmbeddedChannel(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        EmbeddedChannel outboundChannel = new EmbeddedChannel(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(false)));
         imc.setTargetVersion(MESSAGING_VERSION);
-        imc.setupPipeline(clientChannel.pipeline(), MESSAGING_VERSION, compress);
+        imc.setupPipeline(outboundChannel.pipeline(), MESSAGING_VERSION, compress);
         // remove the client handshake message from the outbound messages
-        clientChannel.outboundMessages().clear();
+        outboundChannel.outboundMessages().clear();
 
-        EmbeddedChannel serverChannel = new EmbeddedChannel(new InboundHandshakeHandler(new TestAuthenticator(true)));
-        InboundHandshakeHandler.setupMessagingPipeline(serverChannel.pipeline(), InboundHandshakeHandler.createHandlers(REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION, COUNTING_CONSUMER));
+        EmbeddedChannel inboundChannel = new EmbeddedChannel(new InboundHandshakeHandler(new TestAuthenticator(true)));
+        InboundHandshakeHandler.setupMessagingPipeline(inboundChannel.pipeline(), InboundHandshakeHandler.createHandlers(REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION, COUNTING_CONSUMER));
 
-        return new TestChannels(clientChannel, serverChannel);
+        return new TestChannels(outboundChannel, inboundChannel);
     }
 
     private static class TestChannels
     {
-        final EmbeddedChannel clientChannel;
-        final EmbeddedChannel serverChannel;
+        final EmbeddedChannel outboundChannel;
+        final EmbeddedChannel inboundChannel;
 
-        TestChannels(EmbeddedChannel clientChannel, EmbeddedChannel serverChannel)
+        TestChannels(EmbeddedChannel outboundChannel, EmbeddedChannel inboundChannel)
         {
-            this.clientChannel = clientChannel;
-            this.serverChannel = serverChannel;
+            this.outboundChannel = outboundChannel;
+            this.inboundChannel = inboundChannel;
         }
     }
 

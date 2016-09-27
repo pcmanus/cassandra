@@ -63,8 +63,8 @@ public final class SSLFactory
     @VisibleForTesting
     static volatile boolean checkedExpiry = false;
 
-    private static AtomicReference<SslContext> clientSslContext;
-    private static AtomicReference<SslContext> serverSslContext;
+    private static AtomicReference<SslContext> clientSslContext = new AtomicReference<>();
+    private static AtomicReference<SslContext> serverSslContext = new AtomicReference<>();
 
     public static SSLServerSocket getServerSocket(EncryptionOptions options, InetAddress address, int port) throws IOException
     {

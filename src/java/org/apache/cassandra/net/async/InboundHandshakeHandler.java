@@ -250,11 +250,9 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     static void setupMessagingPipeline(ChannelPipeline pipeline, List<Pair<String, ChannelHandler>> namesToHandlers)
     {
-        String after = handshakeHandlerChannelHandlerName;
         for (Pair<String, ChannelHandler> pair : namesToHandlers)
         {
-            pipeline.addAfter(after, pair.left, pair.right);
-            after = pair.left;
+            pipeline.addLast(pair.left, pair.right);
         }
 
         pipeline.remove(handshakeHandlerChannelHandlerName);

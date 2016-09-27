@@ -44,7 +44,7 @@ public class InboundHandshakeHandlerTest
 {
     private static final InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 0);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
-    static final String SHH_HANDLER_NAME = "ServerHandshakeHandler#0";
+    static final String SHH_HANDLER_NAME = "InboundHandshakeHandler#0";
     private static final Consumer<MessageInWrapper> NOP_CONSUMER = msg -> {};
 
     InboundHandshakeHandler handler;

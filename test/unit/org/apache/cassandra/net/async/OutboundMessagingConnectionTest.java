@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -76,7 +77,7 @@ public class OutboundMessagingConnectionTest
     @Before
     public void setup()
     {
-        imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true), new TestScheduledExecutorService());
+        imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(true)), new TestScheduledExecutorService());
         handler = new CountingHandler();
         channel = new EmbeddedChannel(handler);
         imc.setChannel(channel);
