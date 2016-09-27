@@ -36,30 +36,30 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.ServerHandshakeHandler.State;
+import org.apache.cassandra.net.async.InboundHandshakeHandler.State;
 
-public class ServerHandshakeHandlerTest
+public class InboundHandshakeHandlerTest
 {
     private static final InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 0);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
     static final String SHH_HANDLER_NAME = "ServerHandshakeHandler#0";
     private static final Consumer<MessageInWrapper> NOP_CONSUMER = msg -> {};
 
-    ServerHandshakeHandler handler;
+    InboundHandshakeHandler handler;
     EmbeddedChannel channel;
     private ByteBuf buf;
 
     @BeforeClass
     public static void beforeClass()
     {
-        ServerHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
+        InboundHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
         DatabaseDescriptor.daemonInitialization();
     }
 
     @Before
     public void setUp()
     {
-        handler = new ServerHandshakeHandler(new TestAuthenticator(false));
+        handler = new InboundHandshakeHandler(new TestAuthenticator(false));
         channel = new EmbeddedChannel(handler);
     }
 
@@ -74,7 +74,7 @@ public class ServerHandshakeHandlerTest
     @Test
     public void handleAuthenticate_Good()
     {
-        handler = new ServerHandshakeHandler(new TestAuthenticator(true));
+        handler = new InboundHandshakeHandler(new TestAuthenticator(true));
         channel = new EmbeddedChannel(handler);
         boolean result = handler.handleAuthenticate(addr, channel.pipeline().firstContext());
         Assert.assertTrue(result);
@@ -103,7 +103,7 @@ public class ServerHandshakeHandlerTest
     @Test (expected = IOException.class)
     public void handleStart_BadMagic() throws IOException
     {
-        ServerHandshakeHandler handler = new ServerHandshakeHandler(new TestAuthenticator(false));
+        InboundHandshakeHandler handler = new InboundHandshakeHandler(new TestAuthenticator(false));
         EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC << 2);
@@ -117,7 +117,7 @@ public class ServerHandshakeHandlerTest
         channel.eventLoop();
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(ClientHandshakeHandler.createHeader(MESSAGING_VERSION + 1, true, NettyFactory.Mode.MESSAGING));
+        buf.writeInt(OutboundHandshakeHandler.createHeader(MESSAGING_VERSION + 1, true, NettyFactory.Mode.MESSAGING));
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
         State state = handler.handleStart(channel.pipeline().firstContext(), buf);
         Assert.assertEquals(State.HANDSHAKE_FAIL, state);
@@ -130,7 +130,7 @@ public class ServerHandshakeHandlerTest
     {
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(ClientHandshakeHandler.createHeader(MessagingService.VERSION_12, true, NettyFactory.Mode.MESSAGING));
+        buf.writeInt(OutboundHandshakeHandler.createHeader(MessagingService.VERSION_12, true, NettyFactory.Mode.MESSAGING));
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
         State state = handler.handleStart(channel.pipeline().firstContext(), buf);
         Assert.assertEquals(State.HANDSHAKE_FAIL, state);
@@ -143,7 +143,7 @@ public class ServerHandshakeHandlerTest
     {
         buf = Unpooled.buffer(32, 32);
         buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(ClientHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING));
+        buf.writeInt(OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING));
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
         State state = handler.handleStart(channel.pipeline().firstContext(), buf);
         Assert.assertEquals(State.AWAIT_MESSAGING_START_RESPONSE, state);
@@ -191,7 +191,7 @@ public class ServerHandshakeHandlerTest
     public void setupPipeline_NoCompression()
     {
         ChannelPipeline pipeline = channel.pipeline();
-        ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), false, MESSAGING_VERSION, NOP_CONSUMER));
+        InboundHandshakeHandler.setupMessagingPipeline(pipeline, InboundHandshakeHandler.createHandlers(addr.getAddress(), false, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));
     }
@@ -200,7 +200,7 @@ public class ServerHandshakeHandlerTest
     public void setupPipeline_WithCompression()
     {
         ChannelPipeline pipeline = channel.pipeline();
-        ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
+        InboundHandshakeHandler.setupMessagingPipeline(pipeline, InboundHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNotNull(pipeline.get(Lz4FrameDecoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));
     }
@@ -209,7 +209,7 @@ public class ServerHandshakeHandlerTest
     public void setupPipeline()
     {
         ChannelPipeline pipeline = channel.pipeline();
-        ServerHandshakeHandler.setupMessagingPipeline(pipeline, ServerHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
+        InboundHandshakeHandler.setupMessagingPipeline(pipeline, InboundHandshakeHandler.createHandlers(addr.getAddress(), true, MESSAGING_VERSION, NOP_CONSUMER));
         Assert.assertNotNull(pipeline.get(MessageReceiveHandler.class));
     }
 }

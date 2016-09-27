@@ -44,8 +44,6 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
-import org.apache.cassandra.net.OutboundTcpConnection.RetriedQueuedMessage;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.State;
 
@@ -331,7 +329,7 @@ public class InternodeMessagingConnectionTest
     @Test
     public void finishHandshake_GOOD()
     {
-        channel.pipeline().addLast(new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, true, result -> {}, NettyFactory.Mode.MESSAGING));
+        channel.pipeline().addLast(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, true, result -> {}, NettyFactory.Mode.MESSAGING));
         ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, GOOD);
         imc.finishHandshake(result);
         Assert.assertEquals(channel, imc.getChannel());

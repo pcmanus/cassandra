@@ -29,17 +29,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.concurrent.Future;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
-import org.apache.cassandra.net.OutboundTcpConnection;
+import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.NettyFactory.ClientChannelInitializer;
 import org.apache.cassandra.utils.JVMStabilityInspector;
-
-import static org.apache.cassandra.net.OutboundTcpConnection.isLocalDC;
 
 /**
  * Asynchronously (via netty) connects to a remote peer. On connection failures, will attempt to reconnect
@@ -48,6 +46,18 @@ import static org.apache.cassandra.net.OutboundTcpConnection.isLocalDC;
 class ClientConnector
 {
     private static final Logger logger = LoggerFactory.getLogger(ClientConnector.class);
+
+    private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
+
+    /**
+     * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
+     */
+    public static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
+
+    /**
+     * NUmber of milliseconds between connection retry attempts.
+     */
+    public static final int OPEN_RETRY_DELAY = 100;
 
     /**
      * We can keep the {@link Bootstrap} around in case we need to reconnect to the peer,
@@ -109,7 +119,7 @@ class ClientConnector
             logger.trace("unable to connect to {}", remoteAddr, cause);
 
             // it's safe to get a reference to the channel from the Future instance, thus we can get the executor
-            channelFuture.channel().eventLoop().schedule(this::connect, OutboundTcpConnection.OPEN_RETRY_DELAY * connectAttemptCount, TimeUnit.MILLISECONDS);
+            channelFuture.channel().eventLoop().schedule(this::connect, OPEN_RETRY_DELAY * connectAttemptCount, TimeUnit.MILLISECONDS);
         }
         else
         {
@@ -204,8 +214,8 @@ class ClientConnector
     private static Bootstrap buildBootstrap(InetSocketAddress remoteAddr, ClientChannelInitializer initializer, int channelBufferSize)
     {
         boolean tcpNoDelay;
-        if (isLocalDC(remoteAddr.getAddress()))
-            tcpNoDelay = OutboundTcpConnection.INTRADC_TCP_NODELAY;
+        if (ConnectionUtils.isLocalDC(remoteAddr.getAddress()))
+            tcpNoDelay = INTRADC_TCP_NODELAY;
         else
             tcpNoDelay = DatabaseDescriptor.getInterDCTcpNoDelay();
 

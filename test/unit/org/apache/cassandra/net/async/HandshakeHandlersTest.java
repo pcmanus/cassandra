@@ -40,12 +40,11 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
 import org.apache.cassandra.schema.KeyspaceParams;
 
 import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.READY;
-import static org.apache.cassandra.net.async.ServerHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
-import static org.apache.cassandra.net.async.ServerHandshakeHandlerTest.SHH_HANDLER_NAME;
+import static org.apache.cassandra.net.async.InboundHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
+import static org.apache.cassandra.net.async.InboundHandshakeHandlerTest.SHH_HANDLER_NAME;
 
 public class HandshakeHandlersTest
 {
@@ -67,7 +66,7 @@ public class HandshakeHandlersTest
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, STANDARD1, 0, AsciiType.instance, BytesType.instance));
         CompactionManager.instance.disableAutoCompaction();
-        ServerHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
+        InboundHandshakeHandler.handshakeHandlerChannelHandlerName = SHH_HANDLER_NAME;
     }
 
     @Before
@@ -80,11 +79,11 @@ public class HandshakeHandlersTest
     public void handshake_HappyPath()
     {
         // beacuse both CHH & SHH are ChannelInboundHandlers, we can't use the same EmbeddedChannel to handle them
-        ServerHandshakeHandler serverHandshakeHandler = new ServerHandshakeHandler(new TestAuthenticator(true));
-        EmbeddedChannel serverChannel = new EmbeddedChannel(serverHandshakeHandler);
+        InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
+        EmbeddedChannel serverChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
         InternodeMessagingConnection imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true));
-        ClientHandshakeHandler clientHandshakeHandler = new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, false, imc::finishHandshake, NettyFactory.Mode.MESSAGING);
+        OutboundHandshakeHandler clientHandshakeHandler = new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, false, imc::finishHandshake, NettyFactory.Mode.MESSAGING);
         EmbeddedChannel clientChannel = new EmbeddedChannel(clientHandshakeHandler);
         Assert.assertEquals(1, clientChannel.outboundMessages().size());
 
@@ -100,7 +99,7 @@ public class HandshakeHandlersTest
         serverChannel.writeInbound(clientChannel.readOutbound());
 
         Assert.assertEquals(READY, imc.getState());
-        Assert.assertEquals(MESSAGING_HANDSHAKE_COMPLETE, serverHandshakeHandler.getState());
+        Assert.assertEquals(MESSAGING_HANDSHAKE_COMPLETE, inboundHandshakeHandler.getState());
     }
 
     @Test
@@ -162,15 +161,15 @@ public class HandshakeHandlersTest
 
     private TestChannels buildChannels(boolean compress)
     {
-        EmbeddedChannel clientChannel = new EmbeddedChannel(new ClientHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
+        EmbeddedChannel clientChannel = new EmbeddedChannel(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
         InternodeMessagingConnection imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
         imc.setTargetVersion(MESSAGING_VERSION);
         imc.setupPipeline(clientChannel.pipeline(), MESSAGING_VERSION, compress);
         // remove the client handshake message from the outbound messages
         clientChannel.outboundMessages().clear();
 
-        EmbeddedChannel serverChannel = new EmbeddedChannel(new ServerHandshakeHandler(new TestAuthenticator(true)));
-        ServerHandshakeHandler.setupMessagingPipeline(serverChannel.pipeline(), ServerHandshakeHandler.createHandlers(REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION, COUNTING_CONSUMER));
+        EmbeddedChannel serverChannel = new EmbeddedChannel(new InboundHandshakeHandler(new TestAuthenticator(true)));
+        InboundHandshakeHandler.setupMessagingPipeline(serverChannel.pipeline(), InboundHandshakeHandler.createHandlers(REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION, COUNTING_CONSUMER));
 
         return new TestChannels(clientChannel, serverChannel);
     }

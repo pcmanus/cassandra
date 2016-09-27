@@ -37,14 +37,14 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 
-public class ClientHandshakeHandlerTest
+public class OutboundHandshakeHandlerTest
 {
     private static final int MESSAGING_VERSION = MessagingService.current_version;
     private static final InetSocketAddress remoteAddr = new InetSocketAddress("127.0.0.1", 0);
     private static final String HANDLER_NAME = "clientHandshakeHandler";
 
     private EmbeddedChannel channel;
-    private ClientHandshakeHandler handler;
+    private OutboundHandshakeHandler handler;
     private ConnectionHandshakeResult result;
     private ByteBuf buf;
 
@@ -58,8 +58,8 @@ public class ClientHandshakeHandlerTest
     public void setup()
     {
         channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        handler = new ClientHandshakeHandler(remoteAddr, MESSAGING_VERSION, true,
-                                             this::callbackHandler, NettyFactory.Mode.MESSAGING);
+        handler = new OutboundHandshakeHandler(remoteAddr, MESSAGING_VERSION, true,
+                                               this::callbackHandler, NettyFactory.Mode.MESSAGING);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
         result = null;
     }
@@ -75,7 +75,7 @@ public class ClientHandshakeHandlerTest
     @Test
     public void createHeader_FramedNoCompression()
     {
-        int header = ClientHandshakeHandler.createHeader(MESSAGING_VERSION, false, NettyFactory.Mode.MESSAGING);
+        int header = OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, false, NettyFactory.Mode.MESSAGING);
         int version = MessagingService.getBits(header, 15, 8);
         Assert.assertEquals(MESSAGING_VERSION, version);
         boolean compressed = MessagingService.getBits(header, 2, 1) == 1;
@@ -85,7 +85,7 @@ public class ClientHandshakeHandlerTest
     @Test
     public void createHeader_FramedWithCompression()
     {
-        int header = ClientHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING);
+        int header = OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING);
         int version = MessagingService.getBits(header, 15, 8);
         Assert.assertEquals(MESSAGING_VERSION, version);
         boolean compressed = MessagingService.getBits(header, 2, 1) == 1;
@@ -97,7 +97,7 @@ public class ClientHandshakeHandlerTest
     {
         buf = Unpooled.buffer(128, 128);
         int fakeHeader = 498234;
-        ClientHandshakeHandler.firstHandshakeMessage(buf, fakeHeader);
+        OutboundHandshakeHandler.firstHandshakeMessage(buf, fakeHeader);
         MessagingService.validateMagic(buf.readInt());
         Assert.assertEquals(fakeHeader, buf.readInt());
         Assert.assertEquals(buf.writerIndex(), buf.readerIndex());
@@ -149,7 +149,7 @@ public class ClientHandshakeHandlerTest
 
         int msgVersion = MESSAGING_VERSION - 1;
         channel.pipeline().remove(HANDLER_NAME);
-        handler = new ClientHandshakeHandler(remoteAddr, msgVersion, true, this::callbackHandler, NettyFactory.Mode.MESSAGING);
+        handler = new OutboundHandshakeHandler(remoteAddr, msgVersion, true, this::callbackHandler, NettyFactory.Mode.MESSAGING);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
         channel.writeInbound(buf);
         Assert.assertEquals(buf.writerIndex(), buf.readerIndex());

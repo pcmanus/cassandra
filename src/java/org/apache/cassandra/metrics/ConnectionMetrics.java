@@ -21,15 +21,12 @@ import java.net.InetAddress;
 
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
+import org.apache.cassandra.net.async.InternodeMessagingPool;
 
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
-
-import org.apache.cassandra.net.OutboundTcpConnectionPool;
-import org.apache.cassandra.net.async.InternodeMessagingPool;
-
 /**
- * Metrics for {@link OutboundTcpConnectionPool}.
+ * Metrics for internode connections.
  */
 public class ConnectionMetrics
 {
@@ -67,81 +64,7 @@ public class ConnectionMetrics
      * Create metrics for given connection pool.
      *
      * @param ip IP address to use for metrics label
-     * @param connectionPool Connection pool
      */
-    public ConnectionMetrics(InetAddress ip, final OutboundTcpConnectionPool connectionPool)
-    {
-        // ipv6 addresses will contain colons, which are invalid in a JMX ObjectName
-        address = ip.getHostAddress().replace(':', '.');
-
-        factory = new DefaultNameFactory("Connection", address);
-
-        largeMessagePendingTasks = Metrics.register(factory.createMetricName("LargeMessagePendingTasks"), new Gauge<Integer>()
-        {
-            public Integer getValue()
-            {
-                return connectionPool.largeMessages.getPendingMessages();
-            }
-        });
-        largeMessageCompletedTasks = Metrics.register(factory.createMetricName("LargeMessageCompletedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.largeMessages.getCompletedMesssages();
-            }
-        });
-        largeMessageDroppedTasks = Metrics.register(factory.createMetricName("LargeMessageDroppedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.largeMessages.getDroppedMessages();
-            }
-        });
-        smallMessagePendingTasks = Metrics.register(factory.createMetricName("SmallMessagePendingTasks"), new Gauge<Integer>()
-        {
-            public Integer getValue()
-            {
-                return connectionPool.smallMessages.getPendingMessages();
-            }
-        });
-        smallMessageCompletedTasks = Metrics.register(factory.createMetricName("SmallMessageCompletedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.smallMessages.getCompletedMesssages();
-            }
-        });
-        smallMessageDroppedTasks = Metrics.register(factory.createMetricName("SmallMessageDroppedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.smallMessages.getDroppedMessages();
-            }
-        });
-        gossipMessagePendingTasks = Metrics.register(factory.createMetricName("GossipMessagePendingTasks"), new Gauge<Integer>()
-        {
-            public Integer getValue()
-            {
-                return connectionPool.gossipMessages.getPendingMessages();
-            }
-        });
-        gossipMessageCompletedTasks = Metrics.register(factory.createMetricName("GossipMessageCompletedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.gossipMessages.getCompletedMesssages();
-            }
-        });
-        gossipMessageDroppedTasks = Metrics.register(factory.createMetricName("GossipMessageDroppedTasks"), new Gauge<Long>()
-        {
-            public Long getValue()
-            {
-                return connectionPool.gossipMessages.getDroppedMessages();
-            }
-        });
-        timeouts = Metrics.meter(factory.createMetricName("Timeouts"));
-    }
-
     public ConnectionMetrics(InetAddress ip, final InternodeMessagingPool messagingPool)
     {
         // ipv6 addresses will contain colons, which are invalid in a JMX ObjectName

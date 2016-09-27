@@ -23,7 +23,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
 import java.util.Queue;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -42,8 +41,6 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandler;
-import io.netty.channel.ChannelOutboundHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.util.internal.PlatformDependent;
@@ -51,15 +48,12 @@ import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
+import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.OutboundTcpConnection;
-import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
-import org.apache.cassandra.net.OutboundTcpConnection.RetriedQueuedMessage;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
-import static org.apache.cassandra.net.OutboundTcpConnection.isLocalDC;
 import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHANNEL_HANDLER_NAME;
 
 /**
@@ -76,7 +70,11 @@ public class InternodeMessagingConnection
 {
     static final Logger logger = LoggerFactory.getLogger(InternodeMessagingConnection.class);
 
-    private static final int DEFAULT_BUFFER_SIZE = OutboundTcpConnection.BUFFER_SIZE;
+    /*
+ * Size of buffer in output stream
+ */
+    private static final String BUFFER_SIZE_PROPERTY = Config.PROPERTY_PREFIX + "otc_buffer_size";
+    private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
     /**
      * As we use netty's {@link FlushConsolidationHandler}, we can configure a max number of flush() events before it actually
@@ -442,7 +440,7 @@ public class InternodeMessagingConnection
     {
         // assumes version >= 1.2
         return (DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.all)
-               || ((DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.dc) && !isLocalDC(addr));
+               || ((DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.dc) && !ConnectionUtils.isLocalDC(addr));
     }
 
     int getTargetVersion()

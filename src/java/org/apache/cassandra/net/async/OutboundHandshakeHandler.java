@@ -50,9 +50,9 @@ import org.apache.cassandra.utils.FBUtilities;
  * This class extends {@link ByteToMessageDecoder}, which is a {@link ChannelInboundHandler}, because after the first message is sent
  * on becoming active in the channel, it waits for the peer's response (the second message of the internode messaging handshake protocol).
  */
-class ClientHandshakeHandler extends ByteToMessageDecoder
+class OutboundHandshakeHandler extends ByteToMessageDecoder
 {
-    private static final Logger logger = LoggerFactory.getLogger(ClientHandshakeHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(OutboundHandshakeHandler.class);
 
     /**
      * The length of the second message of the internode messaging handshake.
@@ -88,7 +88,7 @@ class ClientHandshakeHandler extends ByteToMessageDecoder
 
     private volatile boolean isCancelled;
 
-    ClientHandshakeHandler(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, NettyFactory.Mode mode)
+    OutboundHandshakeHandler(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, NettyFactory.Mode mode)
     {
         this.remoteAddr = remoteAddr;
         this.messagingVersion = messagingVersion;

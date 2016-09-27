@@ -40,7 +40,6 @@ import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.UnbufferedDataOutputStreamPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.NanoTimeToCurrentTimeMillis;
@@ -107,10 +106,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         }
     }
 
-    /**
-     * taken almost vertabim from {@link org.apache.cassandra.net.OutboundTcpConnection#writeConnected(QueuedMessage, boolean)}.
-     * Code is copy/pasted from OTC to reduce the amount of changes made to it make merging/backporting easier.
-     */
+    // TODO:JEB add comment
     private static void captureTracingInfo(ChannelHandlerContext ctx, QueuedMessage msg)
     {
         try

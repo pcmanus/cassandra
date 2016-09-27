@@ -6,7 +6,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -24,7 +23,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
@@ -38,7 +36,7 @@ import static org.apache.cassandra.net.async.NettyFactory.HANDSHAKE_HANDLER_CHAN
  * This handler will be the first in the netty channel for each incoming connection, and once the handshake is successful,
  * it will configure ther proper handlers for and remove itself from the working pipeline.
  */
-class ServerHandshakeHandler extends ByteToMessageDecoder
+class InboundHandshakeHandler extends ByteToMessageDecoder
 {
     private static final Logger logger = LoggerFactory.getLogger(NettyFactory.class);
 
@@ -77,7 +75,7 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
      */
     private Future<?> handshakeResponse;
 
-    ServerHandshakeHandler(IInternodeAuthenticator authenticator)
+    InboundHandshakeHandler(IInternodeAuthenticator authenticator)
     {
         this.authenticator = authenticator;
         state = State.START;
@@ -246,7 +244,7 @@ class ServerHandshakeHandler extends ByteToMessageDecoder
      * Add the {@link ChannelHandler}s to the pipeline. We can't naively just shove the handlers onto the end of the pipeline
      * (via {@link ChannelPipeline#addLast(String, ChannelHandler)}) due to unit testing. {@link EmbeddedChannel} adds it's own
      * handler at the end of the channel, which collects messages and does not send the message to any further handlers in the pipeline.
-     * Hence, we have to add new handlers after the current {@link ServerHandshakeHandler}.
+     * Hence, we have to add new handlers after the current {@link InboundHandshakeHandler}.
      */
     @VisibleForTesting
     static void setupMessagingPipeline(ChannelPipeline pipeline, List<Pair<String, ChannelHandler>> namesToHandlers)

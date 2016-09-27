@@ -19,13 +19,18 @@ package org.apache.cassandra.streaming;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.channels.SocketChannel;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.net.OutboundTcpConnectionPool;
+import org.apache.cassandra.net.ConnectionUtils;
+import org.apache.cassandra.security.SSLFactory;
+import org.apache.cassandra.utils.FBUtilities;
 
 public class DefaultConnectionFactory implements StreamConnectionFactory
 {
@@ -49,7 +54,7 @@ public class DefaultConnectionFactory implements StreamConnectionFactory
         {
             try
             {
-                Socket socket = OutboundTcpConnectionPool.newSocket(peer);
+                Socket socket = newSocket(peer);
                 socket.setSoTimeout(DatabaseDescriptor.getStreamingSocketTimeout());
                 socket.setKeepAlive(true);
                 return socket;
@@ -70,6 +75,28 @@ public class DefaultConnectionFactory implements StreamConnectionFactory
                     throw new IOException("interrupted", wtf);
                 }
             }
+        }
+    }
+
+    // TODO this is deliberately copied from (the now former) OutboundTcpConnectionPool, for CASSANDRA-8457.
+    // to be replaced in CASSANDRA-12229 (make streaming use 8457)
+    public static Socket newSocket(InetAddress endpoint) throws IOException
+    {
+        // zero means 'bind on any available port.'
+        if (ConnectionUtils.isEncryptedChannel(endpoint))
+        {
+            if (Config.getOutboundBindAny())
+                return SSLFactory.getSocket(DatabaseDescriptor.getServerEncryptionOptions(), endpoint, DatabaseDescriptor.getSSLStoragePort());
+            else
+                return SSLFactory.getSocket(DatabaseDescriptor.getServerEncryptionOptions(), endpoint, DatabaseDescriptor.getSSLStoragePort(), FBUtilities.getLocalAddress(), 0);
+        }
+        else
+        {
+            SocketChannel channel = SocketChannel.open();
+            if (!Config.getOutboundBindAny())
+                channel.bind(new InetSocketAddress(FBUtilities.getLocalAddress(), 0));
+            channel.connect(new InetSocketAddress(endpoint, DatabaseDescriptor.getStoragePort()));
+            return channel.socket();
         }
     }
 }

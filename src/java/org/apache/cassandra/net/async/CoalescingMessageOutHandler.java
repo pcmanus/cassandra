@@ -38,7 +38,6 @@ import io.netty.channel.PendingWriteQueue;
 import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.ScheduledFuture;
-import org.apache.cassandra.net.OutboundTcpConnection.QueuedMessage;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CoalescingStrategies;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;

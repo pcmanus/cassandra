@@ -34,7 +34,7 @@ import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.net.OutboundTcpConnection;
+import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.NativeTransportService;
@@ -131,7 +131,7 @@ public final class NettyFactory
             if (WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
 
-            channel.pipeline().addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new ServerHandshakeHandler(authenticator));
+            channel.pipeline().addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new InboundHandshakeHandler(authenticator));
         }
     }
 
@@ -168,7 +168,7 @@ public final class NettyFactory
                                              .option(ChannelOption.TCP_NODELAY, tcpNoDelay)
                                              .handler(initializer);
 
-        if (OutboundTcpConnection.isLocalDC(initializer.remoteAddr.getAddress()))
+        if (ConnectionUtils.isLocalDC(initializer.remoteAddr.getAddress()))
             bootstrap.option(ChannelOption.TCP_NODELAY, true);
         else
             bootstrap.option(ChannelOption.TCP_NODELAY, DatabaseDescriptor.getInterDCTcpNoDelay());
@@ -211,7 +211,7 @@ public final class NettyFactory
                 pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
             }
 
-            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new ClientHandshakeHandler(remoteAddr, messagingVersion, compress, callback, mode));
+            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(remoteAddr, messagingVersion, compress, callback, mode));
         }
     }
 

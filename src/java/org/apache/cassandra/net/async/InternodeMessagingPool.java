@@ -21,12 +21,13 @@ package org.apache.cassandra.net.async;
 import java.net.InetSocketAddress;
 
 import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
+import org.apache.cassandra.locator.Ec2MultiRegionSnitch;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.net.OutboundTcpConnectionPool;
 import org.apache.cassandra.utils.CoalescingStrategies;
 
 /**
@@ -35,6 +36,8 @@ import org.apache.cassandra.utils.CoalescingStrategies;
  */
 public class InternodeMessagingPool
 {
+    public static final long LARGE_MESSAGE_THRESHOLD = Long.getLong(Config.PROPERTY_PREFIX + "otcp_large_message_threshold", 1024 * 64);
+
     private final ConnectionMetrics metrics;
     private final BackPressureState backPressureState;
 
@@ -89,13 +92,15 @@ public class InternodeMessagingPool
         if (Stage.GOSSIP == msg.getStage())
             return gossipChannel;
 
-        return msg.payloadSize(smallMessageChannel.getTargetVersion()) > OutboundTcpConnectionPool.LARGE_MESSAGE_THRESHOLD
+        return msg.payloadSize(smallMessageChannel.getTargetVersion()) > LARGE_MESSAGE_THRESHOLD
              ? largeMessageChannel
              : smallMessageChannel;
     }
 
+    // TODO:JEB add better comment;  this is just lifted from OTCP
     /**
-     * functionally equivalent to {@link OutboundTcpConnectionPool#reset()}
+     * Reconnect to {@link #preferredRemoteAddr} after the current message backlog is exhausted.
+     * Used by classes like {@link Ec2MultiRegionSnitch} to force nodes in the same region to communicate over their private IPs.
      */
     public void reset()
     {
