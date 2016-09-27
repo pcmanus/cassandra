@@ -1033,10 +1033,6 @@ server_encryption_options:
     keystore_password: cassandra
     truststore: conf/.truststore
     truststore_password: cassandra
-    # for use with netty's openssl integration
-    x509_cert: conf/.x509
-    keyfile: conf/.keyfile
-    keyfile_password: cassandra
     # More advanced defaults below:
     # protocol: TLS
     # algorithm: SunX509

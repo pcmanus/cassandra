@@ -35,7 +35,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 
 public class OutboundHandshakeHandlerTest
 {

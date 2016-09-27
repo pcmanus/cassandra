@@ -42,7 +42,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
 
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.READY;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.READY;
 import static org.apache.cassandra.net.async.InboundHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
 import static org.apache.cassandra.net.async.InboundHandshakeHandlerTest.SHH_HANDLER_NAME;
 
@@ -82,7 +82,7 @@ public class HandshakeHandlersTest
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel serverChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        InternodeMessagingConnection imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true));
         OutboundHandshakeHandler clientHandshakeHandler = new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, false, imc::finishHandshake, NettyFactory.Mode.MESSAGING);
         EmbeddedChannel clientChannel = new EmbeddedChannel(clientHandshakeHandler);
         Assert.assertEquals(1, clientChannel.outboundMessages().size());
@@ -162,7 +162,7 @@ public class HandshakeHandlersTest
     private TestChannels buildChannels(boolean compress)
     {
         EmbeddedChannel clientChannel = new EmbeddedChannel(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
-        InternodeMessagingConnection imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
         imc.setTargetVersion(MESSAGING_VERSION);
         imc.setupPipeline(clientChannel.pipeline(), MESSAGING_VERSION, compress);
         // remove the client handshake message from the outbound messages
@@ -186,7 +186,7 @@ public class HandshakeHandlersTest
         }
     }
 
-    private Void nop(InternodeMessagingConnection.ConnectionHandshakeResult connectionHandshakeResult)
+    private Void nop(OutboundMessagingConnection.ConnectionHandshakeResult connectionHandshakeResult)
     {
         // do nothing, really
         return null;

@@ -35,7 +35,7 @@ import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.ConnectionUtils;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.NettyFactory.ClientChannelInitializer;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
@@ -43,9 +43,9 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
  * Asynchronously (via netty) connects to a remote peer. On connection failures, will attempt to reconnect
  * unless cancelled by an external caller.
  */
-class ClientConnector
+class OutboundConnector
 {
-    private static final Logger logger = LoggerFactory.getLogger(ClientConnector.class);
+    private static final Logger logger = LoggerFactory.getLogger(OutboundConnector.class);
 
     private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
 
@@ -76,7 +76,7 @@ class ClientConnector
     private volatile ChannelFuture connectFuture;
 
     @VisibleForTesting
-    ClientConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
+    OutboundConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
     {
         this.bootstrap = bootstrap;
         this.localAddr = localAddr;
@@ -149,7 +149,7 @@ class ClientConnector
         private int channelBufferSize;
 
         // even though this is the "client" end of this interaction, we're dealing with the server-to-server internode
-        // communications here, so thus we need the "server" EncryptionOptions.
+        // communications here, so thus we need the "server" EncryptionOptions as "server" if for node-to-node communications.
         private ServerEncryptionOptions encryptionOptions;
         private int protocolVersion;
         private boolean compress;
@@ -204,10 +204,10 @@ class ClientConnector
             return this;
         }
 
-        ClientConnector build()
+        OutboundConnector build()
         {
             ClientChannelInitializer initializer = new ClientChannelInitializer(remoteAddr, protocolVersion, compress, callback, encryptionOptions, mode);
-            return new ClientConnector(buildBootstrap(remoteAddr, initializer, channelBufferSize), localAddr, remoteAddr);
+            return new OutboundConnector(buildBootstrap(remoteAddr, initializer, channelBufferSize), localAddr, remoteAddr);
         }
     }
 

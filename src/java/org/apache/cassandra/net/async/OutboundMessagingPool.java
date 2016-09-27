@@ -34,16 +34,16 @@ import org.apache.cassandra.utils.CoalescingStrategies;
  * Groups a set of outbound connections to a given peer, and routes outgoing messages to the appropriate connection
  * (based upon message's type or size).
  */
-public class InternodeMessagingPool
+public class OutboundMessagingPool
 {
     public static final long LARGE_MESSAGE_THRESHOLD = Long.getLong(Config.PROPERTY_PREFIX + "otcp_large_message_threshold", 1024 * 64);
 
     private final ConnectionMetrics metrics;
     private final BackPressureState backPressureState;
 
-    public InternodeMessagingConnection gossipChannel;
-    public InternodeMessagingConnection largeMessageChannel;
-    public InternodeMessagingConnection smallMessageChannel;
+    public OutboundMessagingConnection gossipChannel;
+    public OutboundMessagingConnection largeMessageChannel;
+    public OutboundMessagingConnection smallMessageChannel;
 
     /**
      * An override address on which to communicate with the peer. Typically used for something like EC2 public IP addresses
@@ -51,21 +51,21 @@ public class InternodeMessagingPool
      */
     private InetSocketAddress preferredRemoteAddr;
 
-    public InternodeMessagingPool(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, BackPressureState backPressureState)
+    public OutboundMessagingPool(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, BackPressureState backPressureState)
     {
         preferredRemoteAddr = remoteAddr;
         this.backPressureState = backPressureState;
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
         String displayName = preferredRemoteAddr.getAddress().getHostAddress();
-        smallMessageChannel = new InternodeMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                               newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
-        largeMessageChannel = new InternodeMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                               newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
+        smallMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
+                                                              newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
+        largeMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
+                                                              newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
 
         // don't coalesce the gossip messages, just ship them out asap (let's not piss off the FD on any peer node by any artificial delays)
-        gossipChannel = new InternodeMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                         newCoalescingStrategy("DISABLED", displayName));
+        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
+                                                        newCoalescingStrategy("DISABLED", displayName));
 
     }
 
@@ -73,7 +73,7 @@ public class InternodeMessagingPool
     {
         return CoalescingStrategies.newCoalescingStrategy(strategyName,
                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
-                                                          InternodeMessagingConnection.logger,
+                                                          OutboundMessagingConnection.logger,
                                                           displayName);
     }
 
@@ -87,7 +87,7 @@ public class InternodeMessagingPool
         getConnection(msg).enqueue(msg, id);
     }
 
-    private InternodeMessagingConnection getConnection(MessageOut msg)
+    private OutboundMessagingConnection getConnection(MessageOut msg)
     {
         if (Stage.GOSSIP == msg.getStage())
             return gossipChannel;

@@ -32,7 +32,7 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.net.async.InternodeMessagingPool;
+import org.apache.cassandra.net.async.OutboundMessagingPool;
 
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
@@ -295,7 +295,7 @@ public class Config
     public int tracetype_repair_ttl = (int) TimeUnit.DAYS.toSeconds(7);
 
     /**
-     * Strategy to use for coalescing messages in {@link InternodeMessagingPool}.
+     * Strategy to use for coalescing messages in {@link OutboundMessagingPool}.
      * Can be fixed, movingaverage, timehorizon, disabled. Setting is case and leading/trailing
      * whitespace insensitive. You can also specify a subclass of
      * {@link org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy} by name.

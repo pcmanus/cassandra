@@ -35,13 +35,13 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
-public class ClientConnectorTest
+public class OutboundConnectorTest
 {
     private final static InetSocketAddress local = InetSocketAddress.createUnresolved("127.0.0.1", 9876);
     private final static InetSocketAddress remote = InetSocketAddress.createUnresolved("127.0.0.2", 9876);
 
     EmbeddedChannel channel;
-    ClientConnector connector;
+    OutboundConnector connector;
 
     @BeforeClass
     public static void before()
@@ -53,7 +53,7 @@ public class ClientConnectorTest
     public void setUp()
     {
         channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        connector = new ClientConnector(null, local, remote);
+        connector = new OutboundConnector(null, local, remote);
     }
 
     @After

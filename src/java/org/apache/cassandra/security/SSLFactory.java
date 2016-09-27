@@ -18,7 +18,6 @@
 package org.apache.cassandra.security;
 
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -29,6 +28,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
@@ -62,6 +62,9 @@ public final class SSLFactory
 
     @VisibleForTesting
     static volatile boolean checkedExpiry = false;
+
+    private static AtomicReference<SslContext> clientSslContext;
+    private static AtomicReference<SslContext> serverSslContext;
 
     public static SSLServerSocket getServerSocket(EncryptionOptions options, InetAddress address, int port) throws IOException
     {
@@ -216,10 +219,21 @@ public final class SSLFactory
         return getSslContext(options, buildTruststore, forServer, OpenSsl.isAvailable());
     }
 
-    /** get a netty {@link SslContext} instance */
+    /**
+     * Get a netty {@link SslContext} instance.
+     */
     @VisibleForTesting
     static SslContext getSslContext(EncryptionOptions options, boolean buildTruststore, boolean forServer, boolean useOpenSsl) throws IOException
     {
+        // the netty folks informed me that a) SslContext is expensive to create (as well as to destroy),
+        // b) it consumes a lof of resources (especially direct memory),
+        // but c) it can be reused across connection (assuming the SSL params are the same)
+
+        if (forServer && serverSslContext.get() != null)
+            return serverSslContext.get();
+        if (!forServer && clientSslContext.get() != null)
+            return clientSslContext.get();
+
         TrustManagerFactory tmf = null;
         if (buildTruststore)
             tmf = buildTrustManagerFactory(options);
@@ -227,16 +241,14 @@ public final class SSLFactory
         SslContextBuilder builder;
         if (forServer)
         {
-            if (useOpenSsl)
-            {
-                builder = SslContextBuilder.forServer(new File(options.x509_cert), new File(options.keyfile), options.keyfile_password)
-                                           .sslProvider(SslProvider.OPENSSL);
-            }
-            else
-            {
-                KeyManagerFactory kmf = buildKeyManagerFactory(options);
-                builder = SslContextBuilder.forServer(kmf).sslProvider(SslProvider.JDK);
-            }
+            /*
+                There is a case where the netty/openssl combo might not support using KeyManagerFactory. If so, we would need
+                to fall back to passing in a file reference for both a x509 and PKCS#8 private key file in PEM format (see
+                {@link SslContextBuilder#forServer(File, File, String)}). However, we are not supporting that now to keep
+                the config/yaml API simple.
+             */
+            KeyManagerFactory kmf = buildKeyManagerFactory(options);
+            builder = SslContextBuilder.forServer(kmf).sslProvider(useOpenSsl ? SslProvider.OPENSSL : SslProvider.JDK);
             builder.clientAuth(options.require_client_auth ? ClientAuth.REQUIRE : ClientAuth.NONE);
         }
         else
@@ -244,8 +256,14 @@ public final class SSLFactory
             builder = SslContextBuilder.forClient();
         }
 
-        return builder.ciphers(Arrays.asList(options.cipher_suites))
-                      .trustManager(tmf)
-                      .build();
+        SslContext ctx = builder.ciphers(Arrays.asList(options.cipher_suites))
+                        .trustManager(tmf)
+                        .build();
+
+        AtomicReference<SslContext> ref = forServer ? serverSslContext : clientSslContext;
+        if (ref.compareAndSet(null, ctx))
+            return ctx;
+        else
+            return ref.get();
     }
 }

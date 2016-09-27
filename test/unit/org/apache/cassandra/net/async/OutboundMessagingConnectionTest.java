@@ -46,24 +46,24 @@ import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.State;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.State;
 
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.DISCONNECT;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.GOOD;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.CLOSED;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.CREATING_CHANNEL;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.NOT_READY;
-import static org.apache.cassandra.net.async.InternodeMessagingConnection.State.READY;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.DISCONNECT;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.GOOD;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.CLOSED;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.CREATING_CHANNEL;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.NOT_READY;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.READY;
 
-public class InternodeMessagingConnectionTest
+public class OutboundMessagingConnectionTest
 {
     private static final InetSocketAddress LOCAL_ADDR = new InetSocketAddress("127.0.0.1", 9998);
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.1", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
-    private InternodeMessagingConnection imc;
+    private OutboundMessagingConnection imc;
     private CountingHandler handler;
     private EmbeddedChannel channel;
 
@@ -76,7 +76,7 @@ public class InternodeMessagingConnectionTest
     @Before
     public void setup()
     {
-        imc = new InternodeMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true), new TestScheduledExecutorService());
+        imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(true), new TestScheduledExecutorService());
         handler = new CountingHandler();
         channel = new EmbeddedChannel(handler);
         imc.setChannel(channel);
@@ -272,7 +272,7 @@ public class InternodeMessagingConnectionTest
         Assert.assertEquals(count, imc.backlogSize());
 
         imc.setState(READY);
-        ClientConnector connector = new ClientConnector(null, LOCAL_ADDR, REMOTE_ADDR);
+        OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
         imc.connectionTimeout(connector);
         Assert.assertEquals(READY, imc.getState());
         Assert.assertFalse(connector.isCancelled());
@@ -288,7 +288,7 @@ public class InternodeMessagingConnectionTest
         Assert.assertEquals(count, imc.backlogSize());
 
         imc.setState(CREATING_CHANNEL);
-        ClientConnector connector = new ClientConnector(null, LOCAL_ADDR, REMOTE_ADDR);
+        OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
         imc.connectionTimeout(connector);
         Assert.assertEquals(CREATING_CHANNEL, imc.getState());
         Assert.assertTrue(connector.isCancelled());
@@ -304,7 +304,7 @@ public class InternodeMessagingConnectionTest
         Assert.assertEquals(count, imc.backlogSize());
 
         imc.setState(CLOSED);
-        ClientConnector connector = new ClientConnector(null, LOCAL_ADDR, REMOTE_ADDR);
+        OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
         imc.connectionTimeout(connector);
         Assert.assertEquals(CLOSED, imc.getState());
         Assert.assertTrue(connector.isCancelled());
@@ -320,8 +320,8 @@ public class InternodeMessagingConnectionTest
         Assert.assertEquals(count, imc.backlogSize());
 
         imc.setState(CREATING_CHANNEL);
-        ClientConnector connector = new ClientConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        imc.setClientConnector(connector);
+        OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
+        imc.setOutboundConnector(connector);
         imc.connectionTimeout(connector);
         Assert.assertEquals(NOT_READY, imc.getState());
         Assert.assertTrue(connector.isCancelled());

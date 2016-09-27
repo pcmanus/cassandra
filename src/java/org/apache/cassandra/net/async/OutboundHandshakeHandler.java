@@ -38,12 +38,12 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult.Result;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
- * A {@link ChannelHandler} to execute the client-side of the internode communication handshake protocol.
+ * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
  * As soon as the handler is added to the channel via {@code #channelActive} (which is only invoked if the underlying connection
  * was properly established), the first message of the internode messaging protocol is automatically sent out.
  *
@@ -81,7 +81,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     private final NettyFactory.Mode mode;
 
     /**
-     * A future that places a timeout on how long we'll wait for the server to respond
+     * A future that places a timeout on how long we'll wait for the peer to respond
      * so we can move on to the next step of the handshake or just fail.
      */
     private Future<?> handshakeResponse;
@@ -135,7 +135,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         return header;
     }
 
-    // invoked when we get the response back from the server, which should contain the second message of the internode
+    // invoked when we get the response back from the peer, which should contain the second message of the internode
     // messaging handshake
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception

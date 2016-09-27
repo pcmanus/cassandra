@@ -35,13 +35,13 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.ConnectionUtils;
-import org.apache.cassandra.net.async.InternodeMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.NativeTransportService;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
- * A central spot for building Netty-based server and client Channels/Pipelines/Bootstrap instances.
+ * A central spot for building Netty-based Channel/Pipeline/Bootstrap instances.
  */
 public final class NettyFactory
 {

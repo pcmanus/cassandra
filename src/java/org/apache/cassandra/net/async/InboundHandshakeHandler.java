@@ -61,17 +61,17 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     private boolean hasAuthenticated;
 
     /**
-     * The client's declared messaging version.
+     * The peer's declared messaging version.
      */
     private int version;
 
     /**
-     * Does the client support (or want to use) compressed data?
+     * Does the peer support (or want to use) compressed data?
      */
     private boolean compressed;
 
     /**
-     * A future the essentially places a timeout on how long we'll wait for the client
+     * A future the essentially places a timeout on how long we'll wait for the peer
      * to complete the next step of the handshake.
      */
     private Future<?> handshakeResponse;
@@ -227,7 +227,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     }
 
     /**
-     * Creates the list of {@link ChannelHandler}s to service the client.
+     * Creates the list of {@link ChannelHandler}s to service the peer.
      */
     static List<Pair<String, ChannelHandler>> createHandlers(InetAddress peer, boolean compressed, int messagingVersion, Consumer<MessageInWrapper> messageConsumer)
     {

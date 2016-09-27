@@ -112,19 +112,14 @@ public class SSLFactoryTest
     public void getSslContext_OpenSSL() throws IOException
     {
         // only try this test if OpenSsl is available
-        boolean useOpenSsl = OpenSsl.isAvailable();
-        EncryptionOptions options;
-        if (useOpenSsl)
+        if (!OpenSsl.isAvailable())
         {
-            options = addCertAndPrivateKey(encryptionOptions);
-        }
-        else
-        {
-            logger.warn("OpenSSL not available in this application, so not really testing the netty-openssl code paths");
-            options = addKeystoreOptions(encryptionOptions);
+            logger.warn("OpenSSL not available in this application, so not testing the netty-openssl code paths");
+            return;
         }
 
-        SslContext sslContext = SSLFactory.getSslContext(options, true, true, useOpenSsl);
+        EncryptionOptions options = addKeystoreOptions(encryptionOptions);
+        SslContext sslContext = SSLFactory.getSslContext(options, true, true, true);
         Assert.assertNotNull(sslContext);
     }
 
@@ -140,13 +135,6 @@ public class SSLFactoryTest
     {
         options.keystore = "test/conf/cassandra_ssl_test.keystore";
         options.keystore_password = "cassandra";
-        return options;
-    }
-
-    private EncryptionOptions addCertAndPrivateKey(EncryptionOptions options)
-    {
-        options.x509_cert = ssc.certificate().getAbsolutePath();
-        options.keyfile = ssc.privateKey().getAbsolutePath();
         return options;
     }
 

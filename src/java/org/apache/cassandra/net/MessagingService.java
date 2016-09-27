@@ -96,7 +96,7 @@ import org.apache.cassandra.locator.ILatencySubscriber;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.metrics.DroppedMessageMetrics;
 import org.apache.cassandra.metrics.MessagingMetrics;
-import org.apache.cassandra.net.async.InternodeMessagingPool;
+import org.apache.cassandra.net.async.OutboundMessagingPool;
 import org.apache.cassandra.net.async.NettyFactory;
 import org.apache.cassandra.net.async.NettyFactory.SecureServerInitializer;
 import org.apache.cassandra.net.async.NettyFactory.ServerInitializer;
@@ -1403,7 +1403,7 @@ public final class MessagingService implements MessagingServiceMBean
 
     private class NettySender implements MessageSender
     {
-        private final ConcurrentMap<InetAddress, InternodeMessagingPool> channelManagers = new NonBlockingHashMap<>();
+        private final ConcurrentMap<InetAddress, OutboundMessagingPool> channelManagers = new NonBlockingHashMap<>();
         private final List<Channel> serverChannels = Lists.newArrayList();
 
         public void sendOneWay(MessageOut message, int id, InetAddress to)
@@ -1411,9 +1411,9 @@ public final class MessagingService implements MessagingServiceMBean
             getMessagingConnection(to).sendMessage(message, id);
         }
 
-        private InternodeMessagingPool getMessagingConnection(InetAddress to)
+        private OutboundMessagingPool getMessagingConnection(InetAddress to)
         {
-            InternodeMessagingPool pool = channelManagers.get(to);
+            OutboundMessagingPool pool = channelManagers.get(to);
             if (pool == null)
             {
                 boolean secure = ConnectionUtils.isEncryptedChannel(to);
@@ -1425,8 +1425,8 @@ public final class MessagingService implements MessagingServiceMBean
 
                 ServerEncryptionOptions encryptionOptions = secure ? DatabaseDescriptor.getServerEncryptionOptions() : null;
 
-                pool = new InternodeMessagingPool(preferredRemote, local, encryptionOptions, backPressure.newState(to));
-                InternodeMessagingPool existing = channelManagers.putIfAbsent(to, pool);
+                pool = new OutboundMessagingPool(preferredRemote, local, encryptionOptions, backPressure.newState(to));
+                OutboundMessagingPool existing = channelManagers.putIfAbsent(to, pool);
                 if (existing != null)
                     pool = existing;
             }
@@ -1440,7 +1440,7 @@ public final class MessagingService implements MessagingServiceMBean
 
         public void markTimeout(InetAddress addr)
         {
-            InternodeMessagingPool conn = channelManagers.get(addr);
+            OutboundMessagingPool conn = channelManagers.get(addr);
             if (conn != null)
                 conn.incrementTimeout();
         }
@@ -1459,14 +1459,14 @@ public final class MessagingService implements MessagingServiceMBean
 
         public void destroyConnectionPool(InetAddress to)
         {
-            InternodeMessagingPool pool = channelManagers.remove(to);
+            OutboundMessagingPool pool = channelManagers.remove(to);
             if (pool != null)
                 pool.close();
         }
 
         public void switchIpAddress(InetAddress publicAddress, InetAddress localAddress)
         {
-            InternodeMessagingPool messagingPool = channelManagers.get(publicAddress);
+            OutboundMessagingPool messagingPool = channelManagers.get(publicAddress);
             if (messagingPool != null)
             {
                 boolean secure = ConnectionUtils.isEncryptedChannel(publicAddress);
@@ -1477,14 +1477,14 @@ public final class MessagingService implements MessagingServiceMBean
 
         public void reset(InetAddress address)
         {
-            InternodeMessagingPool messagingPool = channelManagers.get(address);
+            OutboundMessagingPool messagingPool = channelManagers.get(address);
             if (messagingPool != null)
                 messagingPool.reset();
         }
 
         public InetAddress getCurrentEndpoint(InetAddress publicAddress)
         {
-            InternodeMessagingPool messagingPool = channelManagers.get(publicAddress);
+            OutboundMessagingPool messagingPool = channelManagers.get(publicAddress);
             return messagingPool != null ? messagingPool.getPreferredRemoteAddr().getAddress() : null;
         }
 
@@ -1515,7 +1515,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Integer> getLargeMessagePendingTasks()
         {
             Map<String, Integer> pendingTasks = new HashMap<String, Integer>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 pendingTasks.put(entry.getKey().getHostAddress(), entry.getValue().largeMessageChannel.getPendingMessages());
             return pendingTasks;
         }
@@ -1523,7 +1523,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getLargeMessageCompletedTasks()
         {
             Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().largeMessageChannel.getCompletedMesssages());
             return completedTasks;
         }
@@ -1531,7 +1531,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getLargeMessageDroppedTasks()
         {
             Map<String, Long> droppedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 droppedTasks.put(entry.getKey().getHostAddress(), entry.getValue().largeMessageChannel.getDroppedMessages());
             return droppedTasks;
         }
@@ -1539,7 +1539,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Integer> getSmallMessagePendingTasks()
         {
             Map<String, Integer> pendingTasks = new HashMap<String, Integer>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 pendingTasks.put(entry.getKey().getHostAddress(), entry.getValue().smallMessageChannel.getPendingMessages());
             return pendingTasks;
         }
@@ -1547,7 +1547,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getSmallMessageCompletedTasks()
         {
             Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().smallMessageChannel.getCompletedMesssages());
             return completedTasks;
         }
@@ -1555,7 +1555,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getSmallMessageDroppedTasks()
         {
             Map<String, Long> droppedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 droppedTasks.put(entry.getKey().getHostAddress(), entry.getValue().smallMessageChannel.getDroppedMessages());
             return droppedTasks;
         }
@@ -1563,7 +1563,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Integer> getGossipMessagePendingTasks()
         {
             Map<String, Integer> pendingTasks = new HashMap<String, Integer>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 pendingTasks.put(entry.getKey().getHostAddress(), entry.getValue().gossipChannel.getPendingMessages());
             return pendingTasks;
         }
@@ -1571,7 +1571,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getGossipMessageCompletedTasks()
         {
             Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().gossipChannel.getCompletedMesssages());
             return completedTasks;
         }
@@ -1579,7 +1579,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getGossipMessageDroppedTasks()
         {
             Map<String, Long> droppedTasks = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 droppedTasks.put(entry.getKey().getHostAddress(), entry.getValue().gossipChannel.getDroppedMessages());
             return droppedTasks;
         }
@@ -1587,7 +1587,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Long> getTimeoutsPerHost()
         {
             Map<String, Long> result = new HashMap<String, Long>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
             {
                 String ip = entry.getKey().getHostAddress();
                 long recent = entry.getValue().getTimeouts();
@@ -1599,7 +1599,7 @@ public final class MessagingService implements MessagingServiceMBean
         public Map<String, Double> getBackPressurePerHost()
         {
             Map<String, Double> map = new HashMap<>(channelManagers.size());
-            for (Map.Entry<InetAddress, InternodeMessagingPool> entry : channelManagers.entrySet())
+            for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
                 map.put(entry.getKey().getHostAddress(), entry.getValue().getBackPressureState().getBackPressureRateLimit());
 
             return map;

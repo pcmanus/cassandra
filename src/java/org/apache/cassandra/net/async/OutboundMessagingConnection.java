@@ -67,9 +67,9 @@ import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHA
  * and create the connection. Upon sucessfully setting up the connection/channel, the {@link #state} will be updated again
  * (to {@link State#READY}, which indicates to other threads that the channel is ready for business and can be written to.
  */
-public class InternodeMessagingConnection
+public class OutboundMessagingConnection
 {
-    static final Logger logger = LoggerFactory.getLogger(InternodeMessagingConnection.class);
+    static final Logger logger = LoggerFactory.getLogger(OutboundMessagingConnection.class);
 
     /*
  * Size of buffer in output stream
@@ -123,18 +123,18 @@ public class InternodeMessagingConnection
      * allocation.
      */
     @SuppressWarnings("rawtypes")
-    private static final AtomicReferenceFieldUpdater<InternodeMessagingConnection, State> stateUpdater;
+    private static final AtomicReferenceFieldUpdater<OutboundMessagingConnection, State> stateUpdater;
     static {
         @SuppressWarnings("rawtypes")
-        AtomicReferenceFieldUpdater<InternodeMessagingConnection, State> referenceFieldUpdater = PlatformDependent.newAtomicReferenceFieldUpdater(InternodeMessagingConnection.class, "state");
+        AtomicReferenceFieldUpdater<OutboundMessagingConnection, State> referenceFieldUpdater = PlatformDependent.newAtomicReferenceFieldUpdater(OutboundMessagingConnection.class, "state");
         if (referenceFieldUpdater == null)
-            referenceFieldUpdater = AtomicReferenceFieldUpdater.newUpdater(InternodeMessagingConnection.class, State.class, "state");
+            referenceFieldUpdater = AtomicReferenceFieldUpdater.newUpdater(OutboundMessagingConnection.class, State.class, "state");
         stateUpdater = referenceFieldUpdater;
 
     }
     private volatile State state = State.NOT_READY;
 
-    private ClientConnector clientConnector;
+    private OutboundConnector outboundConnector;
 
     /**
      * The channel once a socket connection is established; it won't be in it's normal working state until the handshake is complete.
@@ -146,13 +146,13 @@ public class InternodeMessagingConnection
      */
     private int targetVersion;
 
-    InternodeMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy)
     {
         this(remoteAddr, localAddr, encryptionOptions, coalescingStrategy, ScheduledExecutors.scheduledTasks);
     }
 
     @VisibleForTesting
-    InternodeMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy, ScheduledExecutorService sceduledExecutor)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy, ScheduledExecutorService sceduledExecutor)
     {
         this.remoteAddr = remoteAddr;
         this.localAddr = localAddr;
@@ -325,7 +325,7 @@ public class InternodeMessagingConnection
         int messagingVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
 
         // pass in the "broadcast address" here, and *not* the preferredRemoteAddr; preferredRemoteAddr is passed to ClientConnector
-        clientConnector = new ClientConnector.Builder()
+        outboundConnector = new OutboundConnector.Builder()
                           .addLocalAddr(localAddr)
                           .addRemoteAddr(preferredRemoteAddr)
                           .compress(shouldCompressConnection(remoteAddr.getAddress()))
@@ -334,10 +334,10 @@ public class InternodeMessagingConnection
                           .encryptionOptions(encryptionOptions)
                           .channelBufferSize(channelBufferSize)
                           .build();
-        clientConnector.connect();
+        outboundConnector.connect();
 
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
-        connectionTimeoutFuture = scheduledExecutor.schedule(() -> connectionTimeout(clientConnector), timeout, TimeUnit.MILLISECONDS);
+        connectionTimeoutFuture = scheduledExecutor.schedule(() -> connectionTimeout(outboundConnector), timeout, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -347,7 +347,7 @@ public class InternodeMessagingConnection
      * so there's an inherent race with {@link #finishHandshake(ConnectionHandshakeResult)},
      * as well as any possible connect() reattempts (a seemingly remote race condition, however).
      */
-    void connectionTimeout(ClientConnector initiatingConnector)
+    void connectionTimeout(OutboundConnector initiatingConnector)
     {
         State initialState = state;
         if (initialState != State.READY)
@@ -357,7 +357,7 @@ public class InternodeMessagingConnection
 
             // if the parameter ClientConnector is the same as the same as the member field,
             // no other thread has attempted a reconnect (and put a new instance into the member field)
-            if (initiatingConnector == clientConnector && initialState != State.CLOSED)
+            if (initiatingConnector == outboundConnector && initialState != State.CLOSED)
             {
                 // a last-ditch attempt to let finishHandshake() win the any race
                 if (stateUpdater.compareAndSet(this, initialState, State.NOT_READY))
@@ -370,7 +370,7 @@ public class InternodeMessagingConnection
      * Process the results of the handshake negotiation.
      *
      * Note: this method will be invoked from the netty event loop,
-     * so there's an inherent race with {@link #connectionTimeout(ClientConnector)}.
+     * so there's an inherent race with {@link #connectionTimeout(OutboundConnector)}.
      */
     void finishHandshake(ConnectionHandshakeResult result)
     {
@@ -380,7 +380,7 @@ public class InternodeMessagingConnection
             connectionTimeoutFuture.cancel(false);
             connectionTimeoutFuture = null;
         }
-        clientConnector = null;
+        outboundConnector = null;
 
         if (result.result != ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE)
         {
@@ -480,10 +480,10 @@ public class InternodeMessagingConnection
             connectionTimeoutFuture.cancel(false);
             connectionTimeoutFuture = null;
         }
-        if (clientConnector != null)
+        if (outboundConnector != null)
         {
-            clientConnector.cancel();
-            clientConnector = null;
+            outboundConnector.cancel();
+            outboundConnector = null;
         }
 
         backlog.clear();
@@ -580,9 +580,9 @@ public class InternodeMessagingConnection
     }
 
     @VisibleForTesting
-    void setClientConnector(ClientConnector connector)
+    void setOutboundConnector(OutboundConnector connector)
     {
-        clientConnector = connector;
+        outboundConnector = connector;
     }
 
     @VisibleForTesting
