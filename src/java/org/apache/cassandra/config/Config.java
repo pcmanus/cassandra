@@ -310,7 +310,6 @@ public class Config
      */
     public static final int otc_coalescing_window_us_default = 200;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
-    public boolean ms_netty_enabled = false;
 
     public int windows_timer_interval = 0;
 

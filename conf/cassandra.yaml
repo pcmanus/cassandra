@@ -1194,5 +1194,3 @@ back_pressure_strategy:
         - high_ratio: 0.90
           factor: 5
           flow: FAST
-
-ms_netty_enabled: true
