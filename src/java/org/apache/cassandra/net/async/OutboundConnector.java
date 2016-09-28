@@ -21,7 +21,6 @@ package org.apache.cassandra.net.async;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -31,33 +30,20 @@ import org.slf4j.LoggerFactory;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.concurrent.Future;
-import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
-import org.apache.cassandra.net.ConnectionUtils;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
 /**
- * Asynchronously (via netty) connects to a remote peer. On connection failures, will attempt to reconnect
- * unless cancelled by an external caller.
+ * Asynchronously connects to a remote peer, via netty. The sole responsibility of this class is to
+ * establish a TCP socket connection. On connection failures, it will retry the connect unless cancelled by an external caller.
  */
 class OutboundConnector
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundConnector.class);
 
-    private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
-
     /**
-     * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
+     * Number of milliseconds between connection retry attempts.
      */
-    public static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
-
-    /**
-     * NUmber of milliseconds between connection retry attempts.
-     */
-    public static final int OPEN_RETRY_DELAY = 100;
+    private static final int OPEN_RETRY_DELAY = 100;
 
     /**
      * We can keep the {@link Bootstrap} around in case we need to reconnect to the peer,
@@ -105,14 +91,14 @@ class OutboundConnector
             return false;
 
         ChannelFuture channelFuture = (ChannelFuture)future;
+        if (channelFuture.isSuccess())
+            return true;
+
         if (channelFuture.isCancelled() || isCancelled)
         {
             channelFuture.channel().close();
             return false;
         }
-
-        if (channelFuture.isSuccess())
-            return true;
 
         Throwable cause = future.cause();
         if (cause instanceof IOException)
@@ -141,90 +127,6 @@ class OutboundConnector
         ChannelFuture future = connectFuture;
         if (future != null)
             future.cancel(false);
-    }
-
-    public static class Builder
-    {
-        private InetSocketAddress localAddr;
-        private InetSocketAddress remoteAddr;
-        private int channelBufferSize;
-
-        // even though this is the "client" end of this interaction, we're dealing with the server-to-server internode
-        // communications here, so thus we need the "server" EncryptionOptions as "server" if for node-to-node communications.
-        private ServerEncryptionOptions encryptionOptions;
-        private int protocolVersion;
-        private boolean compress;
-        private Consumer<ConnectionHandshakeResult> callback;
-        private NettyFactory.Mode mode = NettyFactory.Mode.MESSAGING;
-
-        public Builder addLocalAddr(InetSocketAddress localAddr)
-        {
-            this.localAddr = localAddr;
-            return this;
-        }
-
-        public Builder addRemoteAddr(InetSocketAddress remoteAddr)
-        {
-            this.remoteAddr = remoteAddr;
-            return this;
-        }
-
-        public Builder channelBufferSize(int channelBufferSize)
-        {
-            this.channelBufferSize = channelBufferSize;
-            return this;
-        }
-
-        public Builder compress(boolean compress)
-        {
-            this.compress = compress;
-            return this;
-        }
-
-        public Builder protocolVersion(int protocolVersion)
-        {
-            this.protocolVersion = protocolVersion;
-            return this;
-        }
-
-        public Builder encryptionOptions(ServerEncryptionOptions encryptionOptions)
-        {
-            this.encryptionOptions = encryptionOptions;
-            return this;
-        }
-
-        public Builder streaming()
-        {
-            mode = NettyFactory.Mode.STREAMING;
-            return this;
-        }
-
-        public Builder callback(Consumer<ConnectionHandshakeResult> callback)
-        {
-            this.callback = callback;
-            return this;
-        }
-
-        OutboundConnector build()
-        {
-            OutboundChannelInitializer initializer = new OutboundChannelInitializer(remoteAddr, protocolVersion, compress, callback, encryptionOptions, mode);
-            return new OutboundConnector(buildBootstrap(remoteAddr, initializer, channelBufferSize), localAddr, remoteAddr);
-        }
-    }
-
-    private static Bootstrap buildBootstrap(InetSocketAddress remoteAddr, OutboundChannelInitializer initializer, int channelBufferSize)
-    {
-        boolean tcpNoDelay;
-        if (ConnectionUtils.isLocalDC(remoteAddr.getAddress()))
-            tcpNoDelay = INTRADC_TCP_NODELAY;
-        else
-            tcpNoDelay = DatabaseDescriptor.getInterDCTcpNoDelay();
-
-        int sendBufferSize = 1 << 16;
-        if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
-            sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
-
-        return NettyFactory.createOutboundBootstrap(initializer, sendBufferSize, tcpNoDelay, channelBufferSize);
     }
 
     @VisibleForTesting

@@ -67,7 +67,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     /**
      * The IP address to identify this node to the peer. Memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
      */
-    private final InetSocketAddress remoteAddr;
+    private final InetSocketAddress localAddr;
 
     /**
      * The expected messaging service version to use.
@@ -93,9 +93,9 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
     private volatile boolean isCancelled;
 
-    OutboundHandshakeHandler(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, NettyFactory.Mode mode)
+    OutboundHandshakeHandler(InetSocketAddress localAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, NettyFactory.Mode mode)
     {
-        this.remoteAddr = remoteAddr;
+        this.localAddr = localAddr;
         this.messagingVersion = messagingVersion;
         this.compress = compress;
         this.callback = callback;
@@ -176,13 +176,13 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         }
         else
         {
-            ByteBuf buf = ctx.alloc().buffer(Integer.BYTES + CompactEndpointSerializationHelper.serializedSize(remoteAddr.getAddress()));
+            ByteBuf buf = ctx.alloc().buffer(Integer.BYTES + CompactEndpointSerializationHelper.serializedSize(localAddr.getAddress()));
             try
             {
                 buf.writeInt(MessagingService.current_version);
                 @SuppressWarnings("resource")
                 DataOutput bbos = new ByteBufOutputStream(buf);
-                CompactEndpointSerializationHelper.serialize(remoteAddr.getAddress(), bbos);
+                CompactEndpointSerializationHelper.serialize(localAddr.getAddress(), bbos);
                 ctx.writeAndFlush(buf);
                 result = Result.GOOD;
             }

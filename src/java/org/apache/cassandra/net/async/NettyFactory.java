@@ -34,7 +34,6 @@ import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.NativeTransportService;
@@ -153,7 +152,7 @@ public final class NettyFactory
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
-    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
+    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, boolean remoteDc, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
     {
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
         Bootstrap bootstrap = new Bootstrap().group(OUTBOUND_GROUP)
@@ -166,7 +165,7 @@ public final class NettyFactory
                                              .option(ChannelOption.TCP_NODELAY, tcpNoDelay)
                                              .handler(initializer);
 
-        if (ConnectionUtils.isLocalDC(initializer.remoteAddr.getAddress()))
+        if (remoteDc)
             bootstrap.option(ChannelOption.TCP_NODELAY, true);
         else
             bootstrap.option(ChannelOption.TCP_NODELAY, DatabaseDescriptor.getInterDCTcpNoDelay());
@@ -179,16 +178,16 @@ public final class NettyFactory
 
     static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>
     {
-        private final InetSocketAddress remoteAddr;
+        private final InetSocketAddress localAddr;
         private final int messagingVersion;
         private final boolean compress;
         private final Consumer<ConnectionHandshakeResult> callback;
         private final ServerEncryptionOptions encryptionOptions;
         private final Mode mode;
 
-        OutboundChannelInitializer(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, Mode mode)
+        OutboundChannelInitializer(InetSocketAddress localAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, Mode mode)
         {
-            this.remoteAddr = remoteAddr;
+            this.localAddr = localAddr;
             this.messagingVersion = messagingVersion;
             this.compress = compress;
             this.callback = callback;
@@ -210,7 +209,7 @@ public final class NettyFactory
             if (NettyFactory.WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
 
-            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(remoteAddr, messagingVersion, compress, callback, mode));
+            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(localAddr, messagingVersion, compress, callback, mode));
         }
     }
 

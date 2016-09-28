@@ -36,6 +36,7 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
@@ -53,6 +54,8 @@ import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.NettyFactory.Mode;
+import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
@@ -72,11 +75,18 @@ public class OutboundMessagingConnection
 {
     static final Logger logger = LoggerFactory.getLogger(OutboundMessagingConnection.class);
 
-    /*
- * Size of buffer in output stream
- */
+    /**
+     * Size of buffer in output stream
+    */
     private static final String BUFFER_SIZE_PROPERTY = Config.PROPERTY_PREFIX + "otc_buffer_size";
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
+
+
+    /**
+     * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
+     */
+    private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
+    public static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
 
     /**
      * As we use netty's {@link FlushConsolidationHandler}, we can configure a max number of flush() events before it actually
@@ -100,17 +110,25 @@ public class OutboundMessagingConnection
     private final AtomicLong droppedMessageCount;
     private final AtomicLong completedMessageCount;
 
-    private final InetSocketAddress remoteAddr;
+    /**
+     * Memoization of the local node's broadcast address.
+     */
     private final InetSocketAddress localAddr;
-    private final ServerEncryptionOptions encryptionOptions;
-    private final Optional<CoalescingStrategy> coalescingStrategy;
-    private final int channelBufferSize;
+
+    /**
+     * An identifier for the peer. Use {@link #preferredConnectAddress} as the address to actually connect on.
+     */
+    private final InetSocketAddress remoteAddr;
 
     /**
      * An override address on which to communicate with the peer. Typically used for something like EC2 public IP address
      * which need to be used for communication between EC2 regions.
      */
-    private InetSocketAddress preferredRemoteAddr;
+    private volatile InetSocketAddress preferredConnectAddress;
+
+    private final ServerEncryptionOptions encryptionOptions;
+    private final Optional<CoalescingStrategy> coalescingStrategy;
+    private final int channelBufferSize;
 
     /**
      * A future for notifying when the timeout for creating the connection and negotiating the handshake has elapsed.
@@ -140,7 +158,7 @@ public class OutboundMessagingConnection
     /**
      * The channel once a socket connection is established; it won't be in it's normal working state until the handshake is complete.
      */
-    private Channel channel;
+    private volatile Channel channel;
 
     /**
      * the target protocol version to communiate to the peer with, discovered/negotiated via handshaking
@@ -155,9 +173,9 @@ public class OutboundMessagingConnection
     @VisibleForTesting
     OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, Optional<CoalescingStrategy> coalescingStrategy, ScheduledExecutorService sceduledExecutor)
     {
-        this.remoteAddr = remoteAddr;
         this.localAddr = localAddr;
-        preferredRemoteAddr = remoteAddr;
+        this.remoteAddr = remoteAddr;
+        preferredConnectAddress = remoteAddr;
         this.encryptionOptions = encryptionOptions;
         this.coalescingStrategy = coalescingStrategy;
         backlog = new ConcurrentLinkedQueue<>();
@@ -254,8 +272,7 @@ public class OutboundMessagingConnection
         // TODO:JEB handle "cause instanceof CancellationException"
         if (cause instanceof IOException || cause.getCause() instanceof IOException)
         {
-            if (logger.isTraceEnabled())
-                logger.trace("error writing to {}", preferredRemoteAddr, cause);
+            logger.trace("error writing to peer {} at address {}", remoteAddr, preferredConnectAddress, cause);
 
             // because we get the reference the channel to which the message was sent, we don't have to worry about
             // a race of the callback being invoked but the IMC already setting up a new channel (and thus we won't attempt to close that new channel)
@@ -279,7 +296,7 @@ public class OutboundMessagingConnection
         else
         {
             // Non IO exceptions are likely a programming error so let's not silence them
-            logger.error("error writing to {}", preferredRemoteAddr, cause);
+            logger.error("error writing to peer {} at address {}", remoteAddr, preferredConnectAddress, cause);
         }
     }
 
@@ -325,20 +342,27 @@ public class OutboundMessagingConnection
 
         int messagingVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
 
-        // pass in the "broadcast address" here, and *not* the preferredRemoteAddr; preferredRemoteAddr is passed to ClientConnector
-        outboundConnector = new OutboundConnector.Builder()
-                          .addLocalAddr(localAddr)
-                          .addRemoteAddr(preferredRemoteAddr)
-                          .compress(shouldCompressConnection(remoteAddr.getAddress()))
-                          .callback(this::finishHandshake)
-                          .protocolVersion(messagingVersion)
-                          .encryptionOptions(encryptionOptions)
-                          .channelBufferSize(channelBufferSize)
-                          .build();
+        Bootstrap bootstrap = buildBootstrap(messagingVersion, shouldCompressConnection(remoteAddr.getAddress()));
+        outboundConnector = new OutboundConnector(bootstrap, localAddr, preferredConnectAddress);
         outboundConnector.connect();
 
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
         connectionTimeoutFuture = scheduledExecutor.schedule(() -> connectionTimeout(outboundConnector), timeout, TimeUnit.MILLISECONDS);
+    }
+
+    private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
+    {
+        OutboundChannelInitializer initializer = new OutboundChannelInitializer(localAddr, messagingVersion, compress, this::finishHandshake, encryptionOptions, Mode.MESSAGING);
+
+        boolean tcpNoDelay = ConnectionUtils.isLocalDC(remoteAddr.getAddress()) ?
+                             INTRADC_TCP_NODELAY :
+                             DatabaseDescriptor.getInterDCTcpNoDelay();
+
+        int sendBufferSize = 1 << 16;
+        if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
+            sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
+
+        return NettyFactory.createOutboundBootstrap(initializer, ConnectionUtils.isLocalDC(remoteAddr.getAddress()), sendBufferSize, tcpNoDelay, channelBufferSize);
     }
 
     /**
@@ -460,7 +484,7 @@ public class OutboundMessagingConnection
     {
         // capture a reference to the current channel, in case it gets swapped out before we can call close() on it
         Channel currentChannel = channel;
-        preferredRemoteAddr = newAddr;
+        preferredConnectAddress = newAddr;
 
         // kick off connecting on the new address. all new incoming messages will go that route, as well as any currently backlogged.
         reconnect();
