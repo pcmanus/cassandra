@@ -64,7 +64,6 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
 import org.apache.cassandra.metrics.StorageMetrics;
-import org.apache.cassandra.schema.LegacySchemaMigrator;
 import org.apache.cassandra.thrift.ThriftServer;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
@@ -203,18 +202,6 @@ public class CassandraDaemon
             exitOrFail(e.returnCode, e.getMessage(), e.getCause());
         }
 
-        try
-        {
-            if (SystemKeyspace.snapshotOnVersionChange())
-            {
-                SystemKeyspace.migrateDataDirs();
-            }
-        }
-        catch (IOException e)
-        {
-            exitOrFail(3, e.getMessage(), e.getCause());
-        }
-
         // We need to persist this as soon as possible after startup checks.
         // This should be the first write to SystemKeyspace (CASSANDRA-11742)
         SystemKeyspace.persistLocalMetadata();
@@ -246,13 +233,6 @@ public class CassandraDaemon
                 }
             }
         });
-
-        /*
-         * Migrate pre-3.0 keyspaces, tables, types, functions, and aggregates, to their new 3.0 storage.
-         * We don't (and can't) wait for commit log replay here, but we don't need to - all schema changes force
-         * explicit memtable flushes.
-         */
-        LegacySchemaMigrator.migrate();
 
         // Populate token metadata before flushing, for token-aware sstable partitioning (#6696)
         StorageService.instance.populateTokenMetadata();

@@ -102,16 +102,6 @@ public final class SystemKeyspace
     public static final String BUILT_VIEWS = "built_views";
     public static final String PREPARED_STATEMENTS = "prepared_statements";
 
-    @Deprecated public static final String LEGACY_HINTS = "hints";
-    @Deprecated public static final String LEGACY_BATCHLOG = "batchlog";
-    @Deprecated public static final String LEGACY_KEYSPACES = "schema_keyspaces";
-    @Deprecated public static final String LEGACY_COLUMNFAMILIES = "schema_columnfamilies";
-    @Deprecated public static final String LEGACY_COLUMNS = "schema_columns";
-    @Deprecated public static final String LEGACY_TRIGGERS = "schema_triggers";
-    @Deprecated public static final String LEGACY_USERTYPES = "schema_usertypes";
-    @Deprecated public static final String LEGACY_FUNCTIONS = "schema_functions";
-    @Deprecated public static final String LEGACY_AGGREGATES = "schema_aggregates";
-
     public static final CFMetaData Batches =
         compile(BATCHES,
                 "batches awaiting replay",
@@ -288,148 +278,6 @@ public final class SystemKeyspace
                 + "query_string text,"
                 + "PRIMARY KEY ((prepared_id)))");
 
-    @Deprecated
-    public static final CFMetaData LegacyHints =
-        compile(LEGACY_HINTS,
-                "*DEPRECATED* hints awaiting delivery",
-                "CREATE TABLE %s ("
-                + "target_id uuid,"
-                + "hint_id timeuuid,"
-                + "message_version int,"
-                + "mutation blob,"
-                + "PRIMARY KEY ((target_id), hint_id, message_version)) "
-                + "WITH COMPACT STORAGE")
-                .compaction(CompactionParams.scts(singletonMap("enabled", "false")))
-                .gcGraceSeconds(0);
-
-    @Deprecated
-    public static final CFMetaData LegacyBatchlog =
-        compile(LEGACY_BATCHLOG,
-                "*DEPRECATED* batchlog entries",
-                "CREATE TABLE %s ("
-                + "id uuid,"
-                + "data blob,"
-                + "version int,"
-                + "written_at timestamp,"
-                + "PRIMARY KEY ((id)))")
-                .compaction(CompactionParams.scts(singletonMap("min_threshold", "2")))
-                .gcGraceSeconds(0);
-
-    @Deprecated
-    public static final CFMetaData LegacyKeyspaces =
-        compile(LEGACY_KEYSPACES,
-                "*DEPRECATED* keyspace definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "durable_writes boolean,"
-                + "strategy_class text,"
-                + "strategy_options text,"
-                + "PRIMARY KEY ((keyspace_name))) "
-                + "WITH COMPACT STORAGE");
-
-    @Deprecated
-    public static final CFMetaData LegacyColumnfamilies =
-        compile(LEGACY_COLUMNFAMILIES,
-                "*DEPRECATED* table definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "columnfamily_name text,"
-                + "bloom_filter_fp_chance double,"
-                + "caching text,"
-                + "cf_id uuid," // post-2.1 UUID cfid
-                + "comment text,"
-                + "compaction_strategy_class text,"
-                + "compaction_strategy_options text,"
-                + "comparator text,"
-                + "compression_parameters text,"
-                + "default_time_to_live int,"
-                + "default_validator text,"
-                + "dropped_columns map<text, bigint>,"
-                + "gc_grace_seconds int,"
-                + "is_dense boolean,"
-                + "key_validator text,"
-                + "local_read_repair_chance double,"
-                + "max_compaction_threshold int,"
-                + "max_index_interval int,"
-                + "memtable_flush_period_in_ms int,"
-                + "min_compaction_threshold int,"
-                + "min_index_interval int,"
-                + "read_repair_chance double,"
-                + "speculative_retry text,"
-                + "subcomparator text,"
-                + "type text,"
-                + "PRIMARY KEY ((keyspace_name), columnfamily_name))");
-
-    @Deprecated
-    public static final CFMetaData LegacyColumns =
-        compile(LEGACY_COLUMNS,
-                "*DEPRECATED* column definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "columnfamily_name text,"
-                + "column_name text,"
-                + "component_index int,"
-                + "index_name text,"
-                + "index_options text,"
-                + "index_type text,"
-                + "type text,"
-                + "validator text,"
-                + "PRIMARY KEY ((keyspace_name), columnfamily_name, column_name))");
-
-    @Deprecated
-    public static final CFMetaData LegacyTriggers =
-        compile(LEGACY_TRIGGERS,
-                "*DEPRECATED* trigger definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "columnfamily_name text,"
-                + "trigger_name text,"
-                + "trigger_options map<text, text>,"
-                + "PRIMARY KEY ((keyspace_name), columnfamily_name, trigger_name))");
-
-    @Deprecated
-    public static final CFMetaData LegacyUsertypes =
-        compile(LEGACY_USERTYPES,
-                "*DEPRECATED* user defined type definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "type_name text,"
-                + "field_names list<text>,"
-                + "field_types list<text>,"
-                + "PRIMARY KEY ((keyspace_name), type_name))");
-
-    @Deprecated
-    public static final CFMetaData LegacyFunctions =
-        compile(LEGACY_FUNCTIONS,
-                "*DEPRECATED* user defined function definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "function_name text,"
-                + "signature frozen<list<text>>,"
-                + "argument_names list<text>,"
-                + "argument_types list<text>,"
-                + "body text,"
-                + "language text,"
-                + "return_type text,"
-                + "called_on_null_input boolean,"
-                + "PRIMARY KEY ((keyspace_name), function_name, signature))");
-
-    @Deprecated
-    public static final CFMetaData LegacyAggregates =
-        compile(LEGACY_AGGREGATES,
-                "*DEPRECATED* user defined aggregate definitions",
-                "CREATE TABLE %s ("
-                + "keyspace_name text,"
-                + "aggregate_name text,"
-                + "signature frozen<list<text>>,"
-                + "argument_types list<text>,"
-                + "final_func text,"
-                + "initcond blob,"
-                + "return_type text,"
-                + "state_func text,"
-                + "state_type text,"
-                + "PRIMARY KEY ((keyspace_name), aggregate_name, signature))");
-
     private static CFMetaData compile(String name, String description, String schema)
     {
         return CFMetaData.compile(String.format(schema, name), SchemaConstants.SYSTEM_KEYSPACE_NAME)
@@ -457,16 +305,7 @@ public final class SystemKeyspace
                          TransferredRanges,
                          ViewsBuildsInProgress,
                          BuiltViews,
-                         LegacyHints,
-                         LegacyBatchlog,
-                         PreparedStatements,
-                         LegacyKeyspaces,
-                         LegacyColumnfamilies,
-                         LegacyColumns,
-                         LegacyTriggers,
-                         LegacyUsertypes,
-                         LegacyFunctions,
-                         LegacyAggregates);
+                         PreparedStatements);
     }
 
     private static Functions functions()
@@ -1410,40 +1249,6 @@ public final class SystemKeyspace
         }
         // report back whatever we found in the system table
         return result.one().getString("release_version");
-    }
-
-    /**
-     * Check data directories for old files that can be removed when migrating from 2.1 or 2.2 to 3.0,
-     * these checks can be removed in 4.0, see CASSANDRA-7066
-     */
-    public static void migrateDataDirs()
-    {
-        Iterable<String> dirs = Arrays.asList(DatabaseDescriptor.getAllDataFileLocations());
-        for (String dataDir : dirs)
-        {
-            logger.trace("Checking {} for old files", dataDir);
-            File dir = new File(dataDir);
-            assert dir.exists() : dir + " should have been created by startup checks";
-
-            for (File ksdir : dir.listFiles((d, n) -> new File(d, n).isDirectory()))
-            {
-                logger.trace("Checking {} for old files", ksdir);
-
-                for (File cfdir : ksdir.listFiles((d, n) -> new File(d, n).isDirectory()))
-                {
-                    logger.trace("Checking {} for old files", cfdir);
-
-                    if (Descriptor.isLegacyFile(cfdir))
-                    {
-                        FileUtils.deleteRecursive(cfdir);
-                    }
-                    else
-                    {
-                        FileUtils.delete(cfdir.listFiles((d, n) -> Descriptor.isLegacyFile(new File(d, n))));
-                    }
-                }
-            }
-        }
     }
 
     private static ByteBuffer rangeToBytes(Range<Token> range)
