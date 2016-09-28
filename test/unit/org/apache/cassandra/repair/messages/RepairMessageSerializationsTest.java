@@ -29,7 +29,9 @@ import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
+import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Murmur3Partitioner;
@@ -44,6 +46,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.NodePair;
 import org.apache.cassandra.repair.RepairJobDesc;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.MerkleTrees;
 
 public class RepairMessageSerializationsTest
@@ -57,7 +60,7 @@ public class RepairMessageSerializationsTest
     public static void before()
     {
         DatabaseDescriptor.daemonInitialization();
-        originalPartitioner = DatabaseDescriptor.setPartitionerUnsafe(Murmur3Partitioner.instance);
+        originalPartitioner = StorageService.instance.setPartitionerUnsafe(Murmur3Partitioner.instance);
     }
 
     @AfterClass
@@ -78,11 +81,6 @@ public class RepairMessageSerializationsTest
     private RepairJobDesc buildRepairJobDesc()
     {
         List<Range<Token>> tokenRanges = buildTokenRanges();
-        tokenRanges.add(new Range<>(new LongToken(1000), new LongToken(1001)));
-        tokenRanges.add(new Range<>(new LongToken(2000), new LongToken(2001)));
-        tokenRanges.add(new Range<>(new LongToken(3000), new LongToken(3001)));
-        tokenRanges.add(new Range<>(new LongToken(4000), new LongToken(4001)));
-
         return new RepairJobDesc(UUID.randomUUID(), UUID.randomUUID(), "serializationsTestKeyspace", "repairMessages", tokenRanges);
     }
 

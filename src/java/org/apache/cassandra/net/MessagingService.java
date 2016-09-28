@@ -1447,8 +1447,15 @@ public final class MessagingService implements MessagingServiceMBean
                 InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getSSLStoragePort());
                 serverChannels.add(NettyFactory.createServerChannel(localAddr, new SecureServerInitializer(authenticator, DatabaseDescriptor.getServerEncryptionOptions())));
             }
-            InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getStoragePort());
-            serverChannels.add(NettyFactory.createServerChannel(localAddr, new ServerInitializer(authenticator)));
+
+            if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.all)
+            {
+                InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getStoragePort());
+                serverChannels.add(NettyFactory.createServerChannel(localAddr, new ServerInitializer(authenticator)));
+            }
+
+            if (serverChannels.isEmpty())
+                throw new IllegalStateException("no listening channels set up in MessagingService!");
         }
 
         public void destroyConnectionPool(InetAddress to)
