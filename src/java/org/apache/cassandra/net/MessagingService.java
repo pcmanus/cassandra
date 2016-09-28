@@ -98,8 +98,8 @@ import org.apache.cassandra.metrics.DroppedMessageMetrics;
 import org.apache.cassandra.metrics.MessagingMetrics;
 import org.apache.cassandra.net.async.OutboundMessagingPool;
 import org.apache.cassandra.net.async.NettyFactory;
-import org.apache.cassandra.net.async.NettyFactory.SecureServerInitializer;
-import org.apache.cassandra.net.async.NettyFactory.ServerInitializer;
+import org.apache.cassandra.net.async.NettyFactory.SecureInboundInitializer;
+import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
 import org.apache.cassandra.repair.messages.RepairMessage;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.AbstractWriteResponseHandler;
@@ -1445,13 +1445,13 @@ public final class MessagingService implements MessagingServiceMBean
             if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.none)
             {
                 InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getSSLStoragePort());
-                serverChannels.add(NettyFactory.createServerChannel(localAddr, new SecureServerInitializer(authenticator, DatabaseDescriptor.getServerEncryptionOptions())));
+                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new SecureInboundInitializer(authenticator, DatabaseDescriptor.getServerEncryptionOptions())));
             }
 
             if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.all)
             {
                 InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getStoragePort());
-                serverChannels.add(NettyFactory.createServerChannel(localAddr, new ServerInitializer(authenticator)));
+                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new InboundInitializer(authenticator)));
             }
 
             if (serverChannels.isEmpty())

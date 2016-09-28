@@ -24,7 +24,7 @@ import org.junit.Test;
 
 import org.apache.cassandra.auth.AllowAllInternodeAuthenticator;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.net.async.NettyFactory.ServerInitializer;
+import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
 
 public class NettyFactoryTest
 {
@@ -32,16 +32,16 @@ public class NettyFactoryTest
     public void createServerChannel_SecondAttemptToBind()
     {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 9876);
-        ServerInitializer serverInitializer = new ServerInitializer(new AllowAllInternodeAuthenticator());
-        NettyFactory.createServerChannel(addr, serverInitializer);
-        NettyFactory.createServerChannel(addr, serverInitializer);
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator());
+        NettyFactory.createInboundChannel(addr, inboundInitializer);
+        NettyFactory.createInboundChannel(addr, inboundInitializer);
     }
 
     @Test(expected = ConfigurationException.class)
     public void createServerChannel_UnbindableAddress()
     {
         InetSocketAddress addr = new InetSocketAddress("1.1.1.1", 9876);
-        ServerInitializer serverInitializer = new ServerInitializer(new AllowAllInternodeAuthenticator());
-        NettyFactory.createServerChannel(addr, serverInitializer);
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator());
+        NettyFactory.createInboundChannel(addr, inboundInitializer);
     }
 }

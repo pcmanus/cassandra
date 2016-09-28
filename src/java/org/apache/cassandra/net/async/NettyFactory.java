@@ -65,8 +65,8 @@ public final class NettyFactory
 
     private static final boolean useEpoll = NativeTransportService.useEpoll();
     private static final EventLoopGroup ACCEPT_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyAcceptor-Threads");
-    private static final EventLoopGroup SERVER_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyServer-Threads");
-    private static final EventLoopGroup CLIENT_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyClient-Threads");
+    private static final EventLoopGroup INBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyInbound-Threads");
+    private static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyOutbound-Threads");
 
     private static EventLoopGroup getEventLoopGroup(int threadCount, String threadNamePrefix)
     {
@@ -78,11 +78,11 @@ public final class NettyFactory
     private NettyFactory()
     {   }
 
-    public static Channel createServerChannel(InetSocketAddress localAddr, ServerInitializer initializer) throws ConfigurationException
+    public static Channel createInboundChannel(InetSocketAddress localAddr, InboundInitializer initializer) throws ConfigurationException
     {
         logger.info("Starting Netty-based Messaging Service on port {}", localAddr.getPort());
         Class<? extends ServerChannel> transport = useEpoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
-        ServerBootstrap bootstrap = new ServerBootstrap().group(ACCEPT_GROUP, SERVER_GROUP)
+        ServerBootstrap bootstrap = new ServerBootstrap().group(ACCEPT_GROUP, INBOUND_GROUP)
                                                          .channel(transport)
                                                          .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                                                          .option(ChannelOption.SO_BACKLOG, 500)
@@ -114,11 +114,11 @@ public final class NettyFactory
         return channelFuture.channel();
     }
 
-    public static class ServerInitializer extends ChannelInitializer<SocketChannel>
+    public static class InboundInitializer extends ChannelInitializer<SocketChannel>
     {
         private final IInternodeAuthenticator authenticator;
 
-        public ServerInitializer(IInternodeAuthenticator authenticator)
+        public InboundInitializer(IInternodeAuthenticator authenticator)
         {
             this.authenticator = authenticator;
         }
@@ -135,11 +135,11 @@ public final class NettyFactory
         }
     }
 
-    public static class SecureServerInitializer extends ServerInitializer
+    public static class SecureInboundInitializer extends InboundInitializer
     {
         private final ServerEncryptionOptions encryptionOptions;
 
-        public SecureServerInitializer(IInternodeAuthenticator authenticator, ServerEncryptionOptions encryptionOptions)
+        public SecureInboundInitializer(IInternodeAuthenticator authenticator, ServerEncryptionOptions encryptionOptions)
         {
             super(authenticator);
             this.encryptionOptions = encryptionOptions;
@@ -155,10 +155,10 @@ public final class NettyFactory
         }
     }
 
-    static Bootstrap createClientChannel(ClientChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
+    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
     {
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
-        Bootstrap bootstrap = new Bootstrap().group(CLIENT_GROUP)
+        Bootstrap bootstrap = new Bootstrap().group(OUTBOUND_GROUP)
                                              .channel(transport)
                                              .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                                              .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
@@ -179,7 +179,7 @@ public final class NettyFactory
         return bootstrap;
     }
 
-    static class ClientChannelInitializer extends ChannelInitializer<SocketChannel>
+    static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>
     {
         private final InetSocketAddress remoteAddr;
         private final int messagingVersion;
@@ -188,7 +188,7 @@ public final class NettyFactory
         private final ServerEncryptionOptions encryptionOptions;
         private final Mode mode;
 
-        ClientChannelInitializer(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, Mode mode)
+        OutboundChannelInitializer(InetSocketAddress remoteAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, Mode mode)
         {
             this.remoteAddr = remoteAddr;
             this.messagingVersion = messagingVersion;

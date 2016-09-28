@@ -36,7 +36,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.ConnectionUtils;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.NettyFactory.ClientChannelInitializer;
+import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
 /**
@@ -207,12 +207,12 @@ class OutboundConnector
 
         OutboundConnector build()
         {
-            ClientChannelInitializer initializer = new ClientChannelInitializer(remoteAddr, protocolVersion, compress, callback, encryptionOptions, mode);
+            OutboundChannelInitializer initializer = new OutboundChannelInitializer(remoteAddr, protocolVersion, compress, callback, encryptionOptions, mode);
             return new OutboundConnector(buildBootstrap(remoteAddr, initializer, channelBufferSize), localAddr, remoteAddr);
         }
     }
 
-    private static Bootstrap buildBootstrap(InetSocketAddress remoteAddr, ClientChannelInitializer initializer, int channelBufferSize)
+    private static Bootstrap buildBootstrap(InetSocketAddress remoteAddr, OutboundChannelInitializer initializer, int channelBufferSize)
     {
         boolean tcpNoDelay;
         if (ConnectionUtils.isLocalDC(remoteAddr.getAddress()))
@@ -224,7 +224,7 @@ class OutboundConnector
         if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
             sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
 
-        return NettyFactory.createClientChannel(initializer, sendBufferSize, tcpNoDelay, channelBufferSize);
+        return NettyFactory.createOutboundBootstrap(initializer, sendBufferSize, tcpNoDelay, channelBufferSize);
     }
 
     @VisibleForTesting

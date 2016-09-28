@@ -356,7 +356,7 @@ public class OutboundMessagingConnection
             // if we got this far, always cancel the connector/handler
             initiatingConnector.cancel();
 
-            // if the parameter ClientConnector is the same as the same as the member field,
+            // if the parameter initiatingConnector is the same as the same as the member field,
             // no other thread has attempted a reconnect (and put a new instance into the member field)
             if (initiatingConnector == outboundConnector && initialState != State.CLOSED)
             {
