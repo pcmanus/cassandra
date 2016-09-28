@@ -39,7 +39,7 @@ import org.apache.cassandra.net.MessagingService;
  * we don't do more work than necessary (i.e. we don't allocate/deserialize
  * objects for things we don't care about).
  */
-public abstract class UnfilteredDeserializer
+public class UnfilteredDeserializer
 {
     private static final Logger logger = LoggerFactory.getLogger(UnfilteredDeserializer.class);
 
@@ -47,29 +47,67 @@ public abstract class UnfilteredDeserializer
     protected final DataInputPlus in;
     protected final SerializationHelper helper;
 
-    protected UnfilteredDeserializer(CFMetaData metadata,
-                                     DataInputPlus in,
-                                     SerializationHelper helper)
+    private final ClusteringPrefix.Deserializer clusteringDeserializer;
+    private final SerializationHeader header;
+
+    private int nextFlags;
+    private int nextExtendedFlags;
+    private boolean isReady;
+    private boolean isDone;
+
+    private final Row.Builder builder;
+
+    private UnfilteredDeserializer(CFMetaData metadata,
+                                   DataInputPlus in,
+                                   SerializationHeader header,
+                                   SerializationHelper helper)
     {
         this.metadata = metadata;
         this.in = in;
         this.helper = helper;
+        this.header = header;
+        this.clusteringDeserializer = new ClusteringPrefix.Deserializer(metadata.comparator, in, header);
+        this.builder = BTreeRow.sortedBuilder();
     }
 
     public static UnfilteredDeserializer create(CFMetaData metadata,
                                                 DataInputPlus in,
                                                 SerializationHeader header,
-                                                SerializationHelper helper,
-                                                DeletionTime partitionDeletion,
-                                                boolean readAllAsDynamic)
+                                                SerializationHelper helper)
     {
-        return new CurrentDeserializer(metadata, in, header, helper);
+        return new UnfilteredDeserializer(metadata, in, header, helper);
     }
 
     /**
      * Whether or not there is more atom to read.
      */
-    public abstract boolean hasNext() throws IOException;
+    public boolean hasNext() throws IOException
+    {
+        if (isReady)
+            return true;
+
+        prepareNext();
+        return !isDone;
+    }
+
+    private void prepareNext() throws IOException
+    {
+        if (isDone)
+            return;
+
+        nextFlags = in.readUnsignedByte();
+        if (UnfilteredSerializer.isEndOfPartition(nextFlags))
+        {
+            isDone = true;
+            isReady = false;
+            return;
+        }
+
+        nextExtendedFlags = UnfilteredSerializer.readExtendedFlags(in, nextFlags);
+
+        clusteringDeserializer.prepare(nextFlags, nextExtendedFlags);
+        isReady = true;
+    }
 
     /**
      * Compare the provided bound to the next atom to read on disk.
@@ -78,141 +116,68 @@ public abstract class UnfilteredDeserializer
      * comparison. Whenever we know what to do with this atom (read it or skip it),
      * readNext or skipNext should be called.
      */
-    public abstract int compareNextTo(ClusteringBound bound) throws IOException;
+    public int compareNextTo(ClusteringBound bound) throws IOException
+    {
+        if (!isReady)
+            prepareNext();
+
+        assert !isDone;
+
+        return clusteringDeserializer.compareNextTo(bound);
+    }
 
     /**
      * Returns whether the next atom is a row or not.
      */
-    public abstract boolean nextIsRow() throws IOException;
+    public boolean nextIsRow() throws IOException
+    {
+        if (!isReady)
+            prepareNext();
 
-    /**
-     * Returns whether the next atom is the static row or not.
-     */
-    public abstract boolean nextIsStatic() throws IOException;
+        return UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.ROW;
+    }
 
     /**
      * Returns the next atom.
      */
-    public abstract Unfiltered readNext() throws IOException;
+    public Unfiltered readNext() throws IOException
+    {
+        isReady = false;
+        if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
+        {
+            ClusteringBoundOrBoundary bound = clusteringDeserializer.deserializeNextBound();
+            return UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, bound);
+        }
+        else
+        {
+            builder.newRow(clusteringDeserializer.deserializeNextClustering());
+            return UnfilteredSerializer.serializer.deserializeRowBody(in, header, helper, nextFlags, nextExtendedFlags, builder);
+        }
+    }
 
     /**
      * Clears any state in this deserializer.
      */
-    public abstract void clearState() throws IOException;
+    public void clearState()
+    {
+        isReady = false;
+        isDone = false;
+    }
 
     /**
      * Skips the next atom.
      */
-    public abstract void skipNext() throws IOException;
-
-    private static class CurrentDeserializer extends UnfilteredDeserializer
+    public void skipNext() throws IOException
     {
-        private final ClusteringPrefix.Deserializer clusteringDeserializer;
-        private final SerializationHeader header;
-
-        private int nextFlags;
-        private int nextExtendedFlags;
-        private boolean isReady;
-        private boolean isDone;
-
-        private final Row.Builder builder;
-
-        private CurrentDeserializer(CFMetaData metadata,
-                                    DataInputPlus in,
-                                    SerializationHeader header,
-                                    SerializationHelper helper)
+        isReady = false;
+        clusteringDeserializer.skipNext();
+        if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
         {
-            super(metadata, in, helper);
-            this.header = header;
-            this.clusteringDeserializer = new ClusteringPrefix.Deserializer(metadata.comparator, in, header);
-            this.builder = BTreeRow.sortedBuilder();
+            UnfilteredSerializer.serializer.skipMarkerBody(in);
         }
-
-        public boolean hasNext() throws IOException
+        else
         {
-            if (isReady)
-                return true;
-
-            prepareNext();
-            return !isDone;
-        }
-
-        private void prepareNext() throws IOException
-        {
-            if (isDone)
-                return;
-
-            nextFlags = in.readUnsignedByte();
-            if (UnfilteredSerializer.isEndOfPartition(nextFlags))
-            {
-                isDone = true;
-                isReady = false;
-                return;
-            }
-
-            nextExtendedFlags = UnfilteredSerializer.readExtendedFlags(in, nextFlags);
-
-            clusteringDeserializer.prepare(nextFlags, nextExtendedFlags);
-            isReady = true;
-        }
-
-        public int compareNextTo(ClusteringBound bound) throws IOException
-        {
-            if (!isReady)
-                prepareNext();
-
-            assert !isDone;
-
-            return clusteringDeserializer.compareNextTo(bound);
-        }
-
-        public boolean nextIsRow() throws IOException
-        {
-            if (!isReady)
-                prepareNext();
-
-            return UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.ROW;
-        }
-
-        public boolean nextIsStatic() throws IOException
-        {
-            // This exists only for the sake of the OldFormatDeserializer
-            throw new UnsupportedOperationException();
-        }
-
-        public Unfiltered readNext() throws IOException
-        {
-            isReady = false;
-            if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
-            {
-                ClusteringBoundOrBoundary bound = clusteringDeserializer.deserializeNextBound();
-                return UnfilteredSerializer.serializer.deserializeMarkerBody(in, header, bound);
-            }
-            else
-            {
-                builder.newRow(clusteringDeserializer.deserializeNextClustering());
-                return UnfilteredSerializer.serializer.deserializeRowBody(in, header, helper, nextFlags, nextExtendedFlags, builder);
-            }
-        }
-
-        public void skipNext() throws IOException
-        {
-            isReady = false;
-            clusteringDeserializer.skipNext();
-            if (UnfilteredSerializer.kind(nextFlags) == Unfiltered.Kind.RANGE_TOMBSTONE_MARKER)
-            {
-                UnfilteredSerializer.serializer.skipMarkerBody(in);
-            }
-            else
-            {
-                UnfilteredSerializer.serializer.skipRowBody(in);
-            }
-        }
-
-        public void clearState()
-        {
-            isReady = false;
-            isDone = false;
+            UnfilteredSerializer.serializer.skipRowBody(in);
         }
     }
 }

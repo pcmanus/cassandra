@@ -312,7 +312,7 @@ public abstract class AbstractSSTableIterator implements UnfilteredRowIterator
         private void createDeserializer()
         {
             assert file != null && deserializer == null;
-            deserializer = UnfilteredDeserializer.create(sstable.metadata, file, sstable.header, helper, partitionLevelDeletion, isForThrift);
+            deserializer = UnfilteredDeserializer.create(sstable.metadata, file, sstable.header, helper);
         }
 
         protected void seekToPosition(long position) throws IOException
