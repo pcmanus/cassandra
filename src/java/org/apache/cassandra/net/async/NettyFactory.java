@@ -41,7 +41,8 @@ import org.apache.cassandra.service.NativeTransportService;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
- * A central spot for building Netty-based Channel/Pipeline/Bootstrap instances.
+ * A central spot for building Netty {@link Channel}s. Channels here are setup with a pipeline to participate
+ * in the internode protocol handshake, either the inbound or outbound side as per the method invoked.
  */
 public final class NettyFactory
 {
@@ -78,6 +79,10 @@ public final class NettyFactory
     private NettyFactory()
     {   }
 
+    /**
+     * Create a {@link Channel} that listens on the {@code localAddr}. This method will block while trying to bind to the address,
+     * but it does not make a remote call.
+     */
     public static Channel createInboundChannel(InetSocketAddress localAddr, InboundInitializer initializer) throws ConfigurationException
     {
         logger.info("Starting Netty-based Messaging Service on port {}", localAddr.getPort());
@@ -117,16 +122,25 @@ public final class NettyFactory
     public static class InboundInitializer extends ChannelInitializer<SocketChannel>
     {
         private final IInternodeAuthenticator authenticator;
+        private final ServerEncryptionOptions encryptionOptions;
 
-        public InboundInitializer(IInternodeAuthenticator authenticator)
+        public InboundInitializer(IInternodeAuthenticator authenticator, ServerEncryptionOptions encryptionOptions)
         {
             this.authenticator = authenticator;
+            this.encryptionOptions = encryptionOptions;
         }
 
         @Override
         public void initChannel(SocketChannel channel) throws Exception
         {
             ChannelPipeline pipeline = channel.pipeline();
+
+            // order of handlers: ssl -> logger -> handshakeHandler
+            if (encryptionOptions != null)
+            {
+                SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, true);
+                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
+            }
 
             if (WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
@@ -135,26 +149,10 @@ public final class NettyFactory
         }
     }
 
-    public static class SecureInboundInitializer extends InboundInitializer
-    {
-        private final ServerEncryptionOptions encryptionOptions;
-
-        public SecureInboundInitializer(IInternodeAuthenticator authenticator, ServerEncryptionOptions encryptionOptions)
-        {
-            super(authenticator);
-            this.encryptionOptions = encryptionOptions;
-        }
-
-        @Override
-        public void initChannel(SocketChannel channel) throws Exception
-        {
-            ChannelPipeline pipeline = channel.pipeline();
-            SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, true);
-            pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
-            super.initChannel(channel);
-        }
-    }
-
+    /**
+     * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
+     * and thus does not block.
+     */
     static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
     {
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
@@ -202,14 +200,15 @@ public final class NettyFactory
         {
             ChannelPipeline pipeline = channel.pipeline();
 
-            if (NettyFactory.WIRETRACE)
-                pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
-
+            // order of handlers: ssl -> logger -> handshakeHandler
             if (encryptionOptions != null)
             {
                 SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, false);
                 pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
             }
+
+            if (NettyFactory.WIRETRACE)
+                pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
 
             pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(remoteAddr, messagingVersion, compress, callback, mode));
         }

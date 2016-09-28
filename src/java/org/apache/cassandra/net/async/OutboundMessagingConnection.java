@@ -415,7 +415,7 @@ public class OutboundMessagingConnection
     void setupPipeline(ChannelPipeline pipeline, int messagingVersion, boolean compress)
     {
         if (compress)
-            pipeline.addLast("outboundCompressor", new Lz4FrameEncoder());
+            pipeline.addLast(NettyFactory.OUTBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameEncoder());
 
         pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(messagingVersion, completedMessageCount, channelBufferSize));

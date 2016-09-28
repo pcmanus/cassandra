@@ -32,7 +32,7 @@ public class NettyFactoryTest
     public void createServerChannel_SecondAttemptToBind()
     {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 9876);
-        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator());
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
         NettyFactory.createInboundChannel(addr, inboundInitializer);
         NettyFactory.createInboundChannel(addr, inboundInitializer);
     }
@@ -41,7 +41,7 @@ public class NettyFactoryTest
     public void createServerChannel_UnbindableAddress()
     {
         InetSocketAddress addr = new InetSocketAddress("1.1.1.1", 9876);
-        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator());
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
         NettyFactory.createInboundChannel(addr, inboundInitializer);
     }
 }
