@@ -327,8 +327,7 @@ public class ScrubTest
             cfs.clearUnsafe();
 
             List<String> keys = Arrays.asList("t", "a", "b", "z", "c", "y", "d");
-            String filename = cfs.getSSTablePath(tempDataDir);
-            Descriptor desc = Descriptor.fromFilename(filename);
+            Descriptor desc = cfs.newSSTableDescriptor(tempDataDir);
 
             LifecycleTransaction txn = LifecycleTransaction.offline(OperationType.WRITE);
             try (SSTableTxnWriter writer = new SSTableTxnWriter(txn, createTestWriter(desc, (long) keys.size(), cfs.metadata, txn)))

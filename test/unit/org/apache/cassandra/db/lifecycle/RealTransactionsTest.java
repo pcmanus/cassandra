@@ -160,7 +160,7 @@ public class RealTransactionsTest extends SchemaLoader
             {
                 long lastCheckObsoletion = System.nanoTime();
                 File directory = txn.originals().iterator().next().descriptor.directory;
-                Descriptor desc = Descriptor.fromFilename(cfs.getSSTablePath(directory));
+                Descriptor desc = cfs.newSSTableDescriptor(directory);
                 CFMetaData metadata = Schema.instance.getCFMetaData(desc);
                 rewriter.switchWriter(SSTableWriter.create(metadata,
                                                            desc,

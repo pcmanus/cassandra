@@ -162,11 +162,6 @@ public class SSTableExport
                         : cmd.getOptionValues(EXCLUDE_KEY_OPTION)));
         String ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 
-        if (Descriptor.isLegacyFile(new File(ssTableFileName)))
-        {
-            System.err.println("Unsupported legacy sstable");
-            System.exit(1);
-        }
         if (!new File(ssTableFileName).exists())
         {
             System.err.println("Cannot find file " + ssTableFileName);

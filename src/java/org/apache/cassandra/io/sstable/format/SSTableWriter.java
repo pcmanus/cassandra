@@ -127,26 +127,14 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         return create(descriptor, keyCount, repairedAt, metadata, collector, header, indexes, txn);
     }
 
-    public static SSTableWriter create(String filename,
-                                       long keyCount,
-                                       long repairedAt,
-                                       int sstableLevel,
-                                       SerializationHeader header,
-                                       Collection<Index> indexes,
-                                       LifecycleTransaction txn)
-    {
-        return create(Descriptor.fromFilename(filename), keyCount, repairedAt, sstableLevel, header, indexes, txn);
-    }
-
     @VisibleForTesting
-    public static SSTableWriter create(String filename,
+    public static SSTableWriter create(Descriptor descriptor,
                                        long keyCount,
                                        long repairedAt,
                                        SerializationHeader header,
                                        Collection<Index> indexes,
                                        LifecycleTransaction txn)
     {
-        Descriptor descriptor = Descriptor.fromFilename(filename);
         return create(descriptor, keyCount, repairedAt, 0, header, indexes, txn);
     }
 
