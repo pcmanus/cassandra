@@ -747,8 +747,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                descriptor.ksname,
                                                descriptor.cfname,
                                                fileIndexGenerator.incrementAndGet(),
-                                               descriptor.formatType,
-                                               descriptor.digestComponent);
+                                               descriptor.formatType);
             }
             while (new File(newDescriptor.filenameFor(Component.DATA)).exists());
 
@@ -832,8 +831,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                               keyspace.getName(),
                               name,
                               fileIndexGenerator.incrementAndGet(),
-                              format,
-                              Component.digestFor(BigFormat.latestVersion.uncompressedChecksumType()));
+                              format);
     }
 
     /**

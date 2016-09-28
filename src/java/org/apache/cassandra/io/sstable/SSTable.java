@@ -218,17 +218,9 @@ public abstract class SSTable
         Set<Component> components = Sets.newHashSetWithExpectedSize(knownTypes.size());
         for (Component.Type componentType : knownTypes)
         {
-            if (componentType == Component.Type.DIGEST)
-            {
-                if (desc.digestComponent != null && new File(desc.filenameFor(desc.digestComponent)).exists())
-                    components.add(desc.digestComponent);
-            }
-            else
-            {
-                Component component = new Component(componentType);
-                if (new File(desc.filenameFor(component)).exists())
-                    components.add(component);
-            }
+            Component component = new Component(componentType);
+            if (new File(desc.filenameFor(component)).exists())
+                components.add(component);
         }
         return components;
     }

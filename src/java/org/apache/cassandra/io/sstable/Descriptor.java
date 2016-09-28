@@ -55,8 +55,6 @@ public class Descriptor
     public final String cfname;
     public final int generation;
     public final SSTableFormat.Type formatType;
-    /** digest component - might be {@code null} for old, legacy sstables */
-    public final Component digestComponent;
     private final int hashCode;
 
     /**
@@ -65,7 +63,7 @@ public class Descriptor
     @VisibleForTesting
     public Descriptor(File directory, String ksname, String cfname, int generation)
     {
-        this(SSTableFormat.Type.current().info.getLatestVersion(), directory, ksname, cfname, generation, SSTableFormat.Type.current(), null);
+        this(SSTableFormat.Type.current().info.getLatestVersion(), directory, ksname, cfname, generation, SSTableFormat.Type.current());
     }
 
     /**
@@ -73,16 +71,10 @@ public class Descriptor
      */
     public Descriptor(File directory, String ksname, String cfname, int generation, SSTableFormat.Type formatType)
     {
-        this(formatType.info.getLatestVersion(), directory, ksname, cfname, generation, formatType, Component.digestFor(formatType.info.getLatestVersion().uncompressedChecksumType()));
+        this(formatType.info.getLatestVersion(), directory, ksname, cfname, generation, formatType);
     }
 
-    @VisibleForTesting
-    public Descriptor(String version, File directory, String ksname, String cfname, int generation, SSTableFormat.Type formatType)
-    {
-        this(formatType.info.getVersion(version), directory, ksname, cfname, generation, formatType, Component.digestFor(formatType.info.getLatestVersion().uncompressedChecksumType()));
-    }
-
-    public Descriptor(Version version, File directory, String ksname, String cfname, int generation, SSTableFormat.Type formatType, Component digestComponent)
+    public Descriptor(Version version, File directory, String ksname, String cfname, int generation, SSTableFormat.Type formatType)
     {
         assert version != null && directory != null && ksname != null && cfname != null && formatType.info.getLatestVersion().getClass().equals(version.getClass());
         this.version = version;
@@ -98,24 +90,18 @@ public class Descriptor
         this.cfname = cfname;
         this.generation = generation;
         this.formatType = formatType;
-        this.digestComponent = digestComponent;
 
         hashCode = Objects.hashCode(version, this.directory, generation, ksname, cfname, formatType);
     }
 
     public Descriptor withGeneration(int newGeneration)
     {
-        return new Descriptor(version, directory, ksname, cfname, newGeneration, formatType, digestComponent);
+        return new Descriptor(version, directory, ksname, cfname, newGeneration, formatType);
     }
 
     public Descriptor withFormatType(SSTableFormat.Type newType)
     {
-        return new Descriptor(newType.info.getLatestVersion(), directory, ksname, cfname, generation, newType, digestComponent);
-    }
-
-    public Descriptor withDigestComponent(Component newDigestComponent)
-    {
-        return new Descriptor(version, directory, ksname, cfname, generation, formatType, newDigestComponent);
+        return new Descriptor(newType.info.getLatestVersion(), directory, ksname, cfname, generation, newType);
     }
 
     public String tmpFilenameFor(Component component)
@@ -279,10 +265,7 @@ public class Descriptor
 
         assert tokenStack.isEmpty() : "Invalid file name " + name + " in " + directory;
 
-        return Pair.create(new Descriptor(version, parentDirectory, ksname, cfname, generation, fmt,
-                                          // _assume_ version from version
-                                          Component.digestFor(version.uncompressedChecksumType())),
-                           component);
+        return Pair.create(new Descriptor(version, parentDirectory, ksname, cfname, generation, fmt), component);
     }
 
     public IMetadataSerializer getMetadataSerializer()

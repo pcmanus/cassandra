@@ -144,18 +144,6 @@ public class BigFormat implements SSTableFormat
         }
 
         @Override
-        public ChecksumType compressedChecksumType()
-        {
-            return ChecksumType.CRC32;
-        }
-
-        @Override
-        public ChecksumType uncompressedChecksumType()
-        {
-            return ChecksumType.CRC32;
-        }
-
-        @Override
         public boolean hasCommitLogLowerBound()
         {
             return hasCommitLogLowerBound;

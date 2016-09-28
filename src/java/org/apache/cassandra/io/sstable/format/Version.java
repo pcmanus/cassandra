@@ -46,10 +46,6 @@ public abstract class Version
 
     public abstract boolean isLatestVersion();
 
-    public abstract ChecksumType compressedChecksumType();
-
-    public abstract ChecksumType uncompressedChecksumType();
-
     public abstract int correspondingMessagingVersion(); // Only use by storage that 'storeRows' so far
 
     public abstract boolean hasCommitLogLowerBound();

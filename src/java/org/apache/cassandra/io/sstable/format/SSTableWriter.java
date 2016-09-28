@@ -145,7 +145,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                 Component.STATS,
                 Component.SUMMARY,
                 Component.TOC,
-                Component.digestFor(BigFormat.latestVersion.uncompressedChecksumType())));
+                Component.DIGEST));
 
         if (metadata.params.bloomFilterFpChance < 1.0)
             components.add(Component.FILTER);
