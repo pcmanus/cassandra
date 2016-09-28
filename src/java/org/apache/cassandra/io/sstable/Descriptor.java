@@ -140,8 +140,7 @@ public class Descriptor
     {
         buff.append(version).append(separator);
         buff.append(generation);
-        if (formatType != SSTableFormat.Type.LEGACY)
-            buff.append(separator).append(formatType.name);
+        buff.append(separator).append(formatType.name);
     }
 
     public String relativeFilenameFor(Component component)
@@ -258,7 +257,7 @@ public class Descriptor
 
         nexttok = tokenStack.pop();
         // generation OR format type
-        SSTableFormat.Type fmt = SSTableFormat.Type.LEGACY;
+        SSTableFormat.Type fmt = SSTableFormat.Type.BIG;
         if (!CharMatcher.DIGIT.matchesAllOf(nexttok))
         {
             fmt = SSTableFormat.Type.validate(nexttok);

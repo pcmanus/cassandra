@@ -189,13 +189,7 @@ public class FileMessageHeader
             UUIDSerializer.serializer.serialize(header.cfId, out, version);
             out.writeInt(header.sequenceNumber);
             out.writeUTF(header.version.toString());
-
-            //We can't stream to a node that doesn't understand a new sstable format
-            if (version < StreamMessage.VERSION_22 && header.format != SSTableFormat.Type.LEGACY && header.format != SSTableFormat.Type.BIG)
-                throw new UnsupportedOperationException("Can't stream non-legacy sstables to nodes < 2.2");
-
-            if (version >= StreamMessage.VERSION_22)
-                out.writeUTF(header.format.name);
+            out.writeUTF(header.format.name);
 
             out.writeLong(header.estimatedKeys);
             out.writeInt(header.sections.size());
@@ -221,10 +215,7 @@ public class FileMessageHeader
             UUID cfId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             int sequenceNumber = in.readInt();
             Version sstableVersion = SSTableFormat.Type.current().info.getVersion(in.readUTF());
-
-            SSTableFormat.Type format = SSTableFormat.Type.LEGACY;
-            if (version >= StreamMessage.VERSION_22)
-                format = SSTableFormat.Type.validate(in.readUTF());
+            SSTableFormat.Type format = SSTableFormat.Type.validate(in.readUTF());
 
             long estimatedKeys = in.readLong();
             int count = in.readInt();
@@ -244,10 +235,7 @@ public class FileMessageHeader
             long size = UUIDSerializer.serializer.serializedSize(header.cfId, version);
             size += TypeSizes.sizeof(header.sequenceNumber);
             size += TypeSizes.sizeof(header.version.toString());
-
-            if (version >= StreamMessage.VERSION_22)
-                size += TypeSizes.sizeof(header.format.name);
-
+            size += TypeSizes.sizeof(header.format.name);
             size += TypeSizes.sizeof(header.estimatedKeys);
 
             size += TypeSizes.sizeof(header.sections.size());
