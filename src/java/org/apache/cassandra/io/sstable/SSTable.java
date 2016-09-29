@@ -168,14 +168,40 @@ public abstract class SSTable
     }
 
     /**
-     * @return Descriptor and Component pair. null if given file is not acceptable as SSTable component.
-     *         If component is of unknown type, returns CUSTOM component.
+     * Parse a sstable filename into both a {@link Descriptor} and {@code Component} object.
+     *
+     * @param file the filename to parse.
+     * @return a pair of the {@code Descriptor} and {@code Component} corresponding to {@code file} if it corresponds to
+     * a valid and supported sstable filename, {@code null} otherwise. Note that components of an unknown type will be
+     * returned as CUSTOM ones.
      */
-    public static Pair<Descriptor, Component> tryComponentFromFilename(File dir, String name)
+    public static Pair<Descriptor, Component> tryComponentFromFilename(File file)
     {
         try
         {
-            return Component.fromFilename(dir, name);
+            return Descriptor.fromFilenameWithComponent(file);
+        }
+        catch (Throwable e)
+        {
+            return null;
+        }
+    }
+
+    /**
+     * Parse a sstable filename into a {@link Descriptor} object.
+     * <p>
+     * Note that this method ignores the component part of the filename; if this is not what you want, use
+     * {@link #tryComponentFromFilename} instead.
+     *
+     * @param file the filename to parse.
+     * @return the {@code Descriptor} corresponding to {@code file} if it corresponds to a valid and supported sstable
+     * filename, {@code null} otherwise.
+     */
+    public static Descriptor tryDescriptorFromFilename(File file)
+    {
+        try
+        {
+            return Descriptor.fromFilename(file);
         }
         catch (Throwable e)
         {

@@ -118,38 +118,32 @@ public class Component
     }
 
     /**
-     * {@code
-     * Filename of the form "<ksname>/<cfname>-[tmp-][<version>-]<gen>-<component>",
-     * }
-     * @return A Descriptor for the SSTable, and a Component for this particular file.
-     * TODO move descriptor into Component field
+     * Parse the component part of a sstable filename into a {@code Component} object.
+     *
+     * @param name a string representing a sstable component.
+     * @return the component corresponding to {@code name}. Note that this always return a component as an unrecognized
+     * name is parsed into a CUSTOM component.
      */
-    public static Pair<Descriptor,Component> fromFilename(File directory, String name)
+    static Component parse(String name)
     {
-        Pair<Descriptor,String> path = Descriptor.fromFilename(directory, name);
+        Type type = Type.fromRepresentation(name);
 
-        // parse the component suffix
-        Type type = Type.fromRepresentation(path.right);
-        // build (or retrieve singleton for) the component object
-        Component component;
-        switch(type)
+        // Build (or retrieve singleton for) the component object
+        switch (type)
         {
-            case DATA:              component = Component.DATA;                         break;
-            case PRIMARY_INDEX:     component = Component.PRIMARY_INDEX;                break;
-            case FILTER:            component = Component.FILTER;                       break;
-            case COMPRESSION_INFO:  component = Component.COMPRESSION_INFO;             break;
-            case STATS:             component = Component.STATS;                        break;
-            case DIGEST:            component = Component.DIGEST;                       break;
-            case CRC:               component = Component.CRC;                          break;
-            case SUMMARY:           component = Component.SUMMARY;                      break;
-            case TOC:               component = Component.TOC;                          break;
-            case SECONDARY_INDEX:   component = new Component(Type.SECONDARY_INDEX, path.right); break;
-            case CUSTOM:            component = new Component(Type.CUSTOM, path.right); break;
-            default:
-                 throw new IllegalStateException();
+            case DATA:             return Component.DATA;
+            case PRIMARY_INDEX:    return Component.PRIMARY_INDEX;
+            case FILTER:           return Component.FILTER;
+            case COMPRESSION_INFO: return Component.COMPRESSION_INFO;
+            case STATS:            return Component.STATS;
+            case DIGEST:           return Component.DIGEST;
+            case CRC:              return Component.CRC;
+            case SUMMARY:          return Component.SUMMARY;
+            case TOC:              return Component.TOC;
+            case SECONDARY_INDEX:  return new Component(Type.SECONDARY_INDEX, name);
+            case CUSTOM:           return new Component(Type.CUSTOM, name);
+            default:               throw new AssertionError();
         }
-
-        return Pair.create(path.left, component);
     }
 
     @Override

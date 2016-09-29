@@ -260,9 +260,8 @@ public class Directories
                         if (file.isDirectory())
                             return false;
 
-                        Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file.getParentFile(),
-                                                                                            file.getName());
-                        return pair != null && pair.left.ksname.equals(metadata.ksName) && pair.left.cfname.equals(metadata.cfName);
+                        Descriptor desc = SSTable.tryDescriptorFromFilename(file);
+                        return desc != null && desc.ksname.equals(metadata.ksName) && desc.cfname.equals(metadata.cfName);
 
                     }
                 });
@@ -308,8 +307,9 @@ public class Directories
     {
         for (File dir : dataPaths)
         {
-            if (new File(dir, filename).exists())
-                return Descriptor.fromFilename(dir, filename).left;
+            File file = new File(dir, filename);
+            if (file.exists())
+                return Descriptor.fromFilename(file);
         }
         return null;
     }
@@ -755,7 +755,7 @@ public class Directories
                             return false;
 
                     case FINAL:
-                        Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file.getParentFile(), file.getName());
+                        Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(file);
                         if (pair == null)
                             return false;
 
@@ -1025,11 +1025,11 @@ public class Directories
         public boolean isAcceptable(Path path)
         {
             File file = path.toFile();
-            Pair<Descriptor, Component> pair = SSTable.tryComponentFromFilename(path.getParent().toFile(), file.getName());
-            return pair != null
-                    && pair.left.ksname.equals(metadata.ksName)
-                    && pair.left.cfname.equals(metadata.cfName)
-                    && !toSkip.contains(file);
+            Descriptor desc = SSTable.tryDescriptorFromFilename(file);
+            return desc != null
+                && desc.ksname.equals(metadata.ksName)
+                && desc.cfname.equals(metadata.cfName)
+                && !toSkip.contains(file);
         }
     }
 }
