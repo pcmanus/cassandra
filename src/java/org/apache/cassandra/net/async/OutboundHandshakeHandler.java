@@ -57,12 +57,19 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     /**
      * The length of the first message of the internode messaging handshake.
      */
-    private static final int FIRST_MESSAGE_LENGTH = 8;
+    static final int FIRST_MESSAGE_LENGTH = 8;
 
     /**
      * The length of the second message of the internode messaging handshake.
      */
-    private static final int SECOND_MESSAGE_LENGTH = 4;
+    static final int SECOND_MESSAGE_LENGTH = 4;
+
+    /**
+     * The length of the third message in the internode message handshake protocol. We need to receive an int (version)
+     * and an IP addr. If IPv4, that's 5 more bytes; if IPv6, it's 17 more bytes. Since we can't know apriori if the IP address
+     * will be v4 or v6, go with the minimum requires bytes (5), and hope that if the address is v6, we'll have the extra 12 bytes in the packet.
+     */
+    static final int THIRD_MESSAGE_LENGTH_MIN = 9;
 
     /**
      * The IP address to identify this node to the peer. Memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
@@ -123,13 +130,6 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     static int createHeader(int version, boolean compressionEnabled, NettyFactory.Mode mode)
     {
-        // 2 bits: unused.  used to be "serializer type," which was always Binary
-        // 1 bit: compression
-        // 1 bit: streaming mode
-        // 2 bits: unused
-        // 8 bits: version
-        // 15 bits: unused
-
         int header = 0;
         if (compressionEnabled)
             header |= 1 << 2;

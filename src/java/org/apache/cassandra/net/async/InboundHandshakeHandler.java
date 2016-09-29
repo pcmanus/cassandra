@@ -41,15 +41,6 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
 {
     private static final Logger logger = LoggerFactory.getLogger(NettyFactory.class);
 
-    private static final int FIRST_MESSAGE_LENGTH = 8;
-
-    /**
-     * The length of the third message in the internode message handshake protocol. We need to receive an int (version)
-     * and an IP addr. If IPv4, that's 5 more bytes; if IPv6, it's 17 more bytes. Since we can't know apriori if the IP address
-     * will be v4 or v6, go with the minimum requires bytes (5), and hope that if the address is v6, we'll have the extra 12 bytes in the packet.
-     */
-    private static final int THIRD_MESSAGE_LENGTH_MIN = 9;
-
     enum State { START, AWAITING_HANDSHAKE_BEGIN, AWAIT_STREAM_START_RESPONSE, AWAIT_MESSAGING_START_RESPONSE, MESSAGING_HANDSHAKE_COMPLETE, HANDSHAKE_FAIL }
 
     private State state;
@@ -145,21 +136,12 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     State handleStart(ChannelHandlerContext ctx, ByteBuf in) throws IOException
     {
-        if (in.readableBytes() < FIRST_MESSAGE_LENGTH)
+        if (in.readableBytes() < OutboundHandshakeHandler.FIRST_MESSAGE_LENGTH)
             return State.START;
 
         MessagingService.validateMagic(in.readInt());
         int header = in.readInt();
         version = MessagingService.getBits(header, 15, 8);
-
-        // these are two older checks, located in different spots in the MS/ITC code. hence, the difference styles
-        // outbound side will reconnect if necessary to upgrade version
-        if (version > MessagingService.current_version)
-        {
-            logger.error("peer wants to use a messaging version higher ({}) than what this node supports ({})", version, MessagingService.current_version);
-            ctx.close();
-            return State.HANDSHAKE_FAIL;
-        }
 
         if (version < MessagingService.VERSION_20)
         {
@@ -181,10 +163,18 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
         {
             // if this version is < the MS version the other node is trying
             // to connect with, the other node will disconnect
-            ByteBuf outBuf = ctx.alloc().ioBuffer(4);
+            ByteBuf outBuf = ctx.alloc().buffer(OutboundHandshakeHandler.SECOND_MESSAGE_LENGTH);
             outBuf.writeInt(MessagingService.current_version);
-
             ctx.writeAndFlush(outBuf).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+
+            // outbound side will reconnect if necessary to upgrade version
+            if (version <= MessagingService.current_version)
+            {
+                logger.error("peer wants to use a messaging version higher ({}) than what this node supports ({})", version, MessagingService.current_version);
+                ctx.close();
+                return State.HANDSHAKE_FAIL;
+            }
+
             long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
             handshakeResponse = ctx.executor().schedule(() -> handshakeTimeout(ctx), timeout, TimeUnit.MILLISECONDS);
             return State.AWAIT_MESSAGING_START_RESPONSE;
@@ -198,7 +188,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     State handleMessagingStartResponse(ChannelHandlerContext ctx, ByteBuf in) throws IOException
     {
-        if (in.readableBytes() < THIRD_MESSAGE_LENGTH_MIN)
+        if (in.readableBytes() < OutboundHandshakeHandler.THIRD_MESSAGE_LENGTH_MIN)
             return State.AWAIT_MESSAGING_START_RESPONSE;
 
         if (handshakeResponse != null)
