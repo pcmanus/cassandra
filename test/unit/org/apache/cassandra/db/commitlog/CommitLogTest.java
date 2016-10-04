@@ -154,7 +154,7 @@ public class CommitLogTest
     @Test
     public void testRecoveryWithZeroLog() throws Exception
     {
-        testRecovery(new byte[10], null);
+        testRecovery(new byte[10], CommitLogReplayException.class);
     }
 
     @Test
@@ -526,7 +526,6 @@ public class CommitLogTest
         ParameterizedClass commitLogCompression = DatabaseDescriptor.getCommitLogCompression();
         EncryptionContext encryptionContext = DatabaseDescriptor.getEncryptionContext();
         runExpecting(() -> testRecovery(logData, CommitLogDescriptor.current_version), expected);
-        runExpecting(() -> testRecovery(new CommitLogDescriptor(4, commitLogCompression, encryptionContext), logData), expected);
     }
 
     @Test
