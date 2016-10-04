@@ -1,8 +1,6 @@
 package org.apache.cassandra.net.async;
 
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +32,6 @@ import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.NativeTransportService;
 import org.apache.cassandra.utils.FBUtilities;
@@ -49,10 +46,10 @@ public final class NettyFactory
 
     public enum Mode { MESSAGING, Mode, STREAMING }
 
-    public static final String SSL_CHANNEL_HANDLER_NAME = "ssl";
-    public static final String INBOUND_COMPRESSOR_HANDLER_NAME = "inboundCompressor";
-    public static final String OUTBOUND_COMPRESSOR_HANDLER_NAME = "outboundCompressor";
-    public static final String COALESCING_MESSAGE_CHANNEL_HANDLER_NAME = "messageCoalescer";
+    private static final String SSL_CHANNEL_HANDLER_NAME = "ssl";
+    static final String INBOUND_COMPRESSOR_HANDLER_NAME = "inboundCompressor";
+    static final String OUTBOUND_COMPRESSOR_HANDLER_NAME = "outboundCompressor";
+    static final String COALESCING_MESSAGE_CHANNEL_HANDLER_NAME = "messageCoalescer";
     static final String HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME = "handshakeHandler";
 
     /** a useful addition for debugging; simply set to true to get more data in your logs */
@@ -152,7 +149,7 @@ public final class NettyFactory
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
-    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, boolean remoteDc, int sendBufferSize, boolean tcpNoDelay, int channelBufferSize)
+    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, boolean remoteDc, int sendBufferSize, boolean tcpNoDelay)
     {
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
         Bootstrap bootstrap = new Bootstrap().group(OUTBOUND_GROUP)
@@ -178,21 +175,11 @@ public final class NettyFactory
 
     static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>
     {
-        private final InetSocketAddress localAddr;
-        private final int messagingVersion;
-        private final boolean compress;
-        private final Consumer<ConnectionHandshakeResult> callback;
-        private final ServerEncryptionOptions encryptionOptions;
-        private final Mode mode;
+        private final OutboundConnectionParams params;
 
-        OutboundChannelInitializer(InetSocketAddress localAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, Mode mode)
+        OutboundChannelInitializer(OutboundConnectionParams params)
         {
-            this.localAddr = localAddr;
-            this.messagingVersion = messagingVersion;
-            this.compress = compress;
-            this.callback = callback;
-            this.encryptionOptions = encryptionOptions;
-            this.mode = mode;
+            this.params = params;
         }
 
         public void initChannel(SocketChannel channel) throws Exception
@@ -200,26 +187,16 @@ public final class NettyFactory
             ChannelPipeline pipeline = channel.pipeline();
 
             // order of handlers: ssl -> logger -> handshakeHandler
-            if (encryptionOptions != null)
+            if (params.encryptionOptions != null)
             {
-                SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, false);
+                SslContext sslContext = SSLFactory.getSslContext(params.encryptionOptions, true, false);
                 pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
             }
 
             if (NettyFactory.WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
 
-            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(localAddr, messagingVersion, compress, callback, mode));
+            pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(params));
         }
-    }
-
-    static InetAddress getInetAddress(Channel channel)
-    {
-        return ((InetSocketAddress)channel.remoteAddress()).getAddress();
-    }
-
-    public static boolean isSecure(Channel channel)
-    {
-        return channel.pipeline().get(SSL_CHANNEL_HANDLER_NAME) != null;
     }
 }

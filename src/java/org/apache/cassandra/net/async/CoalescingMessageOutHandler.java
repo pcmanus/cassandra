@@ -50,7 +50,7 @@ import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
  */
 class CoalescingMessageOutHandler extends ChannelOutboundHandlerAdapter implements Iterable<QueuedMessage>
 {
-    private static final Logger logger = LoggerFactory.getLogger(CoalescingMessageOutHandler.class);
+    public static final Logger logger = LoggerFactory.getLogger(CoalescingMessageOutHandler.class);
 
     private final CoalescingStrategy coalescingStrategy;
 

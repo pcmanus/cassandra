@@ -167,8 +167,8 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
             outBuf.writeInt(MessagingService.current_version);
             ctx.writeAndFlush(outBuf).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
 
-            // outbound side will reconnect if necessary to upgrade version
-            if (version <= MessagingService.current_version)
+            // outbound side will reconnect to change the version
+            if (version > MessagingService.current_version)
             {
                 logger.error("peer wants to use a messaging version higher ({}) than what this node supports ({})", version, MessagingService.current_version);
                 ctx.close();

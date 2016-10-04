@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -39,11 +38,8 @@ import org.junit.Test;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
-import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.compression.Lz4FrameDecoder;
-import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -64,7 +60,7 @@ public class OutboundMessagingConnectionTest
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.1", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
-    private OutboundMessagingConnection imc;
+    private OutboundMessagingConnection omc;
     private CountingHandler handler;
     private EmbeddedChannel channel;
 
@@ -77,10 +73,10 @@ public class OutboundMessagingConnectionTest
     @Before
     public void setup()
     {
-        imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(true)), new TestScheduledExecutorService());
+        omc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, false, new TestScheduledExecutorService());
         handler = new CountingHandler();
         channel = new EmbeddedChannel(handler);
-        imc.setChannel(channel);
+        omc.setChannel(channel);
     }
 
     @After
@@ -93,25 +89,25 @@ public class OutboundMessagingConnectionTest
     public void clearBacklog_InactiveChannel()
     {
         channel.close();
-        Assert.assertFalse(imc.writeBacklogToChannel());
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
+        Assert.assertFalse(omc.writeBacklogToChannel());
+        Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(0, handler.writeCount);
     }
 
     @Test
     public void clearBacklog_EmptyBacklog()
     {
-        Assert.assertTrue(imc.writeBacklogToChannel());
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
+        Assert.assertTrue(omc.writeBacklogToChannel());
+        Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(0, handler.writeCount);
     }
 
     @Test
     public void clearBacklog_OneMessage()
     {
-        imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
-        Assert.assertTrue(imc.writeBacklogToChannel());
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
+        omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
+        Assert.assertTrue(omc.writeBacklogToChannel());
+        Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(1, handler.writeCount);
     }
 
@@ -122,56 +118,56 @@ public class OutboundMessagingConnectionTest
         for (int i = 0; i < count; i++)
         {
             if (i % 2 == 0)
-                imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+                omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
             else
-                imc.addToBacklog(new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i), Long.MIN_VALUE, true));
+                omc.addToBacklog(new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i), Long.MIN_VALUE, true));
         }
 
-        Assert.assertTrue(imc.writeBacklogToChannel());
+        Assert.assertTrue(omc.writeBacklogToChannel());
         int half = 32 >> 1;
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
+        Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(half, handler.writeCount);
-        Assert.assertEquals(half, imc.getDroppedMessages().intValue());
+        Assert.assertEquals(half, omc.getDroppedMessages().intValue());
     }
 
     @Test
     public void enqueue_CreatingChannel()
     {
-        Assert.assertEquals(0, imc.backlogSize());
-        imc.setState(CREATING_CHANNEL);
-        imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(1, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
+        omc.setState(CREATING_CHANNEL);
+        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
+        Assert.assertEquals(1, omc.backlogSize());
     }
 
     @Test
     public void enqueue_ChannelClosed()
     {
-        Assert.assertEquals(0, imc.backlogSize());
-        imc.setState(CLOSED);
-        imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
+        omc.setState(CLOSED);
+        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
     public void enqueue_HappyPath()
     {
-        Assert.assertEquals(0, imc.backlogSize());
-        imc.setState(READY);
-        imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(0, imc.backlogSize());
-        Assert.assertEquals(0, imc.getPendingMessages().intValue());
+        Assert.assertEquals(0, omc.backlogSize());
+        omc.setState(READY);
+        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
+        Assert.assertEquals(0, omc.backlogSize());
+        Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(1, handler.writeCount);
     }
 
     @Test
     public void enqueue_ReadyButChannelIsInActive()
     {
-        Assert.assertEquals(0, imc.backlogSize());
-        imc.setState(READY);
+        Assert.assertEquals(0, omc.backlogSize());
+        omc.setState(READY);
         channel.close();
         channel.pipeline().fireChannelWritabilityChanged();
-        imc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(1, imc.backlogSize());
+        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
+        Assert.assertEquals(1, omc.backlogSize());
         Assert.assertEquals(0, handler.writeCount);
     }
 
@@ -179,9 +175,9 @@ public class OutboundMessagingConnectionTest
     public void handleMessagePromise_FutureNotDone()
     {
         ChannelPromise promise = channel.newPromise();
-        imc.handleMessageFuture(promise, null);
+        omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
@@ -189,9 +185,9 @@ public class OutboundMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setSuccess();
-        imc.handleMessageFuture(promise, null);
+        omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
@@ -199,9 +195,9 @@ public class OutboundMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.cancel(false);
-        imc.handleMessageFuture(promise, null);
+        omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
@@ -209,45 +205,45 @@ public class OutboundMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new NullPointerException("this is a test"));
-        imc.handleMessageFuture(promise, null);
+        omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
     public void handleMessagePromise_IOException_ShouldCloseChannel_RetryMsg()
     {
         // set this state to not have the test execute the connect() logic
-        imc.setState(CLOSED);
+        omc.setState(CLOSED);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
-        imc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
-        Assert.assertEquals(1, imc.backlogSize());
+        omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
+        Assert.assertEquals(1, omc.backlogSize());
     }
 
     @Test
     public void handleMessagePromise_IOException_ShouldCloseChannel_DoNotRetryMsg()
     {
         // set this state to not have the test execute the connect() logic
-        imc.setState(CLOSED);
+        omc.setState(CLOSED);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
-        imc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
-        Assert.assertEquals(0, imc.backlogSize());
+        omc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
     public void handleMessagePromise_IOException_ChannelClosed_DoNotRetryMsg()
     {
-        State state = imc.getState();
+        State state = omc.getState();
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
         channel.close();
-        imc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
+        omc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
 
         Assert.assertFalse(channel.isActive());
-        Assert.assertEquals(0, imc.backlogSize());
-        Assert.assertEquals(state, imc.getState());
+        Assert.assertEquals(0, omc.backlogSize());
+        Assert.assertEquals(state, omc.getState());
     }
 
     @Test
@@ -255,13 +251,13 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
-        imc.close();
+        omc.close();
         Assert.assertFalse(channel.isActive());
-        Assert.assertEquals(State.CLOSED, imc.getState());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(State.CLOSED, omc.getState());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
@@ -269,15 +265,15 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
-        imc.setState(READY);
+        omc.setState(READY);
         OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        imc.connectionTimeout(connector);
-        Assert.assertEquals(READY, imc.getState());
+        omc.connectionTimeout(connector);
+        Assert.assertEquals(READY, omc.getState());
         Assert.assertFalse(connector.isCancelled());
-        Assert.assertEquals(count, imc.backlogSize());
+        Assert.assertEquals(count, omc.backlogSize());
     }
 
     @Test
@@ -285,15 +281,15 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
-        imc.setState(CREATING_CHANNEL);
+        omc.setState(CREATING_CHANNEL);
         OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        imc.connectionTimeout(connector);
-        Assert.assertEquals(CREATING_CHANNEL, imc.getState());
+        omc.connectionTimeout(connector);
+        Assert.assertEquals(CREATING_CHANNEL, omc.getState());
         Assert.assertTrue(connector.isCancelled());
-        Assert.assertEquals(count, imc.backlogSize());
+        Assert.assertEquals(count, omc.backlogSize());
     }
 
     @Test
@@ -301,15 +297,15 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
-        imc.setState(CLOSED);
+        omc.setState(CLOSED);
         OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        imc.connectionTimeout(connector);
-        Assert.assertEquals(CLOSED, imc.getState());
+        omc.connectionTimeout(connector);
+        Assert.assertEquals(CLOSED, omc.getState());
         Assert.assertTrue(connector.isCancelled());
-        Assert.assertEquals(count, imc.backlogSize());
+        Assert.assertEquals(count, omc.backlogSize());
     }
 
     @Test
@@ -317,26 +313,25 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
-        imc.setState(CREATING_CHANNEL);
+        omc.setState(CREATING_CHANNEL);
         OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        imc.setOutboundConnector(connector);
-        imc.connectionTimeout(connector);
-        Assert.assertEquals(NOT_READY, imc.getState());
+        omc.setOutboundConnector(connector);
+        omc.connectionTimeout(connector);
+        Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertTrue(connector.isCancelled());
-        Assert.assertEquals(0, imc.backlogSize());
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     @Test
     public void finishHandshake_GOOD()
     {
-        channel.pipeline().addLast(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, true, result -> {}, NettyFactory.Mode.MESSAGING));
         ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, GOOD);
-        imc.finishHandshake(result);
-        Assert.assertEquals(channel, imc.getChannel());
-        Assert.assertEquals(READY, imc.getState());
+        omc.finishHandshake(result);
+        Assert.assertEquals(channel, omc.getChannel());
+        Assert.assertEquals(READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));
     }
 
@@ -345,15 +340,15 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
         ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, DISCONNECT);
-        imc.finishHandshake(result);
-        Assert.assertEquals(channel, imc.getChannel());
-        Assert.assertEquals(NOT_READY, imc.getState());
+        omc.finishHandshake(result);
+        Assert.assertEquals(channel, omc.getChannel());
+        Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));
-        Assert.assertEquals(count, imc.backlogSize());
+        Assert.assertEquals(count, omc.backlogSize());
     }
 
     @Test
@@ -361,36 +356,14 @@ public class OutboundMessagingConnectionTest
     {
         int count = 32;
         for (int i = 0; i < count; i++)
-            imc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, imc.backlogSize());
+            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
+        Assert.assertEquals(count, omc.backlogSize());
 
         ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, NEGOTIATION_FAILURE);
-        imc.finishHandshake(result);
-        Assert.assertEquals(NOT_READY, imc.getState());
+        omc.finishHandshake(result);
+        Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));
-        Assert.assertEquals(0, imc.backlogSize());
-    }
-
-    @Test
-    public void setupPipeline_WithCompression()
-    {
-        ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
-        imc.setupPipeline(pipeline, MESSAGING_VERSION, true);
-        Assert.assertNotNull(pipeline.get(Lz4FrameEncoder.class));
-        Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
-        Assert.assertNotNull(pipeline.get(MessageOutHandler.class));
-        Assert.assertNotNull(pipeline.get(CoalescingMessageOutHandler.class));
-    }
-
-    @Test
-    public void setupPipeline_NoCompression()
-    {
-        ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
-        imc.setupPipeline(pipeline, MESSAGING_VERSION, false);
-        Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));
-        Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
-        Assert.assertNotNull(pipeline.get(MessageOutHandler.class));
-        Assert.assertNotNull(pipeline.get(CoalescingMessageOutHandler.class));
+        Assert.assertEquals(0, omc.backlogSize());
     }
 
     static class CountingHandler extends ChannelOutboundHandlerAdapter

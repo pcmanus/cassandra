@@ -21,7 +21,7 @@ package org.apache.cassandra.net.async;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
@@ -43,9 +43,10 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
 
-import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.READY;
 import static org.apache.cassandra.net.async.InboundHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
 import static org.apache.cassandra.net.async.InboundHandshakeHandlerTest.SHH_HANDLER_NAME;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.DEFAULT_BUFFER_SIZE;
+import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.READY;
 
 public class HandshakeHandlersTest
 {
@@ -83,9 +84,12 @@ public class HandshakeHandlersTest
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel inboundChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(true)));
-        OutboundHandshakeHandler clientHandshakeHandler = new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, false, imc::finishHandshake, NettyFactory.Mode.MESSAGING);
-        EmbeddedChannel outboundChannel = new EmbeddedChannel(clientHandshakeHandler);
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, false);
+        OutboundConnectionParams params = new OutboundConnectionParams(LOCAL_ADDR, REMOTE_ADDR, MESSAGING_VERSION, DEFAULT_BUFFER_SIZE,
+                                                                       imc::finishHandshake, null, NettyFactory.Mode.MESSAGING,
+                                                                       false, false, new AtomicLong(), new AtomicLong());
+        OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
+        EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
         Assert.assertEquals(1, outboundChannel.outboundMessages().size());
 
         // move internode protocol Msg1 to the server's channel
@@ -159,18 +163,21 @@ public class HandshakeHandlersTest
             inboundChannel.writeInbound(o);
 
         Assert.assertTrue(outboundChannel.outboundMessages().isEmpty());
-        // if compress, LZ4FrameEncoder will send 'close' packet to peer (thus a message is in the channel)
-        Assert.assertEquals(compress, outboundChannel.finishAndReleaseAll());
         Assert.assertFalse(inboundChannel.finishAndReleaseAll());
     }
 
     private TestChannels buildChannels(boolean compress)
     {
-        EmbeddedChannel outboundChannel = new EmbeddedChannel(new OutboundHandshakeHandler(REMOTE_ADDR, MESSAGING_VERSION, compress, this::nop, NettyFactory.Mode.MESSAGING));
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, Optional.of(new FakeCoalescingStrategy(false)));
-        imc.setTargetVersion(MESSAGING_VERSION);
-        imc.setupPipeline(outboundChannel.pipeline(), MESSAGING_VERSION, compress);
-        // remove the client handshake message from the outbound messages
+        OutboundConnectionParams params = new OutboundConnectionParams(LOCAL_ADDR, REMOTE_ADDR, MESSAGING_VERSION, DEFAULT_BUFFER_SIZE,
+                                                                       this::nop, null, NettyFactory.Mode.MESSAGING,
+                                                                       false, compress, new AtomicLong(), new AtomicLong());
+        OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
+        EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
+        OutboundMessagingConnection omc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, false);
+        omc.setTargetVersion(MESSAGING_VERSION);
+        outboundHandshakeHandler.setupPipeline(outboundChannel.pipeline(), MESSAGING_VERSION);
+
+        // remove the outbound handshake message from the outbound messages
         outboundChannel.outboundMessages().clear();
 
         EmbeddedChannel inboundChannel = new EmbeddedChannel(new InboundHandshakeHandler(new TestAuthenticator(true)));

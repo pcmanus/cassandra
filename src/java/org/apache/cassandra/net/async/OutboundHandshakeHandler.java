@@ -19,8 +19,10 @@
 package org.apache.cassandra.net.async;
 
 import java.io.DataOutput;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -31,24 +33,37 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufOutputStream;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import io.netty.handler.codec.compression.Lz4FrameEncoder;
+import io.netty.handler.flush.FlushConsolidationHandler;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result;
+import org.apache.cassandra.utils.CoalescingStrategies;
+import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.FBUtilities;
+
+import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHANNEL_HANDLER_NAME;
 
 /**
  * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
- * As soon as the handler is added to the channel via {@code #channelActive} (which is only invoked if the underlying connection
- * was properly established), the first message of the internode messaging protocol is automatically sent out.
+ * As soon as the handler is added to the channel via {@link #channelActive(ChannelHandlerContext)}
+ * (which is only invoked if the underlying connectionwas properly established), the first message of
+ * the internode messaging protocol is automatically sent out.
  *
- * This class extends {@link ByteToMessageDecoder}, which is a {@link ChannelInboundHandler}, because after the first message is sent
- * on becoming active in the channel, it waits for the peer's response (the second message of the internode messaging handshake protocol).
+ * Upon completion of the handshake (on success, fail or timeout), the {@link #callback} is invoked to let the listener
+ * know the result of th connect/handshake.
+ *
+ * This class extends {@link ByteToMessageDecoder}, which is a {@link ChannelInboundHandler}, because after the
+ * first message is sent on becoming active in the channel, it waits for the peer's response (the second message
+ * of the internode messaging handshake protocol).
  */
 class OutboundHandshakeHandler extends ByteToMessageDecoder
 {
@@ -72,9 +87,18 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     static final int THIRD_MESSAGE_LENGTH_MIN = 9;
 
     /**
+     * As we use netty's {@link FlushConsolidationHandler}, we can configure a max number of flush() events before it actually
+     * flushes; see {@link FlushConsolidationHandler}'s docs for full details.
+     */
+    // TODO make this configurable? yet more config :-/
+    private static final int MAX_MESSAGES_BEFORE_FLUSH = 32;
+
+    /**
      * The IP address to identify this node to the peer. Memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
      */
     private final InetSocketAddress localAddr;
+
+    private final InetSocketAddress remoteAddr;
 
     /**
      * The expected messaging service version to use.
@@ -82,15 +106,11 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     private final int messagingVersion;
 
     /**
-     * Declares if transferred data should be compressed.
-     */
-    private final boolean compress;
-
-    /**
      * A function to invoke upon completion of the attempt, success or failure, to connect to the peer.
      */
     private final Consumer<ConnectionHandshakeResult> callback;
     private final NettyFactory.Mode mode;
+    private final OutboundConnectionParams params;
 
     /**
      * A future that places a timeout on how long we'll wait for the peer to respond
@@ -100,20 +120,21 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
     private volatile boolean isCancelled;
 
-    OutboundHandshakeHandler(InetSocketAddress localAddr, int messagingVersion, boolean compress, Consumer<ConnectionHandshakeResult> callback, NettyFactory.Mode mode)
+    OutboundHandshakeHandler(OutboundConnectionParams params)
     {
-        this.localAddr = localAddr;
-        this.messagingVersion = messagingVersion;
-        this.compress = compress;
-        this.callback = callback;
-        this.mode = mode;
+        this.params = params;
+        this.localAddr = params.localAddr;
+        this.remoteAddr = params.remoteAddr;
+        this.messagingVersion = params.protocolVersion;
+        this.callback = params.callback;
+        this.mode = params.mode;
     }
 
     // invoked when the channel is active, and sends out the first handshake message
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception
     {
-        ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().buffer(FIRST_MESSAGE_LENGTH), createHeader(messagingVersion, compress, mode)));
+        ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().buffer(FIRST_MESSAGE_LENGTH), createHeader(messagingVersion, params.compress, mode)));
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
         timeoutFuture = ctx.executor().schedule(() -> abortHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
         ctx.fireChannelActive();
@@ -184,6 +205,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
                 DataOutput bbos = new ByteBufOutputStream(buf);
                 CompactEndpointSerializationHelper.serialize(localAddr.getAddress(), bbos);
                 ctx.writeAndFlush(buf);
+                setupPipeline(ctx.channel().pipeline(), peerMessagingVersion);
                 result = Result.GOOD;
             }
             catch (Exception e)
@@ -196,6 +218,46 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
         callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, result));
         ctx.channel().pipeline().remove(this);
+    }
+
+    void setupPipeline(ChannelPipeline pipeline, int messagingVersion)
+    {
+        if (params.compress)
+            pipeline.addLast(NettyFactory.OUTBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameEncoder());
+
+        // only create an updated params instance if the messaging versions are different
+        OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion ? params : params.updateProtocolVersion(messagingVersion);
+        pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
+        pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
+        if (params.maybeCoalesce)
+            coalescingStrategy().map(cs -> pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(cs, params.droppedMessageCount)));
+        pipeline.addLast("lameoLogger", new ErrorLoggingHandler());
+    }
+
+    private Optional<CoalescingStrategy> coalescingStrategy()
+    {
+        String strategyName = DatabaseDescriptor.getOtcCoalescingStrategy();
+        String displayName = remoteAddr.getAddress().getHostAddress();
+        CoalescingStrategy coalescingStrategy = CoalescingStrategies.newCoalescingStrategy(strategyName,
+                                                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
+                                                                                           CoalescingMessageOutHandler.logger,
+                                                                                           displayName);
+
+        return coalescingStrategy.isCoalescing() ? Optional.of(coalescingStrategy) : Optional.empty();
+    }
+
+    private class ErrorLoggingHandler extends ChannelDuplexHandler
+    {
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
+        {
+            if (cause instanceof IOException)
+                logger.debug("IOException from {}", remoteAddr, cause);
+            else
+                logger.warn("error on channel from {}", remoteAddr, cause);
+
+            ctx.close();
+        }
     }
 
     /**

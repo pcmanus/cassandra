@@ -19,18 +19,14 @@
 package org.apache.cassandra.net.async;
 
 import java.net.InetSocketAddress;
-import java.util.Optional;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.locator.Ec2MultiRegionSnitch;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.utils.CoalescingStrategies;
-import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 
 /**
  * Groups a set of outbound connections to a given peer, and routes outgoing messages to the appropriate connection
@@ -38,7 +34,7 @@ import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
  */
 public class OutboundMessagingPool
 {
-    public static final long LARGE_MESSAGE_THRESHOLD = Long.getLong(Config.PROPERTY_PREFIX + "otcp_large_message_threshold", 1024 * 64);
+    private static final long LARGE_MESSAGE_THRESHOLD = Long.getLong(Config.PROPERTY_PREFIX + "otcp_large_message_threshold", 1024 * 64);
 
     private final ConnectionMetrics metrics;
     private final BackPressureState backPressureState;
@@ -59,24 +55,11 @@ public class OutboundMessagingPool
         this.backPressureState = backPressureState;
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
-        String displayName = preferredRemoteAddr.getAddress().getHostAddress();
-        smallMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                              newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
-        largeMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions,
-                                                              newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(), displayName));
+        smallMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, true);
+        largeMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, true);
 
-        // don't coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
-        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, Optional.empty());
-    }
-
-    private static Optional<CoalescingStrategy> newCoalescingStrategy(String strategyName, String displayName)
-    {
-        CoalescingStrategy coalescingStrategy = CoalescingStrategies.newCoalescingStrategy(strategyName,
-                                                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
-                                                                                           OutboundMessagingConnection.logger,
-                                                                                           displayName);
-
-        return coalescingStrategy.isCoalescing() ? Optional.of(coalescingStrategy) : Optional.empty();
+        // don't attempt coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
+        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, false);
     }
 
     public BackPressureState getBackPressureState()

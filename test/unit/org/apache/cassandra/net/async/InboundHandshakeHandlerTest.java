@@ -70,7 +70,7 @@ public class InboundHandshakeHandlerTest
     {
         if (buf != null)
             buf.release();
-        Assert.assertFalse(channel.finishAndReleaseAll());
+        channel.finishAndReleaseAll();
     }
 
     @Test

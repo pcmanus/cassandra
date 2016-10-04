@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -39,13 +38,8 @@ import org.slf4j.LoggerFactory;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPipeline;
-import io.netty.handler.codec.compression.Lz4FrameEncoder;
-import io.netty.handler.flush.FlushConsolidationHandler;
 import io.netty.util.internal.PlatformDependent;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
@@ -56,7 +50,6 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.NettyFactory.Mode;
 import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
-import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
 import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHANNEL_HANDLER_NAME;
@@ -73,27 +66,19 @@ import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHA
  */
 public class OutboundMessagingConnection
 {
-    static final Logger logger = LoggerFactory.getLogger(OutboundMessagingConnection.class);
+    private static final Logger logger = LoggerFactory.getLogger(OutboundMessagingConnection.class);
 
-    /**
-     * Size of buffer in output stream
-    */
-    private static final String BUFFER_SIZE_PROPERTY = Config.PROPERTY_PREFIX + "otc_buffer_size";
-    private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
-
-
+    private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
     /**
      * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
      */
-    private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
-    public static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
+    private static final boolean INTRADC_TCP_NODELAY = Boolean.parseBoolean(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
 
+    private static final String BUFFER_SIZE_PROPERTY = Config.PROPERTY_PREFIX + "otc_buffer_size";
     /**
-     * As we use netty's {@link FlushConsolidationHandler}, we can configure a max number of flush() events before it actually
-     * flushes; see {@link FlushConsolidationHandler}'s docs for full details.
+     * Size of buffer in output stream
      */
-    // TODO make this configurable? yet more config :-/
-    private static final int MAX_MESSAGES_BEFORE_FLUSH = 32;
+    static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
     /**
      * Describes this instance's ability to send messages into it's Netty {@link Channel}.
@@ -127,8 +112,7 @@ public class OutboundMessagingConnection
     private volatile InetSocketAddress preferredConnectAddress;
 
     private final ServerEncryptionOptions encryptionOptions;
-    private final Optional<CoalescingStrategy> coalescingStrategy;
-    private final int channelBufferSize;
+    private final boolean maybeCoalesce;
 
     /**
      * A future for notifying when the timeout for creating the connection and negotiating the handshake has elapsed.
@@ -165,23 +149,22 @@ public class OutboundMessagingConnection
      */
     private int targetVersion;
 
-    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, Optional<CoalescingStrategy> coalescingStrategy)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, boolean maybeCoalesce)
     {
-        this(remoteAddr, localAddr, encryptionOptions, coalescingStrategy, ScheduledExecutors.scheduledTasks);
+        this(remoteAddr, localAddr, encryptionOptions, maybeCoalesce, ScheduledExecutors.scheduledTasks);
     }
 
     @VisibleForTesting
-    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, Optional<CoalescingStrategy> coalescingStrategy, ScheduledExecutorService sceduledExecutor)
+    OutboundMessagingConnection(InetSocketAddress remoteAddr, InetSocketAddress localAddr, ServerEncryptionOptions encryptionOptions, boolean maybeCoalesce, ScheduledExecutorService sceduledExecutor)
     {
         this.localAddr = localAddr;
         this.remoteAddr = remoteAddr;
         preferredConnectAddress = remoteAddr;
         this.encryptionOptions = encryptionOptions;
-        this.coalescingStrategy = coalescingStrategy;
+        this.maybeCoalesce = maybeCoalesce;
         backlog = new ConcurrentLinkedQueue<>();
         droppedMessageCount = new AtomicLong(0);
         completedMessageCount = new AtomicLong(0);
-        channelBufferSize = DEFAULT_BUFFER_SIZE;
         this.scheduledExecutor = sceduledExecutor;
 
         // We want to use the most precise protocol version we know because while there is version detection on connect(),
@@ -201,7 +184,7 @@ public class OutboundMessagingConnection
      *
      * If the {@link #state} is {@link State#CLOSED}, just ignore the message.
      */
-    public void enqueue(MessageOut msg, int id)
+    void enqueue(MessageOut msg, int id)
     {
         if (state == State.CLOSED)
             return;
@@ -280,7 +263,7 @@ public class OutboundMessagingConnection
             // check that it's safe to change the state (to kick off the reconnect); basically make sure the instance hasn't been closed
             // and that another thread hasn't already created a new channel. Basically, only the first message to fail on this channel
             // should trigger the reconnect.
-            if (state == State.READY && channel == channelFuture.channel())
+            if (state == State.READY && channel.id().equals(channelFuture.channel().id()))
             {
                 // there's a subtle timing issue here. we need to move the messages out of CMOH before closing the channel,
                 // but we also need to stop writing new messages to the channel.
@@ -327,9 +310,10 @@ public class OutboundMessagingConnection
     }
 
     /**
-     * Perform all the actions required to establish a working, valid connection. This includes
+     * Intiate all the actions required to establish a working, valid connection. This includes
      * opening the socket, negotiating the internode messaging handshake, and setting up the working
-     * Netty {@link Channel}.
+     * Netty {@link Channel}. However, this method will not block for all those actions: it will only
+     * kick off the connection attempt via {@link OutboundConnector} as everything is asynchronous.
      *
      * Threads compete to update the {@link #state} field to {@link State#CREATING_CHANNEL} to ensure only one
      * connection is attempted at a time.
@@ -341,8 +325,8 @@ public class OutboundMessagingConnection
             return;
 
         int messagingVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
-
-        Bootstrap bootstrap = buildBootstrap(messagingVersion, shouldCompressConnection(remoteAddr.getAddress()));
+        boolean compress = shouldCompressConnection(remoteAddr.getAddress());
+        Bootstrap bootstrap = buildBootstrap(messagingVersion, compress);
         outboundConnector = new OutboundConnector(bootstrap, localAddr, preferredConnectAddress);
         outboundConnector.connect();
 
@@ -352,7 +336,10 @@ public class OutboundMessagingConnection
 
     private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
     {
-        OutboundChannelInitializer initializer = new OutboundChannelInitializer(localAddr, messagingVersion, compress, this::finishHandshake, encryptionOptions, Mode.MESSAGING);
+        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, preferredConnectAddress, messagingVersion, DEFAULT_BUFFER_SIZE,
+                                                                       this::finishHandshake, encryptionOptions, Mode.MESSAGING,
+                                                                       maybeCoalesce, compress, droppedMessageCount, completedMessageCount);
+        OutboundChannelInitializer initializer = new OutboundChannelInitializer(params);
 
         boolean tcpNoDelay = ConnectionUtils.isLocalDC(remoteAddr.getAddress()) ?
                              INTRADC_TCP_NODELAY :
@@ -362,29 +349,30 @@ public class OutboundMessagingConnection
         if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
             sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
 
-        return NettyFactory.createOutboundBootstrap(initializer, ConnectionUtils.isLocalDC(remoteAddr.getAddress()), sendBufferSize, tcpNoDelay, channelBufferSize);
+        return NettyFactory.createOutboundBootstrap(initializer, ConnectionUtils.isLocalDC(remoteAddr.getAddress()), sendBufferSize, tcpNoDelay);
     }
 
     /**
-     * A callback for handling timeouts when cretaing connections.
+     * A callback for handling timeouts when creating a connection.
      *
      * Note: this method is *not* invoked from the netty event loop,
      * so there's an inherent race with {@link #finishHandshake(ConnectionHandshakeResult)},
      * as well as any possible connect() reattempts (a seemingly remote race condition, however).
+     * Therefore, this function tries to lose any races, as much as possible.
      */
     void connectionTimeout(OutboundConnector initiatingConnector)
     {
         State initialState = state;
         if (initialState != State.READY)
         {
-            // if we got this far, always cancel the connector/handler
+            // if we got this far, always cancel the connector
             initiatingConnector.cancel();
 
             // if the parameter initiatingConnector is the same as the same as the member field,
             // no other thread has attempted a reconnect (and put a new instance into the member field)
             if (initiatingConnector == outboundConnector && initialState != State.CLOSED)
             {
-                // a last-ditch attempt to let finishHandshake() win the any race
+                // a last-ditch attempt to let finishHandshake() win the race
                 if (stateUpdater.compareAndSet(this, initialState, State.NOT_READY))
                     backlog.clear();
             }
@@ -417,7 +405,6 @@ public class OutboundMessagingConnection
         switch (result.result)
         {
             case GOOD:
-                setupPipeline(result.channel.pipeline(), result.negotiatedMessagingVersion, shouldCompressConnection(remoteAddr.getAddress()));
                 // change the state so incoming messages can be sent to the channel (without adding to the backlog)
                 stateUpdater.set(this, State.READY);
                 scheduledExecutor.execute(this::writeBacklogToChannel);
@@ -428,6 +415,8 @@ public class OutboundMessagingConnection
                 stateUpdater.set(this, State.NOT_READY);
                 break;
             case NEGOTIATION_FAILURE:
+                if (channel != null)
+                    channel.close();
                 backlog.clear();
                 stateUpdater.set(this, State.NOT_READY);
                 break;
@@ -436,33 +425,7 @@ public class OutboundMessagingConnection
         }
     }
 
-    void setupPipeline(ChannelPipeline pipeline, int messagingVersion, boolean compress)
-    {
-        if (compress)
-            pipeline.addLast(NettyFactory.OUTBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameEncoder());
-
-        pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
-        pipeline.addLast("messageOutHandler", new MessageOutHandler(messagingVersion, completedMessageCount, channelBufferSize));
-        coalescingStrategy.map(cs -> pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(cs, droppedMessageCount)));
-        pipeline.addLast("lameoLogger", new ErrorLoggingHandler());
-    }
-
-    class ErrorLoggingHandler extends ChannelDuplexHandler
-    {
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
-        {
-            if (cause instanceof IOException)
-                logger.debug("IOException from {}", remoteAddr, cause);
-            else
-                logger.warn("error on channel from {}", remoteAddr, cause);
-
-            ctx.close();
-        }
-
-    }
-
-    private static boolean shouldCompressConnection(InetAddress addr)
+    static boolean shouldCompressConnection(InetAddress addr)
     {
         // assumes version >= 1.2
         return (DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.all)
@@ -482,6 +445,9 @@ public class OutboundMessagingConnection
      */
     void reconnectWithNewIp(InetSocketAddress newAddr)
     {
+        if (state == State.CLOSED)
+            throw new IllegalStateException("cannot reconnect on new IP address as connections to peer are already closed");
+
         // capture a reference to the current channel, in case it gets swapped out before we can call close() on it
         Channel currentChannel = channel;
         preferredConnectAddress = newAddr;
@@ -550,7 +516,7 @@ public class OutboundMessagingConnection
      */
     public Integer getPendingMessages()
     {
-        //TODO:JEB this might not be completely accurate now :-/
+        //TODO:JEB this might not be completely accurate as it doen't account for anything in the netty channel itself
         return backlog.size();
     }
 

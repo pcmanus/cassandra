@@ -59,7 +59,7 @@ class MessageInProcessingHandler extends SimpleChannelInboundHandler<MessageInWr
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
     {
-        if (cause instanceof DecoderException)
+        if (cause instanceof DecoderException && cause.getCause() != null)
             cause = cause.getCause();
 
         if (cause instanceof EOFException)
@@ -69,7 +69,7 @@ class MessageInProcessingHandler extends SimpleChannelInboundHandler<MessageInWr
         else if (cause instanceof IOException)
             logger.trace("IOException reading from socket; closing", cause);
         else
-            logger.warn(String.format("exception caught in inbound channel pipeline from %s", NettyFactory.getInetAddress(ctx.channel())), cause);
+            logger.warn("exception caught in inbound channel pipeline from " + ctx.channel().remoteAddress(), cause);
 
         ctx.close();
     }
