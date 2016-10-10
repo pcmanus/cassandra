@@ -37,8 +37,8 @@ import org.apache.cassandra.io.util.DataOutputPlus;
  * by a query.
  *
  * In practice, this class cover 2 main cases:
- *   1) most user queries have to internally query all columns, because the CQL semantic requires us to know if
- *      a row is live or not even if it has no values for the columns requested by the user (see #6588for more
+ *   1) most user queries have to internally query all (regular) columns, because the CQL semantic requires us to know
+ *      if a row is live or not even if it has no values for the columns requested by the user (see #6588 for more
  *      details). However, while we need to know for columns if it has live values, we can actually save from
  *      sending the values for those columns that will not be returned to the user.
  *   2) for some internal queries (and for queries using #6588 if we introduce it), we're actually fine only
@@ -51,8 +51,11 @@ public class ColumnFilter
 {
     public static final Serializer serializer = new Serializer();
 
-    // Distinguish between the 2 cases described above: if 'isFetchAll' is true, then all columns will be retrieved
-    // by the query, but the values for column/cells not selected by 'selection' and 'subSelections' will be skipped.
+    // Distinguish between the 2 cases described above: if 'isFetchAll' is true, then all regular columns will be
+    // retrieved by the query. If selection is also null, then all static columns will be fetched too. If 'isFetchAll'
+    // is true and selection is not null, then 1) for static columns, only the ones in selection are read and 2) for
+    // regular columns, while all are fetches, the the values for column/cells not selected by 'selection' and
+    // 'subSelections' will be skipped.
     // Otherwise, only the column/cells returned by 'selection' and 'subSelections' will be returned at all.
     private final boolean isFetchAll;
 
@@ -102,7 +105,15 @@ public class ColumnFilter
      */
     public PartitionColumns fetchedColumns()
     {
-        return isFetchAll ? metadata.partitionColumns() : selection;
+        if (!isFetchAll)
+            return selection;
+
+        // We always fetch all regulars, but only fetch the statics in selection. Unless selection is null, in which
+        // case it's a wildcard and we fetch everything.
+        PartitionColumns all = metadata.partitionColumns();
+        return selection == null || all.statics.isEmpty()
+             ? all
+             : new PartitionColumns(selection.statics, all.regulars);
     }
 
     public boolean includesAllColumns()
@@ -115,6 +126,11 @@ public class ColumnFilter
      */
     public boolean includes(ColumnDefinition column)
     {
+        // For statics, it is included only if it's part of selection, or if selection is null (wildcard query).
+        if (column.isStatic())
+            return selection == null || selection.contains(column);
+
+        // For regulars, if 'isFetchAll', then it's included automatically. Otherwise, it depends on 'selection'.
         return isFetchAll || selection.contains(column);
     }
 
@@ -185,7 +201,7 @@ public class ColumnFilter
      * Returns a {@code ColumnFilter}} builder that includes all columns (so the selections
      * added to the builder are the columns/cells for which we shouldn't skip the values).
      */
-    public static Builder allColumnsBuilder(CFMetaData metadata)
+    public static Builder allRegularColumnsBuilder(CFMetaData metadata)
     {
         return new Builder(metadata);
     }
