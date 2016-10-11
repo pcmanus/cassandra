@@ -20,7 +20,6 @@ package org.apache.cassandra.net.async;
 
 import java.io.EOFException;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 

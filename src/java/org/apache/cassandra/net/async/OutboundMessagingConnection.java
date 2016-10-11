@@ -201,6 +201,7 @@ public class OutboundMessagingConnection
      */
     boolean writeBacklogToChannel()
     {
+        boolean wroteMessage = false;
         while (true)
         {
             if (!channel.isActive())
@@ -208,13 +209,18 @@ public class OutboundMessagingConnection
 
             final QueuedMessage backlogged = backlog.poll();
             if (backlogged == null)
+            {
+                if (wroteMessage)
+                    channel.flush();
                 return true;
+            }
 
             // check to see if message has timed out, before shoveling it into the channel.
             if (!backlogged.isTimedOut())
             {
                 ChannelFuture future = channel.write(backlogged);
                 future.addListener(f -> handleMessageFuture(f, backlogged));
+                wroteMessage = true;
             }
             else
             {
@@ -223,6 +229,7 @@ public class OutboundMessagingConnection
                     final RetriedQueuedMessage retriedQueuedMessage = new RetriedQueuedMessage(backlogged);
                     ChannelFuture future = channel.write(retriedQueuedMessage);
                     future.addListener(f -> handleMessageFuture(f, retriedQueuedMessage));
+                    wroteMessage = true;
                 }
                 else
                 {
