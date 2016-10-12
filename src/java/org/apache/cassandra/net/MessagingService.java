@@ -1441,16 +1441,17 @@ public final class MessagingService implements MessagingServiceMBean
         public void listen(InetAddress localEp) throws ConfigurationException
         {
             IInternodeAuthenticator authenticator = DatabaseDescriptor.getInternodeAuthenticator();
+            int receiveBufferSize = DatabaseDescriptor.getInternodeRecvBufferSize();
             if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.none)
             {
                 InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getSSLStoragePort());
-                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new InboundInitializer(authenticator, DatabaseDescriptor.getServerEncryptionOptions())));
+                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new InboundInitializer(authenticator, DatabaseDescriptor.getServerEncryptionOptions()), receiveBufferSize));
             }
 
             if (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption != ServerEncryptionOptions.InternodeEncryption.all)
             {
                 InetSocketAddress localAddr = new InetSocketAddress(localEp, DatabaseDescriptor.getStoragePort());
-                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new InboundInitializer(authenticator, null)));
+                serverChannels.add(NettyFactory.createInboundChannel(localAddr, new InboundInitializer(authenticator, null), receiveBufferSize));
             }
 
             if (serverChannels.isEmpty())

@@ -29,7 +29,6 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Slf4JLoggerFactory;
 import org.apache.cassandra.auth.IInternodeAuthenticator;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.security.SSLFactory;
@@ -79,7 +78,7 @@ public final class NettyFactory
      * Create a {@link Channel} that listens on the {@code localAddr}. This method will block while trying to bind to the address,
      * but it does not make a remote call.
      */
-    public static Channel createInboundChannel(InetSocketAddress localAddr, InboundInitializer initializer) throws ConfigurationException
+    public static Channel createInboundChannel(InetSocketAddress localAddr, InboundInitializer initializer, int receiveBufferSize) throws ConfigurationException
     {
         logger.info("Starting Netty-based Messaging Service on port {}", localAddr.getPort());
         Class<? extends ServerChannel> transport = useEpoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
@@ -91,6 +90,9 @@ public final class NettyFactory
                                                          .childOption(ChannelOption.TCP_NODELAY, true)
                                                          .childOption(ChannelOption.SO_REUSEADDR, true)
                                                          .childHandler(initializer);
+
+        if (receiveBufferSize > 0)
+            bootstrap.childOption(ChannelOption.SO_RCVBUF, receiveBufferSize);
 
         ChannelFuture channelFuture = bootstrap.bind(localAddr);
 
@@ -149,10 +151,10 @@ public final class NettyFactory
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
-    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, boolean remoteDc, int sendBufferSize, boolean tcpNoDelay)
+    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay)
     {
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
-        Bootstrap bootstrap = new Bootstrap().group(OUTBOUND_GROUP)
+        return new Bootstrap().group(OUTBOUND_GROUP)
                                              .channel(transport)
                                              .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                                              .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
@@ -161,16 +163,6 @@ public final class NettyFactory
                                              .option(ChannelOption.SO_SNDBUF, sendBufferSize)
                                              .option(ChannelOption.TCP_NODELAY, tcpNoDelay)
                                              .handler(initializer);
-
-        if (remoteDc)
-            bootstrap.option(ChannelOption.TCP_NODELAY, true);
-        else
-            bootstrap.option(ChannelOption.TCP_NODELAY, DatabaseDescriptor.getInterDCTcpNoDelay());
-
-        if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
-            bootstrap.option(ChannelOption.SO_SNDBUF, DatabaseDescriptor.getInternodeSendBufferSize());
-
-        return bootstrap;
     }
 
     static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>

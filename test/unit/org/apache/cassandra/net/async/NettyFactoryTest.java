@@ -28,13 +28,15 @@ import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
 
 public class NettyFactoryTest
 {
+    private static final int receiveBufferSize = 1 << 16;
+
     @Test(expected = ConfigurationException.class)
     public void createServerChannel_SecondAttemptToBind()
     {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 9876);
         InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
-        NettyFactory.createInboundChannel(addr, inboundInitializer);
-        NettyFactory.createInboundChannel(addr, inboundInitializer);
+        NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
+        NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
     }
 
     @Test(expected = ConfigurationException.class)
@@ -42,6 +44,6 @@ public class NettyFactoryTest
     {
         InetSocketAddress addr = new InetSocketAddress("1.1.1.1", 9876);
         InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
-        NettyFactory.createInboundChannel(addr, inboundInitializer);
+        NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
     }
 }

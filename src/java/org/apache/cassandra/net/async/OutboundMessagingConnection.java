@@ -353,10 +353,10 @@ public class OutboundMessagingConnection
                              DatabaseDescriptor.getInterDCTcpNoDelay();
 
         int sendBufferSize = 1 << 16;
-        if (DatabaseDescriptor.getInternodeSendBufferSize() != null)
+        if (DatabaseDescriptor.getInternodeSendBufferSize() > 0)
             sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
 
-        return NettyFactory.createOutboundBootstrap(initializer, ConnectionUtils.isLocalDC(remoteAddr.getAddress()), sendBufferSize, tcpNoDelay);
+        return NettyFactory.createOutboundBootstrap(initializer, sendBufferSize, tcpNoDelay);
     }
 
     /**
