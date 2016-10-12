@@ -60,7 +60,7 @@ public class OutboundMessagingConnectionTest
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.1", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
-    private OutboundMessagingConnection omc;
+    private OutboundMessagingConnection omc ;
     private CountingHandler handler;
     private EmbeddedChannel channel;
 
@@ -82,7 +82,7 @@ public class OutboundMessagingConnectionTest
     @After
     public void tearDown()
     {
-        Assert.assertFalse(channel.finishAndReleaseAll());
+        channel.finishAndReleaseAll();
     }
 
     @Test
