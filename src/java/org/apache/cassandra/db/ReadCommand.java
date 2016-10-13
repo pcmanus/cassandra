@@ -542,7 +542,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
     /**
      * Creates a message for this command.
      */
-    public abstract MessageOut<ReadCommand> createMessage(int version);
+    public abstract MessageOut<ReadCommand> createMessage();
 
     protected abstract void appendCQLWhereClause(StringBuilder sb);
 

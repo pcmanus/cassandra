@@ -273,7 +273,7 @@ public class PartitionRangeReadCommand extends ReadCommand
         return Transformation.apply(iter, new CacheFilter());
     }
 
-    public MessageOut<ReadCommand> createMessage(int version)
+    public MessageOut<ReadCommand> createMessage()
     {
         return new MessageOut<>(MessagingService.Verb.RANGE_SLICE, this, serializer);
     }
