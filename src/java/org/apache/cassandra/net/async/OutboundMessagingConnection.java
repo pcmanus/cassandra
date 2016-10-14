@@ -83,7 +83,7 @@ public class OutboundMessagingConnection
     /**
      * Describes this instance's ability to send messages into it's Netty {@link Channel}.
      */
-    enum State { NOT_READY, CREATING_CHANNEL, READY, CLOSED }
+    enum State { NOT_READY, CREATING_CHANNEL, READY }
 
     /**
      * Backlog to hold messages passed by upstream threads while the Netty {@link Channel} is being set up or recreated.
@@ -181,13 +181,9 @@ public class OutboundMessagingConnection
      * If the {@link #channel} is set up and ready to use (the normal case), simply send the message to it and return.
      * If the {@link #channel} is not set up, then one lucky thread is selected to create the Channel, while other threads
      * just add the {@code msg} to the backlog queue.
-     *
-     * If the {@link #state} is {@link State#CLOSED}, just ignore the message.
      */
     void enqueue(MessageOut msg, int id)
     {
-        if (state == State.CLOSED)
-            return;
         backlog.add(new QueuedMessage(msg, id));
         if (state == State.READY)
             writeBacklogToChannel();
@@ -204,9 +200,6 @@ public class OutboundMessagingConnection
         boolean wroteMessage = false;
         while (true)
         {
-            if (!channel.isActive())
-                return false;
-
             final QueuedMessage backlogged = backlog.poll();
             if (backlogged == null)
             {
@@ -295,8 +288,6 @@ public class OutboundMessagingConnection
      */
     private void reconnect()
     {
-        if (state == State.CLOSED)
-            return;
         stateUpdater.set(this, State.NOT_READY);
         connect();
     }
@@ -377,7 +368,7 @@ public class OutboundMessagingConnection
 
             // if the parameter initiatingConnector is the same as the same as the member field,
             // no other thread has attempted a reconnect (and put a new instance into the member field)
-            if (initiatingConnector == outboundConnector && initialState != State.CLOSED)
+            if (initiatingConnector == outboundConnector)
             {
                 // a last-ditch attempt to let finishHandshake() win the race
                 if (stateUpdater.compareAndSet(this, initialState, State.NOT_READY))
@@ -452,9 +443,6 @@ public class OutboundMessagingConnection
      */
     void reconnectWithNewIp(InetSocketAddress newAddr)
     {
-        if (state == State.CLOSED)
-            throw new IllegalStateException("cannot reconnect on new IP address as connections to peer are already closed");
-
         // capture a reference to the current channel, in case it gets swapped out before we can call close() on it
         Channel currentChannel = channel;
         preferredConnectAddress = newAddr;
@@ -469,10 +457,10 @@ public class OutboundMessagingConnection
         currentChannel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
-    public void close()
+    public void close(boolean softClose)
     {
-        stateUpdater.set(this, State.CLOSED);
-
+        // close the connection creation objects before changing the state to avoid possible race conditions
+        // on those member fields.
         if (connectionTimeoutFuture != null)
         {
             connectionTimeoutFuture.cancel(false);
@@ -484,7 +472,10 @@ public class OutboundMessagingConnection
             outboundConnector = null;
         }
 
-        backlog.clear();
+        stateUpdater.set(this, State.NOT_READY);
+
+        if (!softClose)
+            backlog.clear();
 
         if (channel != null)
             channel.close();

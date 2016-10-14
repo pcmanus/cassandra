@@ -49,7 +49,6 @@ import org.apache.cassandra.net.async.OutboundMessagingConnection.State;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.DISCONNECT;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.GOOD;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE;
-import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.CLOSED;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.CREATING_CHANNEL;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.NOT_READY;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.READY;
@@ -140,15 +139,6 @@ public class OutboundMessagingConnectionTest
     }
 
     @Test
-    public void enqueue_ChannelClosed()
-    {
-        Assert.assertEquals(0, omc.backlogSize());
-        omc.setState(CLOSED);
-        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(0, omc.backlogSize());
-    }
-
-    @Test
     public void enqueue_HappyPath()
     {
         Assert.assertEquals(0, omc.backlogSize());
@@ -211,28 +201,6 @@ public class OutboundMessagingConnectionTest
     }
 
     @Test
-    public void handleMessagePromise_IOException_ShouldCloseChannel_RetryMsg()
-    {
-        // set this state to not have the test execute the connect() logic
-        omc.setState(CLOSED);
-        ChannelPromise promise = channel.newPromise();
-        promise.setFailure(new IOException("this is a test"));
-        omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
-        Assert.assertEquals(1, omc.backlogSize());
-    }
-
-    @Test
-    public void handleMessagePromise_IOException_ShouldCloseChannel_DoNotRetryMsg()
-    {
-        // set this state to not have the test execute the connect() logic
-        omc.setState(CLOSED);
-        ChannelPromise promise = channel.newPromise();
-        promise.setFailure(new IOException("this is a test"));
-        omc.handleMessageFuture(promise, new RetriedQueuedMessage(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1, 0, true)));
-        Assert.assertEquals(0, omc.backlogSize());
-    }
-
-    @Test
     public void handleMessagePromise_IOException_ChannelClosed_DoNotRetryMsg()
     {
         State state = omc.getState();
@@ -254,9 +222,9 @@ public class OutboundMessagingConnectionTest
             omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
         Assert.assertEquals(count, omc.backlogSize());
 
-        omc.close();
+        omc.close(false);
         Assert.assertFalse(channel.isActive());
-        Assert.assertEquals(State.CLOSED, omc.getState());
+        Assert.assertEquals(State.NOT_READY, omc.getState());
         Assert.assertEquals(0, omc.backlogSize());
     }
 
@@ -288,22 +256,6 @@ public class OutboundMessagingConnectionTest
         OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
         omc.connectionTimeout(connector);
         Assert.assertEquals(CREATING_CHANNEL, omc.getState());
-        Assert.assertTrue(connector.isCancelled());
-        Assert.assertEquals(count, omc.backlogSize());
-    }
-
-    @Test
-    public void connectionTimeout_StateIsClosed()
-    {
-        int count = 32;
-        for (int i = 0; i < count; i++)
-            omc.addToBacklog(new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), i));
-        Assert.assertEquals(count, omc.backlogSize());
-
-        omc.setState(CLOSED);
-        OutboundConnector connector = new OutboundConnector(null, LOCAL_ADDR, REMOTE_ADDR);
-        omc.connectionTimeout(connector);
-        Assert.assertEquals(CLOSED, omc.getState());
         Assert.assertTrue(connector.isCancelled());
         Assert.assertEquals(count, omc.backlogSize());
     }

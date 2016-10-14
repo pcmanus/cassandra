@@ -1462,7 +1462,7 @@ public final class MessagingService implements MessagingServiceMBean
         {
             OutboundMessagingPool pool = channelManagers.remove(to);
             if (pool != null)
-                pool.close();
+                pool.close(true);
         }
 
         public void reconnectWithNewIp(InetAddress address, InetAddress preferredAddress)

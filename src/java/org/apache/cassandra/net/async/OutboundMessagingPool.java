@@ -89,7 +89,7 @@ public class OutboundMessagingPool
      */
     public void reset()
     {
-        close();
+        close(true);
     }
 
     /**
@@ -107,11 +107,11 @@ public class OutboundMessagingPool
         smallMessageChannel.reconnectWithNewIp(addr);
     }
 
-    public void close()
+    public void close(boolean softClose)
     {
-        gossipChannel.close();
-        largeMessageChannel.close();
-        smallMessageChannel.close();
+        gossipChannel.close(softClose);
+        largeMessageChannel.close(softClose);
+        smallMessageChannel.close(softClose);
     }
 
     public void incrementTimeout()
