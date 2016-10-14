@@ -108,7 +108,7 @@ public class MessagingServiceTest
         long sentAt = now - latency;
 
         assertNull(dcLatency.get("datacenter1"));
-        addDCLatency(sentAt, now);
+        addDCLatency(sentAt);
         assertNotNull(dcLatency.get("datacenter1"));
         assertEquals(1, dcLatency.get("datacenter1").getCount());
         long expectedBucket = bucketOffsets[Math.abs(Arrays.binarySearch(bucketOffsets, TimeUnit.MILLISECONDS.toNanos(latency))) - 1];
@@ -128,7 +128,7 @@ public class MessagingServiceTest
         long sentAt = now - latency;
 
         assertNull(dcLatency.get("datacenter1"));
-        addDCLatency(sentAt, now);
+        addDCLatency(sentAt);
         assertNull(dcLatency.get("datacenter1"));
     }
 
@@ -221,7 +221,7 @@ public class MessagingServiceTest
         assertFalse(MockBackPressureStrategy.applied);
     }
 
-    private static void addDCLatency(long sentAt, long now) throws IOException
+    private static void addDCLatency(long sentAt) throws IOException
     {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (DataOutputStreamPlus out = new WrappedDataOutputStreamPlus(baos))
@@ -229,7 +229,7 @@ public class MessagingServiceTest
             out.writeInt((int) sentAt);
         }
         DataInputStreamPlus in = new DataInputStreamPlus(new ByteArrayInputStream(baos.toByteArray()));
-        MessageIn.readTimestamp(InetAddress.getLocalHost(), in, now);
+        MessageIn.readConstructionTime(InetAddress.getLocalHost(), in);
     }
 
     public static class MockBackPressureStrategy implements BackPressureStrategy<MockBackPressureStrategy.MockBackPressureState>

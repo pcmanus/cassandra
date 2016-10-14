@@ -1160,7 +1160,7 @@ public final class MessagingService implements MessagingServiceMBean
         {
             updateDroppedMutationCount((IMutation) message.payload);
         }
-        incrementDroppedMessages(message.verb, timeTaken, message.constructionTime.isCrossNode);
+        incrementDroppedMessages(message.verb, timeTaken, message.isCrossNode());
     }
 
     public void incrementDroppedMessages(Verb verb, long timeTaken, boolean isCrossNodeTimeout)
