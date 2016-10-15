@@ -76,7 +76,8 @@ public class OutboundMessagingConnection
 
     private static final String BUFFER_SIZE_PROPERTY = Config.PROPERTY_PREFIX + "otc_buffer_size";
     /**
-     * Size of buffer in output stream
+     * Size of the buffer for data being sent out. This is the buffer that we serialize messages into, which is not the same as the
+     * socket send buffer (whose size is controlled by {@link DatabaseDescriptor#getInternodeSendBufferSize()}).
      */
     static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 

@@ -61,26 +61,26 @@ class MessageOutHandler extends ChannelDuplexHandler
     private final int targetMessagingVersion;
 
     private final AtomicLong completedMessageCount;
-    private final int channelSendBufferSize;
+    private final int bufferSize;
 
     private SwappingByteBufDataOutputStreamPlus dataOutputPlus;
 
     MessageOutHandler(OutboundConnectionParams params)
     {
-        this (params.protocolVersion, params.completedMessageCount, params.channelSendBufferSize);
+        this (params.protocolVersion, params.completedMessageCount, params.bufferSize);
     }
 
-    MessageOutHandler(int targetMessagingVersion, AtomicLong completedMessageCount, int channelSendBufferSize)
+    MessageOutHandler(int targetMessagingVersion, AtomicLong completedMessageCount, int bufferSize)
     {
         this.targetMessagingVersion = targetMessagingVersion;
         this.completedMessageCount = completedMessageCount;
-        this.channelSendBufferSize = channelSendBufferSize;
+        this.bufferSize = bufferSize;
     }
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx)
     {
-        dataOutputPlus = new SwappingByteBufDataOutputStreamPlus(ctx, channelSendBufferSize);
+        dataOutputPlus = new SwappingByteBufDataOutputStreamPlus(ctx, bufferSize);
     }
 
     @Override
