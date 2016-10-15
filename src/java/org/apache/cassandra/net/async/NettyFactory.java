@@ -80,7 +80,7 @@ public final class NettyFactory
      */
     public static Channel createInboundChannel(InetSocketAddress localAddr, InboundInitializer initializer, int receiveBufferSize) throws ConfigurationException
     {
-        logger.info("Starting Netty-based Messaging Service on port {}", localAddr.getPort());
+        logger.info("Starting Messaging Service on {}", localAddr);
         Class<? extends ServerChannel> transport = useEpoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
         ServerBootstrap bootstrap = new ServerBootstrap().group(ACCEPT_GROUP, INBOUND_GROUP)
                                                          .channel(transport)

@@ -85,15 +85,6 @@ public class OutboundMessagingConnectionTest
     }
 
     @Test
-    public void clearBacklog_InactiveChannel()
-    {
-        channel.close();
-        Assert.assertFalse(omc.writeBacklogToChannel());
-        Assert.assertEquals(0, omc.getPendingMessages().intValue());
-        Assert.assertEquals(0, handler.writeCount);
-    }
-
-    @Test
     public void clearBacklog_EmptyBacklog()
     {
         Assert.assertTrue(omc.writeBacklogToChannel());
@@ -147,18 +138,6 @@ public class OutboundMessagingConnectionTest
         Assert.assertEquals(0, omc.backlogSize());
         Assert.assertEquals(0, omc.getPendingMessages().intValue());
         Assert.assertEquals(1, handler.writeCount);
-    }
-
-    @Test
-    public void enqueue_ReadyButChannelIsInActive()
-    {
-        Assert.assertEquals(0, omc.backlogSize());
-        omc.setState(READY);
-        channel.close();
-        channel.pipeline().fireChannelWritabilityChanged();
-        omc.enqueue(new MessageOut<>(MessagingService.Verb.ECHO), 1);
-        Assert.assertEquals(1, omc.backlogSize());
-        Assert.assertEquals(0, handler.writeCount);
     }
 
     @Test
