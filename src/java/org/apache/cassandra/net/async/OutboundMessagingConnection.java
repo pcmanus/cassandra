@@ -256,7 +256,7 @@ public class OutboundMessagingConnection
         // TODO:JEB handle "cause instanceof CancellationException"
         if (cause instanceof IOException || cause.getCause() instanceof IOException)
         {
-            logger.trace("error writing to peer {} at address {}", remoteAddr, preferredConnectAddress, cause);
+            logger.trace("error writing to peer {} (at address {})", remoteAddr, preferredConnectAddress, cause);
 
             // because we get the reference the channel to which the message was sent, we don't have to worry about
             // a race of the callback being invoked but the IMC already setting up a new channel (and thus we won't attempt to close that new channel)
@@ -280,7 +280,7 @@ public class OutboundMessagingConnection
         else
         {
             // Non IO exceptions are likely a programming error so let's not silence them
-            logger.error("error writing to peer {} at address {}", remoteAddr, preferredConnectAddress, cause);
+            logger.error("error writing to peer {} (on address {})", remoteAddr, preferredConnectAddress, cause);
         }
     }
 
@@ -455,7 +455,8 @@ public class OutboundMessagingConnection
         // the netty folks advised to write and flush something to the channel, and then add a listener close the channel
         // once the last message/buffer is written to the socket. The trick is we really don't know what to write as we don't
         // have a friendly 'close this socket' message.
-        currentChannel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+        if (currentChannel != null)
+            currentChannel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
     }
 
     public void close(boolean softClose)

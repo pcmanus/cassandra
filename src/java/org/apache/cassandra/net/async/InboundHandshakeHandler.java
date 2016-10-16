@@ -90,7 +90,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
                     state = handleMessagingStartResponse(ctx, in);
                     break;
                 case HANDSHAKE_FAIL:
-                    throw new IllegalStateException("channel should be closed after determining the handshake failed");
+                    throw new IllegalStateException("channel should be closed after determining the handshake failed with peer: " + ctx.channel().remoteAddress());
                 default:
                     logger.error("unhandled state: " + state);
                     state = State.HANDSHAKE_FAIL;
@@ -143,24 +143,25 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
         int header = in.readInt();
         version = MessagingService.getBits(header, 15, 8);
 
-        if (version < MessagingService.VERSION_20)
-        {
-            logger.error("Unable to read obsolete message version {}; The earliest version supported is 2.0.0", version);
-            ctx.close();
-            return State.HANDSHAKE_FAIL;
-        }
-
-        logger.trace("Connection version {} from {}", version, ctx.channel().remoteAddress());
-
-        compressed = MessagingService.getBits(header, 2, 1) == 1;
         boolean isStream = MessagingService.getBits(header, 3, 1) == 1;
         if (isStream)
         {
             // TODO fill in once streaming is moved to netty
+            ctx.close();
             return State.AWAIT_STREAM_START_RESPONSE;
         }
         else
         {
+            if (version < MessagingService.VERSION_20)
+            {
+                logger.error("Unable to read obsolete message version {} from {}; The earliest version supported is 2.0.0", version, ctx.channel().remoteAddress());
+                ctx.close();
+                return State.HANDSHAKE_FAIL;
+            }
+
+            logger.trace("Connection version {} from {}", version, ctx.channel().remoteAddress());
+            compressed = MessagingService.getBits(header, 2, 1) == 1;
+
             // if this version is < the MS version the other node is trying
             // to connect with, the other node will disconnect
             ByteBuf outBuf = ctx.alloc().buffer(OutboundHandshakeHandler.SECOND_MESSAGE_LENGTH);
@@ -263,7 +264,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @Override
     public void channelInactive(ChannelHandlerContext ctx)
     {
-        logger.error("Failed to properly handshake with peer {}. Closing the channel.", ctx.channel().remoteAddress());
+        logger.trace("Failed to properly handshake with peer {}. Closing the channel.", ctx.channel().remoteAddress());
         handshakeTimeout(ctx);
         ctx.fireChannelInactive();
     }
