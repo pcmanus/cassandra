@@ -252,7 +252,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
         {
             if (cause instanceof IOException)
-                logger.debug("IOException from {}", remoteAddr, cause);
+                logger.trace("io error from {}", remoteAddr, cause);
             else
                 logger.warn("error on channel from {}", remoteAddr, cause);
 

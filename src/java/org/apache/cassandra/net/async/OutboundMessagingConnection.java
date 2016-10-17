@@ -244,19 +244,16 @@ public class OutboundMessagingConnection
      */
     void handleMessageFuture(io.netty.util.concurrent.Future<? super Void> future, QueuedMessage msg)
     {
-        // only handle failures, for now
-        if (future.cause() == null)
+        // only handle failures, for now. in netty, cancelled futures will have a CancellationException set as the cause
+        Throwable cause = future.cause();
+        if (cause == null)
             return;
 
-        Throwable cause = future.cause();
         JVMStabilityInspector.inspectThrowable(cause);
 
-        // all netty "connection" related exceptions seem to derive from IOException, so this is probably a safe check
-
-        // TODO:JEB handle "cause instanceof CancellationException"
-        if (cause instanceof IOException || cause.getCause() instanceof IOException)
+        if (future.isCancelled() || cause instanceof IOException || cause.getCause() instanceof IOException)
         {
-            logger.trace("error writing to peer {} (at address {})", remoteAddr, preferredConnectAddress, cause);
+            logger.trace("error writing to peer {} (at address {}). error: {}", remoteAddr, preferredConnectAddress, cause);
 
             // because we get the reference the channel to which the message was sent, we don't have to worry about
             // a race of the callback being invoked but the IMC already setting up a new channel (and thus we won't attempt to close that new channel)
