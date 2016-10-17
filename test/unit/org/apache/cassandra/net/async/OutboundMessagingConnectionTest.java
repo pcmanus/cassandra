@@ -164,9 +164,9 @@ public class OutboundMessagingConnectionTest
     {
         ChannelPromise promise = channel.newPromise();
         promise.cancel(false);
-        omc.handleMessageFuture(promise, null);
+        omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(MessagingService.Verb.ECHO), 1));
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(0, omc.backlogSize());
+        Assert.assertEquals(1, omc.backlogSize());
     }
 
     @Test
