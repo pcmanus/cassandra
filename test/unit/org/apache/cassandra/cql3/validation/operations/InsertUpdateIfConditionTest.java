@@ -1421,4 +1421,43 @@ public class InsertUpdateIfConditionTest extends CQLTester
         assertRows(execute("SELECT * FROM %s WHERE a = 7"),
                    row(7, 7, null, null, 7));
     }
+
+    /**
+     * Test for CASSANDRA-12060.
+     */
+    @Test
+    public void testMultiExistConditionOnSameRow() throws Throwable
+    {
+        createTable("CREATE TABLE %s (k int PRIMARY KEY, v1 text, v2 text)");
+
+        // Multiple inserts on the same row with not exist conditions
+        assertRows(execute("BEGIN BATCH "
+                           + "INSERT INTO %1$s (k, v1) values (0, 'foo') IF NOT EXISTS; "
+                           + "INSERT INTO %1$s (k, v2) values (0, 'bar') IF NOT EXISTS; "
+                           + "APPLY BATCH"),
+                   row(true));
+
+        assertRows(execute("SELECT * FROM %s"), row(0, "foo", "bar"));
+
+        // Multiple deletes on the same row with exists conditions (note that this is somewhat non-sensical, one of the
+        // delete is redundant, we're just checking it doesn't break something)
+        assertRows(execute("BEGIN BATCH "
+                           + "DELETE FROM %1$s WHERE k = 0 IF EXISTS; "
+                           + "DELETE FROM %1$s WHERE k = 0 IF EXISTS; "
+                           + "APPLY BATCH"),
+                   row(true));
+
+        assertEmpty(execute("SELECT * FROM %s"));
+
+        // Validate we can't mix different type of conditions however
+        assertInvalid("BEGIN BATCH "
+                      + "INSERT INTO %1$s (k, v1) values (1, 'foo') IF NOT EXISTS; "
+                      + "DELETE FROM %1$s WHERE k = 1 IF EXISTS; "
+                      + "APPLY BATCH");
+
+        assertInvalid("BEGIN BATCH "
+                      + "INSERT INTO %1$s (k, v1) values (1, 'foo') IF NOT EXISTS; "
+                      + "UPDATE %1$s SET v2 = 'bar' WHERE k = 1 IF v1 = 'foo'; "
+                      + "APPLY BATCH");
+    }
 }
