@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.net.async;
 
-import java.util.concurrent.atomic.AtomicLong;
-
 import com.google.common.collect.Iterators;
 import org.junit.After;
 import org.junit.Assert;
@@ -33,11 +31,10 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
-public class CoalescingMessageOutHandlerTest
+public class FlushHandlerTest
 {
-    private final AtomicLong droppedMessageCount = new AtomicLong(0);
     private FakeCoalescingStrategy coalescingStrategy;
-    private CoalescingMessageOutHandler handler;
+    private FlushHandler handler;
     private EmbeddedChannel channel;
 
     @BeforeClass
@@ -50,8 +47,7 @@ public class CoalescingMessageOutHandlerTest
     public void setup()
     {
         coalescingStrategy = new FakeCoalescingStrategy(true);
-        droppedMessageCount.set(0);
-        handler = new CoalescingMessageOutHandler(coalescingStrategy, droppedMessageCount);
+        handler = new FlushHandler(coalescingStrategy);
         channel = new EmbeddedChannel(handler);
     }
 
@@ -73,7 +69,6 @@ public class CoalescingMessageOutHandlerTest
         Assert.assertFalse(promise.isSuccess());
         Assert.assertNotNull(promise.cause());
         Assert.assertFalse(coalescingStrategy.coalesceCallbackInvoked);
-        Assert.assertEquals(0, droppedMessageCount.intValue());
     }
 
     @Test
@@ -88,7 +83,6 @@ public class CoalescingMessageOutHandlerTest
         handler.write(channel.pipeline().firstContext(), queuedMessage, promise);
         Assert.assertTrue(promise.isSuccess());
         Assert.assertTrue(coalescingStrategy.coalesceCallbackInvoked);
-        Assert.assertEquals(0, droppedMessageCount.intValue());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
         channel.releaseOutbound(); // throw away any outbound messages
     }
@@ -100,7 +94,6 @@ public class CoalescingMessageOutHandlerTest
         ChannelPromise promise = (ChannelPromise)channel.write(queuedMessage);
         Assert.assertTrue(promise.isSuccess());
         Assert.assertTrue(coalescingStrategy.coalesceCallbackInvoked);
-        Assert.assertEquals(0, droppedMessageCount.intValue());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
         channel.releaseOutbound(); // throw away any outbound messages
     }
@@ -109,7 +102,6 @@ public class CoalescingMessageOutHandlerTest
     public void doCoalesce_EmptyQueue()
     {
         handler.doCoalesce(channel.pipeline().firstContext());
-        Assert.assertEquals(0, droppedMessageCount.intValue());
         Assert.assertTrue(channel.outboundMessages().isEmpty());
     }
 
@@ -148,16 +140,5 @@ public class CoalescingMessageOutHandlerTest
         Assert.assertEquals(backLogSize / 2, droppedMessageCount.intValue());
         Assert.assertFalse(channel.outboundMessages().isEmpty());
         channel.releaseOutbound(); // throw away any outbound messages
-    }
-
-    @Test
-    public void iterator()
-    {
-        int backLogSize = 16;
-
-        for (int i = 0; i < backLogSize; i++)
-            handler.addToQueue(new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), i), channel.newPromise());
-
-        Assert.assertEquals(backLogSize, Iterators.size(handler.iterator()));
     }
 }

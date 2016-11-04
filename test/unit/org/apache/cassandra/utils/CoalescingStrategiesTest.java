@@ -20,7 +20,6 @@ package org.apache.cassandra.utils;
 import org.apache.cassandra.utils.CoalescingStrategies.Clock;
 import org.apache.cassandra.utils.CoalescingStrategies.Coalescable;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
-import org.apache.cassandra.utils.CoalescingStrategies.Parker;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -48,28 +47,6 @@ public class CoalescingStrategiesTest
 
     private static final Logger logger = LoggerFactory.getLogger(CoalescingStrategiesTest.class);
 
-    static class MockParker implements Parker
-    {
-        Queue<Long> parks = new ArrayDeque<Long>();
-        Semaphore permits = new Semaphore(0);
-
-        Semaphore parked = new Semaphore(0);
-
-        public void park(long nanos)
-        {
-            parks.offer(nanos);
-            parked.release();
-            try
-            {
-                permits.acquire();
-            }
-            catch (InterruptedException e)
-            {
-                throw new RuntimeException(e);
-            }
-        }
-    }
-
     static class SimpleCoalescable implements Coalescable
     {
         final long timestampNanos;
@@ -85,13 +62,10 @@ public class CoalescingStrategiesTest
         }
     }
 
-
     static long toNanos(long micros)
     {
         return TimeUnit.MICROSECONDS.toNanos(micros);
     }
-
-    MockParker parker;
 
     BlockingQueue<SimpleCoalescable> input;
     List<SimpleCoalescable> output;

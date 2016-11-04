@@ -50,8 +50,6 @@ import org.apache.cassandra.utils.CoalescingStrategies;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.FBUtilities;
 
-import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHANNEL_HANDLER_NAME;
-
 /**
  * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
  * As soon as the handler is added to the channel via {@link #channelActive(ChannelHandlerContext)}
@@ -229,21 +227,19 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion ? params : params.updateProtocolVersion(messagingVersion);
         pipeline.addLast("flushConsolidator", new FlushConsolidationHandler(MAX_MESSAGES_BEFORE_FLUSH));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
-        if (params.maybeCoalesce)
-            coalescingStrategy().map(cs -> pipeline.addLast(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME, new CoalescingMessageOutHandler(cs, params.droppedMessageCount)));
+        pipeline.addLast("flushHandler", new FlushHandler(coalescingStrategy()));
         pipeline.addLast("lameoLogger", new ErrorLoggingHandler());
     }
 
-    private Optional<CoalescingStrategy> coalescingStrategy()
+    private CoalescingStrategy coalescingStrategy()
     {
         String strategyName = DatabaseDescriptor.getOtcCoalescingStrategy();
         String displayName = remoteAddr.getAddress().getHostAddress();
-        CoalescingStrategy coalescingStrategy = CoalescingStrategies.newCoalescingStrategy(strategyName,
-                                                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
-                                                                                           CoalescingMessageOutHandler.logger,
-                                                                                           displayName);
+        return CoalescingStrategies.newCoalescingStrategy(strategyName,
+                                                          DatabaseDescriptor.getOtcCoalescingWindow(),
+                                                          FlushHandler.logger,
+                                                          displayName);
 
-        return coalescingStrategy.isCoalescing() ? Optional.of(coalescingStrategy) : Optional.empty();
     }
 
     private class ErrorLoggingHandler extends ChannelDuplexHandler

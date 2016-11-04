@@ -48,7 +48,6 @@ public final class NettyFactory
     private static final String SSL_CHANNEL_HANDLER_NAME = "ssl";
     static final String INBOUND_COMPRESSOR_HANDLER_NAME = "inboundCompressor";
     static final String OUTBOUND_COMPRESSOR_HANDLER_NAME = "outboundCompressor";
-    static final String COALESCING_MESSAGE_CHANNEL_HANDLER_NAME = "messageCoalescer";
     static final String HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME = "handshakeHandler";
 
     /** a useful addition for debugging; simply set to true to get more data in your logs */

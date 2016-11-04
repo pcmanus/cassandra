@@ -52,8 +52,6 @@ import org.apache.cassandra.net.async.NettyFactory.Mode;
 import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
-import static org.apache.cassandra.net.async.NettyFactory.COALESCING_MESSAGE_CHANNEL_HANDLER_NAME;
-
 /**
  * Represents one connection to a peer, and handles the state transistions on the connection and the netty {@link Channel}
  * The underlying socket is not opened until explicitly requested (by sending a message).
@@ -267,7 +265,6 @@ public class OutboundMessagingConnection
                 // but we also need to stop writing new messages to the channel.
                 reconnect();
 
-                movePendingCoalecsedMessages(channelFuture.channel());
                 channelFuture.channel().close();
             }
 
@@ -288,21 +285,6 @@ public class OutboundMessagingConnection
     {
         stateUpdater.set(this, State.NOT_READY);
         connect();
-    }
-
-    /**
-     * Salvage any coalscing messages from the channel's {@link CoalescingMessageOutHandler}, if it has one,
-     * and put them into the {@link #backlog}.
-     */
-    private void movePendingCoalecsedMessages(Channel currentChannel)
-    {
-        CoalescingMessageOutHandler cmoh = (CoalescingMessageOutHandler) currentChannel.pipeline().get(COALESCING_MESSAGE_CHANNEL_HANDLER_NAME);
-        if (cmoh != null)
-        {
-            cmoh.setClosed();
-            for (Iterator<QueuedMessage> iter = cmoh.iterator(); iter.hasNext(); )
-                backlog.add(iter.next());
-        }
     }
 
     /**

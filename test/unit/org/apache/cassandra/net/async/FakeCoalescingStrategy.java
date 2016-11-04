@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.utils.CoalescingStrategies;
 
-class FakeCoalescingStrategy extends CoalescingStrategies.CoalescingStrategy
+class FakeCoalescingStrategy extends CoalescingStrategies.AbstractCoalescingStrategy
 {
     private final boolean coalesces;
     boolean coalesceCallbackInvoked;
