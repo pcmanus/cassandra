@@ -21,7 +21,7 @@ package org.apache.cassandra.cql3.restrictions;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.cql3.IndexName;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 
@@ -61,14 +61,14 @@ public class IndexRestrictions
         return customExpressions;
     }
 
-    static InvalidRequestException invalidIndex(IndexName indexName, CFMetaData cfm)
+    static InvalidRequestException invalidIndex(IndexName indexName, TableMetadata table)
     {
-        return new InvalidRequestException(String.format(INVALID_INDEX, indexName.getIdx(), cfm.ksName, cfm.cfName));
+        return new InvalidRequestException(String.format(INVALID_INDEX, indexName.getIdx(), table.keyspace, table.table));
     }
 
-    static InvalidRequestException indexNotFound(IndexName indexName, CFMetaData cfm)
+    static InvalidRequestException indexNotFound(IndexName indexName, TableMetadata table)
     {
-        return new InvalidRequestException(String.format(INDEX_NOT_FOUND,indexName.getIdx(), cfm.ksName, cfm.cfName));
+        return new InvalidRequestException(String.format(INDEX_NOT_FOUND, indexName.getIdx(), table.keyspace, table.table));
     }
 
     static InvalidRequestException nonCustomIndexInExpression(IndexName indexName)

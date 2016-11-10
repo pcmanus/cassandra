@@ -19,10 +19,10 @@ package org.apache.cassandra.cql3;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.SchemaConstants;
 import org.apache.cassandra.db.KeyspaceNotDefinedException;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.utils.FBUtilities;
@@ -47,14 +47,14 @@ public abstract class Validation
      *
      * @throws InvalidRequestException if the table requested doesn't exist.
      */
-    public static CFMetaData validateColumnFamily(String keyspaceName, String tableName)
+    public static TableMetadata validateColumnFamily(String keyspaceName, String tableName)
     throws InvalidRequestException
     {
         validateKeyspace(keyspaceName);
         if (tableName.isEmpty())
             throw new InvalidRequestException("non-empty table is required");
 
-        CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, tableName);
+        TableMetadata metadata = Schema.instance.getTableMetadata(keyspaceName, tableName);
         if (metadata == null)
             throw new InvalidRequestException("unconfigured table " + tableName);
 
@@ -76,7 +76,7 @@ public abstract class Validation
      *
      * @throws InvalidRequestException if the provided {@code key} is invalid.
      */
-    public static void validateKey(CFMetaData metadata, ByteBuffer key)
+    public static void validateKey(TableMetadata metadata, ByteBuffer key)
     throws InvalidRequestException
     {
         if (key == null || key.remaining() == 0)
@@ -92,7 +92,7 @@ public abstract class Validation
 
         try
         {
-            metadata.getKeyValidator().validate(key);
+            metadata.partitionKeyType.validate(key);
         }
         catch (MarshalException e)
         {

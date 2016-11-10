@@ -26,7 +26,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Ordering;
 import com.google.common.primitives.Longs;
@@ -44,11 +43,12 @@ import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.EncodingStats;
@@ -233,8 +233,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     protected final AtomicLong keyCacheHit = new AtomicLong(0);
     protected final AtomicLong keyCacheRequest = new AtomicLong(0);
 
-    private final InstanceTidier tidy = new InstanceTidier(descriptor, metadata);
-    private final Ref<SSTableReader> selfRef = new Ref<>(this, tidy);
+    private final InstanceTidier tidy;
+    private final Ref<SSTableReader> selfRef;
 
     private RestorableMeter readMeter;
 
@@ -355,32 +355,31 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     public static SSTableReader open(Descriptor descriptor) throws IOException
     {
-        CFMetaData metadata;
+        TableMetadataRef metadata;
         if (descriptor.cfname.contains(SECONDARY_INDEX_NAME_SEPARATOR))
         {
             int i = descriptor.cfname.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
             String parentName = descriptor.cfname.substring(0, i);
             String indexName = descriptor.cfname.substring(i + 1);
-            CFMetaData parent = Schema.instance.getCFMetaData(descriptor.ksname, parentName);
-            IndexMetadata def = parent.getIndexes()
+            TableMetadata parent = Schema.instance.getTableMetadata(descriptor.ksname, parentName);
+            IndexMetadata def = parent.indexes
                                       .get(indexName)
-                                      .orElseThrow(() -> new AssertionError(
-                                                                           "Could not find index metadata for index cf " + i));
-            metadata = CassandraIndex.indexCfsMetadata(parent, def);
+                                      .orElseThrow(() -> new AssertionError("Could not find index metadata for index cf " + i));
+            metadata = TableMetadataRef.to(CassandraIndex.indexCfsMetadata(parent, def));
         }
         else
         {
-            metadata = Schema.instance.getCFMetaData(descriptor.ksname, descriptor.cfname);
+            metadata = Schema.instance.getTableMetadataRef(descriptor.ksname, descriptor.cfname);
         }
         return open(descriptor, metadata);
     }
 
-    public static SSTableReader open(Descriptor desc, CFMetaData metadata) throws IOException
+    public static SSTableReader open(Descriptor desc, TableMetadataRef metadata) throws IOException
     {
         return open(desc, componentsFor(desc), metadata);
     }
 
-    public static SSTableReader open(Descriptor descriptor, Set<Component> components, CFMetaData metadata) throws IOException
+    public static SSTableReader open(Descriptor descriptor, Set<Component> components, TableMetadataRef metadata) throws IOException
     {
         return open(descriptor, components, metadata, true, true);
     }
@@ -392,7 +391,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     }
 
     // use only for offline or "Standalone" operations
-    public static SSTableReader openNoValidation(Descriptor descriptor, CFMetaData metadata) throws IOException
+    public static SSTableReader openNoValidation(Descriptor descriptor, TableMetadataRef metadata) throws IOException
     {
         return open(descriptor, componentsFor(descriptor), metadata, false, false); // do not track hotness
     }
@@ -406,7 +405,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      * @return opened SSTableReader
      * @throws IOException
      */
-    public static SSTableReader openForBatch(Descriptor descriptor, Set<Component> components, CFMetaData metadata) throws IOException
+    public static SSTableReader openForBatch(Descriptor descriptor, Set<Component> components, TableMetadataRef metadata) throws IOException
     {
         // Minimum components without which we can't do anything
         assert components.contains(Component.DATA) : "Data component is missing for sstable " + descriptor;
@@ -422,7 +421,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
         // In that case, we skip the check.
-        String partitionerName = metadata.partitioner.getClass().getCanonicalName();
+        String partitionerName = metadata.get().partitioner.getClass().getCanonicalName();
         if (validationMetadata != null && !partitionerName.equals(validationMetadata.partitioner))
         {
             logger.error("Cannot open {}; partitioner {} does not match system partitioner {}.  Note that the default partitioner starting with Cassandra 1.2 is Murmur3Partitioner, so you will need to edit that to match your old partitioner if upgrading.",
@@ -438,7 +437,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                              System.currentTimeMillis(),
                                              statsMetadata,
                                              OpenReason.NORMAL,
-                                             header == null? null : header.toHeader(metadata));
+                                             header == null? null : header.toHeader(metadata.get()));
 
         try(FileHandle.Builder ibuilder = new FileHandle.Builder(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX))
                                                      .mmapped(DatabaseDescriptor.getIndexAccessMode() == Config.DiskAccessMode.mmap)
@@ -461,10 +460,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     }
 
     public static SSTableReader open(Descriptor descriptor,
-                                      Set<Component> components,
-                                      CFMetaData metadata,
-                                      boolean validate,
-                                      boolean trackHotness) throws IOException
+                                     Set<Component> components,
+                                     TableMetadataRef metadata,
+                                     boolean validate,
+                                     boolean trackHotness) throws IOException
     {
         // Minimum components without which we can't do anything
         assert components.contains(Component.DATA) : "Data component is missing for sstable " + descriptor;
@@ -483,7 +482,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         // Check if sstable is created using same partitioner.
         // Partitioner can be null, which indicates older version of sstable or no stats available.
         // In that case, we skip the check.
-        String partitionerName = metadata.partitioner.getClass().getCanonicalName();
+        String partitionerName = metadata.get().partitioner.getClass().getCanonicalName();
         if (validationMetadata != null && !partitionerName.equals(validationMetadata.partitioner))
         {
             logger.error("Cannot open {}; partitioner {} does not match system partitioner {}.  Note that the default partitioner starting with Cassandra 1.2 is Murmur3Partitioner, so you will need to edit that to match your old partitioner if upgrading.",
@@ -499,7 +498,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                              System.currentTimeMillis(),
                                              statsMetadata,
                                              OpenReason.NORMAL,
-                                             header == null ? null : header.toHeader(metadata));
+                                             header == null ? null : header.toHeader(metadata.get()));
 
         try
         {
@@ -533,7 +532,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     }
 
     public static Collection<SSTableReader> openAll(Set<Map.Entry<Descriptor, Set<Component>>> entries,
-                                                    final CFMetaData metadata)
+                                                    final TableMetadataRef metadata)
     {
         final Collection<SSTableReader> sstables = new LinkedBlockingQueue<>();
 
@@ -591,7 +590,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
      */
     public static SSTableReader internalOpen(Descriptor desc,
                                       Set<Component> components,
-                                      CFMetaData metadata,
+                                      TableMetadataRef metadata,
                                       FileHandle ifile,
                                       FileHandle dfile,
                                       IndexSummary isummary,
@@ -616,12 +615,12 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
 
     private static SSTableReader internalOpen(final Descriptor descriptor,
-                                            Set<Component> components,
-                                            CFMetaData metadata,
-                                            Long maxDataAge,
-                                            StatsMetadata sstableMetadata,
-                                            OpenReason openReason,
-                                            SerializationHeader header)
+                                              Set<Component> components,
+                                              TableMetadataRef metadata,
+                                              Long maxDataAge,
+                                              StatsMetadata sstableMetadata,
+                                              OpenReason openReason,
+                                              SerializationHeader header)
     {
         Factory readerFactory = descriptor.getFormat().getReaderFactory();
 
@@ -630,7 +629,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     protected SSTableReader(final Descriptor desc,
                             Set<Component> components,
-                            CFMetaData metadata,
+                            TableMetadataRef metadata,
                             long maxDataAge,
                             StatsMetadata sstableMetadata,
                             OpenReason openReason,
@@ -641,7 +640,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         this.header = header;
         this.maxDataAge = maxDataAge;
         this.openReason = openReason;
-        this.rowIndexEntrySerializer = descriptor.version.getSSTableFormat().getIndexSerializer(metadata, desc.version, header);
+        this.rowIndexEntrySerializer = descriptor.version.getSSTableFormat().getIndexSerializer(metadata.get(), desc.version, header);
+        tidy = new InstanceTidier(descriptor, metadata.id);
+        selfRef = new Ref<>(this, tidy);
     }
 
     public static long getTotalBytes(Iterable<SSTableReader> sstables)
@@ -682,7 +683,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         // e.g. by BulkLoader, which does not initialize the cache.  As a kludge, we set up the cache
         // here when we know we're being wired into the rest of the server infrastructure.
         keyCache = CacheService.instance.keyCache;
-        final ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(metadata.cfId);
+        final ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(metadata().id);
         if (cfs != null)
             setCrcCheckChance(cfs.getCrcCheckChance());
     }
@@ -694,7 +695,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     private void load(ValidationMetadata validation) throws IOException
     {
-        if (metadata.params.bloomFilterFpChance == 1.0)
+        if (metadata().params.bloomFilterFpChance == 1.0)
         {
             // bf is disabled.
             load(false, true);
@@ -711,7 +712,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             // bf is enabled, but filter component is missing.
             load(true, true);
         }
-        else if (validation.bloomFilterFPChance != metadata.params.bloomFilterFpChance)
+        else if (validation.bloomFilterFPChance != metadata().params.bloomFilterFpChance)
         {
             // bf fp chance in sstable metadata and it has changed since compaction.
             load(true, true);
@@ -819,9 +820,9 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                     : estimateRowsFromIndex(primaryIndex); // statistics is supposed to be optional
 
             if (recreateBloomFilter)
-                bf = FilterFactory.getFilter(estimatedKeys, metadata.params.bloomFilterFpChance, true);
+                bf = FilterFactory.getFilter(estimatedKeys, metadata().params.bloomFilterFpChance, true);
 
-            try (IndexSummaryBuilder summaryBuilder = summaryLoaded ? null : new IndexSummaryBuilder(estimatedKeys, metadata.params.minIndexInterval, samplingLevel))
+            try (IndexSummaryBuilder summaryBuilder = summaryLoaded ? null : new IndexSummaryBuilder(estimatedKeys, metadata().params.minIndexInterval, samplingLevel))
             {
                 long indexPosition;
 
@@ -871,6 +872,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         DataInputStream iStream = null;
         try
         {
+            TableMetadata metadata = metadata();
             iStream = new DataInputStream(new FileInputStream(summariesFile));
             indexSummary = IndexSummary.serializer.deserialize(
                     iStream, getPartitioner(),
@@ -1100,8 +1102,8 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         {
             assert openReason != OpenReason.EARLY;
 
-            int minIndexInterval = metadata.params.minIndexInterval;
-            int maxIndexInterval = metadata.params.maxIndexInterval;
+            int minIndexInterval = metadata().params.minIndexInterval;
+            int maxIndexInterval = metadata().params.maxIndexInterval;
             double effectiveInterval = indexSummary.getEffectiveIndexInterval();
 
             IndexSummary newSummary;
@@ -1146,7 +1148,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         try
         {
             long indexSize = primaryIndex.length();
-            try (IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata.params.minIndexInterval, newSamplingLevel))
+            try (IndexSummaryBuilder summaryBuilder = new IndexSummaryBuilder(estimatedKeys(), metadata().params.minIndexInterval, newSamplingLevel))
             {
                 long indexPosition;
                 while ((indexPosition = primaryIndex.getFilePointer()) != indexSize)
@@ -1467,29 +1469,29 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     public KeyCacheKey getCacheKey(DecoratedKey key)
     {
-        return new KeyCacheKey(metadata.ksAndCFName, descriptor, key.getKey());
+        return new KeyCacheKey(metadata().keyspaceAndTablePair, descriptor, key.getKey());
     }
 
     public void cacheKey(DecoratedKey key, RowIndexEntry info)
     {
-        CachingParams caching = metadata.params.caching;
+        CachingParams caching = metadata().params.caching;
 
         if (!caching.cacheKeys() || keyCache == null || keyCache.getCapacity() == 0)
             return;
 
-        KeyCacheKey cacheKey = new KeyCacheKey(metadata.ksAndCFName, descriptor, key.getKey());
+        KeyCacheKey cacheKey = new KeyCacheKey(metadata().keyspaceAndTablePair, descriptor, key.getKey());
         logger.trace("Adding cache entry for {} -> {}", cacheKey, info);
         keyCache.put(cacheKey, info);
     }
 
     public RowIndexEntry getCachedPosition(DecoratedKey key, boolean updateStats)
     {
-        return getCachedPosition(new KeyCacheKey(metadata.ksAndCFName, descriptor, key.getKey()), updateStats);
+        return getCachedPosition(new KeyCacheKey(metadata().keyspaceAndTablePair, descriptor, key.getKey()), updateStats);
     }
 
     protected RowIndexEntry getCachedPosition(KeyCacheKey unifiedKey, boolean updateStats)
     {
-        if (keyCache != null && keyCache.getCapacity() > 0 && metadata.params.caching.cacheKeys())
+        if (keyCache != null && keyCache.getCapacity() > 0 && metadata().params.caching.cacheKeys())
         {
             if (updateStats)
             {
@@ -1994,7 +1996,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
 
     private int compare(List<ByteBuffer> values1, List<ByteBuffer> values2)
     {
-        ClusteringComparator comparator = metadata.comparator;
+        ClusteringComparator comparator = metadata().comparator;
         for (int i = 0; i < Math.min(values1.size(), values2.size()); i++)
         {
             int cmp = comparator.subtype(i).compare(values1.get(i), values2.get(i));
@@ -2061,7 +2063,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     private static final class InstanceTidier implements Tidy
     {
         private final Descriptor descriptor;
-        private final CFMetaData metadata;
+        private final UUID tableId;
         private IFilter bf;
         private IndexSummary summary;
 
@@ -2091,10 +2093,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 global.ensureReadMeter();
         }
 
-        InstanceTidier(Descriptor descriptor, CFMetaData metadata)
+        InstanceTidier(Descriptor descriptor, UUID tableId)
         {
             this.descriptor = descriptor;
-            this.metadata = metadata;
+            this.tableId = tableId;
         }
 
         public void tidy()
@@ -2106,7 +2108,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
             if (!setup)
                 return;
 
-            final ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(metadata.cfId);
+            final ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(tableId);
             final OpOrder.Barrier barrier;
             if (cfs != null)
             {
@@ -2276,7 +2278,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     {
         public abstract SSTableReader open(final Descriptor descriptor,
                                            Set<Component> components,
-                                           CFMetaData metadata,
+                                           TableMetadataRef metadata,
                                            Long maxDataAge,
                                            StatsMetadata sstableMetadata,
                                            OpenReason openReason,

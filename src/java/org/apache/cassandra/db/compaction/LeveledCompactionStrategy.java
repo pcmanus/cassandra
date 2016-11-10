@@ -28,7 +28,7 @@ import com.google.common.primitives.Doubles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
@@ -402,9 +402,9 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             return filtered;
         }
 
-        public CFMetaData metadata()
+        public TableMetadata metadata()
         {
-            return sstables.get(0).metadata; // The ctor checks we have at least one sstable
+            return sstables.get(0).metadata(); // The ctor checks we have at least one sstable
         }
 
         protected UnfilteredRowIterator computeNext()

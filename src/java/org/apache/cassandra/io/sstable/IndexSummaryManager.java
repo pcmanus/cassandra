@@ -213,7 +213,7 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
                 }
                 while (null == (txn = cfStore.getTracker().tryModify(nonCompacting, OperationType.UNKNOWN)));
 
-                allNonCompacting.put(cfStore.metadata.cfId, txn);
+                allNonCompacting.put(cfStore.metadata.id, txn);
                 allCompacting.addAll(Sets.difference(allSSTables, nonCompacting));
             }
         }

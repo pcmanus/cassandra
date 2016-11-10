@@ -72,7 +72,7 @@ public class OutgoingFileMessage extends StreamMessage
 
         SSTableReader sstable = ref.get();
         filename = sstable.getFilename();
-        this.header = new FileMessageHeader(sstable.metadata.cfId,
+        this.header = new FileMessageHeader(sstable.metadata().id,
                                             sequenceNumber,
                                             sstable.descriptor.version,
                                             sstable.descriptor.formatType,

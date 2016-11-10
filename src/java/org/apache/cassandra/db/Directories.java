@@ -43,6 +43,7 @@ import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.*;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.DirectorySizeCalculator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
@@ -174,16 +175,16 @@ public class Directories
         }
     }
 
-    private final CFMetaData metadata;
+    private final TableMetadata metadata;
     private final DataDirectory[] paths;
     private final File[] dataPaths;
 
-    public Directories(final CFMetaData metadata)
+    public Directories(final TableMetadata metadata)
     {
         this(metadata, dataDirectories);
     }
 
-    public Directories(final CFMetaData metadata, Collection<DataDirectory> paths)
+    public Directories(final TableMetadata metadata, Collection<DataDirectory> paths)
     {
         this(metadata, paths.toArray(new DataDirectory[paths.size()]));
     }
@@ -194,19 +195,19 @@ public class Directories
      *
      * @param metadata metadata of ColumnFamily
      */
-    public Directories(final CFMetaData metadata, DataDirectory[] paths)
+    public Directories(final TableMetadata metadata, DataDirectory[] paths)
     {
         this.metadata = metadata;
         this.paths = paths;
 
-        String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.cfId));
-        int idx = metadata.cfName.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
-        String cfName = idx >= 0 ? metadata.cfName.substring(0, idx) : metadata.cfName;
-        String indexNameWithDot = idx >= 0 ? metadata.cfName.substring(idx) : null;
+        String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.id));
+        int idx = metadata.table.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
+        String cfName = idx >= 0 ? metadata.table.substring(0, idx) : metadata.table;
+        String indexNameWithDot = idx >= 0 ? metadata.table.substring(idx) : null;
 
         this.dataPaths = new File[paths.length];
         // If upgraded from version less than 2.1, use existing directories
-        String oldSSTableRelativePath = join(metadata.ksName, cfName);
+        String oldSSTableRelativePath = join(metadata.keyspace, cfName);
         for (int i = 0; i < paths.length; ++i)
         {
             // check if old SSTable directory exists
@@ -222,7 +223,7 @@ public class Directories
         if (!olderDirectoryExists)
         {
             // use 2.1+ style
-            String newSSTableRelativePath = join(metadata.ksName, cfName + '-' + cfId);
+            String newSSTableRelativePath = join(metadata.keyspace, cfName + '-' + cfId);
             for (int i = 0; i < paths.length; ++i)
                 dataPaths[i] = new File(paths[i].location, newSSTableRelativePath);
         }
@@ -261,7 +262,7 @@ public class Directories
                             return false;
 
                         Descriptor desc = SSTable.tryDescriptorFromFilename(file);
-                        return desc != null && desc.ksname.equals(metadata.ksName) && desc.cfname.equals(metadata.cfName);
+                        return desc != null && desc.ksname.equals(metadata.keyspace) && desc.cfname.equals(metadata.table);
 
                     }
                 });
@@ -760,7 +761,7 @@ public class Directories
                             return false;
 
                         // we are only interested in the SSTable files that belong to the specific ColumnFamily
-                        if (!pair.left.ksname.equals(metadata.ksName) || !pair.left.cfname.equals(metadata.cfName))
+                        if (!pair.left.ksname.equals(metadata.keyspace) || !pair.left.cfname.equals(metadata.table))
                             return false;
 
                         Set<Component> previous = components.get(pair.left);
@@ -1027,8 +1028,8 @@ public class Directories
             File file = path.toFile();
             Descriptor desc = SSTable.tryDescriptorFromFilename(file);
             return desc != null
-                && desc.ksname.equals(metadata.ksName)
-                && desc.cfname.equals(metadata.cfName)
+                && desc.ksname.equals(metadata.keyspace)
+                && desc.cfname.equals(metadata.table)
                 && !toSkip.contains(file);
         }
     }

@@ -18,23 +18,19 @@
 package org.apache.cassandra.db;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.function.Predicate;
 
-import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.*;
-import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.monitoring.MonitorableImpl;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.transform.StoppingTransformation;
 import org.apache.cassandra.db.transform.Transformation;
-import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexNotAvailableException;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -42,14 +38,15 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.metrics.TableMetrics;
 import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.IndexMetadata;
-import org.apache.cassandra.schema.UnknownIndexException;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.exceptions.UnknownIndexException;
 import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
  * General interface for storage-engine read commands (common to both range and
@@ -64,7 +61,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
     public static final IVersionedSerializer<ReadCommand> serializer = new Serializer();
 
     private final Kind kind;
-    private final CFMetaData metadata;
+    private final TableMetadata metadata;
     private final int nowInSec;
 
     private final ColumnFilter columnFilter;
@@ -87,7 +84,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
     protected static abstract class SelectionDeserializer
     {
-        public abstract ReadCommand deserialize(DataInputPlus in, int version, boolean isDigest, int digestVersion, CFMetaData metadata, int nowInSec, ColumnFilter columnFilter, RowFilter rowFilter, DataLimits limits, Optional<IndexMetadata> index) throws IOException;
+        public abstract ReadCommand deserialize(DataInputPlus in, int version, boolean isDigest, int digestVersion, TableMetadata metadata, int nowInSec, ColumnFilter columnFilter, RowFilter rowFilter, DataLimits limits, Optional<IndexMetadata> index) throws IOException;
     }
 
     protected enum Kind
@@ -106,7 +103,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
     protected ReadCommand(Kind kind,
                           boolean isDigestQuery,
                           int digestVersion,
-                          CFMetaData metadata,
+                          TableMetadata metadata,
                           int nowInSec,
                           ColumnFilter columnFilter,
                           RowFilter rowFilter,
@@ -138,7 +135,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
      *
      * @return the metadata for the table queried.
      */
-    public CFMetaData metadata()
+    public TableMetadata metadata()
     {
         return metadata;
     }
@@ -348,7 +345,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
                 throw new IndexNotAvailableException(index);
 
             searcher = index.searcherFor(this);
-            Tracing.trace("Executing read on {}.{} using index {}", cfs.metadata.ksName, cfs.metadata.cfName, index.getIndexMetadata().name);
+            Tracing.trace("Executing read on {}.{} using index {}", cfs.metadata.keyspace, cfs.metadata.table, index.getIndexMetadata().name);
         }
 
         UnfilteredPartitionIterator resultIterator = searcher == null
@@ -402,7 +399,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             private final int failureThreshold = DatabaseDescriptor.getTombstoneFailureThreshold();
             private final int warningThreshold = DatabaseDescriptor.getTombstoneWarnThreshold();
 
-            private final boolean respectTombstoneThresholds = !SchemaConstants.isSystemKeyspace(ReadCommand.this.metadata().ksName);
+            private final boolean respectTombstoneThresholds = !SchemaConstants.isSystemKeyspace(ReadCommand.this.metadata().keyspace);
 
             private int liveRows = 0;
             private int tombstones = 0;
@@ -522,7 +519,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
     private void maybeDelayForTesting()
     {
-        if (!metadata.ksName.startsWith("system"))
+        if (!metadata.keyspace.startsWith("system"))
             FBUtilities.sleepQuietly(TEST_ITERATION_DELAY_MILLIS);
     }
 
@@ -566,7 +563,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
     {
         StringBuilder sb = new StringBuilder();
         sb.append("SELECT ").append(columnFilter());
-        sb.append(" FROM ").append(metadata().ksName).append('.').append(metadata.cfName);
+        sb.append(" FROM ").append(metadata().keyspace).append('.').append(metadata.table);
         appendCQLWhereClause(sb);
 
         if (limits() != DataLimits.NONE)
@@ -618,7 +615,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             out.writeByte(digestFlag(command.isDigestQuery()) | indexFlag(command.index.isPresent()));
             if (command.isDigestQuery())
                 out.writeUnsignedVInt(command.digestVersion());
-            CFMetaData.serializer.serialize(command.metadata(), out, version);
+            UUIDSerializer.serializer.serialize(command.metadata.id, out, version);
             out.writeInt(command.nowInSec());
             ColumnFilter.serializer.serialize(command.columnFilter(), out, version);
             RowFilter.serializer.serialize(command.rowFilter(), out, version);
@@ -644,11 +641,11 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
             boolean hasIndex = hasIndex(flags);
             int digestVersion = isDigest ? (int)in.readUnsignedVInt() : 0;
-            CFMetaData metadata = CFMetaData.serializer.deserialize(in, version);
+            TableMetadata metadata = Schema.instance.getExistingTableMetadata(UUIDSerializer.serializer.deserialize(in, version));
             int nowInSec = in.readInt();
             ColumnFilter columnFilter = ColumnFilter.serializer.deserialize(in, version, metadata);
             RowFilter rowFilter = RowFilter.serializer.deserialize(in, version, metadata);
-            DataLimits limits = DataLimits.serializer.deserialize(in, version,  metadata.comparator);
+            DataLimits limits = DataLimits.serializer.deserialize(in, version, metadata.comparator);
             Optional<IndexMetadata> index = hasIndex
                                           ? deserializeIndexMetadata(in, version, metadata)
                                           : Optional.empty();
@@ -656,11 +653,11 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             return kind.selectionDeserializer.deserialize(in, version, isDigest, digestVersion, metadata, nowInSec, columnFilter, rowFilter, limits, index);
         }
 
-        private Optional<IndexMetadata> deserializeIndexMetadata(DataInputPlus in, int version, CFMetaData cfm) throws IOException
+        private Optional<IndexMetadata> deserializeIndexMetadata(DataInputPlus in, int version, TableMetadata metadata) throws IOException
         {
             try
             {
-                return Optional.of(IndexMetadata.serializer.deserialize(in, version, cfm));
+                return Optional.of(IndexMetadata.serializer.deserialize(in, version, metadata));
             }
             catch (UnknownIndexException e)
             {
@@ -668,7 +665,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
                             "If an index was just created, this is likely due to the schema not " +
                             "being fully propagated. Local read will proceed without using the " +
                             "index. Please wait for schema agreement after index creation.",
-                            cfm.ksName, cfm.cfName, e.indexId);
+                            metadata.keyspace, metadata.table, e.indexId);
                 return Optional.empty();
             }
         }
@@ -676,14 +673,14 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
         public long serializedSize(ReadCommand command, int version)
         {
             return 2 // kind + flags
-                 + (command.isDigestQuery() ? TypeSizes.sizeofUnsignedVInt(command.digestVersion()) : 0)
-                 + CFMetaData.serializer.serializedSize(command.metadata(), version)
-                 + TypeSizes.sizeof(command.nowInSec())
-                 + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)
-                 + RowFilter.serializer.serializedSize(command.rowFilter(), version)
-                 + DataLimits.serializer.serializedSize(command.limits(), version, command.metadata.comparator)
-                 + command.selectionSerializedSize(version)
-                 + command.indexSerializedSize(version);
+                   + (command.isDigestQuery() ? TypeSizes.sizeofUnsignedVInt(command.digestVersion()) : 0)
+                   + UUIDSerializer.serializer.serializedSize(command.metadata.id, version)
+                   + TypeSizes.sizeof(command.nowInSec())
+                   + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)
+                   + RowFilter.serializer.serializedSize(command.rowFilter(), version)
+                   + DataLimits.serializer.serializedSize(command.limits(), version, command.metadata.comparator)
+                   + command.selectionSerializedSize(version)
+                   + command.indexSerializedSize(version);
         }
     }
 }

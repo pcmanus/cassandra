@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.CQL3CasRequest;
 import org.apache.cassandra.db.Clustering;
@@ -67,7 +67,7 @@ public final class ColumnConditions extends AbstractConditions
     }
 
     @Override
-    public Collection<ColumnDefinition> getColumns()
+    public Collection<ColumnMetadata> getColumns()
     {
         return Stream.concat(columnConditions.stream(), staticConditions.stream())
                      .map(e -> e.column)

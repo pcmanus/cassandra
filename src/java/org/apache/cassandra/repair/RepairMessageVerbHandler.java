@@ -91,7 +91,7 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                     ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(desc.parentSessionId);
                     if (prs.isGlobal)
                     {
-                        prs.maybeSnapshot(cfs.metadata.cfId, desc.parentSessionId);
+                        prs.maybeSnapshot(cfs.metadata.id, desc.parentSessionId);
                     }
                     else
                     {
@@ -100,7 +100,7 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                             public boolean apply(SSTableReader sstable)
                             {
                                 return sstable != null &&
-                                       !sstable.metadata.isIndex() && // exclude SSTables from 2i
+                                       !sstable.metadata().isIndex() && // exclude SSTables from 2i
                                        new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(desc.ranges);
                             }
                         }, true, false); //ephemeral snapshot, if repair fails, it will be cleaned next startup

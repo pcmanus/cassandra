@@ -18,7 +18,6 @@
 package org.apache.cassandra.db;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -27,9 +26,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.cassandra.config.CFMetaData;
+
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.SerializationHelper;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -37,6 +35,8 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 // TODO convert this to a Builder pattern instead of encouraging M.add directly,
@@ -70,7 +70,7 @@ public class Mutation implements IMutation
 
     public Mutation(PartitionUpdate update)
     {
-        this(update.metadata().ksName, update.partitionKey(), Collections.singletonMap(update.metadata().cfId, update));
+        this(update.metadata().keyspace, update.partitionKey(), Collections.singletonMap(update.metadata().id, update));
     }
 
     protected Mutation(String keyspaceName, DecoratedKey key, Map<UUID, PartitionUpdate> modifications)
@@ -140,16 +140,16 @@ public class Mutation implements IMutation
 
         cdcEnabled |= update.metadata().params.cdc;
 
-        PartitionUpdate prev = modifications.put(update.metadata().cfId, update);
+        PartitionUpdate prev = modifications.put(update.metadata().id, update);
         if (prev != null)
             // developer error
-            throw new IllegalArgumentException("Table " + update.metadata().cfName + " already has modifications in this mutation: " + prev);
+            throw new IllegalArgumentException("Table " + update.metadata().table + " already has modifications in this mutation: " + prev);
         return this;
     }
 
-    public PartitionUpdate get(CFMetaData cfm)
+    public PartitionUpdate get(TableMetadata metadata)
     {
-        return modifications.get(cfm.cfId);
+        return modifications.get(metadata.id);
     }
 
     public boolean isEmpty()
@@ -286,8 +286,8 @@ public class Mutation implements IMutation
             List<String> cfnames = new ArrayList<>(modifications.size());
             for (UUID cfid : modifications.keySet())
             {
-                CFMetaData cfm = Schema.instance.getCFMetaData(cfid);
-                cfnames.add(cfm == null ? "-dropped-" : cfm.cfName);
+                TableMetadata cfm = Schema.instance.getTableMetadata(cfid);
+                cfnames.add(cfm == null ? "-dropped-" : cfm.table);
             }
             buff.append(StringUtils.join(cfnames, ", "));
         }
@@ -345,7 +345,7 @@ public class Mutation implements IMutation
          * @return a builder for the partition identified by {@code metadata} (and the partition key for which this is a
          * mutation of).
          */
-        public PartitionUpdate.SimpleBuilder update(CFMetaData metadata);
+        public PartitionUpdate.SimpleBuilder update(TableMetadata metadata);
 
         /**
          * Adds an update for table identified by the provided name and return a builder for that partition.
@@ -389,14 +389,14 @@ public class Mutation implements IMutation
             Map<UUID, PartitionUpdate> modifications = new HashMap<>(size);
             DecoratedKey dk = update.partitionKey();
 
-            modifications.put(update.metadata().cfId, update);
+            modifications.put(update.metadata().id, update);
             for (int i = 1; i < size; ++i)
             {
                 update = PartitionUpdate.serializer.deserialize(in, version, flag);
-                modifications.put(update.metadata().cfId, update);
+                modifications.put(update.metadata().id, update);
             }
 
-            return new Mutation(update.metadata().ksName, dk, modifications);
+            return new Mutation(update.metadata().keyspace, dk, modifications);
         }
 
         public Mutation deserialize(DataInputPlus in, int version) throws IOException

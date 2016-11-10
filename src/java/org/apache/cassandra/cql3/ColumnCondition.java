@@ -22,8 +22,8 @@ import java.util.*;
 
 import com.google.common.collect.Iterators;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.*;
@@ -36,7 +36,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  */
 public class ColumnCondition
 {
-    public final ColumnDefinition column;
+    public final ColumnMetadata column;
 
     // For collection, when testing the equality of a specific element, null otherwise.
     private final Term collectionElement;
@@ -49,7 +49,7 @@ public class ColumnCondition
 
     public final Operator operator;
 
-    private ColumnCondition(ColumnDefinition column, Term collectionElement, FieldIdentifier field, Term value, List<Term> inValues, Operator op)
+    private ColumnCondition(ColumnMetadata column, Term collectionElement, FieldIdentifier field, Term value, List<Term> inValues, Operator op)
     {
         this.column = column;
         this.collectionElement = collectionElement;
@@ -63,47 +63,47 @@ public class ColumnCondition
             assert this.inValues == null;
     }
 
-    public static ColumnCondition condition(ColumnDefinition column, Term value, Operator op)
+    public static ColumnCondition condition(ColumnMetadata column, Term value, Operator op)
     {
         return new ColumnCondition(column, null, null, value, null, op);
     }
 
-    public static ColumnCondition condition(ColumnDefinition column, Term collectionElement, Term value, Operator op)
+    public static ColumnCondition condition(ColumnMetadata column, Term collectionElement, Term value, Operator op)
     {
         return new ColumnCondition(column, collectionElement, null, value, null, op);
     }
 
-    public static ColumnCondition condition(ColumnDefinition column, FieldIdentifier udtField, Term value, Operator op)
+    public static ColumnCondition condition(ColumnMetadata column, FieldIdentifier udtField, Term value, Operator op)
     {
         return new ColumnCondition(column, null, udtField, value, null, op);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, List<Term> inValues)
+    public static ColumnCondition inCondition(ColumnMetadata column, List<Term> inValues)
     {
         return new ColumnCondition(column, null, null, null, inValues, Operator.IN);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, Term collectionElement, List<Term> inValues)
+    public static ColumnCondition inCondition(ColumnMetadata column, Term collectionElement, List<Term> inValues)
     {
         return new ColumnCondition(column, collectionElement, null, null, inValues, Operator.IN);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, FieldIdentifier udtField, List<Term> inValues)
+    public static ColumnCondition inCondition(ColumnMetadata column, FieldIdentifier udtField, List<Term> inValues)
     {
         return new ColumnCondition(column, null, udtField, null, inValues, Operator.IN);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, Term inMarker)
+    public static ColumnCondition inCondition(ColumnMetadata column, Term inMarker)
     {
         return new ColumnCondition(column, null, null, inMarker, null, Operator.IN);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, Term collectionElement, Term inMarker)
+    public static ColumnCondition inCondition(ColumnMetadata column, Term collectionElement, Term inMarker)
     {
         return new ColumnCondition(column, collectionElement, null, inMarker, null, Operator.IN);
     }
 
-    public static ColumnCondition inCondition(ColumnDefinition column, FieldIdentifier udtField, Term inMarker)
+    public static ColumnCondition inCondition(ColumnMetadata column, FieldIdentifier udtField, Term inMarker)
     {
         return new ColumnCondition(column, null, udtField, inMarker, null, Operator.IN);
     }
@@ -165,10 +165,10 @@ public class ColumnCondition
 
     public static abstract class Bound
     {
-        public final ColumnDefinition column;
+        public final ColumnMetadata column;
         public final Operator operator;
 
-        protected Bound(ColumnDefinition column, Operator operator)
+        protected Bound(ColumnMetadata column, Operator operator)
         {
             this.column = column;
             this.operator = operator;
@@ -215,21 +215,21 @@ public class ColumnCondition
         }
     }
 
-    private static Cell getCell(Row row, ColumnDefinition column)
+    private static Cell getCell(Row row, ColumnMetadata column)
     {
         // If we're asking for a given cell, and we didn't got any row from our read, it's
         // the same as not having said cell.
         return row == null ? null : row.getCell(column);
     }
 
-    private static Cell getCell(Row row, ColumnDefinition column, CellPath path)
+    private static Cell getCell(Row row, ColumnMetadata column, CellPath path)
     {
         // If we're asking for a given cell, and we didn't got any row from our read, it's
         // the same as not having said cell.
         return row == null ? null : row.getCell(column, path);
     }
 
-    private static Iterator<Cell> getCells(Row row, ColumnDefinition column)
+    private static Iterator<Cell> getCells(Row row, ColumnMetadata column)
     {
         // If we're asking for a complex cells, and we didn't got any row from our read, it's
         // the same as not having any cells for that column.
@@ -958,7 +958,7 @@ public class ColumnCondition
             return new Raw(null, null, inMarker, null, udtField, Operator.IN);
         }
 
-        public ColumnCondition prepare(String keyspace, ColumnDefinition receiver, CFMetaData cfm) throws InvalidRequestException
+        public ColumnCondition prepare(String keyspace, ColumnMetadata receiver, TableMetadata metadata) throws InvalidRequestException
         {
             if (receiver.type instanceof CounterColumnType)
                 throw new InvalidRequestException("Conditions on counters are not supported");

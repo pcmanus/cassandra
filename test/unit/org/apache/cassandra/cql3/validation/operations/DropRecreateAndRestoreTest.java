@@ -43,7 +43,7 @@ public class DropRecreateAndRestoreTest extends CQLTester
 
 
         long time = System.currentTimeMillis();
-        UUID id = currentTableMetadata().cfId;
+        UUID id = currentTableMetadata().id;
         assertRows(execute("SELECT * FROM %s"), row(0, 0, 0), row(0, 1, 1));
         Thread.sleep(5);
 
@@ -84,7 +84,7 @@ public class DropRecreateAndRestoreTest extends CQLTester
     public void testCreateWithIdDuplicate() throws Throwable
     {
         createTable("CREATE TABLE %s (a int, b int, c int, PRIMARY KEY(a, b))");
-        UUID id = currentTableMetadata().cfId;
+        UUID id = currentTableMetadata().id;
         execute(String.format("CREATE TABLE %%s (a int, b int, c int, PRIMARY KEY(a, b)) WITH ID = %s", id));
     }
 
@@ -98,7 +98,7 @@ public class DropRecreateAndRestoreTest extends CQLTester
     public void testAlterWithId() throws Throwable
     {
         createTable("CREATE TABLE %s (a int, b int, c int, PRIMARY KEY(a, b))");
-        UUID id = currentTableMetadata().cfId;
+        UUID id = currentTableMetadata().id;
         execute(String.format("ALTER TABLE %%s WITH ID = %s", id));
     }
 }

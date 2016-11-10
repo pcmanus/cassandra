@@ -17,8 +17,11 @@
  */
 package org.apache.cassandra.schema;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import javax.annotation.Nullable;
 
@@ -26,16 +29,14 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.MapDifference;
 import com.google.common.collect.Maps;
 
-import org.apache.cassandra.config.CFMetaData;
-
 import static com.google.common.collect.Iterables.filter;
 
 /**
  * An immutable container for a keyspace's Tables.
  */
-public final class Tables implements Iterable<CFMetaData>
+public final class Tables implements Iterable<TableMetadata>
 {
-    private final ImmutableMap<String, CFMetaData> tables;
+    private final ImmutableMap<String, TableMetadata> tables;
 
     private Tables(Builder builder)
     {
@@ -52,17 +53,17 @@ public final class Tables implements Iterable<CFMetaData>
         return builder().build();
     }
 
-    public static Tables of(CFMetaData... tables)
+    public static Tables of(TableMetadata... tables)
     {
         return builder().add(tables).build();
     }
 
-    public static Tables of(Iterable<CFMetaData> tables)
+    public static Tables of(Iterable<TableMetadata> tables)
     {
         return builder().add(tables).build();
     }
 
-    public Iterator<CFMetaData> iterator()
+    public Iterator<TableMetadata> iterator()
     {
         return tables.values().iterator();
     }
@@ -76,9 +77,9 @@ public final class Tables implements Iterable<CFMetaData>
      * Get the table with the specified name
      *
      * @param name a non-qualified table name
-     * @return an empty {@link Optional} if the table name is not found; a non-empty optional of {@link CFMetaData} otherwise
+     * @return an empty {@link Optional} if the table name is not found; a non-empty optional of {@link TableMetadataRef} otherwise
      */
-    public Optional<CFMetaData> get(String name)
+    public Optional<TableMetadata> get(String name)
     {
         return Optional.ofNullable(tables.get(name));
     }
@@ -87,10 +88,10 @@ public final class Tables implements Iterable<CFMetaData>
      * Get the table with the specified name
      *
      * @param name a non-qualified table name
-     * @return null if the table name is not found; the found {@link CFMetaData} otherwise
+     * @return null if the table name is not found; the found {@link TableMetadataRef} otherwise
      */
     @Nullable
-    public CFMetaData getNullable(String name)
+    public TableMetadata getNullable(String name)
     {
         return tables.get(name);
     }
@@ -98,12 +99,17 @@ public final class Tables implements Iterable<CFMetaData>
     /**
      * Create a Tables instance with the provided table added
      */
-    public Tables with(CFMetaData table)
+    public Tables with(TableMetadata table)
     {
-        if (get(table.cfName).isPresent())
-            throw new IllegalStateException(String.format("Table %s already exists", table.cfName));
+        if (get(table.table).isPresent())
+            throw new IllegalStateException(String.format("Table %s already exists", table.table));
 
         return builder().add(this).add(table).build();
+    }
+
+    public Tables withSwapped(TableMetadata table)
+    {
+        return without(table.table).with(table);
     }
 
     /**
@@ -111,15 +117,21 @@ public final class Tables implements Iterable<CFMetaData>
      */
     public Tables without(String name)
     {
-        CFMetaData table =
+        TableMetadata table =
             get(name).orElseThrow(() -> new IllegalStateException(String.format("Table %s doesn't exists", name)));
 
         return builder().add(filter(this, t -> t != table)).build();
     }
 
-    MapDifference<String, CFMetaData> diff(Tables other)
+    MapDifference<UUID, TableMetadata> diff(Tables other)
     {
-        return Maps.difference(tables, other.tables);
+        Map<UUID, TableMetadata> thisTables = new HashMap<>();
+        this.forEach(t -> thisTables.put(t.id, t));
+
+        Map<UUID, TableMetadata> otherTables = new HashMap<>();
+        other.forEach(t -> otherTables.put(t.id, t));
+
+        return Maps.difference(thisTables, otherTables);
     }
 
     @Override
@@ -142,7 +154,7 @@ public final class Tables implements Iterable<CFMetaData>
 
     public static final class Builder
     {
-        final ImmutableMap.Builder<String, CFMetaData> tables = new ImmutableMap.Builder<>();
+        final ImmutableMap.Builder<String, TableMetadata> tables = new ImmutableMap.Builder<>();
 
         private Builder()
         {
@@ -153,20 +165,20 @@ public final class Tables implements Iterable<CFMetaData>
             return new Tables(this);
         }
 
-        public Builder add(CFMetaData table)
+        public Builder add(TableMetadata table)
         {
-            tables.put(table.cfName, table);
+            tables.put(table.table, table);
             return this;
         }
 
-        public Builder add(CFMetaData... tables)
+        public Builder add(TableMetadata... tables)
         {
-            for (CFMetaData table : tables)
+            for (TableMetadata table : tables)
                 add(table);
             return this;
         }
 
-        public Builder add(Iterable<CFMetaData> tables)
+        public Builder add(Iterable<TableMetadata> tables)
         {
             tables.forEach(this::add);
             return this;

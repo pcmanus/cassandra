@@ -21,13 +21,13 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.auth.Permission;
-import org.apache.cassandra.config.*;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.service.ClientState;
-import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.schema.MigrationManager;
 import org.apache.cassandra.transport.Event;
 
 public abstract class AlterTypeStatement extends SchemaAlteringStatement
@@ -85,7 +85,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
 
     public Event.SchemaChange announceMigration(boolean isLocalOnly) throws InvalidRequestException, ConfigurationException
     {
-        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(name.getKeyspace());
+        KeyspaceMetadata ksm = Schema.instance.getKeyspaceMetadata(name.getKeyspace());
         if (ksm == null)
             throw new InvalidRequestException(String.format("Cannot alter type in unknown keyspace %s", name.getKeyspace()));
 
@@ -99,53 +99,7 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
         // but we also need to find all existing user types and CF using it and change them.
         MigrationManager.announceTypeUpdate(updated, isLocalOnly);
 
-        for (CFMetaData cfm : ksm.tables)
-        {
-            CFMetaData copy = cfm.copy();
-            boolean modified = false;
-            for (ColumnDefinition def : copy.allColumns())
-                modified |= updateDefinition(copy, def, toUpdate.keyspace, toUpdate.name, updated);
-            if (modified)
-                MigrationManager.announceColumnFamilyUpdate(copy, isLocalOnly);
-        }
-
-        for (ViewDefinition view : ksm.views)
-        {
-            ViewDefinition copy = view.copy();
-            boolean modified = false;
-            for (ColumnDefinition def : copy.metadata.allColumns())
-                modified |= updateDefinition(copy.metadata, def, toUpdate.keyspace, toUpdate.name, updated);
-            if (modified)
-                MigrationManager.announceViewUpdate(copy, isLocalOnly);
-        }
-
-        // Other user types potentially using the updated type
-        for (UserType ut : ksm.types)
-        {
-            // Re-updating the type we've just updated would be harmless but useless so we avoid it.
-            // Besides, we use the occasion to drop the old version of the type if it's a type rename
-            if (ut.keyspace.equals(toUpdate.keyspace) && ut.name.equals(toUpdate.name))
-            {
-                if (!ut.keyspace.equals(updated.keyspace) || !ut.name.equals(updated.name))
-                    MigrationManager.announceTypeDrop(ut);
-                continue;
-            }
-            AbstractType<?> upd = updateWith(ut, toUpdate.keyspace, toUpdate.name, updated);
-            if (upd != null)
-                MigrationManager.announceTypeUpdate((UserType) upd, isLocalOnly);
-        }
         return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TYPE, keyspace(), name.getStringTypeName());
-    }
-
-    private boolean updateDefinition(CFMetaData cfm, ColumnDefinition def, String keyspace, ByteBuffer toReplace, UserType updated)
-    {
-        AbstractType<?> t = updateWith(def.type, keyspace, toReplace, updated);
-        if (t == null)
-            return false;
-
-        // We need to update this validator ...
-        cfm.addOrReplaceColumnDefinition(def.withNewType(t));
-        return true;
     }
 
     // Update the provided type were all instance of a given userType is replaced by a new version

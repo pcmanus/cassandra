@@ -23,8 +23,9 @@ import java.util.*;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.cql3.statements.CreateTableStatement;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.rows.BufferCell;
 import org.apache.cassandra.db.rows.Cell;
@@ -59,13 +60,13 @@ public class ColumnConditionTest
         Cell cell = null;
         if (columnValue != null)
         {
-            ColumnDefinition definition = ColumnDefinition.regularDef("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
+            ColumnMetadata definition = ColumnMetadata.regularColumn("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
             cell = testCell(definition, columnValue, LIST_PATH);
         }
         return bound.isSatisfiedByValue(conditionValue, cell, Int32Type.instance, bound.operator);
     }
 
-    private static Cell testCell(ColumnDefinition column, ByteBuffer value, CellPath path)
+    private static Cell testCell(ColumnMetadata column, ByteBuffer value, CellPath path)
     {
         return new BufferCell(column, 0L, Cell.NO_TTL, Cell.NO_DELETION_TIME, value, path);
     }
@@ -82,7 +83,7 @@ public class ColumnConditionTest
     @Test
     public void testSimpleBoundIsSatisfiedByValue() throws InvalidRequestException
     {
-        ColumnDefinition definition = ColumnDefinition.regularDef("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
 
         // EQ
         ColumnCondition condition = ColumnCondition.condition(definition, new Constants.Value(ONE), Operator.EQ);
@@ -166,11 +167,11 @@ public class ColumnConditionTest
 
     private static boolean listAppliesTo(ColumnCondition.CollectionBound bound, List<ByteBuffer> conditionValues, List<ByteBuffer> columnValues)
     {
-        CFMetaData cfm = CFMetaData.compile("create table foo(a int PRIMARY KEY, b int, c list<int>)", "ks");
+        TableMetadata metadata = CreateTableStatement.parse("create table foo(a int PRIMARY KEY, b int, c list<int>)", "ks").build();
         Map<ByteBuffer, CollectionType> typeMap = new HashMap<>();
         typeMap.put(ByteBufferUtil.bytes("c"), ListType.getInstance(Int32Type.instance, true));
 
-        ColumnDefinition definition = ColumnDefinition.regularDef(cfm, ByteBufferUtil.bytes("c"), ListType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn(metadata, ByteBufferUtil.bytes("c"), ListType.getInstance(Int32Type.instance, true));
 
         List<Cell> cells = new ArrayList<>(columnValues.size());
         if (columnValues != null)
@@ -190,7 +191,7 @@ public class ColumnConditionTest
     // sets use the same check as lists
     public void testListCollectionBoundAppliesTo() throws InvalidRequestException
     {
-        ColumnDefinition definition = ColumnDefinition.regularDef("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
 
         // EQ
         ColumnCondition condition = ColumnCondition.condition(definition, new Lists.Value(Arrays.asList(ONE)), Operator.EQ);
@@ -298,10 +299,10 @@ public class ColumnConditionTest
 
     private static boolean setAppliesTo(ColumnCondition.CollectionBound bound, Set<ByteBuffer> conditionValues, List<ByteBuffer> columnValues)
     {
-        CFMetaData cfm = CFMetaData.compile("create table foo(a int PRIMARY KEY, b int, c set<int>)", "ks");
+        TableMetadata metadata = CreateTableStatement.parse("create table foo(a int PRIMARY KEY, b int, c set<int>)", "ks").build();
         Map<ByteBuffer, CollectionType> typeMap = new HashMap<>();
         typeMap.put(ByteBufferUtil.bytes("c"), SetType.getInstance(Int32Type.instance, true));
-        ColumnDefinition definition = ColumnDefinition.regularDef(cfm, ByteBufferUtil.bytes("c"), SetType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn(metadata, ByteBufferUtil.bytes("c"), SetType.getInstance(Int32Type.instance, true));
 
         List<Cell> cells = new ArrayList<>(columnValues.size());
         if (columnValues != null)
@@ -319,7 +320,7 @@ public class ColumnConditionTest
     @Test
     public void testSetCollectionBoundAppliesTo() throws InvalidRequestException
     {
-        ColumnDefinition definition = ColumnDefinition.regularDef("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
 
         // EQ
         ColumnCondition condition = ColumnCondition.condition(definition, new Sets.Value(set(ONE)), Operator.EQ);
@@ -430,10 +431,10 @@ public class ColumnConditionTest
 
     private static boolean mapAppliesTo(ColumnCondition.CollectionBound bound, Map<ByteBuffer, ByteBuffer> conditionValues, Map<ByteBuffer, ByteBuffer> columnValues)
     {
-        CFMetaData cfm = CFMetaData.compile("create table foo(a int PRIMARY KEY, b map<int, int>)", "ks");
+        TableMetadata metadata = CreateTableStatement.parse("create table foo(a int PRIMARY KEY, b map<int, int>)", "ks").build();
         Map<ByteBuffer, CollectionType> typeMap = new HashMap<>();
         typeMap.put(ByteBufferUtil.bytes("b"), MapType.getInstance(Int32Type.instance, Int32Type.instance, true));
-        ColumnDefinition definition = ColumnDefinition.regularDef(cfm, ByteBufferUtil.bytes("b"), MapType.getInstance(Int32Type.instance, Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn(metadata, ByteBufferUtil.bytes("b"), MapType.getInstance(Int32Type.instance, Int32Type.instance, true));
 
         List<Cell> cells = new ArrayList<>(columnValues.size());
         if (columnValues != null)
@@ -448,7 +449,7 @@ public class ColumnConditionTest
     @Test
     public void testMapCollectionBoundIsSatisfiedByValue() throws InvalidRequestException
     {
-        ColumnDefinition definition = ColumnDefinition.regularDef("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
+        ColumnMetadata definition = ColumnMetadata.regularColumn("ks", "cf", "c", ListType.getInstance(Int32Type.instance, true));
 
         Map<ByteBuffer, ByteBuffer> placeholderMap = new TreeMap<>();
         placeholderMap.put(ONE, ONE);

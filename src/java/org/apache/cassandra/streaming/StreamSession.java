@@ -424,7 +424,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
                 continue;
             }
 
-            UUID cfId = details.ref.get().metadata.cfId;
+            UUID cfId = details.ref.get().metadata().id;
             StreamTransferTask task = transfers.get(cfId);
             if (task == null)
             {

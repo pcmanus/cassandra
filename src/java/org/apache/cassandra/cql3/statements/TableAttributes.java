@@ -61,7 +61,7 @@ public final class TableAttributes extends PropertyDefinitions
     {
         if (getId() != null)
             throw new ConfigurationException("Cannot alter table id.");
-        return build(TableParams.builder(previous));
+        return build(previous.unbuild());
     }
 
     public UUID getId() throws ConfigurationException

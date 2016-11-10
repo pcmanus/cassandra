@@ -34,11 +34,11 @@ import java.util.List;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.Pair;
 
 import com.googlecode.concurrentlinkedhashmap.Weighers;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.AsciiType;
@@ -58,20 +58,21 @@ public class CacheProviderTest
     private static final String KEYSPACE1 = "CacheProviderTest1";
     private static final String CF_STANDARD1 = "Standard1";
 
-    private static CFMetaData cfm;
+    private static TableMetadata cfm;
 
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
     {
         SchemaLoader.prepareServer();
 
-        cfm = CFMetaData.Builder.create(KEYSPACE1, CF_STANDARD1)
-                                        .addPartitionKey("pKey", AsciiType.instance)
-                                        .addRegularColumn("col1", AsciiType.instance)
-                                        .build();
-        SchemaLoader.createKeyspace(KEYSPACE1,
-                                    KeyspaceParams.simple(1),
-                                    cfm);
+        cfm =
+            TableMetadata.builder(KEYSPACE1, CF_STANDARD1)
+                         .isCompound(true)
+                         .addPartitionKeyColumn("pKey", AsciiType.instance)
+                         .addRegularColumn("col1", AsciiType.instance)
+                         .build();
+
+        SchemaLoader.createKeyspace(KEYSPACE1, KeyspaceParams.simple(1), cfm);
     }
 
     private CachedBTreePartition createPartition()

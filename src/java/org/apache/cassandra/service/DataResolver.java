@@ -23,8 +23,8 @@ import java.util.concurrent.TimeoutException;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
@@ -199,7 +199,7 @@ public class DataResolver extends ResponseResolver
                             currentRow(i, clustering).addRowDeletion(merged);
                     }
 
-                    public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+                    public void onComplexDeletion(int i, Clustering clustering, ColumnMetadata column, DeletionTime merged, DeletionTime original)
                     {
                         if (merged != null && !merged.equals(original))
                             currentRow(i, clustering).addComplexDeletion(column, merged);
@@ -219,7 +219,7 @@ public class DataResolver extends ResponseResolver
                         // semantic (making sure we can always distinguish between a row that doesn't exist from one that do exist but has
                         /// no value for the column requested by the user) and so it won't be unexpected by the user that those columns are
                         // not repaired.
-                        ColumnDefinition column = cell.column();
+                        ColumnMetadata column = cell.column();
                         ColumnFilter filter = command.columnFilter();
                         return column.isComplex() ? filter.fetchedCellIsQueried(column, cell.path()) : filter.fetchedColumnIsQueried(column);
                     }
@@ -410,12 +410,12 @@ public class DataResolver extends ResponseResolver
 
         private class ShortReadRowProtection extends Transformation implements MoreRows<UnfilteredRowIterator>
         {
-            final CFMetaData metadata;
+            final TableMetadata metadata;
             final DecoratedKey partitionKey;
             Clustering lastClustering;
             int lastCount = 0;
 
-            private ShortReadRowProtection(CFMetaData metadata, DecoratedKey partitionKey)
+            private ShortReadRowProtection(TableMetadata metadata, DecoratedKey partitionKey)
             {
                 this.metadata = metadata;
                 this.partitionKey = partitionKey;

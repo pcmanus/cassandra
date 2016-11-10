@@ -19,7 +19,7 @@ package org.apache.cassandra.db.partitions;
 
 import java.util.Iterator;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
 import org.apache.cassandra.db.PartitionColumns;
@@ -48,9 +48,9 @@ public class FilteredPartition extends ImmutableBTreePartition
         final Iterator<Row> iter = iterator();
         return new RowIterator()
         {
-            public CFMetaData metadata()
+            public TableMetadata metadata()
             {
-                return metadata;
+                return FilteredPartition.this.metadata();
             }
 
             public boolean isReverseOrder()

@@ -19,8 +19,11 @@ package org.apache.cassandra.cql3.statements;
 
 import java.util.regex.Pattern;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
+import com.google.common.collect.Iterables;
+
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 
 public class IndexTarget
@@ -57,9 +60,10 @@ public class IndexTarget
         quoteName = !COLUMN_IDENTIFIER_PATTERN.matcher(column.toString()).matches();
     }
 
-    public String asCqlString(CFMetaData cfm)
+    public String asCqlString(Iterable<ColumnMetadata> columns)
     {
-        if (!cfm.getColumnDefinition(column).type.isCollection())
+        AbstractType<?> columnType = Iterables.find(columns, c -> c.name.equals(column)).type;
+        if (!columnType.isCollection())
             return column.toCQLString();
 
         return String.format("%s(%s)", type.toString(), column.toCQLString());
@@ -67,48 +71,48 @@ public class IndexTarget
 
     public static class Raw
     {
-        private final ColumnDefinition.Raw column;
+        private final ColumnMetadata.Raw column;
         private final Type type;
 
-        private Raw(ColumnDefinition.Raw column, Type type)
+        private Raw(ColumnMetadata.Raw column, Type type)
         {
             this.column = column;
             this.type = type;
         }
 
-        public static Raw simpleIndexOn(ColumnDefinition.Raw c)
+        public static Raw simpleIndexOn(ColumnMetadata.Raw c)
         {
             return new Raw(c, Type.SIMPLE);
         }
 
-        public static Raw valuesOf(ColumnDefinition.Raw c)
+        public static Raw valuesOf(ColumnMetadata.Raw c)
         {
             return new Raw(c, Type.VALUES);
         }
 
-        public static Raw keysOf(ColumnDefinition.Raw c)
+        public static Raw keysOf(ColumnMetadata.Raw c)
         {
             return new Raw(c, Type.KEYS);
         }
 
-        public static Raw keysAndValuesOf(ColumnDefinition.Raw c)
+        public static Raw keysAndValuesOf(ColumnMetadata.Raw c)
         {
             return new Raw(c, Type.KEYS_AND_VALUES);
         }
 
-        public static Raw fullCollection(ColumnDefinition.Raw c)
+        public static Raw fullCollection(ColumnMetadata.Raw c)
         {
             return new Raw(c, Type.FULL);
         }
 
-        public IndexTarget prepare(CFMetaData cfm)
+        public IndexTarget prepare(TableMetadata table)
         {
             // Until we've prepared the target column, we can't be certain about the target type
             // because (for backwards compatibility) an index on a collection's values uses the
             // same syntax as an index on a regular column (i.e. the 'values' in
             // 'CREATE INDEX on table(values(collection));' is optional). So we correct the target type
             // when the target column is a collection & the target type is SIMPLE.
-            ColumnDefinition columnDef = column.prepare(cfm);
+            ColumnMetadata columnDef = column.prepare(table);
             Type actualType = (type == Type.SIMPLE && columnDef.type.isCollection()) ? Type.VALUES : type;
             return new IndexTarget(columnDef.name, actualType);
         }

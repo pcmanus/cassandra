@@ -19,7 +19,7 @@ package org.apache.cassandra.cql3;
 
 import java.util.List;
 
-import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.cql3.functions.Function;
 import org.apache.cassandra.cql3.statements.CQL3CasRequest;
 import org.apache.cassandra.db.Clustering;
@@ -55,7 +55,7 @@ public interface Conditions
      * Returns the column definitions to which apply the conditions.
      * @return the column definitions to which apply the conditions.
      */
-    Iterable<ColumnDefinition> getColumns();
+    Iterable<ColumnMetadata> getColumns();
 
     /**
      * Checks if this <code>Conditions</code> is empty.

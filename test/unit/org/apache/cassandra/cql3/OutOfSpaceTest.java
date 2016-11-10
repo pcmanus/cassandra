@@ -125,7 +125,7 @@ public class OutOfSpaceTest extends CQLTester
         }
 
         // Make sure commit log wasn't discarded.
-        UUID cfid = currentTableMetadata().cfId;
+        UUID cfid = currentTableMetadata().id;
         for (CommitLogSegment segment : CommitLog.instance.segmentManager.getActiveSegments())
             if (segment.getDirtyCFIDs().contains(cfid))
                 return;

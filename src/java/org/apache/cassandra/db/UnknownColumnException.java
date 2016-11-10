@@ -19,7 +19,7 @@ package org.apache.cassandra.db;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -31,9 +31,9 @@ public class UnknownColumnException extends Exception
 {
     public final ByteBuffer columnName;
 
-    public UnknownColumnException(CFMetaData metadata, ByteBuffer columnName)
+    public UnknownColumnException(TableMetadata metadata, ByteBuffer columnName)
     {
-        super(String.format("Unknown column %s in table %s.%s", stringify(columnName), metadata.ksName, metadata.cfName));
+        super(String.format("Unknown column %s in table %s.%s", stringify(columnName), metadata.keyspace, metadata.table));
         this.columnName = columnName;
     }
 

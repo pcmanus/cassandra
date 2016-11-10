@@ -22,7 +22,7 @@ import java.util.*;
 
 import com.google.common.collect.*;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.Pair;
  */
 public class CQL3CasRequest implements CASRequest
 {
-    public final CFMetaData cfm;
+    public final TableMetadata metadata;
     public final DecoratedKey key;
     public final boolean isBatch;
     private final PartitionColumns conditionColumns;
@@ -57,16 +57,16 @@ public class CQL3CasRequest implements CASRequest
 
     private final List<RowUpdate> updates = new ArrayList<>();
 
-    public CQL3CasRequest(CFMetaData cfm,
+    public CQL3CasRequest(TableMetadata metadata,
                           DecoratedKey key,
                           boolean isBatch,
                           PartitionColumns conditionColumns,
                           boolean updatesRegularRows,
                           boolean updatesStaticRow)
     {
-        this.cfm = cfm;
+        this.metadata = metadata;
         this.key = key;
-        this.conditions = new TreeMap<>(cfm.comparator);
+        this.conditions = new TreeMap<>(metadata.comparator);
         this.isBatch = isBatch;
         this.conditionColumns = conditionColumns;
         this.updatesRegularRows = updatesRegularRows;
@@ -166,7 +166,7 @@ public class CQL3CasRequest implements CASRequest
         // case.
         if (hasExists)
         {
-            PartitionColumns allColumns = cfm.partitionColumns();
+            PartitionColumns allColumns = metadata.regularAndStaticColumns();
             Columns statics = updatesStaticRow ? allColumns.statics : Columns.NONE;
             Columns regulars = updatesRegularRows ? allColumns.regulars : Columns.NONE;
             return new PartitionColumns(statics, regulars);
@@ -179,12 +179,12 @@ public class CQL3CasRequest implements CASRequest
         assert staticConditions != null || !conditions.isEmpty();
 
         // Fetch all columns, but query only the selected ones
-        ColumnFilter columnFilter = ColumnFilter.selection(cfm, columnsToRead());
+        ColumnFilter columnFilter = ColumnFilter.selection(metadata, columnsToRead());
 
         // With only a static condition, we still want to make the distinction between a non-existing partition and one
         // that exists (has some live data) but has not static content. So we query the first live row of the partition.
         if (conditions.isEmpty())
-            return SinglePartitionReadCommand.create(cfm,
+            return SinglePartitionReadCommand.create(metadata,
                                                      nowInSec,
                                                      columnFilter,
                                                      RowFilter.NONE,
@@ -193,7 +193,7 @@ public class CQL3CasRequest implements CASRequest
                                                      new ClusteringIndexSliceFilter(Slices.ALL, false));
 
         ClusteringIndexNamesFilter filter = new ClusteringIndexNamesFilter(conditions.navigableKeySet(), false);
-        return SinglePartitionReadCommand.create(cfm, nowInSec, key, columnFilter, filter);
+        return SinglePartitionReadCommand.create(metadata, nowInSec, key, columnFilter, filter);
     }
 
     /**
@@ -228,11 +228,11 @@ public class CQL3CasRequest implements CASRequest
 
     public PartitionUpdate makeUpdates(FilteredPartition current) throws InvalidRequestException
     {
-        PartitionUpdate update = new PartitionUpdate(cfm, key, updatedColumns(), conditions.size());
+        PartitionUpdate update = new PartitionUpdate(metadata, key, updatedColumns(), conditions.size());
         for (RowUpdate upd : updates)
             upd.applyUpdates(current, update);
 
-        Keyspace.openAndGetStore(cfm).indexManager.validate(update);
+        Keyspace.openAndGetStore(metadata).indexManager.validate(update);
         return update;
     }
 
@@ -260,7 +260,7 @@ public class CQL3CasRequest implements CASRequest
         public void applyUpdates(FilteredPartition current, PartitionUpdate updates) throws InvalidRequestException
         {
             Map<DecoratedKey, Partition> map = stmt.requiresRead() ? Collections.<DecoratedKey, Partition>singletonMap(key, current) : null;
-            UpdateParameters params = new UpdateParameters(cfm, updates.columns(), options, timestamp, stmt.getTimeToLive(options), map);
+            UpdateParameters params = new UpdateParameters(metadata, updates.columns(), options, timestamp, stmt.getTimeToLive(options), map);
             stmt.addUpdateForKey(updates, clustering, params);
         }
     }

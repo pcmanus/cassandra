@@ -18,8 +18,13 @@
 package org.apache.cassandra.schema;
 
 import java.util.Iterator;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+
+import javax.annotation.Nullable;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.MapDifference;
@@ -29,9 +34,12 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
 {
     private final ImmutableMap<String, KeyspaceMetadata> keyspaces;
 
+    private final ImmutableMap<UUID, TableMetadata> tables;
+
     private Keyspaces(Builder builder)
     {
         keyspaces = builder.keyspaces.build();
+        tables = builder.tables.build();
     }
 
     public static Builder builder()
@@ -59,11 +67,57 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
         return keyspaces.values().stream();
     }
 
+    public Set<String> names()
+    {
+        return keyspaces.keySet();
+    }
+
+    /**
+     * Get the keyspace with the specified name
+     *
+     * @param name a non-qualified keyspace name
+     * @return an empty {@link Optional} if the table name is not found; a non-empty optional of {@link KeyspaceMetadata} otherwise
+     */
+    public Optional<KeyspaceMetadata> get(String name)
+    {
+        return Optional.ofNullable(keyspaces.get(name));
+    }
+
+    @Nullable
+    public KeyspaceMetadata getNullable(String name)
+    {
+        return keyspaces.get(name);
+    }
+
+    @Nullable
+    public TableMetadata getTableOrViewNullable(UUID id)
+    {
+        return tables.get(id);
+    }
+
     public Keyspaces filter(Predicate<KeyspaceMetadata> predicate)
     {
         Builder builder = builder();
         stream().filter(predicate).forEach(builder::add);
         return builder.build();
+    }
+
+    /**
+     * Creates a Keyspaces instance with the keyspace with the provided name removed
+     */
+    public Keyspaces without(String name)
+    {
+        KeyspaceMetadata keyspace =
+            get(name).orElseThrow(() -> new IllegalStateException(String.format("Keyspace %s doesn't exists", name)));
+
+        return builder().add(filter(k -> k != keyspace)).build();
+    }
+
+    public Keyspaces withAddedOrUpdated(KeyspaceMetadata keyspace)
+    {
+        return builder().add(filter(k -> !k.name.equals(keyspace.name)))
+                        .add(keyspace)
+                        .build();
     }
 
     MapDifference<String, KeyspaceMetadata> diff(Keyspaces other)
@@ -93,6 +147,8 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
     {
         private final ImmutableMap.Builder<String, KeyspaceMetadata> keyspaces = new ImmutableMap.Builder<>();
 
+        private final ImmutableMap.Builder<UUID, TableMetadata> tables = new ImmutableMap.Builder<>();
+
         private Builder()
         {
         }
@@ -105,6 +161,8 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
         public Builder add(KeyspaceMetadata keyspace)
         {
             keyspaces.put(keyspace.name, keyspace);
+            keyspace.tables.forEach(t -> tables.put(t.id, t));
+            keyspace.views.forEach(v -> tables.put(v.metadata.id, v.metadata));
             return this;
         }
 

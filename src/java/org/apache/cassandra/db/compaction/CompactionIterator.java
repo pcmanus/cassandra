@@ -22,7 +22,7 @@ import java.util.function.Predicate;
 
 import com.google.common.collect.Ordering;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.partitions.PurgeFunction;
@@ -101,20 +101,20 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             metrics.beginCompaction(this);
 
         UnfilteredPartitionIterator merged = scanners.isEmpty()
-                                             ? EmptyIterators.unfilteredPartition(controller.cfs.metadata)
-                                             : UnfilteredPartitionIterators.merge(scanners, nowInSec, listener());
+                                           ? EmptyIterators.unfilteredPartition(controller.cfs.metadata())
+                                           : UnfilteredPartitionIterators.merge(scanners, nowInSec, listener());
         merged = Transformation.apply(merged, new GarbageSkipper(controller, nowInSec));
         this.compacted = Transformation.apply(merged, new Purger(controller, nowInSec));
     }
 
-    public CFMetaData metadata()
+    public TableMetadata metadata()
     {
-        return controller.cfs.metadata;
+        return controller.cfs.metadata();
     }
 
     public CompactionInfo getCompactionInfo()
     {
-        return new CompactionInfo(controller.cfs.metadata,
+        return new CompactionInfo(controller.cfs.metadata(),
                                   type,
                                   bytesRead,
                                   totalBytes,
@@ -320,7 +320,7 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
         final Row staticRow;
         final ColumnFilter cf;
         final int nowInSec;
-        final CFMetaData metadata;
+        final TableMetadata metadata;
         final boolean cellLevelGC;
 
         DeletionTime tombOpenDeletionTime = DeletionTime.LIVE;

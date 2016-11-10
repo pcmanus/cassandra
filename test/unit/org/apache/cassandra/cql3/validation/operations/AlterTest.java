@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.cql3.validation.operations;
 
-import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
@@ -186,12 +186,12 @@ public class AlterTest extends CQLTester
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE).getColumnFamilyStore(tableName);
 
         alterTable("ALTER TABLE %s WITH min_index_interval=256 AND max_index_interval=512");
-        assertEquals(256, cfs.metadata.params.minIndexInterval);
-        assertEquals(512, cfs.metadata.params.maxIndexInterval);
+        assertEquals(256, cfs.metadata().params.minIndexInterval);
+        assertEquals(512, cfs.metadata().params.maxIndexInterval);
 
         alterTable("ALTER TABLE %s WITH caching = {}");
-        assertEquals(256, cfs.metadata.params.minIndexInterval);
-        assertEquals(512, cfs.metadata.params.maxIndexInterval);
+        assertEquals(256, cfs.metadata().params.minIndexInterval);
+        assertEquals(512, cfs.metadata().params.maxIndexInterval);
     }
 
     /**

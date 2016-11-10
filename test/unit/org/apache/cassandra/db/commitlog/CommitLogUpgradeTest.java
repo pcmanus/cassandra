@@ -36,9 +36,10 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
@@ -46,6 +47,7 @@ import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.schema.Tables;
 import org.apache.cassandra.security.EncryptionContextGenerator;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.KillerForTests;
@@ -76,12 +78,14 @@ public class CommitLogUpgradeTest
     private KillerForTests killerForTests;
     private boolean shouldBeKilled = false;
 
-    static CFMetaData metadata = CFMetaData.Builder.createDense(KEYSPACE, TABLE, false, false)
-                                                   .addPartitionKey("key", AsciiType.instance)
-                                                   .addClusteringColumn("col", AsciiType.instance)
-                                                   .addRegularColumn("val", BytesType.instance)
-                                                   .build()
-                                                   .compression(SchemaLoader.getCompressionParameters());
+    static TableMetadata metadata =
+        TableMetadata.builder(KEYSPACE, TABLE)
+                     .isDense(true)
+                     .addPartitionKeyColumn("key", AsciiType.instance)
+                     .addClusteringColumn("col", AsciiType.instance)
+                     .addRegularColumn("val", BytesType.instance)
+                     .compression(SchemaLoader.getCompressionParameters())
+                     .build();
 
     @Before
     public void prepareToBeKilled()
@@ -107,9 +111,7 @@ public class CommitLogUpgradeTest
     public static void initialize()
     {
         SchemaLoader.loadSchema();
-        SchemaLoader.createKeyspace(KEYSPACE,
-                                    KeyspaceParams.simple(1),
-                                    metadata);
+        SchemaLoader.createKeyspace(KEYSPACE, KeyspaceParams.simple(1), metadata);
         DatabaseDescriptor.setEncryptionContext(EncryptionContextGenerator.createContext(true));
     }
 
@@ -124,12 +126,8 @@ public class CommitLogUpgradeTest
         if (cfidString != null)
         {
             UUID cfid = UUID.fromString(cfidString);
-            if (Schema.instance.getCF(cfid) == null)
-            {
-                CFMetaData cfm = Schema.instance.getCFMetaData(KEYSPACE, TABLE);
-                Schema.instance.unload(cfm);
-                Schema.instance.load(cfm.copy(cfid));
-            }
+            if (Schema.instance.getTableMetadata(cfid) == null)
+                Schema.instance.load(KeyspaceMetadata.create(KEYSPACE, KeyspaceParams.simple(1), Tables.of(metadata.unbuild().id(cfid).build())));
         }
 
         Hasher hasher = new Hasher();

@@ -27,8 +27,8 @@ import java.util.Set;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
@@ -61,7 +61,7 @@ public class SSTableExpiredBlockers
         String columnfamily = args[args.length - 1];
         Schema.instance.loadFromDisk(false);
 
-        CFMetaData metadata = Schema.instance.getCFMetaData(keyspace, columnfamily);
+        TableMetadata metadata = Schema.instance.getTableMetadata(keyspace, columnfamily);
         if (metadata == null)
             throw new IllegalArgumentException(String.format("Unknown keyspace/table %s.%s",
                     keyspace,

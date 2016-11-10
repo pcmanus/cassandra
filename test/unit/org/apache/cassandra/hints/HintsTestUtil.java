@@ -53,7 +53,7 @@ final class HintsTestUtil
         assertEquals(expected.mutation.key(), actual.mutation.key());
         assertEquals(expected.mutation.getColumnFamilyIds(), actual.mutation.getColumnFamilyIds());
         for (PartitionUpdate partitionUpdate : expected.mutation.getPartitionUpdates())
-            assertPartitionsEqual(partitionUpdate, actual.mutation.getPartitionUpdate(partitionUpdate.metadata().cfId));
+            assertPartitionsEqual(partitionUpdate, actual.mutation.getPartitionUpdate(partitionUpdate.metadata().id));
         assertEquals(expected.creationTime, actual.creationTime);
         assertEquals(expected.gcgs, actual.gcgs);
     }

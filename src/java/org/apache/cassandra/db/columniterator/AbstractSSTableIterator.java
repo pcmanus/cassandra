@@ -22,7 +22,7 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.*;
@@ -66,7 +66,7 @@ public abstract class AbstractSSTableIterator implements UnfilteredRowIterator
         this.key = key;
         this.columns = columnFilter;
         this.slices = slices;
-        this.helper = new SerializationHelper(sstable.metadata, sstable.descriptor.version.correspondingMessagingVersion(), SerializationHelper.Flag.LOCAL, columnFilter);
+        this.helper = new SerializationHelper(sstable.metadata(), sstable.descriptor.version.correspondingMessagingVersion(), SerializationHelper.Flag.LOCAL, columnFilter);
 
         if (indexEntry == null)
         {
@@ -179,9 +179,9 @@ public abstract class AbstractSSTableIterator implements UnfilteredRowIterator
                                 : createReaderInternal(indexEntry, file, shouldCloseFile);
     };
 
-    public CFMetaData metadata()
+    public TableMetadata metadata()
     {
-        return sstable.metadata;
+        return sstable.metadata();
     }
 
     public PartitionColumns columns()
@@ -307,7 +307,7 @@ public abstract class AbstractSSTableIterator implements UnfilteredRowIterator
         private void createDeserializer()
         {
             assert file != null && deserializer == null;
-            deserializer = UnfilteredDeserializer.create(sstable.metadata, file, sstable.header, helper);
+            deserializer = UnfilteredDeserializer.create(sstable.metadata(), file, sstable.header, helper);
         }
 
         protected void seekToPosition(long position) throws IOException

@@ -309,7 +309,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
 
         List<UUID> cfIds = new ArrayList<>(columnFamilyStores.size());
         for (ColumnFamilyStore cfs : columnFamilyStores)
-            cfIds.add(cfs.metadata.cfId);
+            cfIds.add(cfs.metadata.id);
 
         for (InetAddress neighbour : endpoints)
         {
@@ -521,8 +521,8 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             this.coordinator = coordinator;
             for (ColumnFamilyStore cfs : columnFamilyStores)
             {
-                this.columnFamilyStores.put(cfs.metadata.cfId, cfs);
-                sstableMap.put(cfs.metadata.cfId, new HashSet<String>());
+                this.columnFamilyStores.put(cfs.metadata.id, cfs);
+                sstableMap.put(cfs.metadata.id, new HashSet<String>());
             }
             this.ranges = ranges;
             this.repairedAt = repairedAt;
@@ -632,7 +632,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                     {
                         return sstable != null &&
                                (!isIncremental || !sstable.isRepaired()) &&
-                               !(sstable.metadata.isIndex()) && // exclude SSTables from 2i
+                               !(sstable.metadata().isIndex()) && // exclude SSTables from 2i
                                new Bounds<>(sstable.first.getToken(), sstable.last.getToken()).intersects(ranges);
                     }
                 }, true, false);

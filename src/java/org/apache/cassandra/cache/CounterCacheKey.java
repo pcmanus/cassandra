@@ -22,18 +22,18 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.*;
 
 public final class CounterCacheKey extends CacheKey
@@ -55,12 +55,12 @@ public final class CounterCacheKey extends CacheKey
         this(ksAndCFName, ByteBufferUtil.getArray(partitionKey), ByteBufferUtil.getArray(cellName));
     }
 
-    public static CounterCacheKey create(Pair<String, String> ksAndCFName, ByteBuffer partitionKey, Clustering clustering, ColumnDefinition c, CellPath path)
+    public static CounterCacheKey create(Pair<String, String> ksAndCFName, ByteBuffer partitionKey, Clustering clustering, ColumnMetadata c, CellPath path)
     {
         return new CounterCacheKey(ksAndCFName, partitionKey, makeCellName(clustering, c, path));
     }
 
-    private static ByteBuffer makeCellName(Clustering clustering, ColumnDefinition c, CellPath path)
+    private static ByteBuffer makeCellName(Clustering clustering, ColumnMetadata c, CellPath path)
     {
         int cs = clustering.size();
         ByteBuffer[] values = new ByteBuffer[cs + 1 + (path == null ? 0 : path.size())];
@@ -87,8 +87,8 @@ public final class CounterCacheKey extends CacheKey
      */
     public ByteBuffer readCounterValue(ColumnFamilyStore cfs)
     {
-        CFMetaData metadata = cfs.metadata;
-        assert metadata.ksAndCFName.equals(ksAndCFName);
+        TableMetadata metadata = cfs.metadata();
+        assert metadata.keyspaceAndTablePair.equals(ksAndCFName);
 
         DecoratedKey key = cfs.decorateKey(partitionKey());
 
@@ -97,7 +97,7 @@ public final class CounterCacheKey extends CacheKey
         assert buffers.size() >= clusteringSize + 1; // See makeCellName above
 
         Clustering clustering = Clustering.make(buffers.subList(0, clusteringSize).toArray(new ByteBuffer[clusteringSize]));
-        ColumnDefinition column = metadata.getColumnDefinition(buffers.get(clusteringSize));
+        ColumnMetadata column = metadata.getColumn(buffers.get(clusteringSize));
         // This can theoretically happen if a column is dropped after the cache is saved and we
         // try to load it. Not point if failing in any case, just skip the value.
         if (column == null)

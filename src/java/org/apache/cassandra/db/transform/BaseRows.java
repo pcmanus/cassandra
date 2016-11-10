@@ -20,7 +20,7 @@
  */
 package org.apache.cassandra.db.transform;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionColumns;
 import org.apache.cassandra.db.rows.*;
@@ -50,7 +50,7 @@ implements BaseRowIterator<R>
         partitionKey = copyFrom.partitionKey();
     }
 
-    public CFMetaData metadata()
+    public TableMetadata metadata()
     {
         return input.metadata();
     }

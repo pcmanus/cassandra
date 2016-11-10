@@ -20,7 +20,6 @@ package org.apache.cassandra.db.columniterator;
 import java.io.IOException;
 import java.util.*;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.partitions.ImmutableBTreePartition;
@@ -28,6 +27,7 @@ import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileHandle;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.btree.BTree;
 
 /**
@@ -88,7 +88,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         protected ReusablePartitionData createBuffer(int blocksCount)
         {
             int estimatedRowCount = 16;
-            int columnCount = metadata().partitionColumns().regulars.size();
+            int columnCount = metadata().regularColumns().size();
             if (columnCount == 0 || metadata().clusteringColumns().isEmpty())
             {
                 estimatedRowCount = 1;
@@ -222,7 +222,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         private ReverseIndexedReader(RowIndexEntry indexEntry, FileDataInput file, boolean shouldCloseFile)
         {
             super(file, shouldCloseFile);
-            this.indexState = new IndexState(this, sstable.metadata.comparator, indexEntry, true, ifile);
+            this.indexState = new IndexState(this, sstable.metadata().comparator, indexEntry, true, ifile);
         }
 
         @Override
@@ -321,7 +321,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
 
     private class ReusablePartitionData
     {
-        private final CFMetaData metadata;
+        private final TableMetadata metadata;
         private final DecoratedKey partitionKey;
         private final PartitionColumns columns;
 
@@ -330,7 +330,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         private BTree.Builder<Row> rowBuilder;
         private ImmutableBTreePartition built;
 
-        private ReusablePartitionData(CFMetaData metadata,
+        private ReusablePartitionData(TableMetadata metadata,
                                       DecoratedKey partitionKey,
                                       PartitionColumns columns,
                                       int initialRowCapacity)

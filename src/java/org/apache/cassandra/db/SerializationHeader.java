@@ -21,20 +21,20 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.marshal.TypeParser;
+import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.Version;
-import org.apache.cassandra.io.sstable.metadata.MetadataType;
-import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.IMetadataComponentSerializer;
+import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
+import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class SerializationHeader
@@ -66,12 +66,12 @@ public class SerializationHeader
         this.typeMap = typeMap;
     }
 
-    public static SerializationHeader makeWithoutStats(CFMetaData metadata)
+    public static SerializationHeader makeWithoutStats(TableMetadata metadata)
     {
-        return new SerializationHeader(true, metadata, metadata.partitionColumns(), EncodingStats.NO_STATS);
+        return new SerializationHeader(true, metadata, metadata.regularAndStaticColumns(), EncodingStats.NO_STATS);
     }
 
-    public static SerializationHeader make(CFMetaData metadata, Collection<SSTableReader> sstables)
+    public static SerializationHeader make(TableMetadata metadata, Collection<SSTableReader> sstables)
     {
         // The serialization header has to be computed before the start of compaction (since it's used to write)
         // the result. This means that when compacting multiple sources, we won't have perfectly accurate stats
@@ -91,7 +91,7 @@ public class SerializationHeader
             stats.updateLocalDeletionTime(sstable.getMinLocalDeletionTime());
             stats.updateTTL(sstable.getMinTTL());
             if (sstable.header == null)
-                columns.addAll(metadata.partitionColumns());
+                columns.addAll(metadata.regularAndStaticColumns());
             else
                 columns.addAll(sstable.header.columns());
         }
@@ -99,12 +99,12 @@ public class SerializationHeader
     }
 
     public SerializationHeader(boolean isForSSTable,
-                               CFMetaData metadata,
+                               TableMetadata metadata,
                                PartitionColumns columns,
                                EncodingStats stats)
     {
         this(isForSSTable,
-             metadata.getKeyValidator(),
+             metadata.partitionKeyType,
              metadata.comparator.subtypes(),
              columns,
              stats,
@@ -146,7 +146,7 @@ public class SerializationHeader
         return isStatic ? columns.statics : columns.regulars;
     }
 
-    public AbstractType<?> getType(ColumnDefinition column)
+    public AbstractType<?> getType(ColumnMetadata column)
     {
         return typeMap == null ? column.type : typeMap.get(column.name.bytes);
     }
@@ -240,9 +240,9 @@ public class SerializationHeader
     {
         Map<ByteBuffer, AbstractType<?>> staticColumns = new LinkedHashMap<>();
         Map<ByteBuffer, AbstractType<?>> regularColumns = new LinkedHashMap<>();
-        for (ColumnDefinition column : columns.statics)
+        for (ColumnMetadata column : columns.statics)
             staticColumns.put(column.name.bytes, column.type);
-        for (ColumnDefinition column : columns.regulars)
+        for (ColumnMetadata column : columns.regulars)
             regularColumns.put(column.name.bytes, column.type);
         return new Component(keyType, clusteringTypes, staticColumns, regularColumns, stats);
     }
@@ -254,7 +254,7 @@ public class SerializationHeader
     }
 
     /**
-     * We need the CFMetadata to properly deserialize a SerializationHeader but it's clunky to pass that to
+     * We need the TableMetadata to properly deserialize a SerializationHeader but it's clunky to pass that to
      * a SSTable component, so we use this temporary object to delay the actual need for the metadata.
      */
     public static class Component extends MetadataComponent
@@ -283,7 +283,7 @@ public class SerializationHeader
             return MetadataType.HEADER;
         }
 
-        public SerializationHeader toHeader(CFMetaData metadata)
+        public SerializationHeader toHeader(TableMetadata metadata)
         {
             Map<ByteBuffer, AbstractType<?>> typeMap = new HashMap<>(staticColumns.size() + regularColumns.size());
             typeMap.putAll(staticColumns);
@@ -292,7 +292,7 @@ public class SerializationHeader
             PartitionColumns.Builder builder = PartitionColumns.builder();
             for (ByteBuffer name : typeMap.keySet())
             {
-                ColumnDefinition column = metadata.getColumnDefinition(name);
+                ColumnMetadata column = metadata.getColumn(name);
                 if (column == null)
                 {
                     // TODO: this imply we don't read data for a column we don't yet know about, which imply this is theoretically
@@ -301,10 +301,10 @@ public class SerializationHeader
                     // improve this.
 
                     // If we don't find the definition, it could be we have data for a dropped column, and we shouldn't
-                    // fail deserialization because of that. So we grab a "fake" ColumnDefinition that ensure proper
+                    // fail deserialization because of that. So we grab a "fake" ColumnMetadata that ensure proper
                     // deserialization. The column will be ignore later on anyway.
                     boolean isStatic = staticColumns.containsKey(name);
-                    column = metadata.getDroppedColumnDefinition(name, isStatic);
+                    column = metadata.getDroppedColumn(name, isStatic);
                     if (column == null)
                         throw new RuntimeException("Unknown column " + UTF8Type.instance.getString(name) + " during deserialization");
                 }
@@ -386,11 +386,11 @@ public class SerializationHeader
             }
         }
 
-        public SerializationHeader deserializeForMessaging(DataInputPlus in, CFMetaData metadata, ColumnFilter selection, boolean hasStatic) throws IOException
+        public SerializationHeader deserializeForMessaging(DataInputPlus in, TableMetadata metadata, ColumnFilter selection, boolean hasStatic) throws IOException
         {
             EncodingStats stats = EncodingStats.serializer.deserialize(in);
 
-            AbstractType<?> keyType = metadata.getKeyValidator();
+            AbstractType<?> keyType = metadata.partitionKeyType;
             List<AbstractType<?>> clusteringTypes = metadata.comparator.subtypes();
 
             Columns statics, regulars;

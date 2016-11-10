@@ -27,7 +27,7 @@ import javax.annotation.Nullable;
 import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.db.UnknownColumnFamilyException;
+import org.apache.cassandra.exceptions.UnknownTableException;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -122,10 +122,10 @@ public final class HintMessage
             {
                 return new HintMessage(hostId, Hint.serializer.deserialize(countingIn, version));
             }
-            catch (UnknownColumnFamilyException e)
+            catch (UnknownTableException e)
             {
                 in.skipBytes(Ints.checkedCast(hintSize - countingIn.getBytesRead()));
-                return new HintMessage(hostId, e.cfId);
+                return new HintMessage(hostId, e.id);
             }
         }
     }

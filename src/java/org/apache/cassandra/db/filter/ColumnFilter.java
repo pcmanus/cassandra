@@ -23,11 +23,11 @@ import java.util.*;
 import com.google.common.collect.SortedSetMultimap;
 import com.google.common.collect.TreeMultimap;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.CellPath;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
@@ -66,14 +66,14 @@ public class ColumnFilter
     // null. If false, then _fetched_ == _queried_ and we only store _queried_.
     private final boolean fetchAllRegulars;
 
-    private final CFMetaData metadata; // can be null if !fetchAllRegulars
+    private final TableMetadata metadata; // can be null if !isFetchAll
 
     private final PartitionColumns queried; // can be null if fetchAllRegulars, to represent a wildcard query (all
                                             // static and regular columns are both _fetched_ and _queried_).
     private final SortedSetMultimap<ColumnIdentifier, ColumnSubselection> subSelections; // can be null
 
     private ColumnFilter(boolean fetchAllRegulars,
-                         CFMetaData metadata,
+                         TableMetadata metadata,
                          PartitionColumns queried,
                          SortedSetMultimap<ColumnIdentifier, ColumnSubselection> subSelections)
     {
@@ -88,7 +88,7 @@ public class ColumnFilter
     /**
      * A filter that includes all columns for the provided table.
      */
-    public static ColumnFilter all(CFMetaData metadata)
+    public static ColumnFilter all(TableMetadata metadata)
     {
         return new ColumnFilter(true, metadata, null, null);
     }
@@ -109,7 +109,7 @@ public class ColumnFilter
      * A filter that fetches all columns for the provided table, but returns
      * only the queried ones.
      */
-    public static ColumnFilter selection(CFMetaData metadata, PartitionColumns queried)
+    public static ColumnFilter selection(TableMetadata metadata, PartitionColumns queried)
     {
         return new ColumnFilter(true, metadata, queried, null);
     }
@@ -126,7 +126,7 @@ public class ColumnFilter
 
         // We always fetch all regulars, but only fetch the statics in queried. Unless queried == null, in which
         // case it's a wildcard and we fetch everything.
-        PartitionColumns all = metadata.partitionColumns();
+        PartitionColumns all = metadata.regularAndStaticColumns();
         return queried == null || all.statics.isEmpty()
              ? all
              : new PartitionColumns(queried.statics, all.regulars);
@@ -140,7 +140,7 @@ public class ColumnFilter
     public PartitionColumns queriedColumns()
     {
         assert queried != null || fetchAllRegulars;
-        return queried == null ? metadata.partitionColumns() : queried;
+        return queried == null ? metadata.regularAndStaticColumns() : queried;
     }
 
     /**
@@ -173,7 +173,7 @@ public class ColumnFilter
     /**
      * Whether the provided column is fetched by this filter.
      */
-    public boolean fetches(ColumnDefinition column)
+    public boolean fetches(ColumnMetadata column)
     {
         // For statics, it is included only if it's part of _queried_, or if _queried_ is null (wildcard query).
         if (column.isStatic())
@@ -191,7 +191,7 @@ public class ColumnFilter
      * columns that this class made before using this method. If unsure, you probably want
      * to use the {@link #fetches} method.
      */
-    public boolean fetchedColumnIsQueried(ColumnDefinition column)
+    public boolean fetchedColumnIsQueried(ColumnMetadata column)
     {
         return !fetchAllRegulars || queried == null || queried.contains(column);
     }
@@ -204,7 +204,7 @@ public class ColumnFilter
      * columns that this class made before using this method. If unsure, you probably want
      * to use the {@link #fetches} method.
      */
-    public boolean fetchedCellIsQueried(ColumnDefinition column, CellPath path)
+    public boolean fetchedCellIsQueried(ColumnMetadata column, CellPath path)
     {
         assert path != null;
         if (!fetchAllRegulars || subSelections == null)
@@ -230,7 +230,7 @@ public class ColumnFilter
      * @return the created tester or {@code null} if all the cells from the provided column
      * are queried.
      */
-    public Tester newTester(ColumnDefinition column)
+    public Tester newTester(ColumnMetadata column)
     {
         if (subSelections == null || !column.isComplex())
             return null;
@@ -246,7 +246,7 @@ public class ColumnFilter
      * Returns a {@code ColumnFilter}} builder that fetches all regular columns (and queries the columns
      * added to the builder, or everything if no column is added).
      */
-    public static Builder allRegularColumnsBuilder(CFMetaData metadata)
+    public static Builder allRegularColumnsBuilder(TableMetadata metadata)
     {
         return new Builder(metadata);
     }
@@ -313,21 +313,21 @@ public class ColumnFilter
      *
      * Note that for a allColumnsBuilder, if no queried columns are added, this is interpreted as querying
      * all columns, not querying none (but if you know you want to query all columns, prefer
-     * {@link ColumnFilter#all(CFMetaData)}. For selectionBuilder, adding no queried columns means no column will be
+     * {@link ColumnFilter#all(TableMetadata)}. For selectionBuilder, adding no queried columns means no column will be
      * fetched (so the builder will return {@code PartitionColumns.NONE}).
      */
     public static class Builder
     {
-        private final CFMetaData metadata; // null if we don't fetch all columns
+        private final TableMetadata metadata; // null if we don't fetch all columns
         private PartitionColumns.Builder queriedBuilder;
         private List<ColumnSubselection> subSelections;
 
-        private Builder(CFMetaData metadata)
+        private Builder(TableMetadata metadata)
         {
             this.metadata = metadata;
         }
 
-        public Builder add(ColumnDefinition c)
+        public Builder add(ColumnMetadata c)
         {
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
@@ -335,7 +335,7 @@ public class ColumnFilter
             return this;
         }
 
-        public Builder addAll(Iterable<ColumnDefinition> columns)
+        public Builder addAll(Iterable<ColumnMetadata> columns)
         {
             if (queriedBuilder == null)
                 queriedBuilder = PartitionColumns.builder();
@@ -352,12 +352,12 @@ public class ColumnFilter
             return this;
         }
 
-        public Builder slice(ColumnDefinition c, CellPath from, CellPath to)
+        public Builder slice(ColumnMetadata c, CellPath from, CellPath to)
         {
             return addSubSelection(ColumnSubselection.slice(c, from, to));
         }
 
-        public Builder select(ColumnDefinition c, CellPath elt)
+        public Builder select(ColumnMetadata c, CellPath elt)
         {
             return addSubSelection(ColumnSubselection.element(c, elt));
         }
@@ -393,7 +393,7 @@ public class ColumnFilter
         if (queried.isEmpty())
             return "";
 
-        Iterator<ColumnDefinition> defs = queried.selectOrderIterator();
+        Iterator<ColumnMetadata> defs = queried.selectOrderIterator();
         if (!defs.hasNext())
             return "<none>";
 
@@ -407,7 +407,7 @@ public class ColumnFilter
         return sb.toString();
     }
 
-    private void appendColumnDef(StringBuilder sb, ColumnDefinition column)
+    private void appendColumnDef(StringBuilder sb, ColumnMetadata column)
     {
         if (subSelections == null)
         {
@@ -458,7 +458,7 @@ public class ColumnFilter
             }
         }
 
-        public ColumnFilter deserialize(DataInputPlus in, int version, CFMetaData metadata) throws IOException
+        public ColumnFilter deserialize(DataInputPlus in, int version, TableMetadata metadata) throws IOException
         {
             int header = in.readUnsignedByte();
             boolean isFetchAll = (header & IS_FETCH_ALL_MASK) != 0;

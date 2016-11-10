@@ -37,6 +37,9 @@ import org.apache.cassandra.db.commitlog.CommitLog.Configuration;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.IntegerInterval;
 import org.apache.cassandra.utils.concurrent.OpOrder;
@@ -475,11 +478,11 @@ public abstract class CommitLogSegment
     void markDirty(Mutation mutation, int allocatedPosition)
     {
         for (PartitionUpdate update : mutation.getPartitionUpdates())
-            coverInMap(cfDirty, update.metadata().cfId, allocatedPosition);
+            coverInMap(cfDirty, update.metadata().id, allocatedPosition);
     }
 
     /**
-     * Marks the ColumnFamily specified by cfId as clean for this log segment. If the
+     * Marks the ColumnFamily specified by id as clean for this log segment. If the
      * given context argument is contained in this file, it will only mark the CF as
      * clean if no newer writes have taken place.
      *
@@ -571,8 +574,8 @@ public abstract class CommitLogSegment
         StringBuilder sb = new StringBuilder();
         for (UUID cfId : getDirtyCFIDs())
         {
-            CFMetaData m = Schema.instance.getCFMetaData(cfId);
-            sb.append(m == null ? "<deleted>" : m.cfName).append(" (").append(cfId)
+            TableMetadata m = Schema.instance.getTableMetadata(cfId);
+            sb.append(m == null ? "<deleted>" : m.table).append(" (").append(cfId)
               .append(", dirty: ").append(cfDirty.get(cfId))
               .append(", clean: ").append(cfClean.get(cfId))
               .append("), ");

@@ -76,6 +76,6 @@ public final class RowCacheKey extends CacheKey
     @Override
     public String toString()
     {
-        return String.format("RowCacheKey(ksAndCFName:%s, key:%s)", ksAndCFName, Arrays.toString(key));
+        return String.format("RowCacheKey(keyspaceAndTablePair:%s, key:%s)", ksAndCFName, Arrays.toString(key));
     }
 }

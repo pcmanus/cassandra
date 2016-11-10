@@ -25,7 +25,7 @@ import com.google.common.base.Joiner;
 
 import org.apache.cassandra.auth.FunctionResource;
 import org.apache.cassandra.auth.Permission;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.cql3.Validation;
 import org.apache.cassandra.cql3.functions.*;
@@ -35,7 +35,7 @@ import org.apache.cassandra.exceptions.RequestValidationException;
 import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.ClientState;
-import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.schema.MigrationManager;
 import org.apache.cassandra.transport.Event;
 
 /**
@@ -64,7 +64,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
     @Override
     public Prepared prepare() throws InvalidRequestException
     {
-        if (Schema.instance.getKSMetaData(functionName.keyspace) != null)
+        if (Schema.instance.getKeyspaceMetadata(functionName.keyspace) != null)
         {
             argTypes = new ArrayList<>(argRawTypes.size());
             for (CQL3Type.Raw rawType : argRawTypes)
@@ -138,7 +138,7 @@ public final class DropFunctionStatement extends SchemaAlteringStatement
                 throw new InvalidRequestException(getMissingFunctionError());
         }
 
-        KeyspaceMetadata ksm = Schema.instance.getKSMetaData(old.name().keyspace);
+        KeyspaceMetadata ksm = Schema.instance.getKeyspaceMetadata(old.name().keyspace);
         Collection<UDAggregate> referrers = ksm.functions.aggregatesUsingFunction(old);
         if (!referrers.isEmpty())
             throw new InvalidRequestException(String.format("Function '%s' still referenced by %s", old, referrers));

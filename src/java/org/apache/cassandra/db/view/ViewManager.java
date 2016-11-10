@@ -26,9 +26,8 @@ import com.google.common.util.concurrent.Striped;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.ViewDefinition;
+import org.apache.cassandra.schema.ViewMetadata;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.repair.SystemDistributedKeyspace;
@@ -75,12 +74,12 @@ public class ViewManager
         {
             for (PartitionUpdate update : mutation.getPartitionUpdates())
             {
-                assert keyspace.getName().equals(update.metadata().ksName);
+                assert keyspace.getName().equals(update.metadata().keyspace);
 
                 if (coordinatorBatchlog && keyspace.getReplicationStrategy().getReplicationFactor() == 1)
                     continue;
 
-                if (!forTable(update.metadata()).updatedViews(update).isEmpty())
+                if (!forTable(update.metadata().id).updatedViews(update).isEmpty())
                     return true;
             }
         }
@@ -93,22 +92,10 @@ public class ViewManager
         return viewsByName.values();
     }
 
-    public void update(String viewName)
-    {
-        View view = viewsByName.get(viewName);
-        assert view != null : "When updating a view, it should already be in the ViewManager";
-        view.build();
-
-        // We provide the new definition from the base metadata
-        Optional<ViewDefinition> viewDefinition = keyspace.getMetadata().views.get(viewName);
-        assert viewDefinition.isPresent() : "When updating a view, it should still be in the Keyspaces views";
-        view.updateDefinition(viewDefinition.get());
-    }
-
     public void reload()
     {
-        Map<String, ViewDefinition> newViewsByName = new HashMap<>();
-        for (ViewDefinition definition : keyspace.getMetadata().views)
+        Map<String, ViewMetadata> newViewsByName = new HashMap<>();
+        for (ViewMetadata definition : keyspace.getMetadata().views)
         {
             newViewsByName.put(definition.viewName, definition);
         }
@@ -119,7 +106,7 @@ public class ViewManager
                 removeView(viewName);
         }
 
-        for (Map.Entry<String, ViewDefinition> entry : newViewsByName.entrySet())
+        for (Map.Entry<String, ViewMetadata> entry : newViewsByName.entrySet())
         {
             if (!viewsByName.containsKey(entry.getKey()))
                 addView(entry.getValue());
@@ -147,10 +134,10 @@ public class ViewManager
         }
     }
 
-    public void addView(ViewDefinition definition)
+    public void addView(ViewMetadata definition)
     {
         View view = new View(definition, keyspace.getColumnFamilyStore(definition.baseTableId));
-        forTable(view.getDefinition().baseTableMetadata()).add(view);
+        forTable(view.getDefinition().baseTableId).add(view);
         viewsByName.put(definition.viewName, view);
     }
 
@@ -161,7 +148,7 @@ public class ViewManager
         if (view == null)
             return;
 
-        forTable(view.getDefinition().baseTableMetadata()).removeByName(name);
+        forTable(view.getDefinition().baseTableId).removeByName(name);
         SystemKeyspace.setViewRemoved(keyspace.getName(), view.name);
         SystemDistributedKeyspace.setViewRemoved(keyspace.getName(), view.name);
     }
@@ -172,14 +159,13 @@ public class ViewManager
             view.build();
     }
 
-    public TableViews forTable(CFMetaData metadata)
+    public TableViews forTable(UUID id)
     {
-        UUID baseId = metadata.cfId;
-        TableViews views = viewsByBaseTable.get(baseId);
+        TableViews views = viewsByBaseTable.get(id);
         if (views == null)
         {
-            views = new TableViews(metadata);
-            TableViews previous = viewsByBaseTable.putIfAbsent(baseId, views);
+            views = new TableViews(id);
+            TableViews previous = viewsByBaseTable.putIfAbsent(id, views);
             if (previous != null)
                 views = previous;
         }

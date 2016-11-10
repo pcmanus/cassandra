@@ -31,10 +31,9 @@ import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.cql3.statements.IndexTarget;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.UnknownIndexException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -76,8 +75,8 @@ public final class IndexMetadata
         this.kind = kind;
     }
 
-    public static IndexMetadata fromLegacyMetadata(CFMetaData cfm,
-                                                   ColumnDefinition column,
+    public static IndexMetadata fromLegacyMetadata(Iterable<ColumnMetadata> columns,
+                                                   ColumnMetadata column,
                                                    String name,
                                                    Kind kind,
                                                    Map<String, String> options)
@@ -108,7 +107,7 @@ public final class IndexMetadata
                 target = new IndexTarget(column.name, IndexTarget.Type.VALUES);
             }
         }
-        newOptions.put(IndexTarget.TARGET_OPTION_NAME, target.asCqlString(cfm));
+        newOptions.put(IndexTarget.TARGET_OPTION_NAME, target.asCqlString(columns));
         return new IndexMetadata(name, newOptions, kind);
     }
 
@@ -117,7 +116,7 @@ public final class IndexMetadata
         return new IndexMetadata(name, options, kind);
     }
 
-    public static IndexMetadata fromIndexTargets(CFMetaData cfm,
+    public static IndexMetadata fromIndexTargets(Iterable<ColumnMetadata> columns,
                                                  List<IndexTarget> targets,
                                                  String name,
                                                  Kind kind,
@@ -125,7 +124,7 @@ public final class IndexMetadata
     {
         Map<String, String> newOptions = new HashMap<>(options);
         newOptions.put(IndexTarget.TARGET_OPTION_NAME, targets.stream()
-                                                              .map(target -> target.asCqlString(cfm))
+                                                              .map(target -> target.asCqlString(columns))
                                                               .collect(Collectors.joining(", ")));
         return new IndexMetadata(name, newOptions, kind);
     }
@@ -143,7 +142,7 @@ public final class IndexMetadata
             return PATTERN_NON_WORD_CHAR.matcher(cfName + "_" + root + "_idx").replaceAll("");
     }
 
-    public void validate(CFMetaData cfm)
+    public void validate(TableMetadata table)
     {
         if (!isNameValid(name))
             throw new ConfigurationException("Illegal index name " + name);
@@ -160,14 +159,11 @@ public final class IndexMetadata
             Class<Index> indexerClass = FBUtilities.classForName(className, "custom indexer");
             if(!Index.class.isAssignableFrom(indexerClass))
                 throw new ConfigurationException(String.format("Specified Indexer class (%s) does not implement the Indexer interface", className));
-            validateCustomIndexOptions(cfm, indexerClass, options);
+            validateCustomIndexOptions(table, indexerClass, options);
         }
     }
 
-    private void validateCustomIndexOptions(CFMetaData cfm,
-                                            Class<? extends Index> indexerClass,
-                                            Map<String, String> options)
-    throws ConfigurationException
+    private void validateCustomIndexOptions(TableMetadata table, Class<? extends Index> indexerClass, Map<String, String> options)
     {
         try
         {
@@ -180,7 +176,7 @@ public final class IndexMetadata
             Map<?,?> unknownOptions;
             try
             {
-                unknownOptions = (Map) indexerClass.getMethod("validateOptions", Map.class, CFMetaData.class).invoke(null, filteredOptions, cfm);
+                unknownOptions = (Map) indexerClass.getMethod("validateOptions", Map.class, TableMetadata.class).invoke(null, filteredOptions, table);
             }
             catch (NoSuchMethodException e)
             {
@@ -267,10 +263,10 @@ public final class IndexMetadata
             UUIDSerializer.serializer.serialize(metadata.id, out, version);
         }
 
-        public IndexMetadata deserialize(DataInputPlus in, int version, CFMetaData cfm) throws IOException
+        public IndexMetadata deserialize(DataInputPlus in, int version, TableMetadata table) throws IOException
         {
             UUID id = UUIDSerializer.serializer.deserialize(in, version);
-            return cfm.getIndexes().get(id).orElseThrow(() -> new UnknownIndexException(cfm, id));
+            return table.indexes.get(id).orElseThrow(() -> new UnknownIndexException(table, id));
         }
 
         public long serializedSize(IndexMetadata metadata, int version)

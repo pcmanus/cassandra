@@ -15,19 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.db;
+package org.apache.cassandra.service;
 
-import java.io.IOException;
-import java.util.UUID;
-
-
-public class UnknownColumnFamilyException extends IOException
+public enum ReadRepairDecision
 {
-    public final UUID cfId;
-
-    public UnknownColumnFamilyException(String msg, UUID cfId)
-    {
-        super(msg);
-        this.cfId = cfId;
-    }
+    NONE, GLOBAL, DC_LOCAL;
 }

@@ -18,7 +18,7 @@
 */
 package org.apache.cassandra.db.rows;
 
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionColumns;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -32,7 +32,7 @@ public interface BaseRowIterator<U extends Unfiltered> extends CloseableIterator
     /**
      * The metadata for the table this iterator on.
      */
-    public CFMetaData metadata();
+    public TableMetadata metadata();
 
     /**
      * Whether or not the rows returned by this iterator are in reversed

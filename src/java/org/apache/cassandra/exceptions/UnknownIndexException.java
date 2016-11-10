@@ -15,9 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.config;
 
-public enum ReadRepairDecision
+package org.apache.cassandra.exceptions;
+
+import java.io.IOException;
+import java.util.UUID;
+
+import org.apache.cassandra.schema.TableMetadata;
+
+/**
+ * Exception thrown when we read an index id from a serialized ReadCommand and no corresponding IndexMetadata
+ * can be found in the TableMetadata#indexes collection. Note that this is an internal exception and is not meant
+ * to be user facing, the node reading the ReadCommand should proceed as if no index id were present.
+ */
+public final class UnknownIndexException extends IOException
 {
-    NONE, GLOBAL, DC_LOCAL;
+    public final UUID indexId;
+    public UnknownIndexException(TableMetadata metadata, UUID id)
+    {
+        super(String.format("Unknown index %s for table %s.%s", id.toString(), metadata.keyspace, metadata.table));
+        indexId = id;
+    }
 }

@@ -86,7 +86,7 @@ public class TriggerExecutor
         if (intermediate == null || intermediate.isEmpty())
             return updates;
 
-        return PartitionUpdate.merge(validateForSinglePartition(updates.metadata().cfId, updates.partitionKey(), intermediate));
+        return PartitionUpdate.merge(validateForSinglePartition(updates.metadata().id, updates.partitionKey(), intermediate));
     }
 
     /**
@@ -191,7 +191,7 @@ public class TriggerExecutor
         if (!key.equals(update.partitionKey()))
             throw new InvalidRequestException("Partition key of additional mutation does not match primary update key");
 
-        if (!cfId.equals(update.metadata().cfId))
+        if (!cfId.equals(update.metadata().id))
             throw new InvalidRequestException("table of additional mutation does not match primary update table");
     }
 
@@ -211,7 +211,7 @@ public class TriggerExecutor
      */
     private List<Mutation> executeInternal(PartitionUpdate update)
     {
-        Triggers triggers = update.metadata().getTriggers();
+        Triggers triggers = update.metadata().triggers;
         if (triggers.isEmpty())
             return null;
         List<Mutation> tmutations = Lists.newLinkedList();
@@ -238,7 +238,7 @@ public class TriggerExecutor
         }
         catch (Exception ex)
         {
-            throw new RuntimeException(String.format("Exception while executing trigger on table with ID: %s", update.metadata().cfId), ex);
+            throw new RuntimeException(String.format("Exception while executing trigger on table with ID: %s", update.metadata().id), ex);
         }
         finally
         {

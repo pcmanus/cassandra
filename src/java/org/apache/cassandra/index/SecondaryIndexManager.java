@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.StageManager;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.statements.IndexTarget;
 import org.apache.cassandra.db.*;
@@ -55,12 +54,12 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.internal.CassandraIndex;
 import org.apache.cassandra.index.transactions.*;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.Indexes;
 import org.apache.cassandra.service.pager.SinglePartitionPager;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.ProtocolVersion;
-import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -141,7 +140,7 @@ public class SecondaryIndexManager implements IndexRegistry
     public void reload()
     {
         // figure out what needs to be added and dropped.
-        Indexes tableIndexes = baseCfs.metadata.getIndexes();
+        Indexes tableIndexes = baseCfs.metadata().indexes;
         indexes.keySet()
                .stream()
                .filter(indexName -> !tableIndexes.has(indexName))
@@ -215,7 +214,7 @@ public class SecondaryIndexManager implements IndexRegistry
     }
 
 
-    public Set<IndexMetadata> getDependentIndexes(ColumnDefinition column)
+    public Set<IndexMetadata> getDependentIndexes(ColumnMetadata column)
     {
         if (indexes.isEmpty())
             return Collections.emptySet();
@@ -548,11 +547,11 @@ public class SecondaryIndexManager implements IndexRegistry
     public void indexPartition(DecoratedKey key, Set<Index> indexes, int pageSize)
     {
         if (logger.isTraceEnabled())
-            logger.trace("Indexing partition {}", baseCfs.metadata.getKeyValidator().getString(key.getKey()));
+            logger.trace("Indexing partition {}", baseCfs.metadata().partitionKeyType.getString(key.getKey()));
 
         if (!indexes.isEmpty())
         {
-            SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(baseCfs.metadata,
+            SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fullPartitionRead(baseCfs.metadata(),
                                                                                           FBUtilities.nowInSeconds(),
                                                                                           key);
             int nowInSec = cmd.nowInSec();
@@ -614,7 +613,7 @@ public class SecondaryIndexManager implements IndexRegistry
         if (meanCellsPerPartition <= 0)
             return DEFAULT_PAGE_SIZE;
 
-        int columnsPerRow = baseCfs.metadata.partitionColumns().regulars.size();
+        int columnsPerRow = baseCfs.metadata().regularColumns().size();
         if (meanCellsPerPartition <= 0)
             return DEFAULT_PAGE_SIZE;
 
@@ -625,8 +624,8 @@ public class SecondaryIndexManager implements IndexRegistry
 
         logger.trace("Calculated page size {} for indexing {}.{} ({}/{}/{}/{})",
                      pageSize,
-                     baseCfs.metadata.ksName,
-                     baseCfs.metadata.cfName,
+                     baseCfs.metadata.keyspace,
+                     baseCfs.metadata.table,
                      meanPartitionSize,
                      meanCellsPerPartition,
                      meanRowsPerPartition,
@@ -907,7 +906,7 @@ public class SecondaryIndexManager implements IndexRegistry
                 {
                 }
 
-                public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+                public void onComplexDeletion(int i, Clustering clustering, ColumnMetadata column, DeletionTime merged, DeletionTime original)
                 {
                 }
 
@@ -1001,7 +1000,7 @@ public class SecondaryIndexManager implements IndexRegistry
                 {
                 }
 
-                public void onComplexDeletion(int i, Clustering clustering, ColumnDefinition column, DeletionTime merged, DeletionTime original)
+                public void onComplexDeletion(int i, Clustering clustering, ColumnMetadata column, DeletionTime merged, DeletionTime original)
                 {
                 }
 

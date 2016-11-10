@@ -37,10 +37,10 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
-import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.config.Schema;
-import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
@@ -101,29 +101,29 @@ public class CommitLogReplayer implements CommitLogReadHandler
         for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
         {
             // but, if we've truncated the cf in question, then we need to need to start replay after the truncation
-            CommitLogPosition truncatedAt = SystemKeyspace.getTruncatedPosition(cfs.metadata.cfId);
+            CommitLogPosition truncatedAt = SystemKeyspace.getTruncatedPosition(cfs.metadata.id);
             if (truncatedAt != null)
             {
                 // Point in time restore is taken to mean that the tables need to be replayed even if they were
                 // deleted at a later point in time. Any truncation record after that point must thus be cleared prior
                 // to replay (CASSANDRA-9195).
                 long restoreTime = commitLog.archiver.restorePointInTime;
-                long truncatedTime = SystemKeyspace.getTruncatedAt(cfs.metadata.cfId);
+                long truncatedTime = SystemKeyspace.getTruncatedAt(cfs.metadata.id);
                 if (truncatedTime > restoreTime)
                 {
                     if (replayFilter.includes(cfs.metadata))
                     {
                         logger.info("Restore point in time is before latest truncation of table {}.{}. Clearing truncation record.",
-                                    cfs.metadata.ksName,
-                                    cfs.metadata.cfName);
-                        SystemKeyspace.removeTruncationRecord(cfs.metadata.cfId);
+                                    cfs.metadata.keyspace,
+                                    cfs.metadata.table);
+                        SystemKeyspace.removeTruncationRecord(cfs.metadata.id);
                         truncatedAt = null;
                     }
                 }
             }
 
             IntervalSet<CommitLogPosition> filter = persistedIntervals(cfs.getLiveSSTables(), truncatedAt);
-            cfPersisted.put(cfs.metadata.cfId, filter);
+            cfPersisted.put(cfs.metadata.id, filter);
         }
         CommitLogPosition globalPosition = firstNotCovered(cfPersisted.values());
         logger.debug("Global replay position is {} from columnfamilies {}", globalPosition, FBUtilities.toString(cfPersisted));
@@ -192,7 +192,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
             {
                 public void runMayThrow()
                 {
-                    if (Schema.instance.getKSMetaData(mutation.getKeyspaceName()) == null)
+                    if (Schema.instance.getKeyspaceMetadata(mutation.getKeyspaceName()) == null)
                         return;
                     if (commitLogReplayer.pointInTimeExceeded(mutation))
                         return;
@@ -207,12 +207,12 @@ public class CommitLogReplayer implements CommitLogReadHandler
                     Mutation newMutation = null;
                     for (PartitionUpdate update : commitLogReplayer.replayFilter.filter(mutation))
                     {
-                        if (Schema.instance.getCF(update.metadata().cfId) == null)
+                        if (Schema.instance.getTableMetadata(update.metadata().id) == null)
                             continue; // dropped
 
                         // replay if current segment is newer than last flushed one or,
                         // if it is the last known segment, if we are after the commit log segment position
-                        if (commitLogReplayer.shouldReplay(update.metadata().cfId, new CommitLogPosition(segmentId, entryLocation)))
+                        if (commitLogReplayer.shouldReplay(update.metadata().id, new CommitLogPosition(segmentId, entryLocation)))
                         {
                             if (newMutation == null)
                                 newMutation = new Mutation(mutation.getKeyspaceName(), mutation.key());
@@ -280,7 +280,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
     {
         public abstract Iterable<PartitionUpdate> filter(Mutation mutation);
 
-        public abstract boolean includes(CFMetaData metadata);
+        public abstract boolean includes(TableMetadataRef metadata);
 
         public static ReplayFilter create()
         {
@@ -315,7 +315,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
             return mutation.getPartitionUpdates();
         }
 
-        public boolean includes(CFMetaData metadata)
+        public boolean includes(TableMetadataRef metadata)
         {
             return true;
         }
@@ -340,14 +340,14 @@ public class CommitLogReplayer implements CommitLogReadHandler
             {
                 public boolean apply(PartitionUpdate upd)
                 {
-                    return cfNames.contains(upd.metadata().cfName);
+                    return cfNames.contains(upd.metadata().table);
                 }
             });
         }
 
-        public boolean includes(CFMetaData metadata)
+        public boolean includes(TableMetadataRef metadata)
         {
-            return toReplay.containsEntry(metadata.ksName, metadata.cfName);
+            return toReplay.containsEntry(metadata.keyspace, metadata.table);
         }
     }
 
