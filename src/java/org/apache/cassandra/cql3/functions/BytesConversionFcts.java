@@ -26,6 +26,7 @@ import org.apache.cassandra.cql3.CQL3Type;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -50,6 +51,8 @@ public abstract class BytesConversionFcts
 
         functions.add(VarcharAsBlobFct);
         functions.add(BlobAsVarcharFct);
+
+        functions.add(ByteSizeOfFct);
 
         return functions;
     }
@@ -104,6 +107,15 @@ public abstract class BytesConversionFcts
         public ByteBuffer execute(ProtocolVersion protocolVersion, List<ByteBuffer> parameters)
         {
             return parameters.get(0);
+        }
+    };
+
+    public static final Function ByteSizeOfFct = new NativeScalarFunction("bytesizeof", Int32Type.instance, BytesType.instance)
+    {
+        public ByteBuffer execute(ProtocolVersion protocolVersion, List<ByteBuffer> parameters)
+        {
+            ByteBuffer bb = parameters.get(0);
+            return bb == null ? null : ByteBufferUtil.bytes(bb.remaining());
         }
     };
 }
