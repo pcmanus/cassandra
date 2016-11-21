@@ -60,7 +60,6 @@ import org.apache.cassandra.scheduler.IRequestScheduler;
 import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.security.EncryptionContext;
 import org.apache.cassandra.service.CacheService.CacheType;
-import org.apache.cassandra.thrift.ThriftServer.ThriftServerType;
 import org.apache.cassandra.utils.FBUtilities;
 
 import org.apache.commons.lang3.StringUtils;
@@ -102,7 +101,6 @@ public class DatabaseDescriptor
     private static RequestSchedulerOptions requestSchedulerOptions;
 
     private static long preparedStatementsCacheSizeInMB;
-    private static long thriftPreparedStatementsCacheSizeInMB;
 
     private static long keyCacheSizeInMB;
     private static long counterCacheSizeInMB;
@@ -312,8 +310,6 @@ public class DatabaseDescriptor
 
         applyAddressConfig();
 
-        applyThriftHSHA();
-
         applySnitch();
 
         applyRequestScheduler();
@@ -422,9 +418,6 @@ public class DatabaseDescriptor
             logger.info("Global memtable off-heap threshold is disabled, HeapAllocator will be used instead");
         else
             logger.info("Global memtable off-heap threshold is enabled at {}MB", conf.memtable_offheap_space_in_mb);
-
-        if (conf.thrift_framed_transport_size_in_mb <= 0)
-            throw new ConfigurationException("thrift_framed_transport_size_in_mb must be positive, but was " + conf.thrift_framed_transport_size_in_mb, false);
 
         if (conf.native_transport_max_frame_size_in_mb <= 0)
             throw new ConfigurationException("native_transport_max_frame_size_in_mb must be positive, but was " + conf.native_transport_max_frame_size_in_mb, false);
@@ -595,22 +588,6 @@ public class DatabaseDescriptor
         {
             throw new ConfigurationException("prepared_statements_cache_size_mb option was set incorrectly to '"
                                              + conf.prepared_statements_cache_size_mb + "', supported values are <integer> >= 0.", false);
-        }
-
-        try
-        {
-            // if thrift_prepared_statements_cache_size_mb option was set to "auto" then size of the cache should be "max(1/256 of Heap (in MB), 10MB)"
-            thriftPreparedStatementsCacheSizeInMB = (conf.thrift_prepared_statements_cache_size_mb == null)
-                                                    ? Math.max(10, (int) (Runtime.getRuntime().maxMemory() / 1024 / 1024 / 256))
-                                                    : conf.thrift_prepared_statements_cache_size_mb;
-
-            if (thriftPreparedStatementsCacheSizeInMB <= 0)
-                throw new NumberFormatException(); // to escape duplicating error message
-        }
-        catch (NumberFormatException e)
-        {
-            throw new ConfigurationException("thrift_prepared_statements_cache_size_mb option was set incorrectly to '"
-                                             + conf.thrift_prepared_statements_cache_size_mb + "', supported values are <integer> >= 0.", false);
         }
 
         try
@@ -831,18 +808,6 @@ public class DatabaseDescriptor
                 throw new ConfigurationException("If rpc_address is set to a wildcard address (" + config.rpc_address + "), then " +
                                                  "you must set broadcast_rpc_address to a value other than " + config.rpc_address, false);
         }
-    }
-
-    public static void applyThriftHSHA()
-    {
-        // fail early instead of OOMing (see CASSANDRA-8116)
-        if (ThriftServerType.HSHA.equals(conf.rpc_server_type) && conf.rpc_max_threads == Integer.MAX_VALUE)
-            throw new ConfigurationException("The hsha rpc_server_type is not compatible with an rpc_max_threads " +
-                                             "setting of 'unlimited'.  Please see the comments in cassandra.yaml " +
-                                             "for rpc_server_type and rpc_max_threads.",
-                                             false);
-        if (ThriftServerType.HSHA.equals(conf.rpc_server_type) && conf.rpc_max_threads > (FBUtilities.getAvailableProcessors() * 2 + 1024))
-            logger.warn("rpc_max_threads setting of {} may be too high for the hsha server and cause unnecessary thread contention, reducing performance", conf.rpc_max_threads);
     }
 
     public static void applyEncryptionContext()
@@ -1125,11 +1090,6 @@ public class DatabaseDescriptor
     public static int setCredentialsCacheMaxEntries(int maxEntries)
     {
         return conf.credentials_cache_max_entries = maxEntries;
-    }
-
-    public static int getThriftFramedTransportSize()
-    {
-        return conf.thrift_framed_transport_size_in_mb * 1024 * 1024;
     }
 
     public static int getMaxValueSize()
@@ -2264,11 +2224,6 @@ public class DatabaseDescriptor
     public static long getPreparedStatementsCacheSizeMB()
     {
         return preparedStatementsCacheSizeInMB;
-    }
-
-    public static long getThriftPreparedStatementsCacheSizeMB()
-    {
-        return thriftPreparedStatementsCacheSizeInMB;
     }
 
     public static boolean enableUserDefinedFunctions()

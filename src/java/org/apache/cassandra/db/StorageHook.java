@@ -39,16 +39,13 @@ public interface StorageHook
                                                                       SSTableReader sstable,
                                                                       ClusteringIndexFilter filter,
                                                                       ColumnFilter selectedColumns,
-                                                                      boolean isForThrift,
-                                                                      int nowInSec,
-                                                                      boolean applyThriftTransformation);
+                                                                      int nowInSec);
     public UnfilteredRowIterator makeRowIterator(ColumnFamilyStore cfs,
                                                  SSTableReader sstable,
                                                  DecoratedKey key,
                                                  Slices slices,
                                                  ColumnFilter selectedColumns,
-                                                 boolean reversed,
-                                                 boolean isForThrift);
+                                                 boolean reversed);
 
     static StorageHook createHook()
     {
@@ -65,20 +62,18 @@ public interface StorageHook
 
                 public void reportRead(UUID cfid, DecoratedKey key) {}
 
-                public UnfilteredRowIteratorWithLowerBound makeRowIteratorWithLowerBound(ColumnFamilyStore cfs, DecoratedKey partitionKey, SSTableReader sstable, ClusteringIndexFilter filter, ColumnFilter selectedColumns, boolean isForThrift, int nowInSec, boolean applyThriftTransformation)
+                public UnfilteredRowIteratorWithLowerBound makeRowIteratorWithLowerBound(ColumnFamilyStore cfs, DecoratedKey partitionKey, SSTableReader sstable, ClusteringIndexFilter filter, ColumnFilter selectedColumns, int nowInSec)
                 {
                     return new UnfilteredRowIteratorWithLowerBound(partitionKey,
                                                                    sstable,
                                                                    filter,
                                                                    selectedColumns,
-                                                                   isForThrift,
-                                                                   nowInSec,
-                                                                   applyThriftTransformation);
+                                                                   nowInSec);
                 }
 
-                public UnfilteredRowIterator makeRowIterator(ColumnFamilyStore cfs, SSTableReader sstable, DecoratedKey key, Slices slices, ColumnFilter selectedColumns, boolean reversed, boolean isForThrift)
+                public UnfilteredRowIterator makeRowIterator(ColumnFamilyStore cfs, SSTableReader sstable, DecoratedKey key, Slices slices, ColumnFilter selectedColumns, boolean reversed)
                 {
-                    return sstable.iterator(key, slices, selectedColumns, reversed, isForThrift);
+                    return sstable.iterator(key, slices, selectedColumns, reversed);
                 }
             };
         }

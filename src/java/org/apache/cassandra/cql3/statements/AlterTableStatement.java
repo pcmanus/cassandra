@@ -41,8 +41,6 @@ import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.transport.Event;
 import org.apache.cassandra.utils.*;
 
-import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
-
 public class AlterTableStatement extends SchemaAlteringStatement
 {
     public enum Type
@@ -83,7 +81,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
     public Event.SchemaChange announceMigration(boolean isLocalOnly) throws RequestValidationException
     {
-        CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
+        CFMetaData meta = Validation.validateColumnFamily(keyspace(), columnFamily());
         if (meta.isView())
             throw new InvalidRequestException("Cannot use ALTER TABLE on Materialized View");
 

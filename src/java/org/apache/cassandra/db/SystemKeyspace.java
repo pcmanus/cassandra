@@ -60,7 +60,6 @@ import org.apache.cassandra.schema.*;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.PaxosState;
-import org.apache.cassandra.thrift.cassandraConstants;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.utils.*;
 
@@ -158,7 +157,6 @@ public final class SystemKeyspace
                 + "release_version text,"
                 + "rpc_address inet,"
                 + "schema_version uuid,"
-                + "thrift_version text,"
                 + "tokens set<varchar>,"
                 + "truncated_at map<uuid, blob>,"
                 + "PRIMARY KEY ((key)))");
@@ -342,7 +340,6 @@ public final class SystemKeyspace
                      "cluster_name," +
                      "release_version," +
                      "cql_version," +
-                     "thrift_version," +
                      "native_protocol_version," +
                      "data_center," +
                      "rack," +
@@ -357,7 +354,6 @@ public final class SystemKeyspace
                             DatabaseDescriptor.getClusterName(),
                             FBUtilities.getReleaseVersionString(),
                             QueryProcessor.CQL_VERSION.toString(),
-                            cassandraConstants.VERSION,
                             String.valueOf(ProtocolVersion.CURRENT.asInt()),
                             snitch.getDatacenter(FBUtilities.getBroadcastAddress()),
                             snitch.getRack(FBUtilities.getBroadcastAddress()),
