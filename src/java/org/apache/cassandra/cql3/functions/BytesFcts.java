@@ -32,7 +32,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.serializers.MarshalException;
 
-public abstract class BytesConversionFcts
+public abstract class BytesFcts
 {
     public static Collection<Function> all()
     {

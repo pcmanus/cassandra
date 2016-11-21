@@ -474,7 +474,7 @@ public final class SystemKeyspace
         return Functions.builder()
                         .add(UuidFcts.all())
                         .add(TimeFcts.all())
-                        .add(BytesConversionFcts.all())
+                        .add(BytesFcts.all())
                         .add(AggregateFcts.all())
                         .add(CastFcts.all())
                         .build();
