@@ -1,4 +1,6 @@
 3.11
+Merged from 3.0:
+ * Reject default_time_to_live option when creating or altering MVs (CASSANDRA-12868)
  * AnticompactionRequestSerializer serializedSize is incorrect (CASSANDRA-12934)
 
 3.10
