@@ -224,20 +224,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         return expressions.iterator();
     }
 
-    private static Clustering makeCompactClustering(CFMetaData metadata, ByteBuffer name)
-    {
-        assert metadata.isCompactTable();
-        if (metadata.isCompound())
-        {
-            List<ByteBuffer> values = CompositeType.splitName(name);
-            return Clustering.make(values.toArray(new ByteBuffer[metadata.comparator.size()]));
-        }
-        else
-        {
-            return Clustering.make(name);
-        }
-    }
-
     @Override
     public String toString()
     {

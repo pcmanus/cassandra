@@ -74,9 +74,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public abstract class CompactTables
 {
     // We use an empty value for the 1) this can't conflict with a user-defined column and 2) this actually
-    // validate with any comparator which makes it convenient for columnDefinitionComparator().
+    // validate with any comparator.
     public static final ByteBuffer SUPER_COLUMN_MAP_COLUMN = ByteBufferUtil.EMPTY_BYTE_BUFFER;
-    public static final String SUPER_COLUMN_MAP_COLUMN_STR = UTF8Type.instance.compose(SUPER_COLUMN_MAP_COLUMN);
 
     private CompactTables() {}
 
@@ -93,14 +92,6 @@ public abstract class CompactTables
         return columns.regulars.getSimple(0);
     }
 
-    public static AbstractType<?> columnDefinitionComparator(String kind, boolean isSuper, AbstractType<?> rawComparator, AbstractType<?> rawSubComparator)
-    {
-        if (!"regular".equals(kind))
-            return UTF8Type.instance;
-
-        return isSuper ? rawSubComparator : rawComparator;
-    }
-
     public static boolean hasEmptyCompactValue(CFMetaData metadata)
     {
         return metadata.compactValueColumn().type instanceof EmptyType;
@@ -113,15 +104,7 @@ public abstract class CompactTables
 
     public static DefaultNames defaultNameGenerator(Set<String> usedNames)
     {
-        return new DefaultNames(new HashSet<String>(usedNames));
-    }
-
-    public static DefaultNames defaultNameGenerator(Iterable<ColumnDefinition> defs)
-    {
-        Set<String> usedNames = new HashSet<>();
-        for (ColumnDefinition def : defs)
-            usedNames.add(def.name.toString());
-        return new DefaultNames(usedNames);
+        return new DefaultNames(new HashSet<>(usedNames));
     }
 
     public static class DefaultNames

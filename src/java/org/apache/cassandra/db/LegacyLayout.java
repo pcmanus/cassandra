@@ -202,22 +202,6 @@ public abstract class LegacyLayout
             this.collectionElement = collectionElement;
         }
 
-        public ByteBuffer encode(CFMetaData metadata)
-        {
-            return encodeCellName(metadata, clustering, column == null ? ByteBufferUtil.EMPTY_BYTE_BUFFER : column.name.bytes, collectionElement);
-        }
-
-        public ByteBuffer superColumnSubName()
-        {
-            assert collectionElement != null;
-            return collectionElement;
-        }
-
-        public ByteBuffer superColumnName()
-        {
-            return clustering.get(0);
-        }
-
         @Override
         public String toString()
         {

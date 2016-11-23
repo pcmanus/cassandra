@@ -209,10 +209,6 @@ public class Config
     public int dynamic_snitch_reset_interval_in_ms = 600000;
     public double dynamic_snitch_badness_threshold = 0.1;
 
-    public String request_scheduler;
-    public RequestSchedulerId request_scheduler_id;
-    public RequestSchedulerOptions request_scheduler_options;
-
     public EncryptionOptions.ServerEncryptionOptions server_encryption_options = new EncryptionOptions.ServerEncryptionOptions();
     public EncryptionOptions.ClientEncryptionOptions client_encryption_options = new EncryptionOptions.ClientEncryptionOptions();
     // this encOptions is for backward compatibility (a warning is logged by DatabaseDescriptor)
@@ -418,11 +414,6 @@ public class Config
         ignore,
         die,
         die_immediate
-    }
-
-    public enum RequestSchedulerId
-    {
-        keyspace
     }
 
     public enum DiskOptimizationStrategy

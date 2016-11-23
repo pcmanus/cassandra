@@ -42,7 +42,6 @@ import org.apache.cassandra.auth.IAuthorizer;
 import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.auth.IRoleManager;
 import org.apache.cassandra.config.Config.CommitLogSync;
-import org.apache.cassandra.config.Config.RequestSchedulerId;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.FSWriteError;
@@ -56,8 +55,6 @@ import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.SeedProvider;
 import org.apache.cassandra.net.BackPressureStrategy;
 import org.apache.cassandra.net.RateBasedBackPressure;
-import org.apache.cassandra.scheduler.IRequestScheduler;
-import org.apache.cassandra.scheduler.NoScheduler;
 import org.apache.cassandra.security.EncryptionContext;
 import org.apache.cassandra.service.CacheService.CacheType;
 import org.apache.cassandra.utils.FBUtilities;
@@ -95,10 +92,6 @@ public class DatabaseDescriptor
     // Don't initialize the role manager until applying config. The options supported by CassandraRoleManager
     // depend on the configured IAuthenticator, so defer creating it until that's been set.
     private static IRoleManager roleManager;
-
-    private static IRequestScheduler requestScheduler;
-    private static RequestSchedulerId requestSchedulerId;
-    private static RequestSchedulerOptions requestSchedulerOptions;
 
     private static long preparedStatementsCacheSizeInMB;
 
@@ -311,8 +304,6 @@ public class DatabaseDescriptor
         applyAddressConfig();
 
         applySnitch();
-
-        applyRequestScheduler();
 
         applyInitialTokens();
 
@@ -851,47 +842,6 @@ public class DatabaseDescriptor
         }
     }
 
-    // Maybe safe for clients + tools
-    public static void applyRequestScheduler()
-    {
-        /* Request Scheduler setup */
-        requestSchedulerOptions = conf.request_scheduler_options;
-        if (conf.request_scheduler != null)
-        {
-            try
-            {
-                if (requestSchedulerOptions == null)
-                {
-                    requestSchedulerOptions = new RequestSchedulerOptions();
-                }
-                Class<?> cls = Class.forName(conf.request_scheduler);
-                requestScheduler = (IRequestScheduler) cls.getConstructor(RequestSchedulerOptions.class).newInstance(requestSchedulerOptions);
-            }
-            catch (ClassNotFoundException e)
-            {
-                throw new ConfigurationException("Invalid Request Scheduler class " + conf.request_scheduler, false);
-            }
-            catch (Exception e)
-            {
-                throw new ConfigurationException("Unable to instantiate request scheduler", e);
-            }
-        }
-        else
-        {
-            requestScheduler = new NoScheduler();
-        }
-
-        if (conf.request_scheduler_id == RequestSchedulerId.keyspace)
-        {
-            requestSchedulerId = conf.request_scheduler_id;
-        }
-        else
-        {
-            // Default to Keyspace
-            requestSchedulerId = RequestSchedulerId.keyspace;
-        }
-    }
-
     // definitely not safe for tools + clients - implicitly instantiates StorageService
     public static void applySnitch()
     {
@@ -1169,21 +1119,6 @@ public class DatabaseDescriptor
     public static void setEndpointSnitch(IEndpointSnitch eps)
     {
         snitch = eps;
-    }
-
-    public static IRequestScheduler getRequestScheduler()
-    {
-        return requestScheduler;
-    }
-
-    public static RequestSchedulerOptions getRequestSchedulerOptions()
-    {
-        return requestSchedulerOptions;
-    }
-
-    public static RequestSchedulerId getRequestSchedulerId()
-    {
-        return requestSchedulerId;
     }
 
     public static int getColumnIndexSize()

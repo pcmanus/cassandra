@@ -121,9 +121,6 @@ public final class CFMetaData
 
     public final DataResource resource;
 
-    //For hot path serialization it's often easier to store this info here
-    private volatile ColumnFilter allColumnFilter;
-
     /*
      * All of these methods will go away once CFMetaData becomes completely immutable.
      */
@@ -327,18 +324,11 @@ public final class CFMetaData
 
         if (isCompactTable())
             this.compactValueColumn = CompactTables.getCompactValueColumn(partitionColumns, isSuper());
-
-        this.allColumnFilter = ColumnFilter.all(this);
     }
 
     public Indexes getIndexes()
     {
         return indexes;
-    }
-
-    public ColumnFilter getAllColumnFilter()
-    {
-        return allColumnFilter;
     }
 
     public static CFMetaData create(String ksName,
@@ -563,15 +553,6 @@ public final class CFMetaData
     public Map<ByteBuffer, ColumnDefinition> getColumnMetadata()
     {
         return columnMetadata;
-    }
-
-    /**
-     *
-     * @return The name of the parent cf if this is a seconday index
-     */
-    public String getParentColumnFamilyName()
-    {
-        return isIndex ? cfName.substring(0, cfName.indexOf('.')) : null;
     }
 
     public ReadRepairDecision newReadRepairDecision()
@@ -1054,30 +1035,6 @@ public final class CFMetaData
         return !partitionColumns.statics.isEmpty();
     }
 
-    public boolean hasCollectionColumns()
-    {
-        for (ColumnDefinition def : partitionColumns())
-            if (def.type instanceof CollectionType && def.type.isMultiCell())
-                return true;
-        return false;
-    }
-
-    public boolean hasComplexColumns()
-    {
-        for (ColumnDefinition def : partitionColumns())
-            if (def.isComplex())
-                return true;
-        return false;
-    }
-
-    public boolean hasDroppedCollectionColumns()
-    {
-        for (DroppedColumn def : getDroppedColumns().values())
-            if (def.type instanceof CollectionType && def.type.isMultiCell())
-                return true;
-        return false;
-    }
-
     public boolean isSuper()
     {
         return isSuper;
@@ -1104,13 +1061,6 @@ public final class CFMetaData
     public boolean isView()
     {
         return isView;
-    }
-
-    public AbstractType<?> makeLegacyDefaultValidator()
-    {
-        return isCounter()
-             ? CounterColumnType.instance
-             : (isCompactTable() ? compactValueColumn().type : BytesType.instance);
     }
 
     public static Set<Flag> flagsFromStrings(Set<String> strings)
