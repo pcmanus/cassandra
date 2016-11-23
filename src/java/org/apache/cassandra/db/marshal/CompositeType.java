@@ -226,13 +226,6 @@ public class CompositeType extends AbstractCompositeType
         return null;
     }
 
-    // Extract CQL3 column name from the full column name.
-    public ByteBuffer extractLastComponent(ByteBuffer bb)
-    {
-        int idx = types.get(types.size() - 1) instanceof ColumnToCollectionType ? types.size() - 2 : types.size() - 1;
-        return extractComponent(bb, idx);
-    }
-
     public static boolean isStaticName(ByteBuffer bb)
     {
         return bb.remaining() >= 2 && (ByteBufferUtil.getShortLength(bb, bb.position()) & 0xFFFF) == STATIC_MARKER;
