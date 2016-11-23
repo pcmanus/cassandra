@@ -1309,16 +1309,6 @@ public class DatabaseDescriptor
         return Integer.parseInt(System.getProperty(Config.PROPERTY_PREFIX + "ssl_storage_port", Integer.toString(conf.ssl_storage_port)));
     }
 
-    public static int getRpcPort()
-    {
-        return Integer.parseInt(System.getProperty(Config.PROPERTY_PREFIX + "rpc_port", Integer.toString(conf.rpc_port)));
-    }
-
-    public static int getRpcListenBacklog()
-    {
-        return conf.rpc_listen_backlog;
-    }
-
     public static long getRpcTimeout()
     {
         return conf.request_timeout_in_ms;
@@ -1618,11 +1608,6 @@ public class DatabaseDescriptor
         broadcastAddress = broadcastAdd;
     }
 
-    public static boolean startRpc()
-    {
-        return conf.start_rpc;
-    }
-
     public static InetAddress getRpcAddress()
     {
         return rpcAddress;
@@ -1641,34 +1626,9 @@ public class DatabaseDescriptor
         return broadcastRpcAddress;
     }
 
-    public static String getRpcServerType()
-    {
-        return conf.rpc_server_type;
-    }
-
     public static boolean getRpcKeepAlive()
     {
         return conf.rpc_keepalive;
-    }
-
-    public static Integer getRpcMinThreads()
-    {
-        return conf.rpc_min_threads;
-    }
-
-    public static Integer getRpcMaxThreads()
-    {
-        return conf.rpc_max_threads;
-    }
-
-    public static Integer getRpcSendBufferSize()
-    {
-        return conf.rpc_send_buff_size_in_bytes;
-    }
-
-    public static Integer getRpcRecvBufferSize()
-    {
-        return conf.rpc_recv_buff_size_in_bytes;
     }
 
     public static int getInternodeSendBufferSize()

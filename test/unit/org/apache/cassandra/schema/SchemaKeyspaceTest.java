@@ -74,9 +74,6 @@ public class SchemaKeyspaceTest
             for (ColumnFamilyStore cfs : Keyspace.open(keyspaceName).getColumnFamilyStores())
             {
                 CFMetaData cfm = cfs.metadata;
-                if (!cfm.isThriftCompatible())
-                    continue;
-
                 checkInverses(cfm);
 
                 // Testing with compression to catch #3558
