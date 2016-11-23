@@ -589,7 +589,7 @@ public final class CFMetaData
     public AbstractType<?> getColumnDefinitionNameComparator(ColumnDefinition.Kind kind)
     {
         return (isSuper() && kind == ColumnDefinition.Kind.REGULAR) || (isStaticCompactTable() && kind == ColumnDefinition.Kind.STATIC)
-             ? thriftColumnNameType()
+             ? staticCompactOrSuperTableColumnNameType()
              : UTF8Type.instance;
     }
 
@@ -605,7 +605,7 @@ public final class CFMetaData
 
     // An iterator over all column definitions but that respect the order of a SELECT *.
     // This also "hide" the clustering/regular columns for a non-CQL3 non-dense table for backward compatibility
-    // sake (those are accessible through thrift but not through CQL currently).
+    // sake.
     public Iterator<ColumnDefinition> allColumnsInSelectOrder()
     {
         final boolean isStaticCompactTable = isStaticCompactTable();
@@ -779,9 +779,6 @@ public final class CFMetaData
 
         rebuild();
 
-        // compaction thresholds are checked by ThriftValidation. We shouldn't be doing
-        // validation on the apply path; it's too late for that.
-
         params = cfm.params;
 
         keyValidator = cfm.keyValidator;
@@ -919,10 +916,17 @@ public final class CFMetaData
         return this;
     }
 
-
-
-    // The comparator to validate the definition name with thrift.
-    public AbstractType<?> thriftColumnNameType()
+    /**
+     * The type to use to compare column names in "static compact"
+     * tables or superColum ones.
+     * <p>
+     * This exists because for historical reasons, "static compact" tables as
+     * well as super column ones can have non-UTF8 column names.
+     * <p>
+     * This method should only be called for superColumn tables and "static
+     * compact" ones. For any other table, all column names are UTF8.
+     */
+    public AbstractType<?> staticCompactOrSuperTableColumnNameType()
     {
         if (isSuper())
         {
@@ -1003,10 +1007,8 @@ public final class CFMetaData
         if (getColumnDefinition(to) != null)
             throw new InvalidRequestException(String.format("Cannot rename column %s to %s in keyspace %s; another column of that name already exist", from, to, cfName));
 
-        if (def.isPartOfCellName(isCQLTable(), isSuper()))
-        {
+        if (!def.isPrimaryKeyColumn())
             throw new InvalidRequestException(String.format("Cannot rename non PRIMARY KEY part %s", from));
-        }
 
         if (!getIndexes().isEmpty())
         {
@@ -1045,14 +1047,6 @@ public final class CFMetaData
     public boolean isStaticCompactTable()
     {
         return !isSuper() && !isDense() && !isCompound();
-    }
-
-    /**
-     * Returns whether this CFMetaData can be returned to thrift.
-     */
-    public boolean isThriftCompatible()
-    {
-        return isCompactTable();
     }
 
     public boolean hasStaticColumns()
