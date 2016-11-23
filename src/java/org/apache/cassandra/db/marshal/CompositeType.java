@@ -128,9 +128,8 @@ public class CompositeType extends AbstractCompositeType
         }
         catch (IndexOutOfBoundsException e)
         {
-            // We shouldn't get there in general because 1) we shouldn't construct broken composites
-            // from CQL and 2) broken composites coming from thrift should be rejected by validate.
-            // There is a few cases however where, if the schema has changed since we created/validated
+            // We shouldn't get there in general we shouldn't construct broken composites
+            // but there is a few cases where if the schema has changed since we created/validated
             // the composite, this will be thrown (see #6262). Those cases are a user error but
             // throwing a more meaningful error message to make understanding such error easier. .
             throw new RuntimeException("Cannot get comparator " + i + " in " + this + ". "

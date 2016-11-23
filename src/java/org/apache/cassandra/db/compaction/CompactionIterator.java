@@ -101,7 +101,7 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             metrics.beginCompaction(this);
 
         UnfilteredPartitionIterator merged = scanners.isEmpty()
-                                             ? EmptyIterators.unfilteredPartition(controller.cfs.metadata, false)
+                                             ? EmptyIterators.unfilteredPartition(controller.cfs.metadata)
                                              : UnfilteredPartitionIterators.merge(scanners, nowInSec, listener());
         merged = Transformation.apply(merged, new GarbageSkipper(controller, nowInSec));
         this.compacted = Transformation.apply(merged, new Purger(controller, nowInSec));

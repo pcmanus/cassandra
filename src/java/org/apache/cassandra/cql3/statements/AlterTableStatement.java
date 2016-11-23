@@ -376,11 +376,10 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 break;
             case REGULAR:
             case STATIC:
-                // Thrift allows to change a column validator so CFMetaData.validateCompatibility will let it slide
-                // if we change to an incompatible type (contrarily to the comparator case). But we don't want to
-                // allow it for CQL3 (see #5882) so validating it explicitly here. We only care about value compatibility
-                // though since we won't compare values (except when there is an index, but that is validated by
-                // ColumnDefinition already).
+                // As above, we want a clear error message, but in this case it happens that  CFMetaData.validateCompatibility *does not*
+                // validate this for historical reasons so it's doubtly important. Note that we only care about value compatibility
+                // though since we won't compare values (except when there is an index, but that is validated by ColumnDefinition already).
+                // TODO: we could clear out where validation is done and do it only once.
                 if (!validatorType.isValueCompatibleWith(def.type))
                     throw new ConfigurationException(String.format("Cannot change %s from type %s to type %s: types are incompatible.",
                                                                    def.name,

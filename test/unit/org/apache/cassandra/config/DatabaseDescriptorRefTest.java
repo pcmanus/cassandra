@@ -201,7 +201,6 @@ public class DatabaseDescriptorRefTest
         for (String methodName : new String[]{
             "clientInitialization",
             "applyAddressConfig",
-            "applyThriftHSHA",
             "applyInitialTokens",
             // no seed provider in default configuration for clients
             // "applySeedProvider",

@@ -148,7 +148,7 @@ public class ClientState
     }
 
     /**
-     * @return a ClientState object for external clients (thrift/native protocol users).
+     * @return a ClientState object for external clients (native protocol users).
      */
     public static ClientState forExternalCalls(SocketAddress remoteAddress)
     {

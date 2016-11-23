@@ -69,6 +69,7 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
             // The strategy is validated through KSMetaData.validate() in announceKeyspaceUpdate below.
             // However, for backward compatibility with thrift, this doesn't validate unexpected options yet,
             // so doing proper validation here.
+            // TODO: we should centralize this now, but not sure to understand the previous comment fully
             KeyspaceParams params = attrs.asAlteredKeyspaceParams(ksm.params);
             params.validate(name);
             if (params.replication.klass.equals(LocalStrategy.class))

@@ -582,7 +582,6 @@ Reported name format:
 Name                        Type           Description
 =========================== ============== ===========
 connectedNativeClients      Counter        Number of clients connected to this nodes native protocol server
-connectedThriftClients      Counter        Number of clients connected to this nodes thrift protocol server
 =========================== ============== ===========
 
 JVM Metrics
