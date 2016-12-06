@@ -38,8 +38,8 @@ import org.apache.cassandra.schema.Indexes;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
+import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.Event;
-import org.apache.cassandra.utils.*;
 
 import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
 
@@ -54,7 +54,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
     private final TableAttributes attrs;
     private final Map<ColumnDefinition.Raw, ColumnDefinition.Raw> renames;
     private final List<AlterTableStatementColumn> colNameList;
-    private final Long deleteTimestamp;
+    private final Long deleteTimestamp; // can be null if not provided by the user
 
     public AlterTableStatement(CFName name,
                                Type type,
@@ -68,7 +68,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         this.colNameList = colDataList;
         this.attrs = attrs;
         this.renames = renames;
-        this.deleteTimestamp = deleteTimestamp == null ? FBUtilities.timestampMicros() : deleteTimestamp;
+        this.deleteTimestamp = deleteTimestamp;
     }
 
     public void checkAccess(ClientState state) throws UnauthorizedException, InvalidRequestException
@@ -81,7 +81,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
         // validated in announceMigration()
     }
 
-    public Event.SchemaChange announceMigration(boolean isLocalOnly) throws RequestValidationException
+    public Event.SchemaChange announceMigration(QueryState queryState, boolean isLocalOnly) throws RequestValidationException
     {
         CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
         if (meta.isView())
@@ -250,7 +250,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                                }
                              assert toDelete != null;
                              cfm.removeColumnDefinition(toDelete);
-                             cfm.recordColumnDrop(toDelete, deleteTimestamp);
+                             cfm.recordColumnDrop(toDelete, deleteTimestamp == null ? queryState.getTimestamp() : deleteTimestamp);
                              break;
                     }
 
