@@ -64,22 +64,22 @@ public class ColumnFilter
 
     // True if _fetched_ includes all regular columns (an any static in _queried_), in which case metadata must not be
     // null. If false, then _fetched_ == _queried_ and we only store _queried_.
-    private final boolean isFetchAllRegulars;
+    private final boolean fetchAllRegulars;
 
-    private final CFMetaData metadata; // can be null if !isFetchAllRegulars
+    private final CFMetaData metadata; // can be null if !fetchAllRegulars
 
-    private final PartitionColumns queried; // can be null if isFetchAllRegulars, to represent a wildcard query (all
+    private final PartitionColumns queried; // can be null if fetchAllRegulars, to represent a wildcard query (all
                                             // static and regular columns are both _fetched_ and _queried_).
     private final SortedSetMultimap<ColumnIdentifier, ColumnSubselection> subSelections; // can be null
 
-    private ColumnFilter(boolean isFetchAllRegulars,
+    private ColumnFilter(boolean fetchAllRegulars,
                          CFMetaData metadata,
                          PartitionColumns queried,
                          SortedSetMultimap<ColumnIdentifier, ColumnSubselection> subSelections)
     {
-        assert !isFetchAllRegulars || metadata != null;
-        assert isFetchAllRegulars || queried != null;
-        this.isFetchAllRegulars = isFetchAllRegulars;
+        assert !fetchAllRegulars || metadata != null;
+        assert fetchAllRegulars || queried != null;
+        this.fetchAllRegulars = fetchAllRegulars;
         this.metadata = metadata;
         this.queried = queried;
         this.subSelections = subSelections;
@@ -112,7 +112,7 @@ public class ColumnFilter
      */
     public PartitionColumns fetchedColumns()
     {
-        if (!isFetchAllRegulars)
+        if (!fetchAllRegulars)
             return queried;
 
         // We always fetch all regulars, but only fetch the statics in queried. Unless queried == null, in which
@@ -130,7 +130,7 @@ public class ColumnFilter
      */
     public PartitionColumns queriedColumns()
     {
-        assert queried != null || isFetchAllRegulars;
+        assert queried != null || fetchAllRegulars;
         return queried == null ? metadata.partitionColumns() : queried;
     }
 
@@ -149,7 +149,7 @@ public class ColumnFilter
      */
     public boolean fetchesAllColumns(boolean isStatic)
     {
-        return isStatic ? queried == null : isFetchAllRegulars;
+        return isStatic ? queried == null : fetchAllRegulars;
     }
 
     /**
@@ -158,7 +158,7 @@ public class ColumnFilter
      */
     public boolean allFetchedColumnsAreQueried()
     {
-        return !isFetchAllRegulars || queried == null;
+        return !fetchAllRegulars || queried == null;
     }
 
     /**
@@ -170,8 +170,8 @@ public class ColumnFilter
         if (column.isStatic())
             return queried == null || queried.contains(column);
 
-        // For regulars, if 'isFetchAllRegulars', then it's included automatically. Otherwise, it depends on _queried_.
-        return isFetchAllRegulars || queried.contains(column);
+        // For regulars, if 'fetchAllRegulars', then it's included automatically. Otherwise, it depends on _queried_.
+        return fetchAllRegulars || queried.contains(column);
     }
 
     /**
@@ -184,7 +184,7 @@ public class ColumnFilter
      */
     public boolean fetchedColumnIsQueried(ColumnDefinition column)
     {
-        return !isFetchAllRegulars || queried == null || queried.contains(column);
+        return !fetchAllRegulars || queried == null || queried.contains(column);
     }
 
     /**
@@ -198,7 +198,7 @@ public class ColumnFilter
     public boolean fetchedCellIsQueried(ColumnDefinition column, CellPath path)
     {
         assert path != null;
-        if (!isFetchAllRegulars || subSelections == null)
+        if (!fetchAllRegulars || subSelections == null)
             return true;
 
         SortedSet<ColumnSubselection> s = subSelections.get(column.name);
@@ -230,7 +230,7 @@ public class ColumnFilter
         if (s.isEmpty())
             return null;
 
-        return new Tester(!column.isStatic() && isFetchAllRegulars, s.iterator());
+        return new Tester(!column.isStatic() && fetchAllRegulars, s.iterator());
     }
 
     /**
@@ -378,7 +378,7 @@ public class ColumnFilter
     @Override
     public String toString()
     {
-        if (isFetchAllRegulars && queried == null)
+        if (fetchAllRegulars && queried == null)
             return "*";
 
         if (queried.isEmpty())
@@ -426,7 +426,7 @@ public class ColumnFilter
 
         private static int makeHeaderByte(ColumnFilter selection)
         {
-            return (selection.isFetchAllRegulars ? IS_FETCH_ALL_MASK : 0)
+            return (selection.fetchAllRegulars ? IS_FETCH_ALL_MASK : 0)
                  | (selection.queried != null ? HAS_QUERIED_MASK : 0)
                  | (selection.subSelections != null ? HAS_SUB_SELECTIONS_MASK : 0);
         }
