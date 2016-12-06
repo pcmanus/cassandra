@@ -134,9 +134,22 @@ public class ColumnFilter
         return queried == null ? metadata.partitionColumns() : queried;
     }
 
-    public boolean fetchesAllRegularColumns()
+    /**
+     * Wether all the (regular or static) columns are fetched by this filter.
+     * <p>
+     * Note that this method is meant as an optimization but a negative return
+     * shouldn't be relied upon strongly: this can return {@code false} but
+     * still have all the columns fetches if those were manually selected by the
+     * user. The goal here is to cheaply avoid filtering things on wildcard
+     * queries, as those are common.
+     *
+     * @param isStatic whether to check for static columns or not. If {@code true},
+     * the method returns if all static columns are fetched, otherwise it checks
+     * regular columns.
+     */
+    public boolean fetchesAllColumns(boolean isStatic)
     {
-        return isFetchAllRegulars;
+        return isStatic ? queried == null : isFetchAllRegulars;
     }
 
     /**
