@@ -116,9 +116,10 @@ public class ColumnFilter
              : new PartitionColumns(selection.statics, all.regulars);
     }
 
-    public boolean includesAllColumns()
+    public boolean includesAllColumns(boolean isStatic)
     {
-        return isFetchAll;
+        // Static columns are never all included, unless selection == null
+        return isStatic ? selection == null : isFetchAll;
     }
 
     /**
