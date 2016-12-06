@@ -109,31 +109,16 @@ public abstract class CompactTables
 
     public static class DefaultNames
     {
-        private static final String DEFAULT_PARTITION_KEY_NAME = "key";
         private static final String DEFAULT_CLUSTERING_NAME = "column";
         private static final String DEFAULT_COMPACT_VALUE_NAME = "value";
 
         private final Set<String> usedNames;
-        private int partitionIndex = 0;
         private int clusteringIndex = 1;
         private int compactIndex = 0;
 
         private DefaultNames(Set<String> usedNames)
         {
             this.usedNames = usedNames;
-        }
-
-        public String defaultPartitionKeyName()
-        {
-            while (true)
-            {
-                // For compatibility sake, we call the first alias 'key' rather than 'key1'. This
-                // is inconsistent with column alias, but it's probably not worth risking breaking compatibility now.
-                String candidate = partitionIndex == 0 ? DEFAULT_PARTITION_KEY_NAME : DEFAULT_PARTITION_KEY_NAME + (partitionIndex + 1);
-                ++partitionIndex;
-                if (usedNames.add(candidate))
-                    return candidate;
-            }
         }
 
         public String defaultClusteringName()

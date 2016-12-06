@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /**
  * The abstract validator that is the base for maps, sets and lists (both frozen and non-frozen).
  *
- * Please note that this comparator shouldn't be used "manually" (as a custome
+ * Please note that this comparator shouldn't be used "manually" (as a custom
  * type for instance).
  */
 public abstract class CollectionType<T> extends AbstractType<T>

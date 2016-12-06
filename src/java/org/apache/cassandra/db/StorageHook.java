@@ -38,8 +38,7 @@ public interface StorageHook
                                                                       DecoratedKey partitionKey,
                                                                       SSTableReader sstable,
                                                                       ClusteringIndexFilter filter,
-                                                                      ColumnFilter selectedColumns,
-                                                                      int nowInSec);
+                                                                      ColumnFilter selectedColumns);
     public UnfilteredRowIterator makeRowIterator(ColumnFamilyStore cfs,
                                                  SSTableReader sstable,
                                                  DecoratedKey key,
@@ -62,13 +61,12 @@ public interface StorageHook
 
                 public void reportRead(UUID cfid, DecoratedKey key) {}
 
-                public UnfilteredRowIteratorWithLowerBound makeRowIteratorWithLowerBound(ColumnFamilyStore cfs, DecoratedKey partitionKey, SSTableReader sstable, ClusteringIndexFilter filter, ColumnFilter selectedColumns, int nowInSec)
+                public UnfilteredRowIteratorWithLowerBound makeRowIteratorWithLowerBound(ColumnFamilyStore cfs, DecoratedKey partitionKey, SSTableReader sstable, ClusteringIndexFilter filter, ColumnFilter selectedColumns)
                 {
                     return new UnfilteredRowIteratorWithLowerBound(partitionKey,
                                                                    sstable,
                                                                    filter,
-                                                                   selectedColumns,
-                                                                   nowInSec);
+                                                                   selectedColumns);
                 }
 
                 public UnfilteredRowIterator makeRowIterator(ColumnFamilyStore cfs, SSTableReader sstable, DecoratedKey key, Slices slices, ColumnFilter selectedColumns, boolean reversed)

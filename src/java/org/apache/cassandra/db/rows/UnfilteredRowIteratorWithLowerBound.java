@@ -47,21 +47,18 @@ public class UnfilteredRowIteratorWithLowerBound extends LazilyInitializedUnfilt
     private final SSTableReader sstable;
     private final ClusteringIndexFilter filter;
     private final ColumnFilter selectedColumns;
-    private final int nowInSec;
     private ClusteringBound lowerBound;
     private boolean firstItemRetrieved;
 
     public UnfilteredRowIteratorWithLowerBound(DecoratedKey partitionKey,
                                                SSTableReader sstable,
                                                ClusteringIndexFilter filter,
-                                               ColumnFilter selectedColumns,
-                                               int nowInSec)
+                                               ColumnFilter selectedColumns)
     {
         super(partitionKey);
         this.sstable = sstable;
         this.filter = filter;
         this.selectedColumns = selectedColumns;
-        this.nowInSec = nowInSec;
         this.lowerBound = null;
         this.firstItemRetrieved = false;
     }

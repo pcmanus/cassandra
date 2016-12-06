@@ -637,8 +637,7 @@ public class SinglePartitionReadCommand extends ReadCommand
                                                                   partitionKey(),
                                                                   sstable,
                                                                   clusteringIndexFilter(),
-                                                                  columnFilter(),
-                                                                  nowInSec());
+                                                                  columnFilter());
 
     }
 
