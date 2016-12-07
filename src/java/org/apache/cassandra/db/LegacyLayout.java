@@ -21,7 +21,6 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.utils.*;
 
@@ -41,67 +40,6 @@ import org.apache.cassandra.utils.*;
 public abstract class LegacyLayout
 {
     private LegacyLayout() {}
-
-    private static LegacyCellName decodeForSuperColumn(CFMetaData metadata, Clustering clustering, ByteBuffer subcol)
-    {
-        ColumnDefinition def = metadata.getColumnDefinition(subcol);
-        if (def != null)
-        {
-            // it's a statically defined subcolumn
-            return new LegacyCellName(clustering, def, null);
-        }
-
-        def = metadata.compactValueColumn();
-        assert def != null && def.type instanceof MapType;
-        return new LegacyCellName(clustering, def, subcol);
-    }
-
-    public static LegacyCellName decodeCellName(CFMetaData metadata, ByteBuffer cellname) throws UnknownColumnException
-    {
-        Clustering clustering = decodeClustering(metadata, cellname);
-
-        if (metadata.isSuper())
-            return decodeForSuperColumn(metadata, clustering, CompositeType.extractComponent(cellname, 1));
-
-        if (metadata.isDense() || (metadata.isCompactTable()))
-            return new LegacyCellName(clustering, metadata.compactValueColumn(), null);
-
-        ByteBuffer column = metadata.isCompound() ? CompositeType.extractComponent(cellname, metadata.comparator.size()) : cellname;
-        if (column == null)
-        {
-            // Tables for composite 2ndary indexes used to be compound but dense, but we've transformed them into regular tables
-            // (non compact ones) but with no regular column (i.e. we only care about the clustering). So we'll get here
-            // in that case, and what we want to return is basically a row marker.
-            if (metadata.partitionColumns().isEmpty())
-                return new LegacyCellName(clustering, null, null);
-
-            // Otherwise, we shouldn't get there
-            throw new IllegalArgumentException("No column name component found in cell name");
-        }
-
-        // Row marker, this is ok
-        if (!column.hasRemaining())
-            return new LegacyCellName(clustering, null, null);
-
-        ColumnDefinition def = metadata.getColumnDefinition(column);
-        if ((def == null) || def.isPrimaryKeyColumn())
-        {
-            // If it's a compact table, it means the column is in fact a "dynamic" one
-            if (metadata.isCompactTable())
-                return new LegacyCellName(Clustering.make(column), metadata.compactValueColumn(), null);
-
-            if (def == null)
-                throw new UnknownColumnException(metadata, column);
-            else
-                throw new IllegalArgumentException("Cannot add primary key column to partition update");
-        }
-
-        ByteBuffer collectionElement = metadata.isCompound() ? CompositeType.extractComponent(cellname, metadata.comparator.size() + 1) : null;
-
-        // Note that because static compact columns are translated to static defs in the new world order, we need to force a static
-        // clustering if the definition is static (as it might not be in this case).
-        return new LegacyCellName(def.isStatic() ? Clustering.STATIC_CLUSTERING : clustering, def, collectionElement);
-    }
 
     public static ByteBuffer encodeCellName(CFMetaData metadata, ClusteringPrefix clustering, ByteBuffer columnName, ByteBuffer collectionElement)
     {
@@ -174,28 +112,5 @@ public abstract class LegacyLayout
                                     : Collections.singletonList(value);
 
         return Clustering.make(components.subList(0, Math.min(csize, components.size())).toArray(new ByteBuffer[csize]));
-    }
-
-    public static class LegacyCellName
-    {
-        public final Clustering clustering;
-        public final ColumnDefinition column;
-        public final ByteBuffer collectionElement;
-
-        private LegacyCellName(Clustering clustering, ColumnDefinition column, ByteBuffer collectionElement)
-        {
-            this.clustering = clustering;
-            this.column = column;
-            this.collectionElement = collectionElement;
-        }
-
-        @Override
-        public String toString()
-        {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < clustering.size(); i++)
-                sb.append(i > 0 ? ":" : "").append(clustering.get(i) == null ? "null" : ByteBufferUtil.bytesToHex(clustering.get(i)));
-            return String.format("Cellname(clustering=%s, column=%s, collElt=%s)", sb.toString(), column == null ? "null" : column.name, collectionElement == null ? "null" : ByteBufferUtil.bytesToHex(collectionElement));
-        }
     }
 }
