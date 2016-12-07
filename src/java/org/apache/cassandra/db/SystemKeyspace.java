@@ -157,6 +157,7 @@ public final class SystemKeyspace
                 + "release_version text,"
                 + "rpc_address inet,"
                 + "schema_version uuid,"
+                + "thrift_version text,"
                 + "tokens set<varchar>,"
                 + "truncated_at map<uuid, blob>,"
                 + "PRIMARY KEY ((key)))");
