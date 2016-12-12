@@ -1015,6 +1015,19 @@ public final class CFMetaData
             removeColumnDefinition(def);
     }
 
+    /**
+     * Records a deprecated column for a system table.
+     */
+    public CFMetaData recordDeprecatedSystemColumn(String name, AbstractType<?> type)
+    {
+        // As we play fast and loose with the removal timestamp, make sure this is misued for a non system table.
+        assert SchemaConstants.isSystemKeyspace(ksName);
+        ByteBuffer bb = ByteBufferUtil.bytes(name);
+        recordColumnDrop(ColumnDefinition.regularDef(this, bb, type), Long.MAX_VALUE);
+        return this;
+    }
+
+
     public boolean isCQLTable()
     {
         return !isSuper() && !isDense() && isCompound();

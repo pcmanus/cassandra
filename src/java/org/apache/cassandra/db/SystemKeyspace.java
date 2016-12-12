@@ -160,11 +160,8 @@ public final class SystemKeyspace
                 + "schema_version uuid,"
                 + "tokens set<varchar>,"
                 + "truncated_at map<uuid, blob>,"
-                + "PRIMARY KEY ((key)))");
-
-    static {
-        recordDeprecatedColumn(Local, "thrift_version", UTF8Type.instance);
-    }
+                + "PRIMARY KEY ((key)))"
+                ).recordDeprecatedSystemColumn("thrift_version", UTF8Type.instance);
 
     private static final CFMetaData Peers =
         compile(PEERS,
@@ -281,14 +278,6 @@ public final class SystemKeyspace
                 + "query_string text,"
                 + "PRIMARY KEY ((prepared_id)))");
 
-
-    // Record a deprecated column in a system table. This is needed for upgrades, ensuring old sstable,
-    // that still contain value for a removed system table, are processed correctly.
-    private static void recordDeprecatedColumn(CFMetaData metadata, String name, AbstractType<?> type)
-    {
-        ByteBuffer bb = ByteBufferUtil.bytes(name);
-        metadata.recordColumnDrop(ColumnDefinition.regularDef(metadata, bb, type), Long.MAX_VALUE);
-    }
 
     private static CFMetaData compile(String name, String description, String schema)
     {
