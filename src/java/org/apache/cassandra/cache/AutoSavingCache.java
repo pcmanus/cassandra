@@ -35,7 +35,6 @@ import com.google.common.util.concurrent.MoreExecutors;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
@@ -80,8 +79,10 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
      * Sticking with "d" is fine for 3.0 since it has never been released or used by another version
      *
      * "e" introduced with CASSANDRA-11206, omits IndexInfo from key-cache, stores offset into index-file
+     *
+     * "f" introduced with CASSANDRA-9425, changes "keyspace.table.index" in cache keys to TableMetadata.id+TableMetadata.indexName
      */
-    private static final String CURRENT_VERSION = "e";
+    private static final String CURRENT_VERSION = "f";
 
     private static volatile IStreamFactory streamFactory = new IStreamFactory()
     {
@@ -209,13 +210,19 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 ArrayDeque<Future<Pair<K, V>>> futures = new ArrayDeque<Future<Pair<K, V>>>();
                 while (in.available() > 0)
                 {
-                    //ksname and cfname are serialized by the serializers in CacheService
+                    //cfId and indexName are serialized by the serializers in CacheService
                     //That is delegated there because there are serializer specific conditions
                     //where a cache key is skipped and not written
-                    String ksname = in.readUTF();
-                    String cfname = in.readUTF();
+                    long msb = in.readLong();
+                    long lsb = in.readLong();
+                    UUID tableId = new UUID(msb, lsb);
+                    String indexName = in.readUTF();
+                    if (indexName.isEmpty())
+                        indexName = null;
 
-                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreIncludingIndexes(Pair.create(ksname, cfname));
+                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(tableId);
+                    if (indexName != null && cfs != null)
+                        cfs = cfs.indexManager.getIndexByName(indexName).getBackingTable().orElse(null);
 
                     Future<Pair<K, V>> entryFuture = cacheLoader.deserialize(in, cfs);
                     // Key cache entry can return null, if the SSTable doesn't exist.
@@ -360,9 +367,11 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 {
                     K key = keyIterator.next();
 
-                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreIncludingIndexes(key.ksAndCFName);
+                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(key.tableId);
                     if (cfs == null)
                         continue; // the table or 2i has been dropped.
+                    if (key.indexName != null)
+                        cfs = cfs.indexManager.getIndexByName(key.indexName).getBackingTable().orElse(null);
 
                     cacheLoader.serialize(key, writer, cfs);
 

@@ -95,6 +95,6 @@ public class AutoSavingCacheTest
         // then load saved
         keyCache.loadSavedAsync().get();
         for (SSTableReader sstable : cfs.getLiveSSTables())
-            Assert.assertNotNull(keyCache.get(new KeyCacheKey(cfs.metadata().keyspaceAndTablePair, sstable.descriptor, ByteBufferUtil.bytes("key1"))));
+            Assert.assertNotNull(keyCache.get(new KeyCacheKey(cfs.metadata(), sstable.descriptor, ByteBufferUtil.bytes("key1"))));
     }
 }

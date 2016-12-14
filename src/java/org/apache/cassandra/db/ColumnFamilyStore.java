@@ -1756,7 +1756,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             RowCacheKey key = keyIter.next();
             DecoratedKey dk = decorateKey(ByteBuffer.wrap(key.key));
-            if (key.ksAndCFName.equals(metadata().keyspaceAndTablePair) && !Range.isInRanges(dk.getToken(), ranges))
+            if (key.sameTable(metadata()) && !Range.isInRanges(dk.getToken(), ranges))
                 invalidateCachedPartition(dk);
         }
 
@@ -1767,7 +1767,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             {
                 CounterCacheKey key = keyIter.next();
                 DecoratedKey dk = decorateKey(key.partitionKey());
-                if (key.ksAndCFName.equals(metadata().keyspaceAndTablePair) && !Range.isInRanges(dk.getToken(), ranges))
+                if (key.sameTable(metadata()) && !Range.isInRanges(dk.getToken(), ranges))
                     CacheService.instance.counterCache.remove(key);
             }
         }
@@ -2006,16 +2006,16 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     {
         if (!isRowCacheEnabled())
             return null;
-        IRowCacheEntry cached = CacheService.instance.rowCache.getInternal(new RowCacheKey(metadata().keyspaceAndTablePair, key));
+        IRowCacheEntry cached = CacheService.instance.rowCache.getInternal(new RowCacheKey(metadata(), key));
         return cached == null || cached instanceof RowCacheSentinel ? null : (CachedPartition)cached;
     }
 
     private void invalidateCaches()
     {
-        CacheService.instance.invalidateKeyCacheForCf(metadata().keyspaceAndTablePair);
-        CacheService.instance.invalidateRowCacheForCf(metadata().keyspaceAndTablePair);
+        CacheService.instance.invalidateKeyCacheForCf(metadata());
+        CacheService.instance.invalidateRowCacheForCf(metadata());
         if (metadata().isCounter())
-            CacheService.instance.invalidateCounterCacheForCf(metadata().keyspaceAndTablePair);
+            CacheService.instance.invalidateCounterCacheForCf(metadata());
     }
 
     public int invalidateRowCache(Collection<Bounds<Token>> boundsToInvalidate)
@@ -2026,7 +2026,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             RowCacheKey key = keyIter.next();
             DecoratedKey dk = decorateKey(ByteBuffer.wrap(key.key));
-            if (key.ksAndCFName.equals(metadata().keyspaceAndTablePair) && Bounds.isInBounds(dk.getToken(), boundsToInvalidate))
+            if (key.sameTable(metadata()) && Bounds.isInBounds(dk.getToken(), boundsToInvalidate))
             {
                 invalidateCachedPartition(dk);
                 invalidatedKeys++;
@@ -2043,7 +2043,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             CounterCacheKey key = keyIter.next();
             DecoratedKey dk = decorateKey(key.partitionKey());
-            if (key.ksAndCFName.equals(metadata().keyspaceAndTablePair) && Bounds.isInBounds(dk.getToken(), boundsToInvalidate))
+            if (key.sameTable(metadata()) && Bounds.isInBounds(dk.getToken(), boundsToInvalidate))
             {
                 CacheService.instance.counterCache.remove(key);
                 invalidatedKeys++;
@@ -2057,7 +2057,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      */
     public boolean containsCachedParition(DecoratedKey key)
     {
-        return CacheService.instance.rowCache.getCapacity() != 0 && CacheService.instance.rowCache.containsKey(new RowCacheKey(metadata().keyspaceAndTablePair, key));
+        return CacheService.instance.rowCache.getCapacity() != 0 && CacheService.instance.rowCache.containsKey(new RowCacheKey(metadata(), key));
     }
 
     public void invalidateCachedPartition(RowCacheKey key)
@@ -2070,21 +2070,21 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (!isRowCacheEnabled())
             return;
 
-        invalidateCachedPartition(new RowCacheKey(metadata().keyspaceAndTablePair, key));
+        invalidateCachedPartition(new RowCacheKey(metadata(), key));
     }
 
     public ClockAndCount getCachedCounter(ByteBuffer partitionKey, Clustering clustering, ColumnMetadata column, CellPath path)
     {
         if (CacheService.instance.counterCache.getCapacity() == 0L) // counter cache disabled.
             return null;
-        return CacheService.instance.counterCache.get(CounterCacheKey.create(metadata().keyspaceAndTablePair, partitionKey, clustering, column, path));
+        return CacheService.instance.counterCache.get(CounterCacheKey.create(metadata(), partitionKey, clustering, column, path));
     }
 
     public void putCachedCounter(ByteBuffer partitionKey, Clustering clustering, ColumnMetadata column, CellPath path, ClockAndCount clockAndCount)
     {
         if (CacheService.instance.counterCache.getCapacity() == 0L) // counter cache disabled.
             return;
-        CacheService.instance.counterCache.put(CounterCacheKey.create(metadata().keyspaceAndTablePair, partitionKey, clustering, column, path), clockAndCount);
+        CacheService.instance.counterCache.put(CounterCacheKey.create(metadata(), partitionKey, clustering, column, path), clockAndCount);
     }
 
     public void forceMajorCompaction() throws InterruptedException, ExecutionException

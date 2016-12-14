@@ -36,6 +36,7 @@ import org.apache.cassandra.index.Index;
 import org.apache.cassandra.metrics.CacheMetrics;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.schema.CachingParams;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
 
@@ -386,8 +387,9 @@ public class KeyCacheCqlTest extends CQLTester
         while(iter.hasNext())
         {
             KeyCacheKey key = iter.next();
-            Assert.assertFalse(key.ksAndCFName.left.equals("KEYSPACE_PER_TEST"));
-            Assert.assertFalse(key.ksAndCFName.right.startsWith(table));
+            TableMetadataRef tableMetadataRef = Schema.instance.getTableMetadataRef(key.tableId);
+            Assert.assertFalse(tableMetadataRef.keyspace.equals("KEYSPACE_PER_TEST"));
+            Assert.assertFalse(tableMetadataRef.table.startsWith(table));
         }
     }
 

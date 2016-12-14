@@ -20,44 +20,53 @@ package org.apache.cassandra.cache;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.CellPath;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.*;
 
 public final class CounterCacheKey extends CacheKey
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new CounterCacheKey(null, ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBuffer.allocate(1)));
+    private static final long EMPTY_SIZE = ObjectSizes.measure(new CounterCacheKey(TableMetadata.builder("ks", "tab", UUID.randomUUID())
+                                                                                                .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
+                                                                                                .addPartitionKeyColumn("pk", UTF8Type.instance)
+                                                                                                .build(), ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBuffer.allocate(1)));
 
     private final byte[] partitionKey;
     private final byte[] cellName;
 
-    private CounterCacheKey(Pair<String, String> ksAndCFName, byte[] partitionKey, byte[] cellName)
+    private CounterCacheKey(TableMetadata tableMetadata, byte[] partitionKey, byte[] cellName)
     {
-        super(ksAndCFName);
+        super(tableMetadata);
         this.partitionKey = partitionKey;
         this.cellName = cellName;
     }
 
-    private CounterCacheKey(Pair<String, String> ksAndCFName, ByteBuffer partitionKey, ByteBuffer cellName)
+    private CounterCacheKey(TableMetadata tableMetadata, ByteBuffer partitionKey, ByteBuffer cellName)
     {
-        this(ksAndCFName, ByteBufferUtil.getArray(partitionKey), ByteBufferUtil.getArray(cellName));
+        this(tableMetadata, ByteBufferUtil.getArray(partitionKey), ByteBufferUtil.getArray(cellName));
     }
 
-    public static CounterCacheKey create(Pair<String, String> ksAndCFName, ByteBuffer partitionKey, Clustering clustering, ColumnMetadata c, CellPath path)
+    public static CounterCacheKey create(TableMetadata tableMetadata, ByteBuffer partitionKey, Clustering clustering, ColumnMetadata c, CellPath path)
     {
-        return new CounterCacheKey(ksAndCFName, partitionKey, makeCellName(clustering, c, path));
+        return new CounterCacheKey(tableMetadata, partitionKey, makeCellName(clustering, c, path));
     }
 
     private static ByteBuffer makeCellName(Clustering clustering, ColumnMetadata c, CellPath path)
@@ -88,7 +97,7 @@ public final class CounterCacheKey extends CacheKey
     public ByteBuffer readCounterValue(ColumnFamilyStore cfs)
     {
         TableMetadata metadata = cfs.metadata();
-        assert metadata.keyspaceAndTablePair.equals(ksAndCFName);
+        assert metadata.id.equals(tableId) && Objects.equals(metadata.indexName().orElse(null), indexName);
 
         DecoratedKey key = cfs.decorateKey(partitionKey());
 
@@ -134,10 +143,10 @@ public final class CounterCacheKey extends CacheKey
         ByteBufferUtil.writeWithLength(cellName, out);
     }
 
-    public static CounterCacheKey read(Pair<String, String> ksAndCFName, DataInputPlus in)
+    public static CounterCacheKey read(TableMetadata tableMetadata, DataInputPlus in)
     throws IOException
     {
-        return new CounterCacheKey(ksAndCFName,
+        return new CounterCacheKey(tableMetadata,
                                    ByteBufferUtil.readBytesWithLength(in),
                                    ByteBufferUtil.readBytesWithLength(in));
     }
@@ -152,8 +161,9 @@ public final class CounterCacheKey extends CacheKey
     @Override
     public String toString()
     {
-        return String.format("CounterCacheKey(%s, %s, %s)",
-                             ksAndCFName,
+        TableMetadataRef tableRef = Schema.instance.getTableMetadataRef(tableId);
+        return String.format("CounterCacheKey(%s.%s, %s, %s, %s)",
+                             tableRef.keyspace, tableRef.table, indexName,
                              ByteBufferUtil.bytesToHex(ByteBuffer.wrap(partitionKey)),
                              ByteBufferUtil.bytesToHex(ByteBuffer.wrap(cellName)));
     }
@@ -161,7 +171,7 @@ public final class CounterCacheKey extends CacheKey
     @Override
     public int hashCode()
     {
-        return Arrays.deepHashCode(new Object[]{ksAndCFName, partitionKey, cellName});
+        return Arrays.deepHashCode(new Object[]{tableId, indexName, partitionKey, cellName});
     }
 
     @Override
@@ -175,7 +185,8 @@ public final class CounterCacheKey extends CacheKey
 
         CounterCacheKey cck = (CounterCacheKey) o;
 
-        return ksAndCFName.equals(cck.ksAndCFName)
+        return tableId.equals(cck.tableId)
+            && Objects.equals(indexName, cck.indexName)
             && Arrays.equals(partitionKey, cck.partitionKey)
             && Arrays.equals(cellName, cck.cellName);
     }

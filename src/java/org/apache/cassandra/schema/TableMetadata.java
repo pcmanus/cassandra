@@ -47,7 +47,6 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.utils.AbstractIterator;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
 import org.github.jamm.Unmetered;
 
@@ -57,7 +56,6 @@ import static java.util.stream.Collectors.toSet;
 
 import static com.google.common.collect.Iterables.transform;
 import static org.apache.cassandra.schema.IndexMetadata.isNameValid;
-import static org.apache.cassandra.utils.FBUtilities.toWriteUTFBytes;
 
 @Unmetered
 public final class TableMetadata
@@ -86,7 +84,7 @@ public final class TableMetadata
     public final ImmutableSet<Flag> flags;
 
     private final boolean isView;
-    private final boolean isIndex; // derived from table name
+    private final String indexName; // derived from table name
 
     /*
      * All CQL3 columns definition are stored in the columns map.
@@ -116,8 +114,6 @@ public final class TableMetadata
     public final ColumnMetadata compactValueColumn;
 
     // performance hacks; TODO see if all are really necessary
-    public final Pair<String, String> keyspaceAndTablePair;
-    public final byte[] keyspaceAndTableBytes;
     public final DataResource resource;
 
     private TableMetadata(Builder builder)
@@ -130,7 +126,8 @@ public final class TableMetadata
         params = builder.params.build();
         flags = Sets.immutableEnumSet(builder.flags);
         isView = builder.isView;
-        isIndex = table.contains(".");
+        int indexSep = table.indexOf('.');
+        indexName = indexSep == -1 ? null : table.substring(indexSep + 1);
 
         droppedColumns = ImmutableMap.copyOf(builder.droppedColumns);
         Collections.sort(builder.partitionKeyColumns);
@@ -153,8 +150,6 @@ public final class TableMetadata
                            ? CompactTables.getCompactValueColumn(regularAndStaticColumns, isSuper())
                            : null;
 
-        keyspaceAndTablePair = Pair.create(keyspace, table);
-        keyspaceAndTableBytes = ArrayUtils.addAll(toWriteUTFBytes(keyspace), toWriteUTFBytes(table));
         resource = DataResource.table(keyspace, table);
     }
 
@@ -193,7 +188,12 @@ public final class TableMetadata
 
     public boolean isIndex()
     {
-        return isIndex;
+        return indexName != null;
+    }
+
+    public Optional<String> indexName()
+    {
+        return Optional.ofNullable(indexName);
     }
 
     /*
