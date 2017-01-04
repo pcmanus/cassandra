@@ -22,12 +22,12 @@ import java.util.regex.Pattern;
 import org.apache.cassandra.auth.*;
 import org.apache.cassandra.cql3.Validation;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.schema.MigrationManager;
-import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.locator.LocalStrategy;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.schema.MigrationManager;
+import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.transport.Event;
 

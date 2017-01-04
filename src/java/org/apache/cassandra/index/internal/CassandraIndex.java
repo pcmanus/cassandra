@@ -226,10 +226,10 @@ public abstract class CassandraIndex implements Index
         metadata = indexDef;
         Pair<ColumnMetadata, IndexTarget.Type> target = TargetParser.parse(baseCfs.metadata(), indexDef);
         functions = getFunctions(indexDef, target);
-        TableMetadataRef cfm = TableMetadataRef.to(indexCfsMetadata(baseCfs.metadata(), indexDef));
+        TableMetadataRef tableRef = TableMetadataRef.to(indexCfsMetadata(baseCfs.metadata(), indexDef));
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
-                                                             cfm.table,
-                                                             cfm,
+                                                             tableRef.table,
+                                                             tableRef,
                                                              baseCfs.getTracker().loadsstables);
         indexedColumn = target.left;
     }

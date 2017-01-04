@@ -2649,10 +2649,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (keyspace == null)
             return null;
 
-        UUID id = Schema.instance.getId(ksName, cfName);
-        if (id == null)
+        TableMetadata table = Schema.instance.getTableMetadata(ksName, cfName);
+        if (table == null)
             return null;
 
-        return keyspace.getColumnFamilyStore(id);
+        return keyspace.getColumnFamilyStore(table.id);
     }
 }

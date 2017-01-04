@@ -132,7 +132,7 @@ public class CommitLogUpgradeTestMaker
             FileUtils.createHardLink(f, new File(dataDir, f.getName()));
 
         Properties prop = new Properties();
-        prop.setProperty(CFID_PROPERTY, Schema.instance.getId(KEYSPACE, TABLE).toString());
+        prop.setProperty(CFID_PROPERTY, Schema.instance.getTableMetadata(KEYSPACE, TABLE).id.toString());
         prop.setProperty(CELLS_PROPERTY, Integer.toString(cells));
         prop.setProperty(HASH_PROPERTY, Integer.toString(hash));
         prop.store(new FileOutputStream(new File(dataDir, PROPERTIES_FILE)),

@@ -295,16 +295,16 @@ public class ClientState
         hasAccess(keyspace, perm, DataResource.table(keyspace, columnFamily));
     }
 
-    public void hasColumnFamilyAccess(TableMetadataRef cfm, Permission perm)
+    public void hasColumnFamilyAccess(TableMetadataRef tableRef, Permission perm)
     throws UnauthorizedException, InvalidRequestException
     {
-        hasAccess(cfm.keyspace, perm, cfm.get().resource);
+        hasColumnFamilyAccess(tableRef.get(), perm);
     }
 
     public void hasColumnFamilyAccess(TableMetadata table, Permission perm)
     throws UnauthorizedException, InvalidRequestException
     {
-        hasAccess(table.keyspace, perm, DataResource.table(table.keyspace, table.table));
+        hasAccess(table.keyspace, perm, table.resource);
     }
 
     private void hasAccess(String keyspace, Permission perm, DataResource resource)

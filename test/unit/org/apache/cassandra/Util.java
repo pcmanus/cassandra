@@ -479,9 +479,9 @@ public class Util
         if (!a.key().equals(b.key()) || !a.getColumnFamilyIds().equals(b.getColumnFamilyIds()))
             return false;
 
-        for (UUID cfId : a.getColumnFamilyIds())
+        for (PartitionUpdate update : a.getPartitionUpdates())
         {
-            if (!sameContent(a.getPartitionUpdate(cfId).unfilteredIterator(), b.getPartitionUpdate(cfId).unfilteredIterator()))
+            if (!sameContent(update.unfilteredIterator(), b.getPartitionUpdate(update.metadata()).unfilteredIterator()))
                 return false;
         }
         return true;

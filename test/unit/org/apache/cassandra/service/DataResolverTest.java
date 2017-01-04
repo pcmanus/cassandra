@@ -597,7 +597,7 @@ public class DataResolverTest
 
         MessageOut<Mutation> msg;
         msg = getSentMessage(peer1);
-        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2.id).iterator();
+        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2).iterator();
         assertTrue(rowIter.hasNext());
         Row row = rowIter.next();
         assertFalse(rowIter.hasNext());
@@ -641,7 +641,7 @@ public class DataResolverTest
 
         MessageOut<Mutation> msg;
         msg = getSentMessage(peer1);
-        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2.id).iterator();
+        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2).iterator();
         assertTrue(rowIter.hasNext());
         Row row = rowIter.next();
         assertFalse(rowIter.hasNext());
@@ -689,7 +689,7 @@ public class DataResolverTest
 
         MessageOut<Mutation> msg;
         msg = getSentMessage(peer2);
-        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2.id).iterator();
+        Iterator<Row> rowIter = msg.payload.getPartitionUpdate(cfm2).iterator();
         assertTrue(rowIter.hasNext());
         Row row = rowIter.next();
         assertFalse(rowIter.hasNext());
@@ -736,7 +736,7 @@ public class DataResolverTest
 
         MessageOut<Mutation> msg;
         msg = getSentMessage(peer1);
-        Row row = Iterators.getOnlyElement(msg.payload.getPartitionUpdate(cfm2.id).iterator());
+        Row row = Iterators.getOnlyElement(msg.payload.getPartitionUpdate(cfm2).iterator());
 
         ComplexColumnData cd = row.getComplexColumnData(m);
 

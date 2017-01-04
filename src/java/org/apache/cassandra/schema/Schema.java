@@ -305,7 +305,7 @@ public final class Schema
      * non replicated keyspaces, so keyspace like system_traces which are replicated are actually
      * returned. See getUserKeyspace() below if you don't want those)
      */
-    public List<String> getNonSystemKeyspaces()
+    public ImmutableList<String> getNonSystemKeyspaces()
     {
         return ImmutableList.copyOf(getNonSystemKeyspacesSet());
     }
@@ -449,20 +449,6 @@ public final class Schema
         throw new UnknownTableException(message, id);
     }
 
-    /**
-     * Lookup keyspace/table identifier
-     *
-     * @param ksName The keyspace name
-     * @param cfName The table name
-     *
-     * @return The id for the given (ksname,cfname) pair, or null if it has been dropped.
-     */
-    public UUID getId(String ksName, String cfName)
-    {
-        TableMetadata metadata = getTableMetadata(ksName, cfName);
-        return metadata == null ? null : metadata.id;
-    }
-
     /* Function helpers */
 
     /**
@@ -562,8 +548,11 @@ public final class Schema
         // fetch the current state of schema for the affected keyspaces only
         Keyspaces before = keyspaces.filter(k -> affectedKeyspaces.contains(k.name));
 
+        // apply the schema mutations
+        SchemaKeyspace.applyChanges(mutations);
+
         // apply the schema mutations and fetch the new versions of the altered keyspaces
-        Keyspaces after = SchemaKeyspace.applyChangesAndFetchAffectedKeyspaces(mutations);
+        Keyspaces after = SchemaKeyspace.fetchKeyspaces(affectedKeyspaces);
 
         MapDifference<String, KeyspaceMetadata> keyspacesDiff = before.diff(after);
 

@@ -153,9 +153,9 @@ public class HintTest
         assertNoPartitions(key, TABLE1);
 
         // TABLE0 and TABLE2 updates should have been applied successfully
-        PartitionUpdate upd0 = mutation.getPartitionUpdate(Schema.instance.getId(KEYSPACE, TABLE0));
+        PartitionUpdate upd0 = mutation.getPartitionUpdate(Schema.instance.getTableMetadata(KEYSPACE, TABLE0));
         assertPartitionsEqual(upd0, readPartition(key, TABLE0, upd0.columns()));
-        PartitionUpdate upd2 = mutation.getPartitionUpdate(Schema.instance.getId(KEYSPACE, TABLE2));
+        PartitionUpdate upd2 = mutation.getPartitionUpdate(Schema.instance.getTableMetadata(KEYSPACE, TABLE2));
         assertPartitionsEqual(upd2, readPartition(key, TABLE2, upd2.columns()));
     }
 

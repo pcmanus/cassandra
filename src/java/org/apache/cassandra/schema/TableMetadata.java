@@ -108,7 +108,7 @@ public final class TableMetadata
 
     /*
      * For dense tables, this alias the single non-PK column the table contains (since it can only have one). We keep
-     * that as convenience to access that column more easily (but we could replace calls by partitionColumns().iterator().next()
+     * that as convenience to access that column more easily (but we could replace calls by regularAndStaticColumns().iterator().next()
      * for those tables in practice).
      */
     public final ColumnMetadata compactValueColumn;
@@ -163,22 +163,17 @@ public final class TableMetadata
         return new Builder(keyspace, table, id);
     }
 
-    public static Builder builder(TableMetadata metadata)
-    {
-        return builder(metadata.keyspace, metadata.table, metadata.id)
-                      .partitioner(metadata.partitioner)
-                      .params(metadata.params)
-                      .flags(metadata.flags)
-                      .isView(metadata.isView)
-                      .addColumns(metadata.columns())
-                      .droppedColumns(metadata.droppedColumns)
-                      .indexes(metadata.indexes)
-                      .triggers(metadata.triggers);
-    }
-
     public Builder unbuild()
     {
-        return builder(this);
+        return builder(keyspace, table, id)
+               .partitioner(partitioner)
+               .params(params)
+               .flags(flags)
+               .isView(isView)
+               .addColumns(columns())
+               .droppedColumns(droppedColumns)
+               .indexes(indexes)
+               .triggers(triggers);
     }
 
     public boolean isView()

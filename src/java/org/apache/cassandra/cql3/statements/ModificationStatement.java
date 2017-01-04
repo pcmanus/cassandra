@@ -545,12 +545,8 @@ public abstract class ModificationStatement implements CQLStatement
             // Adding the partition key for batches to disambiguate if the conditions span multipe rows (we don't add them outside
             // of batches for compatibility sakes).
             if (isBatch)
-            {
-                defs.addAll(metadata.partitionKeyColumns());
-                defs.addAll(metadata.clusteringColumns());
-            }
-            for (ColumnMetadata def : columnsWithConditions)
-                defs.add(def);
+                Iterables.addAll(defs, metadata.primaryKeyColumns());
+            Iterables.addAll(defs, columnsWithConditions);
             selection = Selection.forColumns(metadata, new ArrayList<>(defs));
 
         }

@@ -1228,12 +1228,15 @@ public final class SchemaKeyspace
                         .collect(toSet());
     }
 
-    static Keyspaces applyChangesAndFetchAffectedKeyspaces(Collection<Mutation> mutations)
+    static void applyChanges(Collection<Mutation> mutations)
     {
         mutations.forEach(Mutation::apply);
         if (SchemaKeyspace.FLUSH_SCHEMA_TABLES)
             SchemaKeyspace.flush();
+    }
 
+    static Keyspaces fetchKeyspaces(Set<String> toFetch)
+    {
         /*
          * We know the keyspace names we are going to query, but we still want to run the SELECT IN
          * query, to filter out the keyspaces that had been dropped by the applied mutation set.
@@ -1241,7 +1244,7 @@ public final class SchemaKeyspace
         String query = format("SELECT keyspace_name FROM %s.%s WHERE keyspace_name IN ?", SchemaConstants.SCHEMA_KEYSPACE_NAME, KEYSPACES);
 
         Keyspaces.Builder keyspaces = org.apache.cassandra.schema.Keyspaces.builder();
-        for (UntypedResultSet.Row row : query(query, new ArrayList<>(affectedKeyspaces(mutations))))
+        for (UntypedResultSet.Row row : query(query, new ArrayList<>(toFetch)))
             keyspaces.add(fetchKeyspace(row.getString("keyspace_name")));
         return keyspaces.build();
     }

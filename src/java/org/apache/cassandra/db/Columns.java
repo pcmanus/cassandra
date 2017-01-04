@@ -52,7 +52,7 @@ public class Columns extends AbstractCollection<ColumnMetadata> implements Colle
 {
     public static final Serializer serializer = new Serializer();
     public static final Columns NONE = new Columns(BTree.empty(), 0);
-    public static final ColumnMetadata FIRST_COMPLEX =
+    private static final ColumnMetadata FIRST_COMPLEX =
         new ColumnMetadata("",
                            "",
                            ColumnIdentifier.getInterned(ByteBufferUtil.EMPTY_BYTE_BUFFER, UTF8Type.instance),

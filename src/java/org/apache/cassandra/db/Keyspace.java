@@ -157,9 +157,9 @@ public class Keyspace
         }
     }
 
-    public static ColumnFamilyStore openAndGetStore(TableMetadataRef cfm)
+    public static ColumnFamilyStore openAndGetStore(TableMetadataRef tableRef)
     {
-        return open(cfm.keyspace).getColumnFamilyStore(cfm.id);
+        return open(tableRef.keyspace).getColumnFamilyStore(tableRef.id);
     }
 
     public static ColumnFamilyStore openAndGetStore(TableMetadata table)
@@ -201,10 +201,10 @@ public class Keyspace
 
     public ColumnFamilyStore getColumnFamilyStore(String cfName)
     {
-        UUID id = Schema.instance.getId(getName(), cfName);
-        if (id == null)
+        TableMetadata table = Schema.instance.getTableMetadata(getName(), cfName);
+        if (table == null)
             throw new IllegalArgumentException(String.format("Unknown keyspace/cf pair (%s.%s)", getName(), cfName));
-        return getColumnFamilyStore(id);
+        return getColumnFamilyStore(table.id);
     }
 
     public ColumnFamilyStore getColumnFamilyStore(UUID id)

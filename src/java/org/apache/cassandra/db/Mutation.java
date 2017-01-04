@@ -120,9 +120,9 @@ public class Mutation implements IMutation
         return modifications.values();
     }
 
-    public PartitionUpdate getPartitionUpdate(UUID cfId)
+    public PartitionUpdate getPartitionUpdate(TableMetadata table)
     {
-        return modifications.get(cfId);
+        return table == null ? null : modifications.get(table.id);
     }
 
     /**
