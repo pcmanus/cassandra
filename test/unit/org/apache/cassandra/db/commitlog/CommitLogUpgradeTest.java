@@ -24,7 +24,6 @@ package org.apache.cassandra.db.commitlog;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Properties;
-import java.util.UUID;
 
 import junit.framework.Assert;
 
@@ -37,6 +36,7 @@ import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -125,9 +125,9 @@ public class CommitLogUpgradeTest
         String cfidString = prop.getProperty(CFID_PROPERTY);
         if (cfidString != null)
         {
-            UUID cfid = UUID.fromString(cfidString);
-            if (Schema.instance.getTableMetadata(cfid) == null)
-                Schema.instance.load(KeyspaceMetadata.create(KEYSPACE, KeyspaceParams.simple(1), Tables.of(metadata.unbuild().id(cfid).build())));
+            TableId tableId = TableId.fromString(cfidString);
+            if (Schema.instance.getTableMetadata(tableId) == null)
+                Schema.instance.load(KeyspaceMetadata.create(KEYSPACE, KeyspaceParams.simple(1), Tables.of(metadata.unbuild().id(tableId).build())));
         }
 
         Hasher hasher = new Hasher();

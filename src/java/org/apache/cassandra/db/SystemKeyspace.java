@@ -294,7 +294,7 @@ public final class SystemKeyspace
     private static TableMetadata.Builder parse(String table, String description, String cql)
     {
         return CreateTableStatement.parse(format(cql, table), SchemaConstants.SYSTEM_KEYSPACE_NAME)
-                                   .deterministicId()
+                                   .id(TableId.forSystemTable(SchemaConstants.SYSTEM_KEYSPACE_NAME, table))
                                    .dcLocalReadRepairChance(0.0)
                                    .gcGraceSeconds(0)
                                    .memtableFlushPeriod((int) TimeUnit.HOURS.toMillis(1))
@@ -337,7 +337,7 @@ public final class SystemKeyspace
                         .build();
     }
 
-    private static volatile Map<UUID, Pair<CommitLogPosition, Long>> truncationRecords;
+    private static volatile Map<TableId, Pair<CommitLogPosition, Long>> truncationRecords;
 
     public enum BootstrapState
     {
@@ -510,10 +510,10 @@ public final class SystemKeyspace
     /**
      * This method is used to remove information about truncation time for specified column family
      */
-    public static synchronized void removeTruncationRecord(UUID cfId)
+    public static synchronized void removeTruncationRecord(TableId id)
     {
         String req = "DELETE truncated_at[?] from system.%s WHERE key = '%s'";
-        executeInternal(format(req, LOCAL, LOCAL), cfId);
+        executeInternal(format(req, LOCAL, LOCAL), id.asUUID());
         truncationRecords = null;
         forceBlockingFlush(LOCAL);
     }
@@ -524,7 +524,7 @@ public final class SystemKeyspace
         {
             CommitLogPosition.serializer.serialize(position, out);
             out.writeLong(truncatedAt);
-            return singletonMap(cfs.metadata.id, out.asNewBuffer());
+            return singletonMap(cfs.metadata.id.asUUID(), out.asNewBuffer());
         }
         catch (IOException e)
         {
@@ -532,36 +532,36 @@ public final class SystemKeyspace
         }
     }
 
-    public static CommitLogPosition getTruncatedPosition(UUID cfId)
+    public static CommitLogPosition getTruncatedPosition(TableId id)
     {
-        Pair<CommitLogPosition, Long> record = getTruncationRecord(cfId);
+        Pair<CommitLogPosition, Long> record = getTruncationRecord(id);
         return record == null ? null : record.left;
     }
 
-    public static long getTruncatedAt(UUID cfId)
+    public static long getTruncatedAt(TableId id)
     {
-        Pair<CommitLogPosition, Long> record = getTruncationRecord(cfId);
+        Pair<CommitLogPosition, Long> record = getTruncationRecord(id);
         return record == null ? Long.MIN_VALUE : record.right;
     }
 
-    private static synchronized Pair<CommitLogPosition, Long> getTruncationRecord(UUID cfId)
+    private static synchronized Pair<CommitLogPosition, Long> getTruncationRecord(TableId id)
     {
         if (truncationRecords == null)
             truncationRecords = readTruncationRecords();
-        return truncationRecords.get(cfId);
+        return truncationRecords.get(id);
     }
 
-    private static Map<UUID, Pair<CommitLogPosition, Long>> readTruncationRecords()
+    private static Map<TableId, Pair<CommitLogPosition, Long>> readTruncationRecords()
     {
         UntypedResultSet rows = executeInternal(format("SELECT truncated_at FROM system.%s WHERE key = '%s'", LOCAL, LOCAL));
 
-        Map<UUID, Pair<CommitLogPosition, Long>> records = new HashMap<>();
+        Map<TableId, Pair<CommitLogPosition, Long>> records = new HashMap<>();
 
         if (!rows.isEmpty() && rows.one().has("truncated_at"))
         {
             Map<UUID, ByteBuffer> map = rows.one().getMap("truncated_at", UUIDType.instance, BytesType.instance);
             for (Map.Entry<UUID, ByteBuffer> entry : map.entrySet())
-                records.put(entry.getKey(), truncationRecordFromBlob(entry.getValue()));
+                records.put(TableId.fromUUID(entry.getKey()), truncationRecordFromBlob(entry.getValue()));
         }
 
         return records;

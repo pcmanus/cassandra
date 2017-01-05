@@ -19,7 +19,6 @@ package org.apache.cassandra.schema;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.antlr.runtime.*;
@@ -36,7 +35,7 @@ public final class ViewMetadata
 {
     public final String ksName;
     public final String viewName;
-    public final UUID baseTableId;
+    public final TableId baseTableId;
     public final String baseTableName;
     public final boolean includeAllColumns;
     public final TableMetadata metadata;
@@ -51,7 +50,7 @@ public final class ViewMetadata
      */
     public ViewMetadata(String ksName,
                         String viewName,
-                        UUID baseTableId,
+                        TableId baseTableId,
                         String baseTableName,
                         boolean includeAllColumns,
                         SelectStatement.RawStatement select,

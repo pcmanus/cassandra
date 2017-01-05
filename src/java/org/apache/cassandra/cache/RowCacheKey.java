@@ -20,12 +20,12 @@ package org.apache.cassandra.cache;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.UUID;
 
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -37,7 +37,7 @@ public final class RowCacheKey extends CacheKey
 
     private static final long EMPTY_SIZE = ObjectSizes.measure(new RowCacheKey(null, null, new byte[0]));
 
-    public RowCacheKey(UUID tableId, String indexName, byte[] key)
+    public RowCacheKey(TableId tableId, String indexName, byte[] key)
     {
         super(tableId, indexName);
         this.key = key;
@@ -51,7 +51,7 @@ public final class RowCacheKey extends CacheKey
     }
 
     @VisibleForTesting
-    public RowCacheKey(UUID tableId, String indexName, ByteBuffer key)
+    public RowCacheKey(TableId tableId, String indexName, ByteBuffer key)
     {
         super(tableId, indexName);
         this.key = ByteBufferUtil.getArray(key);

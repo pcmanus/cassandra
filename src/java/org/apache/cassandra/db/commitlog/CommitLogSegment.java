@@ -38,8 +38,8 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.IntegerInterval;
 import org.apache.cassandra.utils.concurrent.OpOrder;
@@ -103,10 +103,10 @@ public abstract class CommitLogSegment
     private final WaitQueue syncComplete = new WaitQueue();
 
     // a map of Cf->dirty interval in this segment; if interval is not covered by the clean set, the log contains unflushed data
-    private final NonBlockingHashMap<UUID, IntegerInterval> cfDirty = new NonBlockingHashMap<>(1024);
+    private final NonBlockingHashMap<TableId, IntegerInterval> tableDirty = new NonBlockingHashMap<>(1024);
 
     // a map of Cf->clean intervals; separate map from above to permit marking Cfs clean whilst the log is still in use
-    private final ConcurrentHashMap<UUID, IntegerInterval.Set> cfClean = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<TableId, IntegerInterval.Set> tableClean = new ConcurrentHashMap<>();
 
     public final long id;
 
@@ -478,7 +478,7 @@ public abstract class CommitLogSegment
     void markDirty(Mutation mutation, int allocatedPosition)
     {
         for (PartitionUpdate update : mutation.getPartitionUpdates())
-            coverInMap(cfDirty, update.metadata().id, allocatedPosition);
+            coverInMap(tableDirty, update.metadata().id, allocatedPosition);
     }
 
     /**
@@ -486,19 +486,19 @@ public abstract class CommitLogSegment
      * given context argument is contained in this file, it will only mark the CF as
      * clean if no newer writes have taken place.
      *
-     * @param cfId           the column family ID that is now clean
+     * @param tableId        the table that is now clean
      * @param startPosition  the start of the range that is clean
      * @param endPosition    the end of the range that is clean
      */
-    public synchronized void markClean(UUID cfId, CommitLogPosition startPosition, CommitLogPosition endPosition)
+    public synchronized void markClean(TableId tableId, CommitLogPosition startPosition, CommitLogPosition endPosition)
     {
         if (startPosition.segmentId > id || endPosition.segmentId < id)
             return;
-        if (!cfDirty.containsKey(cfId))
+        if (!tableDirty.containsKey(tableId))
             return;
         int start = startPosition.segmentId == id ? startPosition.position : 0;
         int end = endPosition.segmentId == id ? endPosition.position : Integer.MAX_VALUE;
-        cfClean.computeIfAbsent(cfId, k -> new IntegerInterval.Set()).add(start, end);
+        tableClean.computeIfAbsent(tableId, k -> new IntegerInterval.Set()).add(start, end);
         removeCleanFromDirty();
     }
 
@@ -508,16 +508,16 @@ public abstract class CommitLogSegment
         if (isStillAllocating())
             return;
 
-        Iterator<Map.Entry<UUID, IntegerInterval.Set>> iter = cfClean.entrySet().iterator();
+        Iterator<Map.Entry<TableId, IntegerInterval.Set>> iter = tableClean.entrySet().iterator();
         while (iter.hasNext())
         {
-            Map.Entry<UUID, IntegerInterval.Set> clean = iter.next();
-            UUID cfId = clean.getKey();
+            Map.Entry<TableId, IntegerInterval.Set> clean = iter.next();
+            TableId tableId = clean.getKey();
             IntegerInterval.Set cleanSet = clean.getValue();
-            IntegerInterval dirtyInterval = cfDirty.get(cfId);
+            IntegerInterval dirtyInterval = tableDirty.get(tableId);
             if (dirtyInterval != null && cleanSet.covers(dirtyInterval))
             {
-                cfDirty.remove(cfId);
+                tableDirty.remove(tableId);
                 iter.remove();
             }
         }
@@ -526,17 +526,17 @@ public abstract class CommitLogSegment
     /**
      * @return a collection of dirty CFIDs for this segment file.
      */
-    public synchronized Collection<UUID> getDirtyCFIDs()
+    public synchronized Collection<TableId> getDirtyTableIds()
     {
-        if (cfClean.isEmpty() || cfDirty.isEmpty())
-            return cfDirty.keySet();
+        if (tableClean.isEmpty() || tableDirty.isEmpty())
+            return tableDirty.keySet();
 
-        List<UUID> r = new ArrayList<>(cfDirty.size());
-        for (Map.Entry<UUID, IntegerInterval> dirty : cfDirty.entrySet())
+        List<TableId> r = new ArrayList<>(tableDirty.size());
+        for (Map.Entry<TableId, IntegerInterval> dirty : tableDirty.entrySet())
         {
-            UUID cfId = dirty.getKey();
+            TableId tableId = dirty.getKey();
             IntegerInterval dirtyInterval = dirty.getValue();
-            IntegerInterval.Set cleanSet = cfClean.get(cfId);
+            IntegerInterval.Set cleanSet = tableClean.get(tableId);
             if (cleanSet == null || !cleanSet.covers(dirtyInterval))
                 r.add(dirty.getKey());
         }
@@ -549,12 +549,12 @@ public abstract class CommitLogSegment
     public synchronized boolean isUnused()
     {
         // if room to allocate, we're still in use as the active allocatingFrom,
-        // so we don't want to race with updates to cfClean with removeCleanFromDirty
+        // so we don't want to race with updates to tableClean with removeCleanFromDirty
         if (isStillAllocating())
             return false;
 
         removeCleanFromDirty();
-        return cfDirty.isEmpty();
+        return tableDirty.isEmpty();
     }
 
     /**
@@ -572,12 +572,12 @@ public abstract class CommitLogSegment
     public String dirtyString()
     {
         StringBuilder sb = new StringBuilder();
-        for (UUID cfId : getDirtyCFIDs())
+        for (TableId tableId : getDirtyTableIds())
         {
-            TableMetadata m = Schema.instance.getTableMetadata(cfId);
-            sb.append(m == null ? "<deleted>" : m.table).append(" (").append(cfId)
-              .append(", dirty: ").append(cfDirty.get(cfId))
-              .append(", clean: ").append(cfClean.get(cfId))
+            TableMetadata m = Schema.instance.getTableMetadata(tableId);
+            sb.append(m == null ? "<deleted>" : m.table).append(" (").append(tableId)
+              .append(", dirty: ").append(tableDirty.get(tableId))
+              .append(", clean: ").append(tableClean.get(tableId))
               .append("), ");
         }
         return sb.toString();

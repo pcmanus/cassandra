@@ -163,7 +163,8 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
                                                         String name,
                                                         Types types)
     {
-        TableMetadata.Builder builder = TableMetadata.builder(keyspace, name, row.getUUID("id")).partitioner(partitioner);
+        TableMetadata.Builder builder = TableMetadata.builder(keyspace, name, TableId.fromUUID(row.getUUID("id")))
+                                                     .partitioner(partitioner);
 
         if (isView)
             builder.isCompound(true);

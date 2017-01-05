@@ -58,9 +58,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
     private final Set<ColumnIdentifier> staticColumns;
     private final TableParams params;
     private final boolean ifNotExists;
-    private final UUID id;
+    private final TableId id;
 
-    public CreateTableStatement(CFName name, TableParams params, boolean ifNotExists, Set<ColumnIdentifier> staticColumns, UUID id)
+    public CreateTableStatement(CFName name, TableParams params, boolean ifNotExists, Set<ColumnIdentifier> staticColumns, TableId id)
     {
         super(name);
         this.params = params;

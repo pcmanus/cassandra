@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.ViewMetadata;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.*;
@@ -57,7 +58,7 @@ public class ViewManager
     private static final boolean enableCoordinatorBatchlog = Boolean.getBoolean("cassandra.mv_enable_coordinator_batchlog");
 
     private final ConcurrentMap<String, View> viewsByName = new ConcurrentHashMap<>();
-    private final ConcurrentMap<UUID, TableViews> viewsByBaseTable = new ConcurrentHashMap<>();
+    private final ConcurrentMap<TableId, TableViews> viewsByBaseTable = new ConcurrentHashMap<>();
     private final Keyspace keyspace;
 
     public ViewManager(Keyspace keyspace)
@@ -159,7 +160,7 @@ public class ViewManager
             view.build();
     }
 
-    public TableViews forTable(UUID id)
+    public TableViews forTable(TableId id)
     {
         TableViews views = viewsByBaseTable.get(id);
         if (views == null)

@@ -34,6 +34,7 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -210,12 +211,10 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 ArrayDeque<Future<Pair<K, V>>> futures = new ArrayDeque<Future<Pair<K, V>>>();
                 while (in.available() > 0)
                 {
-                    //cfId and indexName are serialized by the serializers in CacheService
+                    //tableId and indexName are serialized by the serializers in CacheService
                     //That is delegated there because there are serializer specific conditions
                     //where a cache key is skipped and not written
-                    long msb = in.readLong();
-                    long lsb = in.readLong();
-                    UUID tableId = new UUID(msb, lsb);
+                    TableId tableId = TableId.deserialize(in);
                     String indexName = in.readUTF();
                     if (indexName.isEmpty())
                         indexName = null;

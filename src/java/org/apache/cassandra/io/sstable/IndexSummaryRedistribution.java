@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +39,7 @@ import org.apache.cassandra.db.compaction.CompactionInterruptedException;
 import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -57,12 +57,12 @@ public class IndexSummaryRedistribution extends CompactionInfo.Holder
     static final double DOWNSAMPLE_THESHOLD = 0.75;
 
     private final List<SSTableReader> compacting;
-    private final Map<UUID, LifecycleTransaction> transactions;
+    private final Map<TableId, LifecycleTransaction> transactions;
     private final long memoryPoolBytes;
     private final UUID compactionId;
     private volatile long remainingSpace;
 
-    public IndexSummaryRedistribution(List<SSTableReader> compacting, Map<UUID, LifecycleTransaction> transactions, long memoryPoolBytes)
+    public IndexSummaryRedistribution(List<SSTableReader> compacting, Map<TableId, LifecycleTransaction> transactions, long memoryPoolBytes)
     {
         this.compacting = compacting;
         this.transactions = transactions;
@@ -127,7 +127,7 @@ public class IndexSummaryRedistribution extends CompactionInfo.Holder
     }
 
     private List<SSTableReader> adjustSamplingLevels(List<SSTableReader> sstables,
-                                                     Map<UUID, LifecycleTransaction> transactions,
+                                                     Map<TableId, LifecycleTransaction> transactions,
                                                      double totalReadsPerSec, long memoryPoolCapacity) throws IOException
     {
         List<ResampleEntry> toDownsample = new ArrayList<>(sstables.size() / 4);

@@ -35,6 +35,7 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.*;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.ActiveRepairService;
 
 /**
@@ -56,14 +57,14 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
                 case PREPARE_MESSAGE:
                     PrepareMessage prepareMessage = (PrepareMessage) message.payload;
                     logger.debug("Preparing, {}", prepareMessage);
-                    List<ColumnFamilyStore> columnFamilyStores = new ArrayList<>(prepareMessage.cfIds.size());
-                    for (UUID cfId : prepareMessage.cfIds)
+                    List<ColumnFamilyStore> columnFamilyStores = new ArrayList<>(prepareMessage.tableIds.size());
+                    for (TableId tableId : prepareMessage.tableIds)
                     {
-                        ColumnFamilyStore columnFamilyStore = ColumnFamilyStore.getIfExists(cfId);
+                        ColumnFamilyStore columnFamilyStore = ColumnFamilyStore.getIfExists(tableId);
                         if (columnFamilyStore == null)
                         {
                             logErrorAndSendFailureResponse(String.format("Table with id %s was dropped during prepare phase of repair",
-                                                                         cfId.toString()), message.from, id);
+                                                                         tableId), message.from, id);
                             return;
                         }
                         columnFamilyStores.add(columnFamilyStore);

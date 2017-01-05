@@ -236,7 +236,7 @@ public final class SchemaKeyspace
     private static TableMetadata parse(String name, String description, String cql)
     {
         return CreateTableStatement.parse(format(cql, name), SchemaConstants.SCHEMA_KEYSPACE_NAME)
-                                   .deterministicId()
+                                   .id(TableId.forSystemTable(SchemaConstants.SCHEMA_KEYSPACE_NAME, name))
                                    .dcLocalReadRepairChance(0.0)
                                    .gcGraceSeconds((int) TimeUnit.DAYS.toSeconds(7))
                                    .memtableFlushPeriod((int) TimeUnit.HOURS.toMillis(1))
@@ -487,7 +487,7 @@ public final class SchemaKeyspace
     {
         Row.SimpleBuilder rowBuilder = builder.update(Tables)
                                               .row(table.table)
-                                              .add("id", table.id)
+                                              .add("id", table.id.asUUID())
                                               .add("flags", TableMetadata.Flag.toStringSet(table.flags));
 
         addTableParamsToRowBuilder(table.params, rowBuilder);
@@ -691,10 +691,10 @@ public final class SchemaKeyspace
         Row.SimpleBuilder rowBuilder = builder.update(Views)
                                               .row(view.viewName)
                                               .add("include_all_columns", view.includeAllColumns)
-                                              .add("base_table_id", view.baseTableId)
+                                              .add("base_table_id", view.baseTableId.asUUID())
                                               .add("base_table_name", view.baseTableName)
                                               .add("where_clause", view.whereClause)
-                                              .add("id", table.id);
+                                              .add("id", table.id.asUUID());
 
         addTableParamsToRowBuilder(table.params, rowBuilder);
 
@@ -929,7 +929,7 @@ public final class SchemaKeyspace
             throw new RuntimeException(String.format("%s:%s not found in the schema definitions keyspace.", keyspaceName, tableName));
         UntypedResultSet.Row row = rows.one();
 
-        return TableMetadata.builder(keyspaceName, tableName, row.getUUID("id"))
+        return TableMetadata.builder(keyspaceName, tableName, TableId.fromUUID(row.getUUID("id")))
                             .flags(TableMetadata.Flag.fromStringSet(row.getFrozenSet("flags", UTF8Type.instance)))
                             .params(createTableParamsFromRow(row))
                             .addColumns(fetchColumns(keyspaceName, tableName, types))
@@ -1073,7 +1073,7 @@ public final class SchemaKeyspace
             throw new RuntimeException(String.format("%s:%s not found in the schema definitions keyspace.", keyspaceName, viewName));
         UntypedResultSet.Row row = rows.one();
 
-        UUID baseTableId = row.getUUID("base_table_id");
+        TableId baseTableId = TableId.fromUUID(row.getUUID("base_table_id"));
         String baseTableName = row.getString("base_table_name");
         boolean includeAll = row.getBoolean("include_all_columns");
         String whereClause = row.getString("where_clause");
@@ -1081,7 +1081,7 @@ public final class SchemaKeyspace
         List<ColumnMetadata> columns = fetchColumns(keyspaceName, viewName, types);
 
         TableMetadata metadata =
-            TableMetadata.builder(keyspaceName, viewName, row.getUUID("id"))
+            TableMetadata.builder(keyspaceName, viewName, TableId.fromUUID(row.getUUID("id")))
                          .isCompound(true)
                          .isView(true)
                          .addColumns(columns)

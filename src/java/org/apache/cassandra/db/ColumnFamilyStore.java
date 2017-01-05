@@ -2621,7 +2621,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      * Returns a ColumnFamilyStore by id if it exists, null otherwise
      * Differently from others, this method does not throw exception if the table does not exist.
      */
-    public static ColumnFamilyStore getIfExists(UUID id)
+    public static ColumnFamilyStore getIfExists(TableId id)
     {
         TableMetadata metadata = Schema.instance.getTableMetadata(id);
         if (metadata == null)

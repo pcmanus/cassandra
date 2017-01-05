@@ -41,9 +41,11 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.streaming.messages.OutgoingFileMessage;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.Ref;
+import org.hsqldb.Table;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -146,7 +148,7 @@ public class StreamTransferTaskTest
         assertEquals(2, task.getTotalNumberOfFiles());
 
         //add task to stream session, so it is aborted when stream session fails
-        session.transfers.put(UUID.randomUUID(), task);
+        session.transfers.put(TableId.generate(), task);
 
         //make a copy of outgoing file messages, since task is cleared when it's aborted
         Collection<OutgoingFileMessage> files = new LinkedList<>(task.files.values());

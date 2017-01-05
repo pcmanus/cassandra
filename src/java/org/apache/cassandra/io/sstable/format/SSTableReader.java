@@ -43,6 +43,7 @@ import org.apache.cassandra.cache.KeyCacheKey;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.config.Config;
@@ -2063,7 +2064,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
     private static final class InstanceTidier implements Tidy
     {
         private final Descriptor descriptor;
-        private final UUID tableId;
+        private final TableId tableId;
         private IFilter bf;
         private IndexSummary summary;
 
@@ -2093,7 +2094,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 global.ensureReadMeter();
         }
 
-        InstanceTidier(Descriptor descriptor, UUID tableId)
+        InstanceTidier(Descriptor descriptor, TableId tableId)
         {
             this.descriptor = descriptor;
             this.tableId = tableId;

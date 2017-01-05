@@ -64,12 +64,12 @@ public class CompressedStreamReader extends StreamReader
     {
         long totalSize = totalSize();
 
-        ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(cfId);
+        ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
 
         if (cfs == null)
         {
             // schema was dropped during streaming
-            throw new IOException("CF " + cfId + " was dropped during streaming");
+            throw new IOException("CF " + tableId + " was dropped during streaming");
         }
 
         logger.debug("[Stream #{}] Start receiving file #{} from {}, repairedAt = {}, size = {}, ks = '{}', table = '{}'.",

@@ -33,6 +33,7 @@ import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.service.StorageProxy;
@@ -52,7 +53,7 @@ public class TableViews extends AbstractCollection<View>
     // list is the best option.
     private final List<View> views = new CopyOnWriteArrayList();
 
-    public TableViews(UUID id)
+    public TableViews(TableId id)
     {
         baseTableMetadata = Schema.instance.getTableMetadataRef(id);
     }

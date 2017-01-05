@@ -17,11 +17,8 @@
  */
 package org.apache.cassandra.hints;
 
-import java.util.UUID;
-
 import com.google.common.collect.Iterators;
 
-import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.AbstractBTreePartition;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 
@@ -42,7 +39,7 @@ final class HintsTestUtil
     {
         assertEquals(expected.mutation.getKeyspaceName(), actual.mutation.getKeyspaceName());
         assertEquals(expected.mutation.key(), actual.mutation.key());
-        assertEquals(expected.mutation.getColumnFamilyIds(), actual.mutation.getColumnFamilyIds());
+        assertEquals(expected.mutation.getTableIds(), actual.mutation.getTableIds());
         for (PartitionUpdate partitionUpdate : expected.mutation.getPartitionUpdates())
             assertPartitionsEqual(partitionUpdate, actual.mutation.getPartitionUpdate(partitionUpdate.metadata()));
         assertEquals(expected.creationTime, actual.creationTime);

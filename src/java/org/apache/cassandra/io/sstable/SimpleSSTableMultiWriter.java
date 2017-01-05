@@ -19,7 +19,6 @@ package org.apache.cassandra.io.sstable;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.UUID;
 
 import org.apache.cassandra.db.RowIndexEntry;
 import org.apache.cassandra.db.SerializationHeader;
@@ -29,7 +28,7 @@ import org.apache.cassandra.index.Index;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableWriter;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadataRef;
 
 public class SimpleSSTableMultiWriter implements SSTableMultiWriter
@@ -80,7 +79,7 @@ public class SimpleSSTableMultiWriter implements SSTableMultiWriter
         return writer.getFilePointer();
     }
 
-    public UUID getCfId()
+    public TableId getTableId()
     {
         return writer.metadata().id;
     }

@@ -75,7 +75,6 @@ public class DirectoriesTest
         for (String table : TABLES)
         {
             CFM.add(TableMetadata.builder(KS, table)
-                                 .deterministicId()
                                  .isCompound(true)
                                  .addPartitionKeyColumn("thekey", UTF8Type.instance)
                                  .addClusteringColumn("thecolumn", UTF8Type.instance)
@@ -133,19 +132,19 @@ public class DirectoriesTest
 
     private static File cfDir(TableMetadata metadata)
     {
-        String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.id));
+        String tableId = metadata.id.toHexString();
         int idx = metadata.table.indexOf(Directories.SECONDARY_INDEX_NAME_SEPARATOR);
         if (idx >= 0)
         {
             // secondary index
             return new File(tempDataDir,
                             metadata.keyspace + File.separator +
-                            metadata.table.substring(0, idx) + '-' + cfId + File.separator +
+                            metadata.table.substring(0, idx) + '-' + tableId + File.separator +
                             metadata.table.substring(idx));
         }
         else
         {
-            return new File(tempDataDir, metadata.keyspace + File.separator + metadata.table + '-' + cfId);
+            return new File(tempDataDir, metadata.keyspace + File.separator + metadata.table + '-' + tableId);
         }
     }
 
@@ -171,7 +170,6 @@ public class DirectoriesTest
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(KS, "cf")
-                         .deterministicId()
                          .isCompound(true)
                          .addPartitionKeyColumn("thekey", UTF8Type.instance)
                          .addClusteringColumn("col", UTF8Type.instance);

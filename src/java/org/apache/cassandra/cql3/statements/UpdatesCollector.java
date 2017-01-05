@@ -20,8 +20,8 @@ package org.apache.cassandra.cql3.statements;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 
@@ -37,7 +37,7 @@ final class UpdatesCollector
     /**
      * The columns that will be updated for each table (keyed by the table ID).
      */
-    private final Map<UUID, PartitionColumns> updatedColumns;
+    private final Map<TableId, PartitionColumns> updatedColumns;
 
     /**
      * The estimated number of updated row.
@@ -49,7 +49,7 @@ final class UpdatesCollector
      */
     private final Map<String, Map<ByteBuffer, IMutation>> mutations = new HashMap<>();
 
-    public UpdatesCollector(Map<UUID, PartitionColumns> updatedColumns, int updatedRows)
+    public UpdatesCollector(Map<TableId, PartitionColumns> updatedColumns, int updatedRows)
     {
         super();
         this.updatedColumns = updatedColumns;

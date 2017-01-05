@@ -55,7 +55,7 @@ public final class Schema
     private volatile Keyspaces keyspaces = Keyspaces.none();
 
     // UUID -> mutable metadata ref map. We have to update these in place every time a table changes.
-    private final Map<UUID, TableMetadataRef> metadataRefs = new NonBlockingHashMap<>();
+    private final Map<TableId, TableMetadataRef> metadataRefs = new NonBlockingHashMap<>();
 
     // Keyspace objects, one per keyspace. Only one instance should ever exist for any given keyspace.
     private final Map<String, Keyspace> keyspaceInstances = new NonBlockingHashMap<>();
@@ -123,8 +123,8 @@ public final class Schema
         Optional<KeyspaceMetadata> previous = keyspaces.get(ksm.name);
         if (previous.isPresent())
         {
-            MapDifference<UUID, TableMetadata> tablesDiff = previous.get().tables.diff(ksm.tables);
-            MapDifference<UUID, ViewMetadata> viewsDiff = previous.get().views.diff(ksm.views);
+            MapDifference<TableId, TableMetadata> tablesDiff = previous.get().tables.diff(ksm.tables);
+            MapDifference<TableId, ViewMetadata> viewsDiff = previous.get().views.diff(ksm.views);
 
             tablesDiff.entriesOnlyOnLeft().values().forEach(table -> metadataRefs.remove(table.id));
             viewsDiff.entriesOnlyOnLeft().values().forEach(view -> metadataRefs.remove(view.metadata.id));
@@ -215,7 +215,7 @@ public final class Schema
         return index.getBackingTable().orElse(null);
     }
 
-    public ColumnFamilyStore getColumnFamilyStoreInstance(UUID id)
+    public ColumnFamilyStore getColumnFamilyStoreInstance(TableId id)
     {
         TableMetadata metadata = getTableMetadata(id);
         if (metadata == null)
@@ -376,7 +376,7 @@ public final class Schema
      *
      * @return metadata about Table or View
      */
-    public TableMetadataRef getTableMetadataRef(UUID id)
+    public TableMetadataRef getTableMetadataRef(TableId id)
     {
         return metadataRefs.get(id);
     }
@@ -407,7 +407,7 @@ public final class Schema
              : ksm.getTableOrViewNullable(table);
     }
 
-    public TableMetadata getTableMetadata(UUID id)
+    public TableMetadata getTableMetadata(TableId id)
     {
         return keyspaces.getTableOrViewNullable(id);
     }
@@ -436,7 +436,7 @@ public final class Schema
     /**
      * @throws UnknownTableException if the table couldn't be found in the metadata
      */
-    public TableMetadata getExistingTableMetadata(UUID id) throws UnknownTableException
+    public TableMetadata getExistingTableMetadata(TableId id) throws UnknownTableException
     {
         TableMetadata metadata = getTableMetadata(id);
         if (metadata != null)
@@ -569,8 +569,8 @@ public final class Schema
     private void alterKeyspace(KeyspaceMetadata before, KeyspaceMetadata after)
     {
         // calculate the deltas
-        MapDifference<UUID, TableMetadata> tablesDiff = before.tables.diff(after.tables);
-        MapDifference<UUID, ViewMetadata> viewsDiff = before.views.diff(after.views);
+        MapDifference<TableId, TableMetadata> tablesDiff = before.tables.diff(after.tables);
+        MapDifference<TableId, ViewMetadata> viewsDiff = before.views.diff(after.views);
         MapDifference<ByteBuffer, UserType> typesDiff = before.types.diff(after.types);
         MapDifference<Pair<FunctionName, List<String>>, UDFunction> udfsDiff = before.functions.udfsDiff(after.functions);
         MapDifference<Pair<FunctionName, List<String>>, UDAggregate> udasDiff = before.functions.udasDiff(after.functions);

@@ -48,6 +48,7 @@ import org.apache.cassandra.metrics.KeyspaceMetrics;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.service.StorageService;
@@ -83,7 +84,7 @@ public class Keyspace
     public static final OpOrder writeOrder = new OpOrder();
 
     /* ColumnFamilyStore per column family */
-    private final ConcurrentMap<UUID, ColumnFamilyStore> columnFamilyStores = new ConcurrentHashMap<>();
+    private final ConcurrentMap<TableId, ColumnFamilyStore> columnFamilyStores = new ConcurrentHashMap<>();
 
     private volatile AbstractReplicationStrategy replicationStrategy;
     public final ViewManager viewManager;
@@ -207,7 +208,7 @@ public class Keyspace
         return getColumnFamilyStore(table.id);
     }
 
-    public ColumnFamilyStore getColumnFamilyStore(UUID id)
+    public ColumnFamilyStore getColumnFamilyStore(TableId id)
     {
         ColumnFamilyStore cfs = columnFamilyStores.get(id);
         if (cfs == null)
@@ -215,7 +216,7 @@ public class Keyspace
         return cfs;
     }
 
-    public boolean hasColumnFamilyStore(UUID id)
+    public boolean hasColumnFamilyStore(TableId id)
     {
         return columnFamilyStores.containsKey(id);
     }
@@ -357,10 +358,10 @@ public class Keyspace
     }
 
     // best invoked on the compaction mananger.
-    public void dropCf(UUID cfId)
+    public void dropCf(TableId tableId)
     {
-        assert columnFamilyStores.containsKey(cfId);
-        ColumnFamilyStore cfs = columnFamilyStores.remove(cfId);
+        assert columnFamilyStores.containsKey(tableId);
+        ColumnFamilyStore cfs = columnFamilyStores.remove(tableId);
         if (cfs == null)
             return;
 
@@ -498,14 +499,14 @@ public class Keyspace
             mutation.viewLockAcquireStart.compareAndSet(0L, System.currentTimeMillis());
 
             // the order of lock acquisition doesn't matter (from a deadlock perspective) because we only use tryLock()
-            Collection<UUID> columnFamilyIds = mutation.getColumnFamilyIds();
-            Iterator<UUID> idIterator = columnFamilyIds.iterator();
+            Collection<TableId> tableIds = mutation.getTableIds();
+            Iterator<TableId> idIterator = tableIds.iterator();
 
-            locks = new Lock[columnFamilyIds.size()];
-            for (int i = 0; i < columnFamilyIds.size(); i++)
+            locks = new Lock[tableIds.size()];
+            for (int i = 0; i < tableIds.size(); i++)
             {
-                UUID cfid = idIterator.next();
-                int lockKey = Objects.hash(mutation.key().getKey(), cfid);
+                TableId tableId = idIterator.next();
+                int lockKey = Objects.hash(mutation.key().getKey(), tableId);
                 while (true)
                 {
                     Lock lock = null;
@@ -523,7 +524,7 @@ public class Keyspace
                             for (int j = 0; j < i; j++)
                                 locks[j].unlock();
 
-                            logger.trace("Could not acquire lock for {} and table {}", ByteBufferUtil.bytesToHex(mutation.key().getKey()), columnFamilyStores.get(cfid).name);
+                            logger.trace("Could not acquire lock for {} and table {}", ByteBufferUtil.bytesToHex(mutation.key().getKey()), columnFamilyStores.get(tableId).name);
                             Tracing.trace("Could not acquire MV lock");
                             if (future != null)
                             {
@@ -575,8 +576,8 @@ public class Keyspace
             long acquireTime = System.currentTimeMillis() - mutation.viewLockAcquireStart.get();
             if (!isClReplay)
             {
-                for(UUID cfid : columnFamilyIds)
-                    columnFamilyStores.get(cfid).metric.viewLockAcquireTime.update(acquireTime, TimeUnit.MILLISECONDS);
+                for(TableId tableId : tableIds)
+                    columnFamilyStores.get(tableId).metric.viewLockAcquireTime.update(acquireTime, TimeUnit.MILLISECONDS);
             }
         }
         int nowInSec = FBUtilities.nowInSeconds();

@@ -41,6 +41,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.exceptions.UnknownIndexException;
 import org.apache.cassandra.service.ClientWarn;
@@ -615,7 +616,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
             out.writeByte(digestFlag(command.isDigestQuery()) | indexFlag(command.index.isPresent()));
             if (command.isDigestQuery())
                 out.writeUnsignedVInt(command.digestVersion());
-            UUIDSerializer.serializer.serialize(command.metadata.id, out, version);
+            command.metadata.id.serialize(out);
             out.writeInt(command.nowInSec());
             ColumnFilter.serializer.serialize(command.columnFilter(), out, version);
             RowFilter.serializer.serialize(command.rowFilter(), out, version);
@@ -641,7 +642,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
 
             boolean hasIndex = hasIndex(flags);
             int digestVersion = isDigest ? (int)in.readUnsignedVInt() : 0;
-            TableMetadata metadata = Schema.instance.getExistingTableMetadata(UUIDSerializer.serializer.deserialize(in, version));
+            TableMetadata metadata = Schema.instance.getExistingTableMetadata(TableId.deserialize(in));
             int nowInSec = in.readInt();
             ColumnFilter columnFilter = ColumnFilter.serializer.deserialize(in, version, metadata);
             RowFilter rowFilter = RowFilter.serializer.deserialize(in, version, metadata);
@@ -674,7 +675,7 @@ public abstract class ReadCommand extends MonitorableImpl implements ReadQuery
         {
             return 2 // kind + flags
                    + (command.isDigestQuery() ? TypeSizes.sizeofUnsignedVInt(command.digestVersion()) : 0)
-                   + UUIDSerializer.serializer.serializedSize(command.metadata.id, version)
+                   + command.metadata.id.serializedSize()
                    + TypeSizes.sizeof(command.nowInSec())
                    + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)
                    + RowFilter.serializer.serializedSize(command.rowFilter(), version)

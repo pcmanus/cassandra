@@ -63,7 +63,7 @@ public final class CompactionInfo implements Serializable
 
     public UUID getId()
     {
-        return metadata != null ? metadata.id : null;
+        return metadata != null ? metadata.id.asUUID() : null;
     }
 
     public String getKeyspace()

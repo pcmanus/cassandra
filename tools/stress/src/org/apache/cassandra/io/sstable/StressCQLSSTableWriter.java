@@ -24,9 +24,12 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.ArrayUtils;
+
 import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.TypeCodec;
 import org.antlr.runtime.RecognitionException;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -614,8 +617,10 @@ public class StressCQLSSTableWriter implements Closeable
             CreateTableStatement statement = (CreateTableStatement) schemaStatement.prepare(ksm.types).statement;
             statement.validate(ClientState.forInternalCalls());
 
-            //Build metatdata with a portable cfId
-            TableMetadata tableMetadata = statement.builder().deterministicId().build();
+            //Build metadata with a portable tableId
+            TableMetadata tableMetadata = statement.builder()
+                                                   .id(deterministicId(statement.keyspace(), statement.columnFamily()))
+                                                   .build();
 
             Keyspace.setInitialized();
             Directories directories = new Directories(tableMetadata, directoryList.stream().map(Directories.DataDirectory::new).collect(Collectors.toList()));
@@ -627,6 +632,11 @@ public class StressCQLSSTableWriter implements Closeable
             Schema.instance.load(ksm.withSwapped(ksm.tables.with(cfs.metadata())));
 
             return cfs;
+        }
+
+        private static TableId deterministicId(String keyspace, String table)
+        {
+            return TableId.fromUUID(UUID.nameUUIDFromBytes(ArrayUtils.addAll(keyspace.getBytes(), table.getBytes())));
         }
 
         /**

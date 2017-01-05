@@ -36,6 +36,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -54,7 +55,7 @@ public class Mutation implements IMutation
 
     private final DecoratedKey key;
     // map of column family id to mutations for that column family.
-    private final Map<UUID, PartitionUpdate> modifications;
+    private final Map<TableId, PartitionUpdate> modifications;
 
     // Time at which this mutation was instantiated
     public final long createdAt = System.currentTimeMillis();
@@ -73,7 +74,7 @@ public class Mutation implements IMutation
         this(update.metadata().keyspace, update.partitionKey(), Collections.singletonMap(update.metadata().id, update));
     }
 
-    protected Mutation(String keyspaceName, DecoratedKey key, Map<UUID, PartitionUpdate> modifications)
+    protected Mutation(String keyspaceName, DecoratedKey key, Map<TableId, PartitionUpdate> modifications)
     {
         this.keyspaceName = keyspaceName;
         this.key = key;
@@ -85,19 +86,19 @@ public class Mutation implements IMutation
         return new Mutation(keyspaceName, key, new HashMap<>(modifications));
     }
 
-    public Mutation without(Set<UUID> cfIds)
+    public Mutation without(Set<TableId> tableIds)
     {
-        if (cfIds.isEmpty())
+        if (tableIds.isEmpty())
             return this;
 
         Mutation copy = copy();
-        copy.modifications.keySet().removeAll(cfIds);
+        copy.modifications.keySet().removeAll(tableIds);
         return copy;
     }
 
-    public Mutation without(UUID cfId)
+    public Mutation without(TableId tableId)
     {
-        return without(Collections.singleton(cfId));
+        return without(Collections.singleton(tableId));
     }
 
     public String getKeyspaceName()
@@ -105,7 +106,7 @@ public class Mutation implements IMutation
         return keyspaceName;
     }
 
-    public Collection<UUID> getColumnFamilyIds()
+    public Collection<TableId> getTableIds()
     {
         return modifications.keySet();
     }
@@ -175,7 +176,7 @@ public class Mutation implements IMutation
         if (mutations.size() == 1)
             return mutations.get(0);
 
-        Set<UUID> updatedTables = new HashSet<>();
+        Set<TableId> updatedTables = new HashSet<>();
         String ks = null;
         DecoratedKey key = null;
         for (Mutation mutation : mutations)
@@ -190,8 +191,8 @@ public class Mutation implements IMutation
         }
 
         List<PartitionUpdate> updates = new ArrayList<>(mutations.size());
-        Map<UUID, PartitionUpdate> modifications = new HashMap<>(updatedTables.size());
-        for (UUID table : updatedTables)
+        Map<TableId, PartitionUpdate> modifications = new HashMap<>(updatedTables.size());
+        for (TableId table : updatedTables)
         {
             for (Mutation mutation : mutations)
             {
@@ -284,9 +285,9 @@ public class Mutation implements IMutation
         if (shallow)
         {
             List<String> cfnames = new ArrayList<>(modifications.size());
-            for (UUID cfid : modifications.keySet())
+            for (TableId tableId : modifications.keySet())
             {
-                TableMetadata cfm = Schema.instance.getTableMetadata(cfid);
+                TableMetadata cfm = Schema.instance.getTableMetadata(tableId);
                 cfnames.add(cfm == null ? "-dropped-" : cfm.table);
             }
             buff.append(StringUtils.join(cfnames, ", "));
@@ -373,7 +374,7 @@ public class Mutation implements IMutation
             out.writeUnsignedVInt(size);
 
             assert size > 0;
-            for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
+            for (Map.Entry<TableId, PartitionUpdate> entry : mutation.modifications.entrySet())
                 PartitionUpdate.serializer.serialize(entry.getValue(), out, version);
         }
 
@@ -386,7 +387,7 @@ public class Mutation implements IMutation
             if (size == 1)
                 return new Mutation(update);
 
-            Map<UUID, PartitionUpdate> modifications = new HashMap<>(size);
+            Map<TableId, PartitionUpdate> modifications = new HashMap<>(size);
             DecoratedKey dk = update.partitionKey();
 
             modifications.put(update.metadata().id, update);
@@ -407,7 +408,7 @@ public class Mutation implements IMutation
         public long serializedSize(Mutation mutation, int version)
         {
             int size = TypeSizes.sizeofUnsignedVInt(mutation.modifications.size());
-            for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
+            for (Map.Entry<TableId, PartitionUpdate> entry : mutation.modifications.entrySet())
                 size += PartitionUpdate.serializer.serializedSize(entry.getValue(), version);
 
             return size;

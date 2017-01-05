@@ -439,7 +439,7 @@ public class MigrationManagerTest
         assertEquals(Schema.instance.getTableMetadataRef(cf.ksName, cf.cfName).getGcGraceSeconds(), newCfm.getGcGraceSeconds());
         assertEquals(UTF8Type.instance, Schema.instance.getTableMetadataRef(cf.ksName, cf.cfName).getDefaultValidator());
 
-        // Change cfId
+        // Change tableId
         newCfm = new CFMetaData(cf.ksName, cf.cfName, cf.cfType, cf.comparator);
         CFMetaData.copyOpts(newCfm, cf);
         try

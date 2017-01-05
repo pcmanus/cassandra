@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.MessageFormatter;
 
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -60,7 +61,7 @@ public class BatchStatement implements CQLStatement
     private final List<ModificationStatement> statements;
 
     // Columns modified for each table (keyed by the table ID)
-    private final Map<UUID, PartitionColumns> updatedColumns;
+    private final Map<TableId, PartitionColumns> updatedColumns;
     // Columns on which there is conditions. Note that if there is any, then the batch can only be on a single partition (and thus table).
     private final PartitionColumns conditionColumns;
 
@@ -556,7 +557,7 @@ public class BatchStatement implements CQLStatement
 
     private static class MultiTableColumnsBuilder
     {
-        private final Map<UUID, PartitionColumns.Builder> perTableBuilders = new HashMap<>();
+        private final Map<TableId, PartitionColumns.Builder> perTableBuilders = new HashMap<>();
 
         public void addAll(TableMetadata table, PartitionColumns columns)
         {
@@ -569,10 +570,10 @@ public class BatchStatement implements CQLStatement
             builder.addAll(columns);
         }
 
-        public Map<UUID, PartitionColumns> build()
+        public Map<TableId, PartitionColumns> build()
         {
-            Map<UUID, PartitionColumns> m = Maps.newHashMapWithExpectedSize(perTableBuilders.size());
-            for (Map.Entry<UUID, PartitionColumns.Builder> p : perTableBuilders.entrySet())
+            Map<TableId, PartitionColumns> m = Maps.newHashMapWithExpectedSize(perTableBuilders.size());
+            for (Map.Entry<TableId, PartitionColumns.Builder> p : perTableBuilders.entrySet())
                 m.put(p.getKey(), p.getValue().build());
             return m;
         }

@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.schema.Schema;
@@ -64,7 +65,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
     private final Queue<Future<Integer>> futures;
 
     private final AtomicInteger replayedCount;
-    private final Map<UUID, IntervalSet<CommitLogPosition>> cfPersisted;
+    private final Map<TableId, IntervalSet<CommitLogPosition>> cfPersisted;
     private final CommitLogPosition globalPosition;
 
     // Used to throttle speed of replay of mutations if we pass the max outstanding count
@@ -78,11 +79,11 @@ public class CommitLogReplayer implements CommitLogReadHandler
 
     CommitLogReplayer(CommitLog commitLog,
                       CommitLogPosition globalPosition,
-                      Map<UUID, IntervalSet<CommitLogPosition>> cfPersisted,
+                      Map<TableId, IntervalSet<CommitLogPosition>> cfPersisted,
                       ReplayFilter replayFilter)
     {
-        this.keyspacesReplayed = new NonBlockingHashSet<Keyspace>();
-        this.futures = new ArrayDeque<Future<Integer>>();
+        this.keyspacesReplayed = new NonBlockingHashSet<>();
+        this.futures = new ArrayDeque<>();
         // count the number of replayed mutation. We don't really care about atomicity, but we need it to be a reference.
         this.replayedCount = new AtomicInteger();
         this.cfPersisted = cfPersisted;
@@ -95,7 +96,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
     public static CommitLogReplayer construct(CommitLog commitLog)
     {
         // compute per-CF and global replay intervals
-        Map<UUID, IntervalSet<CommitLogPosition>> cfPersisted = new HashMap<>();
+        Map<TableId, IntervalSet<CommitLogPosition>> cfPersisted = new HashMap<>();
         ReplayFilter replayFilter = ReplayFilter.create();
 
         for (ColumnFamilyStore cfs : ColumnFamilyStore.all())
@@ -146,7 +147,7 @@ public class CommitLogReplayer implements CommitLogReadHandler
      */
     public int blockForWrites()
     {
-        for (Map.Entry<UUID, AtomicInteger> entry : commitLogReader.getInvalidMutations())
+        for (Map.Entry<TableId, AtomicInteger> entry : commitLogReader.getInvalidMutations())
             logger.warn("Skipped {} mutations from unknown (probably removed) CF with id {}", entry.getValue(), entry.getKey());
 
         // wait for all the writes to finish on the mutation stage
@@ -357,9 +358,9 @@ public class CommitLogReplayer implements CommitLogReadHandler
      *
      * @return true iff replay is necessary
      */
-    private boolean shouldReplay(UUID cfId, CommitLogPosition position)
+    private boolean shouldReplay(TableId tableId, CommitLogPosition position)
     {
-        return !cfPersisted.get(cfId).contains(position);
+        return !cfPersisted.get(tableId).contains(position);
     }
 
     protected boolean pointInTimeExceeded(Mutation fm)

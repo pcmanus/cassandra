@@ -123,12 +123,12 @@ public final class Tables implements Iterable<TableMetadata>
         return builder().add(filter(this, t -> t != table)).build();
     }
 
-    MapDifference<UUID, TableMetadata> diff(Tables other)
+    MapDifference<TableId, TableMetadata> diff(Tables other)
     {
-        Map<UUID, TableMetadata> thisTables = new HashMap<>();
+        Map<TableId, TableMetadata> thisTables = new HashMap<>();
         this.forEach(t -> thisTables.put(t.id, t));
 
-        Map<UUID, TableMetadata> otherTables = new HashMap<>();
+        Map<TableId, TableMetadata> otherTables = new HashMap<>();
         other.forEach(t -> otherTables.put(t.id, t));
 
         return Maps.difference(thisTables, otherTables);

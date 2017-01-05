@@ -310,7 +310,7 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
         String keyspace = "cql_test_keyspace_options";
         String table = "test_table_options";
 
-        TableMetadata.Builder builder = TableMetadata.builder(keyspace, table, UUIDGen.getTimeUUID());
+        TableMetadata.Builder builder = TableMetadata.builder(keyspace, table);
         builder.addPartitionKeyColumn("pk1", IntegerType.instance)
                .addClusteringColumn("cl1", IntegerType.instance)
                .addRegularColumn("reg1", AsciiType.instance)

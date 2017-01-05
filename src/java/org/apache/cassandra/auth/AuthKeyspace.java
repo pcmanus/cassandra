@@ -20,6 +20,7 @@ package org.apache.cassandra.auth;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.cql3.statements.CreateTableStatement;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.KeyspaceMetadata;
@@ -81,7 +82,7 @@ public final class AuthKeyspace
     private static TableMetadata parse(String name, String description, String cql)
     {
         return CreateTableStatement.parse(format(cql, name), SchemaConstants.AUTH_KEYSPACE_NAME)
-                                   .deterministicId()
+                                   .id(TableId.forSystemTable(SchemaConstants.AUTH_KEYSPACE_NAME, name))
                                    .comment(description)
                                    .dcLocalReadRepairChance(0.0)
                                    .gcGraceSeconds((int) TimeUnit.DAYS.toSeconds(90))

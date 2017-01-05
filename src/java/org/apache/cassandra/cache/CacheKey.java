@@ -18,17 +18,16 @@
 package org.apache.cassandra.cache;
 
 import java.util.Objects;
-import java.util.UUID;
 
-import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 
 public abstract class CacheKey implements IMeasurableMemory
 {
-    public final UUID tableId;
+    public final TableId tableId;
     public final String indexName;
 
-    protected CacheKey(UUID tableId, String indexName)
+    protected CacheKey(TableId tableId, String indexName)
     {
         this.tableId = tableId;
         this.indexName = indexName;

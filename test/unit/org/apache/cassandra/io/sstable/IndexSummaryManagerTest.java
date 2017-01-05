@@ -53,6 +53,7 @@ import org.apache.cassandra.metrics.RestorableMeter;
 import org.apache.cassandra.schema.CachingParams;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.MigrationManager;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import static com.google.common.collect.ImmutableMap.of;
@@ -671,7 +672,7 @@ public class IndexSummaryManagerTest
     }
 
     private static List<SSTableReader> redistributeSummaries(List<SSTableReader> compacting,
-                                                             Map<UUID, LifecycleTransaction> transactions,
+                                                             Map<TableId, LifecycleTransaction> transactions,
                                                              long memoryPoolBytes)
     throws IOException
     {
@@ -685,7 +686,7 @@ public class IndexSummaryManagerTest
         CountDownLatch barrier;
 
         ObservableRedistribution(List<SSTableReader> compacting,
-                                 Map<UUID, LifecycleTransaction> transactions,
+                                 Map<TableId, LifecycleTransaction> transactions,
                                  long memoryPoolBytes,
                                  CountDownLatch barrier)
         {

@@ -30,7 +30,6 @@ import static org.junit.Assert.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 
 
 import org.apache.cassandra.SchemaLoader;
@@ -39,7 +38,7 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.Indexes;
-import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 
 import com.googlecode.concurrentlinkedhashmap.Weighers;
@@ -162,16 +161,16 @@ public class CacheProviderTest
     @Test
     public void testKeys()
     {
-        UUID uuid1 = UUID.randomUUID();
+        TableId id1 = TableId.generate();
         byte[] b1 = {1, 2, 3, 4};
-        RowCacheKey key1 = new RowCacheKey(uuid1, null, ByteBuffer.wrap(b1));
-        UUID uuid2 = new UUID(uuid1.getMostSignificantBits(), uuid1.getLeastSignificantBits());
+        RowCacheKey key1 = new RowCacheKey(id1, null, ByteBuffer.wrap(b1));
+        TableId id2 = TableId.fromString(id1.toString());
         byte[] b2 = {1, 2, 3, 4};
-        RowCacheKey key2 = new RowCacheKey(uuid2, null, ByteBuffer.wrap(b2));
+        RowCacheKey key2 = new RowCacheKey(id2, null, ByteBuffer.wrap(b2));
         assertEquals(key1, key2);
         assertEquals(key1.hashCode(), key2.hashCode());
 
-        TableMetadata tm = TableMetadata.builder("ks", "tab", uuid1)
+        TableMetadata tm = TableMetadata.builder("ks", "tab", id1)
                                         .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                                         .addPartitionKeyColumn("pk", UTF8Type.instance)
                                         .build();
@@ -179,28 +178,28 @@ public class CacheProviderTest
         assertTrue(key1.sameTable(tm));
 
         byte[] b3 = {1, 2, 3, 5};
-        RowCacheKey key3 = new RowCacheKey(uuid1, null, ByteBuffer.wrap(b3));
+        RowCacheKey key3 = new RowCacheKey(id1, null, ByteBuffer.wrap(b3));
         assertNotSame(key1, key3);
         assertNotSame(key1.hashCode(), key3.hashCode());
 
         // with index name
 
-        key1 = new RowCacheKey(uuid1, "indexFoo", ByteBuffer.wrap(b1));
+        key1 = new RowCacheKey(id1, "indexFoo", ByteBuffer.wrap(b1));
         assertNotSame(key1, key2);
         assertNotSame(key1.hashCode(), key2.hashCode());
 
-        key2 = new RowCacheKey(uuid2, "indexFoo", ByteBuffer.wrap(b2));
+        key2 = new RowCacheKey(id2, "indexFoo", ByteBuffer.wrap(b2));
         assertEquals(key1, key2);
         assertEquals(key1.hashCode(), key2.hashCode());
 
-        tm = TableMetadata.builder("ks", "tab.indexFoo", uuid1)
+        tm = TableMetadata.builder("ks", "tab.indexFoo", id1)
                           .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                           .addPartitionKeyColumn("pk", UTF8Type.instance)
                           .indexes(Indexes.of(IndexMetadata.fromSchemaMetadata("indexFoo", IndexMetadata.Kind.KEYS, Collections.emptyMap())))
                           .build();
         assertTrue(key1.sameTable(tm));
 
-        key3 = new RowCacheKey(uuid1, "indexFoo", ByteBuffer.wrap(b3));
+        key3 = new RowCacheKey(id1, "indexFoo", ByteBuffer.wrap(b3));
         assertNotSame(key1, key3);
         assertNotSame(key1.hashCode(), key3.hashCode());
     }

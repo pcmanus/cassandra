@@ -28,7 +28,6 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 
@@ -45,7 +44,6 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.DirectorySizeCalculator;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -61,13 +59,13 @@ import org.apache.cassandra.utils.Pair;
  * } </pre>
  *
  * Until v2.0, {@code <cf dir>} is just column family name.
- * Since v2.1, {@code <cf dir>} has column family ID(cfId) added to its end.
+ * Since v2.1, {@code <cf dir>} has column family ID(tableId) added to its end.
  *
  * SSTables from secondary indexes were put in the same directory as their parent.
  * Since v2.2, they have their own directory under the parent directory whose name is index name.
  * Upon startup, those secondary index files are moved to new directory when upgrading.
  *
- * For backward compatibility, Directories can use directory without cfId if exists.
+ * For backward compatibility, Directories can use directory without tableId if exists.
  *
  * In addition, more that one 'root' data directory can be specified so that
  * {@code <path_to_data_dir>} potentially represents multiple locations.
@@ -200,7 +198,7 @@ public class Directories
         this.metadata = metadata;
         this.paths = paths;
 
-        String cfId = ByteBufferUtil.bytesToHex(ByteBufferUtil.bytes(metadata.id));
+        String tableId = metadata.id.toHexString();
         int idx = metadata.table.indexOf(SECONDARY_INDEX_NAME_SEPARATOR);
         String cfName = idx >= 0 ? metadata.table.substring(0, idx) : metadata.table;
         String indexNameWithDot = idx >= 0 ? metadata.table.substring(idx) : null;
@@ -213,17 +211,11 @@ public class Directories
             // check if old SSTable directory exists
             dataPaths[i] = new File(paths[i].location, oldSSTableRelativePath);
         }
-        boolean olderDirectoryExists = Iterables.any(Arrays.asList(dataPaths), new Predicate<File>()
-        {
-            public boolean apply(File file)
-            {
-                return file.exists();
-            }
-        });
+        boolean olderDirectoryExists = Iterables.any(Arrays.asList(dataPaths), File::exists);
         if (!olderDirectoryExists)
         {
             // use 2.1+ style
-            String newSSTableRelativePath = join(metadata.keyspace, cfName + '-' + cfId);
+            String newSSTableRelativePath = join(metadata.keyspace, cfName + '-' + tableId);
             for (int i = 0; i < paths.length; ++i)
                 dataPaths[i] = new File(paths[i].location, newSSTableRelativePath);
         }

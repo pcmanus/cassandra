@@ -29,6 +29,7 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.RebufferingInputStream;
+import org.apache.cassandra.schema.TableId;
 import org.caffinitas.ohc.OHCache;
 import org.caffinitas.ohc.OHCacheBuilder;
 
@@ -129,8 +130,7 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
             DataOutputBuffer dataOutput = new DataOutputBufferFixed(buf);
             try
             {
-                dataOutput.writeLong(rowCacheKey.tableId.getMostSignificantBits());
-                dataOutput.writeLong(rowCacheKey.tableId.getLeastSignificantBits());
+                rowCacheKey.tableId.serialize(dataOutput);
                 dataOutput.writeUTF(rowCacheKey.indexName != null ? rowCacheKey.indexName : "");
             }
             catch (IOException e)
@@ -145,13 +145,11 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
         {
             @SuppressWarnings("resource")
             DataInputBuffer dataInput = new DataInputBuffer(buf, false);
-            UUID tableId = null;
+            TableId tableId = null;
             String indexName = null;
             try
             {
-                long msb = dataInput.readLong();
-                long lsb = dataInput.readLong();
-                tableId = new UUID(msb, lsb);
+                tableId = TableId.deserialize(dataInput);
                 indexName = dataInput.readUTF();
                 if (indexName.isEmpty())
                     indexName = null;
@@ -167,11 +165,10 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 
         public int serializedSize(RowCacheKey rowCacheKey)
         {
-            return TypeSizes.sizeof(rowCacheKey.tableId.getMostSignificantBits())
-                    + TypeSizes.sizeof(rowCacheKey.tableId.getLeastSignificantBits())
-                    + TypeSizes.sizeof(rowCacheKey.indexName != null ? rowCacheKey.indexName : "")
-                    + 4
-                    + rowCacheKey.key.length;
+            return rowCacheKey.tableId.serializedSize()
+                   + TypeSizes.sizeof(rowCacheKey.indexName != null ? rowCacheKey.indexName : "")
+                   + 4
+                   + rowCacheKey.key.length;
         }
     }
 

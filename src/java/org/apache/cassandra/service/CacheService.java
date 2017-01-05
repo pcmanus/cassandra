@@ -357,8 +357,7 @@ public class CacheService implements CacheServiceMBean
         {
             assert(cfs.metadata().isCounter());
             TableMetadata tableMetadata = cfs.metadata();
-            out.writeLong(tableMetadata.id.getMostSignificantBits());
-            out.writeLong(tableMetadata.id.getLeastSignificantBits());
+            tableMetadata.id.serialize(out);
             out.writeUTF(tableMetadata.indexName().orElse(""));
             key.write(out);
         }
@@ -392,8 +391,7 @@ public class CacheService implements CacheServiceMBean
         {
             assert(!cfs.isIndex());//Shouldn't have row cache entries for indexes
             TableMetadata tableMetadata = cfs.metadata();
-            out.writeLong(tableMetadata.id.getMostSignificantBits());
-            out.writeLong(tableMetadata.id.getLeastSignificantBits());
+            tableMetadata.id.serialize(out);
             out.writeUTF(tableMetadata.indexName().orElse(""));
             ByteBufferUtil.writeWithLength(key.key, out);
         }
@@ -434,8 +432,7 @@ public class CacheService implements CacheServiceMBean
                 return;
 
             TableMetadata tableMetadata = cfs.metadata();
-            out.writeLong(tableMetadata.id.getMostSignificantBits());
-            out.writeLong(tableMetadata.id.getLeastSignificantBits());
+            tableMetadata.id.serialize(out);
             out.writeUTF(tableMetadata.indexName().orElse(""));
             ByteBufferUtil.writeWithLength(key.key, out);
             out.writeInt(key.desc.generation);

@@ -37,6 +37,7 @@ import org.junit.runners.Parameterized.Parameters;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.ParameterizedClass;
@@ -250,8 +251,8 @@ public class CommitLogTest
 
         assertEquals(2, CommitLog.instance.segmentManager.getActiveSegments().size());
 
-        UUID cfid2 = m2.getColumnFamilyIds().iterator().next();
-        CommitLog.instance.discardCompletedSegments(cfid2, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
+        TableId id2 = m2.getTableIds().iterator().next();
+        CommitLog.instance.discardCompletedSegments(id2, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
 
         // Assert we still have both our segments
         assertEquals(2, CommitLog.instance.segmentManager.getActiveSegments().size());
@@ -277,9 +278,9 @@ public class CommitLogTest
         assertEquals(1, CommitLog.instance.segmentManager.getActiveSegments().size());
 
         // "Flush": this won't delete anything
-        UUID cfid1 = rm.getColumnFamilyIds().iterator().next();
+        TableId id1 = rm.getTableIds().iterator().next();
         CommitLog.instance.sync();
-        CommitLog.instance.discardCompletedSegments(cfid1, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
+        CommitLog.instance.discardCompletedSegments(id1, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
 
         assertEquals(1, CommitLog.instance.segmentManager.getActiveSegments().size());
 
@@ -302,8 +303,8 @@ public class CommitLogTest
         // "Flush" second cf: The first segment should be deleted since we
         // didn't write anything on cf1 since last flush (and we flush cf2)
 
-        UUID cfid2 = rm2.getColumnFamilyIds().iterator().next();
-        CommitLog.instance.discardCompletedSegments(cfid2, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
+        TableId id2 = rm2.getTableIds().iterator().next();
+        CommitLog.instance.discardCompletedSegments(id2, CommitLogPosition.NONE, CommitLog.instance.getCurrentPosition());
 
         segments = CommitLog.instance.segmentManager.getActiveSegments();
 
@@ -315,9 +316,9 @@ public class CommitLogTest
 
     private String getDirtyCFIds(Collection<CommitLogSegment> segments)
     {
-        return "Dirty cfIds: <"
+        return "Dirty tableIds: <"
                + String.join(", ", segments.stream()
-                                           .map(CommitLogSegment::getDirtyCFIDs)
+                                           .map(CommitLogSegment::getDirtyTableIds)
                                            .flatMap(uuids -> uuids.stream())
                                            .distinct()
                                            .map(uuid -> uuid.toString()).collect(Collectors.toList()))

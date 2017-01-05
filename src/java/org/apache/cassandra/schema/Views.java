@@ -126,12 +126,12 @@ public final class Views implements Iterable<ViewMetadata>
         return builder().add(filter(this, v -> v != materializedView)).build();
     }
 
-    MapDifference<UUID, ViewMetadata> diff(Views other)
+    MapDifference<TableId, ViewMetadata> diff(Views other)
     {
-        Map<UUID, ViewMetadata> thisViews = new HashMap<>();
+        Map<TableId, ViewMetadata> thisViews = new HashMap<>();
         this.forEach(v -> thisViews.put(v.metadata.id, v));
 
-        Map<UUID, ViewMetadata> otherViews = new HashMap<>();
+        Map<TableId, ViewMetadata> otherViews = new HashMap<>();
         other.forEach(v -> otherViews.put(v.metadata.id, v));
 
         return Maps.difference(thisViews, otherViews);

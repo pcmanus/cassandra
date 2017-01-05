@@ -488,7 +488,7 @@ public class CassandraIndexTest extends CQLTester
     }
 
     // this is slightly annoying, but we cannot read rows from the methods in Util as
-    // ReadCommand#executeInternal uses metadata retrieved via the cfId, which the index
+    // ReadCommand#executeInternal uses metadata retrieved via the tableId, which the index
     // CFS inherits from the base CFS. This has the 'wrong' partitioner (the index table
     // uses LocalPartition, the base table a real one, so we cannot read from the index
     // table with executeInternal

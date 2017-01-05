@@ -17,8 +17,6 @@
  */
 package org.apache.cassandra.schema;
 
-import java.util.*;
-
 /**
  * Encapsulates a volatile reference to an immutable {@link TableMetadata} instance.
  *
@@ -26,7 +24,7 @@ import java.util.*;
  */
 public final class TableMetadataRef
 {
-    public final UUID id;
+    public final TableId id;
     public final String keyspace;
     public final String table;
 

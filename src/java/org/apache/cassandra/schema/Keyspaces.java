@@ -20,7 +20,6 @@ package org.apache.cassandra.schema;
 import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -34,7 +33,7 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
 {
     private final ImmutableMap<String, KeyspaceMetadata> keyspaces;
 
-    private final ImmutableMap<UUID, TableMetadata> tables;
+    private final ImmutableMap<TableId, TableMetadata> tables;
 
     private Keyspaces(Builder builder)
     {
@@ -90,7 +89,7 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
     }
 
     @Nullable
-    public TableMetadata getTableOrViewNullable(UUID id)
+    public TableMetadata getTableOrViewNullable(TableId id)
     {
         return tables.get(id);
     }
@@ -147,7 +146,7 @@ public final class Keyspaces implements Iterable<KeyspaceMetadata>
     {
         private final ImmutableMap.Builder<String, KeyspaceMetadata> keyspaces = new ImmutableMap.Builder<>();
 
-        private final ImmutableMap.Builder<UUID, TableMetadata> tables = new ImmutableMap.Builder<>();
+        private final ImmutableMap.Builder<TableId, TableMetadata> tables = new ImmutableMap.Builder<>();
 
         private Builder()
         {

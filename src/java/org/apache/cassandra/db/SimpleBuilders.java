@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.cql3.ColumnIdentifier;
@@ -107,7 +108,7 @@ public abstract class SimpleBuilders
         private final String keyspaceName;
         private final DecoratedKey key;
 
-        private final Map<UUID, PartitionUpdateBuilder> updateBuilders = new HashMap<>();
+        private final Map<TableId, PartitionUpdateBuilder> updateBuilders = new HashMap<>();
 
         public MutationBuilder(String keyspaceName, DecoratedKey key)
         {

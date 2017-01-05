@@ -29,8 +29,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 
-import org.apache.commons.lang3.ArrayUtils;
-
 import org.apache.cassandra.auth.DataResource;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.ColumnIdentifier;
@@ -47,7 +45,6 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.utils.AbstractIterator;
-import org.apache.cassandra.utils.UUIDGen;
 import org.github.jamm.Unmetered;
 
 import static java.lang.String.format;
@@ -77,7 +74,7 @@ public final class TableMetadata
 
     public final String keyspace;
     public final String table;
-    public final UUID id;
+    public final TableId id;
 
     public final IPartitioner partitioner;
     public final TableParams params;
@@ -158,7 +155,7 @@ public final class TableMetadata
         return new Builder(keyspace, table);
     }
 
-    public static Builder builder(String keyspace, String table, UUID id)
+    public static Builder builder(String keyspace, String table, TableId id)
     {
         return new Builder(keyspace, table, id);
     }
@@ -557,7 +554,7 @@ public final class TableMetadata
         final String keyspace;
         final String table;
 
-        private UUID id;
+        private TableId id;
 
         private IPartitioner partitioner;
         private TableParams.Builder params = TableParams.builder();
@@ -573,7 +570,7 @@ public final class TableMetadata
 
         private boolean isView;
 
-        private Builder(String keyspace, String table, UUID id)
+        private Builder(String keyspace, String table, TableId id)
         {
             this.keyspace = keyspace;
             this.table = table;
@@ -592,26 +589,14 @@ public final class TableMetadata
                 partitioner = DatabaseDescriptor.getPartitioner();
 
             if (id == null)
-                id = UUIDGen.getTimeUUID();
+                id = TableId.generate();
 
             return new TableMetadata(this);
         }
 
-        public Builder id(UUID val)
+        public Builder id(TableId val)
         {
             id = val;
-            return this;
-        }
-
-        /**
-         * Generates and sets deterministic UUID from keyspace/table name pair.
-         * This is used to generate the same UUID for {@code C* version < 2.1}
-         *
-         * Since 2.1, this is only used for system tables and some tests.
-         */
-        public Builder deterministicId()
-        {
-            id = UUID.nameUUIDFromBytes(ArrayUtils.addAll(keyspace.getBytes(), table.getBytes()));
             return this;
         }
 

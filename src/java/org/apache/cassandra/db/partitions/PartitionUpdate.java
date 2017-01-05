@@ -34,6 +34,7 @@ import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDSerializer;
@@ -787,14 +788,14 @@ public class PartitionUpdate extends AbstractBTreePartition
             {
                 assert !iter.isReverseOrder();
 
-                UUIDSerializer.serializer.serialize(update.metadata.id, out, version);
+                update.metadata.id.serialize(out);
                 UnfilteredRowIteratorSerializer.serializer.serialize(iter, null, out, version, update.rowCount());
             }
         }
 
         public PartitionUpdate deserialize(DataInputPlus in, int version, SerializationHelper.Flag flag) throws IOException
         {
-            TableMetadata metadata = Schema.instance.getExistingTableMetadata(UUIDSerializer.serializer.deserialize(in, version));
+            TableMetadata metadata = Schema.instance.getExistingTableMetadata(TableId.deserialize(in));
             UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(metadata, null, in, version, flag);
             if (header.isEmpty)
                 return emptyUpdate(metadata, header.key);
@@ -830,7 +831,7 @@ public class PartitionUpdate extends AbstractBTreePartition
         {
             try (UnfilteredRowIterator iter = update.unfilteredIterator())
             {
-                return UUIDSerializer.serializer.serializedSize(update.metadata.id, version)
+                return update.metadata.id.serializedSize()
                      + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, null, version, update.rowCount());
             }
         }

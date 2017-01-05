@@ -18,13 +18,14 @@
 package org.apache.cassandra.exceptions;
 
 import java.io.IOException;
-import java.util.UUID;
+
+import org.apache.cassandra.schema.TableId;
 
 public class UnknownTableException extends IOException
 {
-    public final UUID id;
+    public final TableId id;
 
-    public UnknownTableException(String msg, UUID id)
+    public UnknownTableException(String msg, TableId id)
     {
         super(msg);
         this.id = id;

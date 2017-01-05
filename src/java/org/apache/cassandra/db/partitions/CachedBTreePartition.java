@@ -27,8 +27,8 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.utils.UUIDSerializer;
 import org.apache.cassandra.utils.btree.BTree;
 
 public class CachedBTreePartition extends ImmutableBTreePartition implements CachedPartition
@@ -152,7 +152,7 @@ public class CachedBTreePartition extends ImmutableBTreePartition implements Cac
             out.writeInt(p.createdAtInSec);
             out.writeInt(p.cachedLiveRows);
             out.writeInt(p.rowsWithNonExpiringCells);
-            UUIDSerializer.serializer.serialize(partition.metadata().id, out, version);
+            partition.metadata().id.serialize(out);
             try (UnfilteredRowIterator iter = p.unfilteredIterator())
             {
                 UnfilteredRowIteratorSerializer.serializer.serialize(iter, null, out, version, p.rowCount());
@@ -175,7 +175,7 @@ public class CachedBTreePartition extends ImmutableBTreePartition implements Cac
             int rowsWithNonExpiringCells = in.readInt();
 
 
-            TableMetadata metadata = Schema.instance.getExistingTableMetadata(UUIDSerializer.serializer.deserialize(in, version));
+            TableMetadata metadata = Schema.instance.getExistingTableMetadata(TableId.deserialize(in));
             UnfilteredRowIteratorSerializer.Header header = UnfilteredRowIteratorSerializer.serializer.deserializeHeader(metadata, null, in, version, SerializationHelper.Flag.LOCAL);
             assert !header.isReversed && header.rowEstimate >= 0;
 
@@ -206,7 +206,7 @@ public class CachedBTreePartition extends ImmutableBTreePartition implements Cac
                 return TypeSizes.sizeof(p.createdAtInSec)
                      + TypeSizes.sizeof(p.cachedLiveRows)
                      + TypeSizes.sizeof(p.rowsWithNonExpiringCells)
-                     + UUIDSerializer.serializer.serializedSize(partition.metadata().id, version)
+                     + partition.metadata().id.serializedSize()
                      + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, null, MessagingService.current_version, p.rowCount());
             }
         }
