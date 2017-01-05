@@ -413,7 +413,7 @@ public class ColumnsTest
         if (columns.isEmpty())
             return TABLE_METADATA;
 
-        TableMetadata.Builder builder = TableMetadata.builder(TABLE_METADATA.keyspace, TABLE_METADATA.table).isCompound(true);
+        TableMetadata.Builder builder = TableMetadata.builder(TABLE_METADATA.keyspace, TABLE_METADATA.table);
         boolean hasPartitionKey = false;
         for (ColumnMetadata def : columns)
         {

@@ -51,7 +51,6 @@ public class TransformerTest
     static TableMetadata metadata()
     {
         return TableMetadata.builder("", "")
-                            .isCompound(true)
                             .addPartitionKeyColumn("pk", BytesType.instance)
                             .addClusteringColumn("c", Int32Type.instance)
                             .addStaticColumn("s", Int32Type.instance)

@@ -75,7 +75,6 @@ public class DirectoriesTest
         for (String table : TABLES)
         {
             CFM.add(TableMetadata.builder(KS, table)
-                                 .isCompound(true)
                                  .addPartitionKeyColumn("thekey", UTF8Type.instance)
                                  .addClusteringColumn("thecolumn", UTF8Type.instance)
                                  .build());
@@ -170,7 +169,6 @@ public class DirectoriesTest
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(KS, "cf")
-                         .isCompound(true)
                          .addPartitionKeyColumn("thekey", UTF8Type.instance)
                          .addClusteringColumn("col", UTF8Type.instance);
 

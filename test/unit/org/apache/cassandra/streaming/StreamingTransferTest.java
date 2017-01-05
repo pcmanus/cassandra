@@ -91,11 +91,9 @@ public class StreamingTransferTest
                        KeyspaceParams.simple(1),
                        standardCFMD(KEYSPACE1, CF_STANDARD),
                        TableMetadata.builder(KEYSPACE1, CF_COUNTER)
-                                    .isCompound(true)
                                     .isCounter(true)
                                     .addPartitionKeyColumn("key", BytesType.instance),
                        TableMetadata.builder(KEYSPACE1, CF_STANDARDINT)
-                                    .isCompound(true)
                                     .addPartitionKeyColumn("key", AsciiType.instance)
                                     .addClusteringColumn("cols", Int32Type.instance)
                                     .addRegularColumn("val", BytesType.instance),

@@ -166,9 +166,7 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
         TableMetadata.Builder builder = TableMetadata.builder(keyspace, name, TableId.fromUUID(row.getUUID("id")))
                                                      .partitioner(partitioner);
 
-        if (isView)
-            builder.isCompound(true);
-        else
+        if (!isView)
             builder.flags(TableMetadata.Flag.fromStringSet(row.getSet("flags", String.class)));
 
         String columnsQuery = String.format("SELECT * FROM %s.%s WHERE keyspace_name = ? AND table_name = ?",

@@ -476,7 +476,6 @@ public final class TableMetadata
     public static TableMetadata minimal(String keyspace, String name)
     {
         return TableMetadata.builder(keyspace, name)
-                            .isCompound(true)
                             .addPartitionKeyColumn("key", BytesType.instance)
                             .build();
     }
@@ -558,7 +557,8 @@ public final class TableMetadata
 
         private IPartitioner partitioner;
         private TableParams.Builder params = TableParams.builder();
-        private Set<Flag> flags = EnumSet.noneOf(Flag.class);
+        // Setting compound as default as "normal" CQL tables are compound and that's what we want by default
+        private Set<Flag> flags = EnumSet.of(Flag.COMPOUND);
         private Triggers triggers = Triggers.none();
         private Indexes indexes = Indexes.none();
 

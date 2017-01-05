@@ -34,7 +34,6 @@ public class KeyCacheKey extends CacheKey
     public final Descriptor desc;
 
     private static final long EMPTY_SIZE = ObjectSizes.measure(new KeyCacheKey(TableMetadata.builder("ks", "tab")
-                                                                                            .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                                                                                             .addPartitionKeyColumn("pk", UTF8Type.instance)
                                                                                             .build(), null, ByteBufferUtil.EMPTY_BYTE_BUFFER));
 

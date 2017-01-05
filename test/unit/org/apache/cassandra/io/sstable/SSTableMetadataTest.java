@@ -61,7 +61,6 @@ public class SSTableMetadataTest
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD3),
                                     TableMetadata.builder(KEYSPACE1, CF_STANDARDCOMPOSITE2)
-                                                 .isCompound(true)
                                                  .addPartitionKeyColumn("key", AsciiType.instance)
                                                  .addClusteringColumn("name", AsciiType.instance)
                                                  .addClusteringColumn("int", IntegerType.instance)

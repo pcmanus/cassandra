@@ -88,7 +88,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
 
         TableMetadata cfm =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addClusteringColumn("ck1", IntegerType.instance)
                          .addRegularColumn("reg1", typeC)
@@ -114,7 +113,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
 
         TableMetadata.Builder builder =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addClusteringColumn("ck1", IntegerType.instance)
                          .addRegularColumn("reg1", IntegerType.instance)
@@ -160,7 +158,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
 
         TableMetadata.Builder builder =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addClusteringColumn("ck1", IntegerType.instance)
                          .addRegularColumn("reg1", IntegerType.instance)
@@ -208,7 +205,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
 
         TableMetadata.Builder metadata =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addPartitionKeyColumn("pk2", AsciiType.instance)
                          .addClusteringColumn("ck1", ReversedType.getInstance(IntegerType.instance))
@@ -246,7 +242,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
         TableMetadata.Builder metadata =
             TableMetadata.builder(keyspace, table)
                          .isDense(true)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addPartitionKeyColumn("pk2", AsciiType.instance)
                          .addClusteringColumn("ck1", ReversedType.getInstance(IntegerType.instance))
@@ -279,7 +274,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
         TableMetadata.Builder metadata =
             TableMetadata.builder(keyspace, table)
                          .isDense(true)
-                         .isCompound(true)
                          .isCounter(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addPartitionKeyColumn("pk2", AsciiType.instance)
@@ -363,7 +357,6 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
 
         TableMetadata.Builder builder =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk1", IntegerType.instance)
                          .addClusteringColumn("cl1", IntegerType.instance)
                          .addRegularColumn("reg1", AsciiType.instance);

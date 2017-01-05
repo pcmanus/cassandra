@@ -61,7 +61,6 @@ public class ReadMessageTest
 
         TableMetadata.Builder cfForReadMetadata =
             TableMetadata.builder(KEYSPACE1, CF_FOR_READ_TEST)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("col1", AsciiType.instance)
                          .addClusteringColumn("col2", AsciiType.instance)
@@ -70,14 +69,12 @@ public class ReadMessageTest
 
         TableMetadata.Builder cfForCommitMetadata1 =
             TableMetadata.builder(KEYSPACE1, CF_FOR_COMMIT_TEST)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("name", AsciiType.instance)
                          .addRegularColumn("commit1", AsciiType.instance);
 
         TableMetadata.Builder cfForCommitMetadata2 =
             TableMetadata.builder(KEYSPACENOCOMMIT, CF_FOR_COMMIT_TEST)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("name", AsciiType.instance)
                          .addRegularColumn("commit2", AsciiType.instance);

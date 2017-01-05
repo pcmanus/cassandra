@@ -72,7 +72,6 @@ public class PartitionImplementationTest
 
         metadata =
             TableMetadata.builder(KEYSPACE, CF)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk", AsciiType.instance)
                          .addClusteringColumn("ck", AsciiType.instance)
                          .addRegularColumn("col", AsciiType.instance)

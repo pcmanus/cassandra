@@ -70,7 +70,6 @@ public class ReadCommandTest
 
         TableMetadata.Builder metadata2 =
             TableMetadata.builder(KEYSPACE, CF2)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("col", AsciiType.instance)
                          .addRegularColumn("a", AsciiType.instance)
@@ -78,7 +77,6 @@ public class ReadCommandTest
 
         TableMetadata.Builder metadata3 =
             TableMetadata.builder(KEYSPACE, CF3)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("col", AsciiType.instance)
                          .addRegularColumn("a", AsciiType.instance)

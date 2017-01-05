@@ -63,7 +63,6 @@ public class RowTest
 
         TableMetadata.Builder metadata =
             TableMetadata.builder(KEYSPACE1, CF_STANDARD1)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("col1", AsciiType.instance)
                          .addRegularColumn("a", AsciiType.instance)

@@ -49,7 +49,6 @@ public class UnfilteredRowIteratorsMergeTest
     static DeletionTime partitionLevelDeletion = DeletionTime.LIVE;
     static TableMetadata metadata =
         TableMetadata.builder("UnfilteredRowIteratorsMergeTest", "Test")
-                     .isCompound(true)
                      .addPartitionKeyColumn("key", AsciiType.instance)
                      .addClusteringColumn("clustering", Int32Type.instance)
                      .addRegularColumn("data", Int32Type.instance)

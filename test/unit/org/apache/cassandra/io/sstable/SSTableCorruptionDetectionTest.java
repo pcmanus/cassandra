@@ -75,7 +75,6 @@ public class SSTableCorruptionDetectionTest extends SSTableWriterTestBase
     {
         TableMetadata.Builder cfm =
             TableMetadata.builder(keyspace, table)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pk", AsciiType.instance)
                          .addClusteringColumn("ck1", AsciiType.instance)
                          .addClusteringColumn("ck2", AsciiType.instance)

@@ -702,7 +702,6 @@ public class Util
     {
         TableMetadata metadata =
             TableMetadata.builder("ks", "tbl")
-                         .isCompound(true)
                          .addPartitionKeyColumn("k", AsciiType.instance)
                          .addClusteringColumn("c1", AsciiType.instance)
                          .addClusteringColumn("c2", Int32Type.instance)

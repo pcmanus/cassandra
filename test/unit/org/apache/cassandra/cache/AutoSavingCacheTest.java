@@ -46,7 +46,6 @@ public class AutoSavingCacheTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     TableMetadata.builder(KEYSPACE1, CF_STANDARD1)
-                                                 .isCompound(true)
                                                  .addPartitionKeyColumn("pKey", AsciiType.instance)
                                                  .addRegularColumn("col1", AsciiType.instance));
     }

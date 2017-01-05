@@ -92,7 +92,6 @@ public class MigrationManagerTest
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(KEYSPACE1, "TestApplyCFM_CF")
-                         .isCompound(true)
                          .addPartitionKeyColumn("keys", BytesType.instance)
                          .addClusteringColumn("col", BytesType.instance)
                          .comment("No comment")
@@ -530,7 +529,6 @@ public class MigrationManagerTest
     {
         return
             TableMetadata.builder(ks, cf)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", UTF8Type.instance)
                          .addClusteringColumn("col", UTF8Type.instance)
                          .addRegularColumn("val", UTF8Type.instance)

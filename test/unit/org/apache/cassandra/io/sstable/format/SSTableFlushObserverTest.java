@@ -73,7 +73,6 @@ public class SSTableFlushObserverTest
     {
         TableMetadata cfm =
             TableMetadata.builder(KS_NAME, CF_NAME)
-                         .isCompound(true)
                          .addPartitionKeyColumn("id", UTF8Type.instance)
                          .addRegularColumn("first_name", UTF8Type.instance)
                          .addRegularColumn("age", Int32Type.instance)

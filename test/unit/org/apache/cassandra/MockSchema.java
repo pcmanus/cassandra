@@ -145,7 +145,6 @@ public class MockSchema
     {
         return TableMetadata.builder(ksname, cfname)
                             .partitioner(Murmur3Partitioner.instance)
-                            .isCompound(true)
                             .addPartitionKeyColumn("key", UTF8Type.instance)
                             .addClusteringColumn("col", UTF8Type.instance)
                             .addRegularColumn("value", UTF8Type.instance)

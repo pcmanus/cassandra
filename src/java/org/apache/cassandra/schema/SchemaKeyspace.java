@@ -1082,7 +1082,6 @@ public final class SchemaKeyspace
 
         TableMetadata metadata =
             TableMetadata.builder(keyspaceName, viewName, TableId.fromUUID(row.getUUID("id")))
-                         .isCompound(true)
                          .isView(true)
                          .addColumns(columns)
                          .droppedColumns(fetchDroppedColumns(keyspaceName, viewName))

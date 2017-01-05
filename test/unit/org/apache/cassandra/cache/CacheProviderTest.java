@@ -71,7 +71,6 @@ public class CacheProviderTest
 
         cfm =
             TableMetadata.builder(KEYSPACE1, CF_STANDARD1)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pKey", AsciiType.instance)
                          .addRegularColumn("col1", AsciiType.instance)
                          .build();
@@ -171,7 +170,6 @@ public class CacheProviderTest
         assertEquals(key1.hashCode(), key2.hashCode());
 
         TableMetadata tm = TableMetadata.builder("ks", "tab", id1)
-                                        .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                                         .addPartitionKeyColumn("pk", UTF8Type.instance)
                                         .build();
 
@@ -193,7 +191,6 @@ public class CacheProviderTest
         assertEquals(key1.hashCode(), key2.hashCode());
 
         tm = TableMetadata.builder("ks", "tab.indexFoo", id1)
-                          .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                           .addPartitionKeyColumn("pk", UTF8Type.instance)
                           .indexes(Indexes.of(IndexMetadata.fromSchemaMetadata("indexFoo", IndexMetadata.Kind.KEYS, Collections.emptyMap())))
                           .build();

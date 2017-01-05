@@ -1750,7 +1750,6 @@ public class ClusteringColumnRestrictionsTest
 
         TableMetadata.Builder builder =
             TableMetadata.builder("keyspace", "test")
-                         .isCompound(true)
                          .addPartitionKeyColumn("partition_key", Int32Type.instance);
 
         for (int i = 0; i < sorts.length; i++)

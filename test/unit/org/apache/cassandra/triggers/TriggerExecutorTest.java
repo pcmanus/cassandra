@@ -260,7 +260,6 @@ public class TriggerExecutorTest
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ks, cf)
-                         .isCompound(true)
                          .addPartitionKeyColumn("pkey", UTF8Type.instance)
                          .addRegularColumn("c1", UTF8Type.instance)
                          .addRegularColumn("c2", UTF8Type.instance);

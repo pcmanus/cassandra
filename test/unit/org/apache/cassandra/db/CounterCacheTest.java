@@ -54,7 +54,6 @@ public class CounterCacheTest
 
         TableMetadata.Builder counterTable =
             TableMetadata.builder(KEYSPACE1, COUNTER1)
-                         .isCompound(true)
                          .isCounter(true)
                          .addPartitionKeyColumn("key", Int32Type.instance)
                          .addClusteringColumn("name", Int32Type.instance)

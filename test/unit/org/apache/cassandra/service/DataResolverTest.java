@@ -84,7 +84,6 @@ public class DataResolverTest
 
         TableMetadata.Builder builder1 =
             TableMetadata.builder(KEYSPACE1, CF_STANDARD)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", BytesType.instance)
                          .addClusteringColumn("col1", AsciiType.instance)
                          .addRegularColumn("c1", AsciiType.instance)
@@ -94,7 +93,6 @@ public class DataResolverTest
 
         TableMetadata.Builder builder2 =
             TableMetadata.builder(KEYSPACE1, CF_COLLECTION)
-                         .isCompound(true)
                          .addPartitionKeyColumn("k", ByteType.instance)
                          .addRegularColumn("m", MapType.getInstance(IntegerType.instance, IntegerType.instance, true));
 

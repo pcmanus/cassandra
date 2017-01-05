@@ -316,7 +316,6 @@ public class SchemaLoader
 
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", AsciiType.instance)
                          .addColumn(indexedColumn);
 
@@ -341,7 +340,6 @@ public class SchemaLoader
     public static TableMetadata.Builder counterCFMD(String ksName, String cfName)
     {
         return TableMetadata.builder(ksName, cfName)
-                            .isCompound(true)
                             .isCounter(true)
                             .addPartitionKeyColumn("key", AsciiType.instance)
                             .addClusteringColumn("name", AsciiType.instance)
@@ -369,7 +367,6 @@ public class SchemaLoader
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", keyType)
                          .addRegularColumn("val", valType)
                          .compression(getCompressionParameters());
@@ -432,7 +429,6 @@ public class SchemaLoader
         // on existing columns
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", AsciiType.instance)
                          .addClusteringColumn("c1", AsciiType.instance)
                          .addRegularColumn("birthdate", LongType.instance)
@@ -471,6 +467,7 @@ public class SchemaLoader
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
+                         .isCompound(false)
                          .isDense(true)
                          .addPartitionKeyColumn("key", AsciiType.instance)
                          .addClusteringColumn("c1", AsciiType.instance)
@@ -498,6 +495,7 @@ public class SchemaLoader
     {
         TableMetadata.Builder builder  =
             TableMetadata.builder(ksName, cfName)
+                         .isCompound(false)
                          .isDense(true)
                          .addPartitionKeyColumn("key", AsciiType.instance)
                          .addClusteringColumn("c1", AsciiType.instance)
@@ -519,7 +517,6 @@ public class SchemaLoader
     public static TableMetadata.Builder jdbcCFMD(String ksName, String cfName, AbstractType comp)
     {
         return TableMetadata.builder(ksName, cfName)
-                            .isCompound(true)
                             .addPartitionKeyColumn("key", BytesType.instance)
                             .compression(getCompressionParameters());
     }
@@ -528,7 +525,6 @@ public class SchemaLoader
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("id", UTF8Type.instance)
                          .addRegularColumn("first_name", UTF8Type.instance)
                          .addRegularColumn("last_name", UTF8Type.instance)
@@ -640,7 +636,6 @@ public static TableMetadata.Builder clusteringSASICFMD(String ksName, String cfN
         }
 
         return TableMetadata.builder(ksName, cfName)
-                            .isCompound(true)
                             .addPartitionKeyColumn("name", UTF8Type.instance)
                             .addClusteringColumn("location", UTF8Type.instance)
                             .addClusteringColumn("age", Int32Type.instance)
@@ -654,7 +649,6 @@ public static TableMetadata.Builder clusteringSASICFMD(String ksName, String cfN
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("sensor_id", Int32Type.instance)
                          .addStaticColumn("sensor_type", UTF8Type.instance)
                          .addClusteringColumn("date", LongType.instance)
@@ -693,7 +687,6 @@ public static TableMetadata.Builder clusteringSASICFMD(String ksName, String cfN
     {
         TableMetadata.Builder builder =
             TableMetadata.builder(ksName, cfName)
-                         .isCompound(true)
                          .addPartitionKeyColumn("song_id", UUIDType.instance)
                          .addRegularColumn("title", UTF8Type.instance)
                          .addRegularColumn("artist", UTF8Type.instance);

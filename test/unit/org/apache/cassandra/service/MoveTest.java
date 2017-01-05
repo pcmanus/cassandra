@@ -150,7 +150,6 @@ public class MoveTest
         KeyspaceMetadata keyspace =  KeyspaceMetadata.create(keyspaceName,
                                                              KeyspaceParams.nts(configOptions(replicas)),
                                                              Tables.of(TableMetadata.builder(keyspaceName, "CF1")
-                                                                                    .isCompound(true)
                                                                                     .addPartitionKeyColumn("key", BytesType.instance)
                                                                                     .build()));
 

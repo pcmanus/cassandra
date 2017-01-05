@@ -65,7 +65,6 @@ public class RowAndDeletionMergeIteratorTest
 
         TableMetadata.Builder builder =
             TableMetadata.builder(KEYSPACE1, CF_STANDARD1)
-                         .isCompound(true)
                          .addPartitionKeyColumn("key", AsciiType.instance)
                          .addClusteringColumn("col1", Int32Type.instance)
                          .addRegularColumn("a", Int32Type.instance);

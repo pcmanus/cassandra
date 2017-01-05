@@ -282,7 +282,6 @@ public class CreateViewStatement extends SchemaAlteringStatement
 
         TableMetadata.Builder builder =
             TableMetadata.builder(keyspace(), columnFamily(), properties.properties.getId())
-                         .isCompound(true)
                          .isView(true)
                          .params(params);
 

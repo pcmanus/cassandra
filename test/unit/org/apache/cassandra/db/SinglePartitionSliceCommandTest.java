@@ -75,7 +75,6 @@ public class SinglePartitionSliceCommandTest
 
         metadata =
             TableMetadata.builder(KEYSPACE, TABLE)
-                         .isCompound(true)
                          .addPartitionKeyColumn("k", UTF8Type.instance)
                          .addStaticColumn("s", UTF8Type.instance)
                          .addClusteringColumn("i", IntegerType.instance)

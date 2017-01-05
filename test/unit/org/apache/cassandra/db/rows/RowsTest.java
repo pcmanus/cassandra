@@ -60,7 +60,6 @@ public class RowsTest
         DatabaseDescriptor.daemonInitialization();
         kcvm =
             TableMetadata.builder(KEYSPACE, KCVM_TABLE)
-                         .isCompound(true)
                          .addPartitionKeyColumn("k", IntegerType.instance)
                          .addClusteringColumn("c", IntegerType.instance)
                          .addRegularColumn("v", IntegerType.instance)
@@ -597,7 +596,6 @@ public class RowsTest
         //   - 2 Complex columns: b and d
         TableMetadata metadata =
             TableMetadata.builder("dummy_ks", "dummy_tbl")
-                         .isCompound(true)
                          .addPartitionKeyColumn("k", BytesType.instance)
                          .addRegularColumn("a", BytesType.instance)
                          .addRegularColumn("b", MapType.getInstance(Int32Type.instance, BytesType.instance, true))

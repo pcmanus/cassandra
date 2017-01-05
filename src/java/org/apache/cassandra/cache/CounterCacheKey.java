@@ -45,7 +45,6 @@ import org.apache.cassandra.utils.*;
 public final class CounterCacheKey extends CacheKey
 {
     private static final long EMPTY_SIZE = ObjectSizes.measure(new CounterCacheKey(TableMetadata.builder("ks", "tab")
-                                                                                                .flags(Collections.singleton(TableMetadata.Flag.COMPOUND))
                                                                                                 .addPartitionKeyColumn("pk", UTF8Type.instance)
                                                                                                 .build(), ByteBufferUtil.EMPTY_BYTE_BUFFER, ByteBuffer.allocate(1)));
 

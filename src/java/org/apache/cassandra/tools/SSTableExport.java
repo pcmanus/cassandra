@@ -102,7 +102,7 @@ public class SSTableExport
         SerializationHeader.Component header = (SerializationHeader.Component) sstableMetadata.get(MetadataType.HEADER);
         IPartitioner partitioner = FBUtilities.newPartitioner(desc);
 
-        TableMetadata.Builder builder = TableMetadata.builder("keyspace", "table").isCompound(true).partitioner(partitioner);
+        TableMetadata.Builder builder = TableMetadata.builder("keyspace", "table").partitioner(partitioner);
         header.getStaticColumns().entrySet().stream()
                 .forEach(entry -> {
                     ColumnIdentifier ident = ColumnIdentifier.getInterned(UTF8Type.instance.getString(entry.getKey()), true);

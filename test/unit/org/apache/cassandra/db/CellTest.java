@@ -57,7 +57,6 @@ public class CellTest
     private static final TableMetadata cfm = SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1).build();
     private static final TableMetadata cfm2 =
         TableMetadata.builder(KEYSPACE1, CF_COLLECTION)
-                     .isCompound(true)
                      .addPartitionKeyColumn("k", IntegerType.instance)
                      .addClusteringColumn("c", IntegerType.instance)
                      .addRegularColumn("v", IntegerType.instance)
