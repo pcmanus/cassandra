@@ -619,11 +619,10 @@ public abstract class CassandraIndex implements Index
     {
         if (value != null && value.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT)
             throw new InvalidRequestException(String.format(
-                                                           "Cannot index value of size %d for index %s on %s.%s(%s) (maximum allowed size=%d)",
+                                                           "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
                                                            value.remaining(),
                                                            metadata.name,
-                                                           baseCfs.metadata.keyspace,
-                                                           baseCfs.metadata.table,
+                                                           baseCfs.metadata.toCQLString(),
                                                            indexedColumn.name.toString(),
                                                            FBUtilities.MAX_UNSIGNED_SHORT));
     }

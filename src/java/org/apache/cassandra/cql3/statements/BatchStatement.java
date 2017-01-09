@@ -232,7 +232,7 @@ public class BatchStatement implements CQLStatement
             {
                 if (tablesWithZeroGcGs == null)
                     tablesWithZeroGcGs = new HashSet<>();
-                tablesWithZeroGcGs.add(String.format("%s.%s", statement.metadata.keyspace, statement.metadata.table));
+                tablesWithZeroGcGs.add(statement.metadata.toCQLString());
             }
             QueryOptions statementOptions = options.forStatement(i);
             long timestamp = attrs.getTimestamp(now, statementOptions);
@@ -279,7 +279,7 @@ public class BatchStatement implements CQLStatement
             for (IMutation mutation : mutations)
             {
                 for (PartitionUpdate update : mutation.getPartitionUpdates())
-                    tableNames.add(String.format("%s.%s", update.metadata().keyspace, update.metadata().table));
+                    tableNames.add(update.metadata().toCQLString());
             }
 
             long failThreshold = DatabaseDescriptor.getBatchSizeFailThreshold();
@@ -315,7 +315,7 @@ public class BatchStatement implements CQLStatement
                 {
                     keySet.add(update.partitionKey());
 
-                    tableNames.add(String.format("%s.%s", update.metadata().keyspace, update.metadata().table));
+                    tableNames.add(update.metadata().toCQLString());
                 }
             }
 

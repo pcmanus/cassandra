@@ -95,15 +95,14 @@ public class ColumnFamilyStoreCQLHelper
         StringBuilder sb = new StringBuilder();
         if (!isCqlCompatible(metadata))
         {
-            sb.append(String.format("/*\nWarning: Table %s.%s omitted because it has constructs not compatible with CQL (was created via legacy API).\n",
-                                    metadata.keyspace,
-                                    metadata.table));
+            sb.append(String.format("/*\nWarning: Table %s omitted because it has constructs not compatible with CQL (was created via legacy API).\n",
+                                    metadata.toCQLString()));
             sb.append("\nApproximate structure, for reference:");
             sb.append("\n(this should not be used to reproduce this schema)\n\n");
         }
 
         sb.append("CREATE TABLE IF NOT EXISTS ");
-        sb.append(quoteIdentifier(metadata.keyspace)).append('.').append(quoteIdentifier(metadata.table)).append(" (");
+        sb.append(metadata.toCQLString()).append(" (");
 
         List<ColumnMetadata> partitionKeyColumns = metadata.partitionKeyColumns();
         List<ColumnMetadata> clusteringColumns = getClusteringColumns(metadata);
@@ -156,17 +155,17 @@ public class ColumnFamilyStoreCQLHelper
                 for (ColumnMetadata cfd : partitionKeyColumns)
                 {
                     pkCommaAppender.accept(sb);
-                    sb.append(quoteIdentifier(cfd.name.toString()));
+                    sb.append(cfd.name.toCQLString());
                 }
                 sb.append(")");
             }
             else
             {
-                sb.append(quoteIdentifier(partitionKeyColumns.get(0).name.toString()));
+                sb.append(partitionKeyColumns.get(0).name.toCQLString());
             }
 
             for (ColumnMetadata cfd : metadata.clusteringColumns())
-                sb.append(", ").append(quoteIdentifier(cfd.name.toString()));
+                sb.append(", ").append(cfd.name.toCQLString());
 
             sb.append(')');
         }
@@ -186,7 +185,7 @@ public class ColumnFamilyStoreCQLHelper
             for (ColumnMetadata cd : clusteringColumns)
             {
                 cOrderCommaAppender.accept(sb);
-                sb.append(quoteIdentifier(cd.name.toString())).append(' ').append(cd.clusteringOrder().toString());
+                sb.append(cd.name.toCQLString()).append(' ').append(cd.clusteringOrder().toString());
             }
             sb.append(")\n\tAND ");
         }
@@ -238,9 +237,9 @@ public class ColumnFamilyStoreCQLHelper
         for (Map.Entry<ByteBuffer, DroppedColumn> entry: metadata.droppedColumns.entrySet())
         {
             DroppedColumn column = entry.getValue();
-            droppedColumns.add(toCQLDrop(metadata.keyspace, metadata.table, column));
+            droppedColumns.add(toCQLDrop(metadata, column));
             if (metadata.getColumn(entry.getKey()) != null)
-                droppedColumns.add(toCQLAdd(metadata.keyspace, metadata.table, metadata.getColumn(entry.getKey())));
+                droppedColumns.add(toCQLAdd(metadata, metadata.getColumn(entry.getKey())));
         }
 
         return droppedColumns;
@@ -254,11 +253,11 @@ public class ColumnFamilyStoreCQLHelper
     {
         List<String> indexes = new ArrayList<>();
         for (IndexMetadata indexMetadata: metadata.indexes)
-            indexes.add(toCQL(metadata.keyspace, metadata.table, indexMetadata));
+            indexes.add(toCQL(metadata, indexMetadata));
         return indexes;
     }
 
-    private static String toCQL(String keyspace, String cf, IndexMetadata indexMetadata)
+    private static String toCQL(TableMetadata baseTable, IndexMetadata indexMetadata)
     {
         if (indexMetadata.isCustom())
         {
@@ -268,29 +267,25 @@ public class ColumnFamilyStoreCQLHelper
                     options.put(k, v);
             });
 
-            return String.format("CREATE CUSTOM INDEX %s ON %s.%s (%s) USING '%s'%s;",
-                                 quoteIdentifier(indexMetadata.name),
-                                 quoteIdentifier(keyspace),
-                                 quoteIdentifier(cf),
+            return String.format("CREATE CUSTOM INDEX %s ON %s (%s) USING '%s'%s;",
+                                 indexMetadata.toCQLString(),
+                                 baseTable.toCQLString(),
                                  indexMetadata.options.get(IndexTarget.TARGET_OPTION_NAME),
                                  indexMetadata.options.get(IndexTarget.CUSTOM_INDEX_OPTION_NAME),
                                  options.isEmpty() ? "" : " WITH OPTIONS " + toCQL(options));
         }
         else
         {
-            return String.format("CREATE INDEX %s ON %s.%s (%s);",
-                                 quoteIdentifier(indexMetadata.name),
-                                 quoteIdentifier(keyspace),
-                                 quoteIdentifier(cf),
+            return String.format("CREATE INDEX %s ON %s (%s);",
+                                 indexMetadata.toCQLString(),
+                                 baseTable.toCQLString(),
                                  indexMetadata.options.get(IndexTarget.TARGET_OPTION_NAME));
         }
     }
     private static String toCQL(UserType userType)
     {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("CREATE TYPE %s.%s(",
-                                quoteIdentifier(userType.keyspace),
-                                quoteIdentifier(userType.getNameAsString())));
+        sb.append("CREATE TYPE ").append(userType.toCQLString()).append(" (");
 
         Consumer<StringBuilder> commaAppender = commaAppender(" ");
         for (int i = 0; i < userType.size(); i++)
@@ -363,26 +358,24 @@ public class ColumnFamilyStoreCQLHelper
     private static String toCQL(ColumnMetadata cd, boolean isStaticCompactTable)
     {
         return String.format("%s %s%s",
-                             quoteIdentifier(cd.name.toString()),
+                             cd.name.toCQLString(),
                              cd.type.asCQL3Type().toString(),
                              cd.isStatic() && !isStaticCompactTable ? " static" : "");
     }
 
-    private static String toCQLAdd(String keyspace, String cf, ColumnMetadata cd)
+    private static String toCQLAdd(TableMetadata table, ColumnMetadata cd)
     {
-        return String.format("ALTER TABLE %s.%s ADD %s %s%s;",
-                             quoteIdentifier(keyspace),
-                             quoteIdentifier(cf),
-                             quoteIdentifier(cd.name.toString()),
+        return String.format("ALTER TABLE %s ADD %s %s%s;",
+                             table.toCQLString(),
+                             cd.name.toCQLString(),
                              cd.type.asCQL3Type().toString(),
                              cd.isStatic() ? " static" : "");
     }
 
-    private static String toCQLDrop(String keyspace, String cf, DroppedColumn droppedColumn)
+    private static String toCQLDrop(TableMetadata table, DroppedColumn droppedColumn)
     {
-        return String.format("ALTER TABLE %s.%s DROP %s USING TIMESTAMP %s;",
-                             quoteIdentifier(keyspace),
-                             quoteIdentifier(cf),
+        return String.format("ALTER TABLE %s DROP %s USING TIMESTAMP %s;",
+                             table.toCQLString(),
                              droppedColumn.column.name.toCQLString(),
                              droppedColumn.droppedTime);
     }
@@ -416,11 +409,6 @@ public class ColumnFamilyStoreCQLHelper
                     stringBuilder.append(',').append(afterComma);
             }
         };
-    }
-
-    private static String quoteIdentifier(String id)
-    {
-        return ColumnIdentifier.maybeQuote(id);
     }
 
     /**

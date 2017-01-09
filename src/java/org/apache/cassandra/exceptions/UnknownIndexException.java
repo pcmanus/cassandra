@@ -33,7 +33,7 @@ public final class UnknownIndexException extends IOException
     public final UUID indexId;
     public UnknownIndexException(TableMetadata metadata, UUID id)
     {
-        super(String.format("Unknown index %s for table %s.%s", id.toString(), metadata.keyspace, metadata.table));
+        super(String.format("Unknown index %s for table %s", id.toString(), metadata.toCQLString()));
         indexId = id;
     }
 }

@@ -611,8 +611,8 @@ public class Keyspace
                     catch (Throwable t)
                     {
                         JVMStabilityInspector.inspectThrowable(t);
-                        logger.error(String.format("Unknown exception caught while attempting to update MaterializedView! %s.%s",
-                                                   upd.metadata().keyspace, upd.metadata().table), t);
+                        logger.error(String.format("Unknown exception caught while attempting to update MaterializedView! %s",
+                                                   upd.metadata().toCQLString()), t);
                         throw t;
                     }
                 }

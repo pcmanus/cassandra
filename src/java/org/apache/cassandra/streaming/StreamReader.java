@@ -307,7 +307,7 @@ public class StreamReader
             if (cfs == null)
             {
                 // schema was dropped during streaming
-                throw new RuntimeException(String.format("CF %s.%s was dropped during streaming", metadata.keyspace, metadata.table));
+                throw new RuntimeException(String.format("Table %s was dropped during streaming", metadata.toCQLString()));
             }
 
             long maxSize = Math.min(MAX_SPILL_FILE_SIZE, totalSize);

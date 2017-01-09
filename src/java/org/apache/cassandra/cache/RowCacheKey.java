@@ -89,6 +89,6 @@ public final class RowCacheKey extends CacheKey
     public String toString()
     {
         TableMetadataRef tableRef = Schema.instance.getTableMetadataRef(tableId);
-        return String.format("RowCacheKey(keyspaceAndTablePair:%s.%s, %s, key:%s)", tableRef.keyspace, tableRef.table, indexName, Arrays.toString(key));
+        return String.format("RowCacheKey(%s, %s, key:%s)", tableRef.toCQLString(), indexName, Arrays.toString(key));
     }
 }

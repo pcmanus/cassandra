@@ -1124,7 +1124,7 @@ public final class SystemKeyspace
      */
     public static void clearSizeEstimates(String keyspace, String table)
     {
-        String cql = format("DELETE FROM %s.%s WHERE keyspace_name = ? AND table_name = ?", SchemaConstants.SYSTEM_KEYSPACE_NAME, SIZE_ESTIMATES);
+        String cql = format("DELETE FROM %s WHERE keyspace_name = ? AND table_name = ?", SizeEstimates.toCQLString());
         executeInternal(cql, keyspace, table);
     }
 
@@ -1296,24 +1296,21 @@ public final class SystemKeyspace
 
     public static void writePreparedStatement(String loggedKeyspace, MD5Digest key, String cql)
     {
-        executeInternal(format("INSERT INTO %s.%s"
-                               + " (logged_keyspace, prepared_id, query_string) VALUES (?, ?, ?)",
-                               SchemaConstants.SYSTEM_KEYSPACE_NAME, PREPARED_STATEMENTS),
+        executeInternal(format("INSERT INTO %s (logged_keyspace, prepared_id, query_string) VALUES (?, ?, ?)",
+                               PreparedStatements.toCQLString()),
                         loggedKeyspace, key.byteBuffer(), cql);
         logger.debug("stored prepared statement for logged keyspace '{}': '{}'", loggedKeyspace, cql);
     }
 
     public static void removePreparedStatement(MD5Digest key)
     {
-        executeInternal(format("DELETE FROM %s.%s"
-                               + " WHERE prepared_id = ?",
-                               SchemaConstants.SYSTEM_KEYSPACE_NAME, PREPARED_STATEMENTS),
+        executeInternal(format("DELETE FROM %s WHERE prepared_id = ?", PreparedStatements.toCQLString()),
                         key.byteBuffer());
     }
 
     public static List<Pair<String, String>> loadPreparedStatements()
     {
-        String query = format("SELECT logged_keyspace, query_string FROM %s.%s", SchemaConstants.SYSTEM_KEYSPACE_NAME, PREPARED_STATEMENTS);
+        String query = format("SELECT logged_keyspace, query_string FROM %s", PreparedStatements.toCQLString());
         UntypedResultSet resultSet = executeOnceInternal(query);
         List<Pair<String, String>> r = new ArrayList<>();
         for (UntypedResultSet.Row row : resultSet)

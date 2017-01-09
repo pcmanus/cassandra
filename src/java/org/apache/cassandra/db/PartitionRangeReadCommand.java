@@ -311,9 +311,8 @@ public class PartitionRangeReadCommand extends ReadCommand
     @Override
     public String toString()
     {
-        return String.format("Read(%s.%s columns=%s rowfilter=%s limits=%s %s)",
-                             metadata().keyspace,
-                             metadata().table,
+        return String.format("Read(%s columns=%s rowfilter=%s limits=%s %s)",
+                             metadata().toCQLString(),
                              columnFilter(),
                              rowFilter(),
                              limits(),

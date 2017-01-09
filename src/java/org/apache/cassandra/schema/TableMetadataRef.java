@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.schema;
 
+import org.apache.cassandra.cql3.ColumnIdentifier;
+
 /**
  * Encapsulates a volatile reference to an immutable {@link TableMetadata} instance.
  *
@@ -41,6 +43,7 @@ public final class TableMetadataRef
 
     /**
      * Create a new ref to the passed {@link TableMetadata}
+     *
      * @param metadata {@link TableMetadata} to reference
      * @return a new TableMetadataRef instance linking to the passed {@link TableMetadata}
      */
@@ -56,7 +59,7 @@ public final class TableMetadataRef
 
     /**
      * Update the reference with the most current version of {@link TableMetadata}
-     *
+     * <p>
      * Must only be used by methods in {@link Schema}, *DO NOT* make public
      * even for testing purposes, it isn't safe.
      */
@@ -76,5 +79,10 @@ public final class TableMetadataRef
     public String toString()
     {
         return get().toString();
+    }
+
+    public String toCQLString()
+    {
+        return String.format("%s.%s", ColumnIdentifier.maybeQuote(keyspace), ColumnIdentifier.maybeQuote(table));
     }
 }

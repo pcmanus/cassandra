@@ -31,6 +31,7 @@ import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.cql3.statements.IndexTarget;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.UnknownIndexException;
@@ -46,7 +47,7 @@ import org.apache.cassandra.utils.UUIDSerializer;
 public final class IndexMetadata
 {
     private static final Logger logger = LoggerFactory.getLogger(IndexMetadata.class);
-    
+
     private static final Pattern PATTERN_NON_WORD_CHAR = Pattern.compile("\\W");
     private static final Pattern PATTERN_WORD_CHARS = Pattern.compile("\\w+");
 
@@ -120,7 +121,7 @@ public final class IndexMetadata
                                                                name, IndexTarget.CUSTOM_INDEX_OPTION_NAME));
             String className = options.get(IndexTarget.CUSTOM_INDEX_OPTION_NAME);
             Class<Index> indexerClass = FBUtilities.classForName(className, "custom indexer");
-            if(!Index.class.isAssignableFrom(indexerClass))
+            if (!Index.class.isAssignableFrom(indexerClass))
                 throw new ConfigurationException(String.format("Specified Indexer class (%s) does not implement the Indexer interface", className));
             validateCustomIndexOptions(table, indexerClass, options);
         }
@@ -130,13 +131,12 @@ public final class IndexMetadata
     {
         try
         {
-            Map<String, String> filteredOptions =
-                Maps.filterKeys(options,key -> !key.equals(IndexTarget.CUSTOM_INDEX_OPTION_NAME));
+            Map<String, String> filteredOptions = Maps.filterKeys(options, key -> !key.equals(IndexTarget.CUSTOM_INDEX_OPTION_NAME));
 
             if (filteredOptions.isEmpty())
                 return;
 
-            Map<?,?> unknownOptions;
+            Map<?, ?> unknownOptions;
             try
             {
                 unknownOptions = (Map) indexerClass.getMethod("validateOptions", Map.class, TableMetadata.class).invoke(null, filteredOptions, table);
@@ -185,6 +185,7 @@ public final class IndexMetadata
         return kind == Kind.COMPOSITES;
     }
 
+    @Override
     public int hashCode()
     {
         return Objects.hashCode(id, name, kind, options);
@@ -193,9 +194,10 @@ public final class IndexMetadata
     public boolean equalsWithoutName(IndexMetadata other)
     {
         return Objects.equal(kind, other.kind)
-            && Objects.equal(options, other.options);
+               && Objects.equal(options, other.options);
     }
 
+    @Override
     public boolean equals(Object obj)
     {
         if (obj == this)
@@ -204,19 +206,25 @@ public final class IndexMetadata
         if (!(obj instanceof IndexMetadata))
             return false;
 
-        IndexMetadata other = (IndexMetadata)obj;
+        IndexMetadata other = (IndexMetadata) obj;
 
         return Objects.equal(id, other.id) && Objects.equal(name, other.name) && equalsWithoutName(other);
     }
 
+    @Override
     public String toString()
     {
         return new ToStringBuilder(this)
-            .append("id", id.toString())
-            .append("name", name)
-            .append("kind", kind)
-            .append("options", options)
-            .build();
+               .append("id", id.toString())
+               .append("name", name)
+               .append("kind", kind)
+               .append("options", options)
+               .build();
+    }
+
+    public String toCQLString()
+    {
+        return ColumnIdentifier.maybeQuote(name);
     }
 
     public static class Serializer

@@ -890,9 +890,8 @@ public class SinglePartitionReadCommand extends ReadCommand
     @Override
     public String toString()
     {
-        return String.format("Read(%s.%s columns=%s rowFilter=%s limits=%s key=%s filter=%s, nowInSec=%d)",
-                             metadata().keyspace,
-                             metadata().table,
+        return String.format("Read(%s columns=%s rowFilter=%s limits=%s key=%s filter=%s, nowInSec=%d)",
+                             metadata().toCQLString(),
                              columnFilter(),
                              rowFilter(),
                              limits(),

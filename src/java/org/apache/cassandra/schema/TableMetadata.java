@@ -375,11 +375,11 @@ public final class TableMetadata
 
         // All tables should have a partition key
         if (partitionKeyColumns.isEmpty())
-            except("Missing partition keys for table %s.%s", keyspace, table);
+            except("Missing partition keys for table %s", toCQLString());
 
         // A compact table should always have a clustering
         if (isCompactTable() && clusteringColumns.isEmpty())
-            except("For table %s.%s, isDense=%b, isCompound=%b, clustering=%s", keyspace, table, isDense(), isCompound(), clusteringColumns);
+            except("For table %s, isDense=%b, isCompound=%b, clustering=%s", toCQLString(), isDense(), isCompound(), clusteringColumns);
 
         if (!indexes.isEmpty() && isSuper())
             except("Secondary indexes are not supported on super column families");
@@ -546,6 +546,11 @@ public final class TableMetadata
                           .add("indexes", indexes)
                           .add("triggers", triggers)
                           .toString();
+    }
+
+    public String toCQLString()
+    {
+        return String.format("%s.%s", ColumnIdentifier.maybeQuote(keyspace), ColumnIdentifier.maybeQuote(table));
     }
 
     public static final class Builder

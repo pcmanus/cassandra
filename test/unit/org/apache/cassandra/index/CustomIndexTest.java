@@ -355,13 +355,13 @@ public class CustomIndexTest extends CQLTester
         execute("INSERT INTO %s (a, b, c, d) VALUES (?, ?, ?, ?)", row);
 
 
-        assertInvalidMessage(String.format(IndexRestrictions.INDEX_NOT_FOUND, indexName, keyspace(), currentTable()),
+        assertInvalidMessage(String.format(IndexRestrictions.INDEX_NOT_FOUND, indexName, currentTableMetadata().toCQLString()),
                              String.format("SELECT * FROM %%s WHERE expr(%s, 'foo bar baz')", indexName));
 
         createIndex(String.format("CREATE CUSTOM INDEX %s ON %%s(c) USING '%s'", indexName, StubIndex.class.getName()));
 
         assertInvalidThrowMessage(Optional.of(ProtocolVersion.CURRENT),
-                                  String.format(IndexRestrictions.INDEX_NOT_FOUND, "no_such_index", keyspace(), currentTable()),
+                                  String.format(IndexRestrictions.INDEX_NOT_FOUND, "no_such_index", currentTableMetadata().toCQLString()),
                                   QueryValidationException.class,
                                   "SELECT * FROM %s WHERE expr(no_such_index, 'foo bar baz ')");
 

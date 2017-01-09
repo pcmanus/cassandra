@@ -161,8 +161,8 @@ public final class CounterCacheKey extends CacheKey
     public String toString()
     {
         TableMetadataRef tableRef = Schema.instance.getTableMetadataRef(tableId);
-        return String.format("CounterCacheKey(%s.%s, %s, %s, %s)",
-                             tableRef.keyspace, tableRef.table, indexName,
+        return String.format("CounterCacheKey(%s, %s, %s, %s)",
+                             tableRef.toCQLString(), indexName,
                              ByteBufferUtil.bytesToHex(ByteBuffer.wrap(partitionKey)),
                              ByteBufferUtil.bytesToHex(ByteBuffer.wrap(cellName)));
     }

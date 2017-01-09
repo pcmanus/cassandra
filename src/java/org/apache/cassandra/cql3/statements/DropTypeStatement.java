@@ -96,7 +96,7 @@ public class DropTypeStatement extends SchemaAlteringStatement
         for (TableMetadata table : ksm.tablesAndViews())
             for (ColumnMetadata def : table.columns())
                 if (def.type.referencesUserType(name.getStringTypeName()))
-                    throw new InvalidRequestException(String.format("Cannot drop user type %s as it is still used by table %s.%s", name, table.keyspace, table.table));
+                    throw new InvalidRequestException(String.format("Cannot drop user type %s as it is still used by table %s", name, table.toCQLString()));
     }
 
     @Override

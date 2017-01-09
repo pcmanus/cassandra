@@ -322,9 +322,8 @@ public abstract class AbstractBTreePartition implements Partition, Iterable<Row>
     {
         StringBuilder sb = new StringBuilder();
 
-        sb.append(String.format("[%s.%s] key=%s columns=%s",
-                                metadata().keyspace,
-                                metadata().table,
+        sb.append(String.format("[%s] key=%s columns=%s",
+                                metadata().toCQLString(),
                                 metadata().partitionKeyType.getString(partitionKey().getKey()),
                                 columns()));
 
