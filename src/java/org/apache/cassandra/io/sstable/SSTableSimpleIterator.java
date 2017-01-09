@@ -36,7 +36,7 @@ import org.apache.cassandra.utils.AbstractIterator;
  */
 public abstract class SSTableSimpleIterator extends AbstractIterator<Unfiltered> implements Iterator<Unfiltered>
 {
-    protected final TableMetadata metadata;
+    final TableMetadata metadata;
     protected final DataInputPlus in;
     protected final SerializationHelper helper;
 

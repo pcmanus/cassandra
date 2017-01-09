@@ -87,7 +87,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
 
     public TableMetadata metadata()
     {
-        return sstable.metadata();
+        return iterator.metadata;
     }
 
     public PartitionColumns columns()

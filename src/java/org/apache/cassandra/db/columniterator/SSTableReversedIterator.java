@@ -222,7 +222,7 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         private ReverseIndexedReader(RowIndexEntry indexEntry, FileDataInput file, boolean shouldCloseFile)
         {
             super(file, shouldCloseFile);
-            this.indexState = new IndexState(this, sstable.metadata().comparator, indexEntry, true, ifile);
+            this.indexState = new IndexState(this, metadata.comparator, indexEntry, true, ifile);
         }
 
         @Override
