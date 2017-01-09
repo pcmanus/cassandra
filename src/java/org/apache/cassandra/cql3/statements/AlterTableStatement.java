@@ -229,18 +229,8 @@ public class AlterTableStatement extends SchemaAlteringStatement
                               throw new InvalidRequestException(String.format("Cannot drop PRIMARY KEY part %s", columnName));
                          case REGULAR:
                          case STATIC:
-                              ColumnMetadata toDelete = null;
-                              for (ColumnMetadata columnDef : current.regularAndStaticColumns())
-                              {
-                                   if (columnDef.name.equals(columnName))
-                                   {
-                                       toDelete = columnDef;
-                                       break;
-                                   }
-                               }
-                             assert toDelete != null;
-                             builder.removeRegularOrStaticColumn(toDelete.name);
-                             builder.recordColumnDrop(toDelete, deleteTimestamp);
+                             builder.removeRegularOrStaticColumn(def.name);
+                             builder.recordColumnDrop(def, deleteTimestamp);
                              break;
                     }
 
