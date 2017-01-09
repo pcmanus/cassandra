@@ -321,8 +321,8 @@ public class CustomIndexTest extends CQLTester
         createTable("CREATE TABLE %s (k int PRIMARY KEY, v1 int, v2 frozen<" + myType + ">)");
         testCreateIndex("udt_idx", "v1", "v2");
         Indexes indexes = getCurrentColumnFamilyStore().metadata().indexes;
-        IndexMetadata expected = IndexMetadata.fromIndexTargets(getCurrentColumnFamilyStore().metadata().columns(),
-                                                                ImmutableList.of(indexTarget("v1", IndexTarget.Type.VALUES),
+        IndexMetadata expected = IndexMetadata.fromIndexTargets(
+        ImmutableList.of(indexTarget("v1", IndexTarget.Type.VALUES),
                                                                                  indexTarget("v2", IndexTarget.Type.VALUES)),
                                                                 "udt_idx",
                                                                 IndexMetadata.Kind.CUSTOM,
@@ -729,7 +729,7 @@ public class CustomIndexTest extends CQLTester
         // so add that to the map of options
         options.put(CUSTOM_INDEX_OPTION_NAME, StubIndex.class.getName());
         TableMetadata cfm = getCurrentColumnFamilyStore().metadata();
-        IndexMetadata expected = IndexMetadata.fromIndexTargets(cfm.columns(), targets, name, IndexMetadata.Kind.CUSTOM, options);
+        IndexMetadata expected = IndexMetadata.fromIndexTargets(targets, name, IndexMetadata.Kind.CUSTOM, options);
         Indexes indexes = getCurrentColumnFamilyStore().metadata().indexes;
         for (IndexMetadata actual : indexes)
             if (actual.equals(expected))

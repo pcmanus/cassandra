@@ -467,8 +467,8 @@ public class SecondaryIndexTest
         String indexName = "birthdate_index";
         ColumnMetadata old = cfs.metadata().getColumn(ByteBufferUtil.bytes("birthdate"));
         IndexMetadata indexDef =
-            IndexMetadata.fromIndexTargets(cfs.metadata().columns(),
-                                           Collections.singletonList(new IndexTarget(old.name, IndexTarget.Type.VALUES)),
+            IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(old.name, IndexTarget.Type.VALUES)),
                                            indexName,
                                            IndexMetadata.Kind.COMPOSITES,
                                            Collections.EMPTY_MAP);

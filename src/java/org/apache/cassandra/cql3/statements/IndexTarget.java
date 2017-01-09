@@ -40,13 +40,11 @@ public class IndexTarget
         this.type = type;
     }
 
-    public String asCqlString(Iterable<ColumnMetadata> columns)
+    public String asCqlString()
     {
-        AbstractType<?> columnType = Iterables.find(columns, c -> c.name.equals(column)).type;
-        if (!columnType.isCollection())
-            return column.toCQLString();
-
-        return String.format("%s(%s)", type.toString(), column.toCQLString());
+        return type == Type.SIMPLE
+               ? column.toCQLString()
+               : String.format("%s(%s)", type.toString(), column.toCQLString());
     }
 
     public static class Raw

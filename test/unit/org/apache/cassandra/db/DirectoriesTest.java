@@ -46,7 +46,6 @@ import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.service.DefaultFSErrorHandler;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
 import static org.junit.Assert.assertEquals;
@@ -174,8 +173,8 @@ public class DirectoriesTest
 
         ColumnIdentifier col = ColumnIdentifier.getInterned("col", true);
         IndexMetadata indexDef =
-            IndexMetadata.fromIndexTargets(builder.columns(),
-                                           Collections.singletonList(new IndexTarget(col, IndexTarget.Type.VALUES)),
+            IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(col, IndexTarget.Type.VALUES)),
                                            "idx",
                                            IndexMetadata.Kind.KEYS,
                                            Collections.emptyMap());

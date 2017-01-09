@@ -80,15 +80,14 @@ public final class IndexMetadata
         return new IndexMetadata(name, options, kind);
     }
 
-    public static IndexMetadata fromIndexTargets(Iterable<ColumnMetadata> columns,
-                                                 List<IndexTarget> targets,
+    public static IndexMetadata fromIndexTargets(List<IndexTarget> targets,
                                                  String name,
                                                  Kind kind,
                                                  Map<String, String> options)
     {
         Map<String, String> newOptions = new HashMap<>(options);
         newOptions.put(IndexTarget.TARGET_OPTION_NAME, targets.stream()
-                                                              .map(target -> target.asCqlString(columns))
+                                                              .map(target -> target.asCqlString())
                                                               .collect(Collectors.joining(", ")));
         return new IndexMetadata(name, newOptions, kind);
     }

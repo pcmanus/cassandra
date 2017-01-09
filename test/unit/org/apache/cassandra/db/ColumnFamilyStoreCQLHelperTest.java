@@ -364,23 +364,23 @@ public class ColumnFamilyStoreCQLHelperTest extends CQLTester
         ColumnIdentifier reg1 = ColumnIdentifier.getInterned("reg1", true);
 
         builder.indexes(
-            Indexes.of(IndexMetadata.fromIndexTargets(builder.columns(),
-                                                      Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.VALUES)),
+            Indexes.of(IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.VALUES)),
                                                       "indexName",
                                                       IndexMetadata.Kind.COMPOSITES,
                                                       Collections.emptyMap()),
-                       IndexMetadata.fromIndexTargets(builder.columns(),
-                                                      Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS)),
+                       IndexMetadata.fromIndexTargets(
+                       Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS)),
                                                       "indexName2",
                                                       IndexMetadata.Kind.COMPOSITES,
                                                       Collections.emptyMap()),
-                       IndexMetadata.fromIndexTargets(builder.columns(),
-                                                      Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS_AND_VALUES)),
+                       IndexMetadata.fromIndexTargets(
+                       Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS_AND_VALUES)),
                                                       "indexName3",
                                                       IndexMetadata.Kind.COMPOSITES,
                                                       Collections.emptyMap()),
-                       IndexMetadata.fromIndexTargets(builder.columns(),
-                                                      Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS_AND_VALUES)),
+                       IndexMetadata.fromIndexTargets(
+                       Collections.singletonList(new IndexTarget(reg1, IndexTarget.Type.KEYS_AND_VALUES)),
                                                       "indexName4",
                                                       IndexMetadata.Kind.CUSTOM,
                                                       Collections.singletonMap(IndexTarget.CUSTOM_INDEX_OPTION_NAME, SASIIndex.class.getName()))));

@@ -215,7 +215,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
             kind = current.isCompound() ? IndexMetadata.Kind.COMPOSITES : IndexMetadata.Kind.KEYS;
         }
 
-        IndexMetadata index = IndexMetadata.fromIndexTargets(current.columns(), targets, acceptedName, kind, indexOptions);
+        IndexMetadata index = IndexMetadata.fromIndexTargets(targets, acceptedName, kind, indexOptions);
 
         // check to disallow creation of an index which duplicates an existing one in all but name
         Optional<IndexMetadata> existingIndex = Iterables.tryFind(current.indexes, existing -> existing.equalsWithoutName(index));

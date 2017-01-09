@@ -320,8 +320,8 @@ public class SchemaLoader
                          .addColumn(indexedColumn);
 
         final Map<String, String> indexOptions = Collections.singletonMap(IndexTarget.CUSTOM_INDEX_OPTION_NAME, StubIndex.class.getName());
-        builder.indexes(Indexes.of(IndexMetadata.fromIndexTargets(builder.columns(),
-                                                                  Collections.singletonList(new IndexTarget(indexedColumn.name,
+        builder.indexes(Indexes.of(IndexMetadata.fromIndexTargets(
+        Collections.singletonList(new IndexTarget(indexedColumn.name,
                                                                                                             IndexTarget.Type.VALUES)),
                                                                   "indexe1",
                                                                   IndexMetadata.Kind.CUSTOM,
@@ -440,8 +440,8 @@ public class SchemaLoader
 
         if (withRegularIndex)
         {
-            indexes.add(IndexMetadata.fromIndexTargets(builder.columns(),
-                                                       Collections.singletonList(
+            indexes.add(IndexMetadata.fromIndexTargets(
+            Collections.singletonList(
                                                            new IndexTarget(new ColumnIdentifier("birthdate", true),
                                                                            IndexTarget.Type.VALUES)),
                                                        cfName + "_birthdate_key_index",
@@ -451,8 +451,8 @@ public class SchemaLoader
 
         if (withStaticIndex)
         {
-            indexes.add(IndexMetadata.fromIndexTargets(builder.columns(),
-                                                       Collections.singletonList(
+            indexes.add(IndexMetadata.fromIndexTargets(
+            Collections.singletonList(
                                                            new IndexTarget(new ColumnIdentifier("static", true),
                                                                            IndexTarget.Type.VALUES)),
                                                        cfName + "_static_index",
@@ -479,8 +479,8 @@ public class SchemaLoader
         if (withIndex)
         {
             IndexMetadata index =
-                IndexMetadata.fromIndexTargets(builder.columns(),
-                                               Collections.singletonList(new IndexTarget(new ColumnIdentifier("birthdate", true),
+                IndexMetadata.fromIndexTargets(
+                Collections.singletonList(new IndexTarget(new ColumnIdentifier("birthdate", true),
                                                                                          IndexTarget.Type.VALUES)),
                                                                                          cfName + "_birthdate_composite_index",
                                                                                          IndexMetadata.Kind.KEYS,
@@ -503,8 +503,8 @@ public class SchemaLoader
                          .compression(getCompressionParameters());
 
         IndexMetadata index =
-            IndexMetadata.fromIndexTargets(builder.columns(),
-                                           Collections.singletonList(new IndexTarget(new ColumnIdentifier("value", true), IndexTarget.Type.VALUES)),
+            IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(new ColumnIdentifier("value", true), IndexTarget.Type.VALUES)),
                                            cfName + "_value_index",
                                            IndexMetadata.Kind.CUSTOM,
                                            Collections.singletonMap(IndexTarget.CUSTOM_INDEX_OPTION_NAME, StubIndex.class.getName()));

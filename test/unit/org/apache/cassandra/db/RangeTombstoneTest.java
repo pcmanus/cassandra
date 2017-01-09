@@ -461,8 +461,8 @@ public class RangeTombstoneTest
 
         ColumnMetadata cd = cfs.metadata().getColumn(indexedColumnName).copy();
         IndexMetadata indexDef =
-            IndexMetadata.fromIndexTargets(cfs.metadata().regularAndStaticColumns(),
-                                           Collections.singletonList(new IndexTarget(cd.name, IndexTarget.Type.VALUES)),
+            IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(cd.name, IndexTarget.Type.VALUES)),
                                            "test_index",
                                            IndexMetadata.Kind.CUSTOM,
                                            ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
@@ -567,8 +567,8 @@ public class RangeTombstoneTest
 
         ColumnMetadata cd = cfs.metadata().getColumn(indexedColumnName).copy();
         IndexMetadata indexDef =
-            IndexMetadata.fromIndexTargets(cfs.metadata().columns(),
-                                           Collections.singletonList(new IndexTarget(cd.name, IndexTarget.Type.VALUES)),
+            IndexMetadata.fromIndexTargets(
+            Collections.singletonList(new IndexTarget(cd.name, IndexTarget.Type.VALUES)),
                                            "test_index",
                                            IndexMetadata.Kind.CUSTOM,
                                            ImmutableMap.of(IndexTarget.CUSTOM_INDEX_OPTION_NAME,
