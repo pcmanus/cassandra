@@ -302,11 +302,6 @@ public class KeyCacheCqlTest extends CQLTester
             assertEquals(500, result.size());
         }
 
-        //Test Schema.getColumnFamilyStoreIncludingIndexes, several null check paths
-        //are defensive and unreachable
-        assertNull(Schema.instance.getColumnFamilyStoreIncludingIndexes(Pair.create("foo", "bar")));
-        assertNull(Schema.instance.getColumnFamilyStoreIncludingIndexes(Pair.create(KEYSPACE_PER_TEST, "bar")));
-
         dropTable("DROP TABLE %s");
         Schema.instance.updateVersion();
 

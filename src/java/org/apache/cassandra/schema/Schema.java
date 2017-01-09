@@ -166,55 +166,6 @@ public final class Schema
         return keyspaceInstances.get(keyspaceName);
     }
 
-    /**
-     * Retrieve a CFS by name even if that CFS is an index
-     *
-     * An index is identified by looking for '.' in the CF name and separating to find the base table
-     * containing the index
-     * @return The named CFS or null if the keyspace, base table, or index don't exist
-     */
-    public ColumnFamilyStore getColumnFamilyStoreIncludingIndexes(Pair<String, String> ksNameAndCFName)
-    {
-        String ksName = ksNameAndCFName.left;
-        String cfName = ksNameAndCFName.right;
-        Pair<String, String> baseTable;
-
-        /*
-         * Split does special case a one character regex, and it looks like it can detect
-         * if you use two characters to escape '.', but it still allocates a useless array.
-         */
-        int indexOfSeparator = cfName.indexOf('.');
-        if (indexOfSeparator > -1)
-            baseTable = Pair.create(ksName, cfName.substring(0, indexOfSeparator));
-        else
-            baseTable = ksNameAndCFName;
-
-        TableMetadata metadata = getTableMetadata(baseTable.left, baseTable.right);
-        if (metadata == null)
-            return null;
-
-        Keyspace ks = keyspaceInstances.get(ksName);
-        if (ks == null)
-            return null;
-
-        ColumnFamilyStore baseCFS = ks.getColumnFamilyStore(metadata.id);
-
-        //Not an index
-        if (indexOfSeparator == -1)
-            return baseCFS;
-
-        if (baseCFS == null)
-            return null;
-
-        Index index = baseCFS.indexManager.getIndexByName(cfName.substring(indexOfSeparator + 1, cfName.length()));
-        if (index == null)
-            return null;
-
-        //Shouldn't ask for a backing table if there is none so just throw?
-        //Or should it return null?
-        return index.getBackingTable().orElse(null);
-    }
-
     public ColumnFamilyStore getColumnFamilyStoreInstance(TableId id)
     {
         TableMetadata metadata = getTableMetadata(id);
