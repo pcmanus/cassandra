@@ -90,10 +90,7 @@ public class SerializationHeader
             stats.updateTimestamp(sstable.getMinTimestamp());
             stats.updateLocalDeletionTime(sstable.getMinLocalDeletionTime());
             stats.updateTTL(sstable.getMinTTL());
-            if (sstable.header == null)
-                columns.addAll(metadata.regularAndStaticColumns());
-            else
-                columns.addAll(sstable.header.columns());
+            columns.addAll(sstable.header.columns());
         }
         return new SerializationHeader(true, metadata, columns.build(), stats.get());
     }

@@ -85,7 +85,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         this.keyCount = keyCount;
         this.repairedAt = repairedAt;
         this.metadataCollector = metadataCollector;
-        this.header = header != null ? header : SerializationHeader.makeWithoutStats(metadata.get()); //null header indicates streaming from pre-3.0 sstable
+        this.header = header;
         this.rowIndexEntrySerializer = descriptor.version.getSSTableFormat().getIndexSerializer(metadata.get(), descriptor.version, header);
         this.observers = observers == null ? Collections.emptySet() : observers;
     }

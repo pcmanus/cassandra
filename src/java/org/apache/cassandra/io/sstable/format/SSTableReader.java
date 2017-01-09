@@ -438,7 +438,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                              System.currentTimeMillis(),
                                              statsMetadata,
                                              OpenReason.NORMAL,
-                                             header == null? null : header.toHeader(metadata.get()));
+                                             header.toHeader(metadata.get()));
 
         try(FileHandle.Builder ibuilder = new FileHandle.Builder(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX))
                                                      .mmapped(DatabaseDescriptor.getIndexAccessMode() == Config.DiskAccessMode.mmap)
@@ -499,7 +499,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                                              System.currentTimeMillis(),
                                              statsMetadata,
                                              OpenReason.NORMAL,
-                                             header == null ? null : header.toHeader(metadata.get()));
+                                             header.toHeader(metadata.get()));
 
         try
         {
