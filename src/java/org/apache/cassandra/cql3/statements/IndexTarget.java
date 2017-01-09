@@ -31,33 +31,13 @@ public class IndexTarget
     public static final String TARGET_OPTION_NAME = "target";
     public static final String CUSTOM_INDEX_OPTION_NAME = "class_name";
 
-    /**
-     * The name of the option used to specify that the index is on the collection keys.
-     */
-    public static final String INDEX_KEYS_OPTION_NAME = "index_keys";
-
-    /**
-     * The name of the option used to specify that the index is on the collection (map) entries.
-     */
-    public static final String INDEX_ENTRIES_OPTION_NAME = "index_keys_and_values";
-
-    /**
-     * Regex for *unquoted* column names, anything which does not match this pattern must be a quoted name
-     */
-    private static final Pattern COLUMN_IDENTIFIER_PATTERN = Pattern.compile("[a-z_0-9]+");
-
     public final ColumnIdentifier column;
-    public final boolean quoteName;
     public final Type type;
 
     public IndexTarget(ColumnIdentifier column, Type type)
     {
         this.column = column;
         this.type = type;
-
-        // if the column name contains anything other than lower case alphanumerics
-        // or underscores, then it must be quoted when included in the target string
-        quoteName = !COLUMN_IDENTIFIER_PATTERN.matcher(column.toString()).matches();
     }
 
     public String asCqlString(Iterable<ColumnMetadata> columns)
@@ -118,7 +98,7 @@ public class IndexTarget
         }
     }
 
-    public static enum Type
+    public enum Type
     {
         VALUES, KEYS, KEYS_AND_VALUES, FULL, SIMPLE;
 

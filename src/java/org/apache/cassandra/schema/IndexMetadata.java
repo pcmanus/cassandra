@@ -75,42 +75,6 @@ public final class IndexMetadata
         this.kind = kind;
     }
 
-    public static IndexMetadata fromLegacyMetadata(Iterable<ColumnMetadata> columns,
-                                                   ColumnMetadata column,
-                                                   String name,
-                                                   Kind kind,
-                                                   Map<String, String> options)
-    {
-        Map<String, String> newOptions = new HashMap<>();
-        if (options != null)
-            newOptions.putAll(options);
-
-        IndexTarget target;
-        if (newOptions.containsKey(IndexTarget.INDEX_KEYS_OPTION_NAME))
-        {
-            newOptions.remove(IndexTarget.INDEX_KEYS_OPTION_NAME);
-            target = new IndexTarget(column.name, IndexTarget.Type.KEYS);
-        }
-        else if (newOptions.containsKey(IndexTarget.INDEX_ENTRIES_OPTION_NAME))
-        {
-            newOptions.remove(IndexTarget.INDEX_KEYS_OPTION_NAME);
-            target = new IndexTarget(column.name, IndexTarget.Type.KEYS_AND_VALUES);
-        }
-        else
-        {
-            if (column.type.isCollection() && !column.type.isMultiCell())
-            {
-                target = new IndexTarget(column.name, IndexTarget.Type.FULL);
-            }
-            else
-            {
-                target = new IndexTarget(column.name, IndexTarget.Type.VALUES);
-            }
-        }
-        newOptions.put(IndexTarget.TARGET_OPTION_NAME, target.asCqlString(columns));
-        return new IndexMetadata(name, newOptions, kind);
-    }
-
     public static IndexMetadata fromSchemaMetadata(String name, Kind kind, Map<String, String> options)
     {
         return new IndexMetadata(name, options, kind);
