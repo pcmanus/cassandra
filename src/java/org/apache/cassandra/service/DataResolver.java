@@ -73,6 +73,15 @@ public class DataResolver extends ResponseResolver
         return counter.applyTo(mergeWithShortReadProtection(iters, sources, counter));
     }
 
+    public void compareResponses()
+    {
+        // We need to fully consume the results to trigger read repairs if appropriate
+        try (PartitionIterator iterator = resolve())
+        {
+            PartitionIterators.consume(iterator);
+        }
+    }
+
     private PartitionIterator mergeWithShortReadProtection(List<UnfilteredPartitionIterator> results, InetAddress[] sources, DataLimits.Counter resultCounter)
     {
         // If we have only one results, there is no read repair to do and we can't get short reads
