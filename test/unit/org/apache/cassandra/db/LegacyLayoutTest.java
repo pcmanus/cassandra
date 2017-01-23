@@ -30,6 +30,7 @@ import org.apache.cassandra.db.marshal.SetType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 import static org.junit.Assert.*;
@@ -40,6 +41,7 @@ public class LegacyLayoutTest
     public void testFromUnfilteredRowIterator() throws Throwable
     {
         CFMetaData table = CFMetaData.Builder.create("ks", "table")
+                                             .withPartitioner(Murmur3Partitioner.instance)
                                              .addPartitionKey("k", Int32Type.instance)
                                              .addRegularColumn("a", SetType.getInstance(Int32Type.instance, true))
                                              .addRegularColumn("b", SetType.getInstance(Int32Type.instance, true))
