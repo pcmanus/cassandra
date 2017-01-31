@@ -93,9 +93,6 @@ class OutboundConnector
     @VisibleForTesting
     boolean connectCallback(Future<? super Void> future)
     {
-        if (!future.isDone())
-            return false;
-
         ChannelFuture channelFuture = (ChannelFuture)future;
         if (channelFuture.isSuccess())
             return true;

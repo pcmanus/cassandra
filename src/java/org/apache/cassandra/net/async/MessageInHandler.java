@@ -18,8 +18,11 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.EOFException;
+import java.io.DataInputStream;
+import java.io.IOException;
 import java.net.InetAddress;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
@@ -29,11 +32,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -41,24 +42,39 @@ import org.apache.cassandra.net.MessagingService;
 /**
  * Parses out individual messages from the incoming buffers. Each message, both header and payload, is incrementally built up
  * from the available input data, then passed to the {@link #messageConsumer}.
+ *
+ * Note: this class derives from {@link ByteToMessageDecoder} to take advantage of the {@link ByteToMessageDecoder.Cumulator}
+ * behavior across {@link #decode(ChannelHandlerContext, ByteBuf, List)} invocations. That way we don't have to maintain
+ * the not-fully consumed {@link ByteBuf}s.
  */
-class MessageInHandler extends ChannelInboundHandlerAdapter
+class MessageInHandler extends ByteToMessageDecoder
 {
     public static final Logger logger = LoggerFactory.getLogger(MessageInHandler.class);
 
+    /**
+     * The default target for consuming deserialized {@link MessageIn}.
+     */
     static final BiConsumer<MessageIn, Integer> MESSAGING_SERVICE_CONSUMER = (messageIn, id) -> MessagingService.instance().receive(messageIn, id);
 
     private enum State
     {
-        READ_MAGIC,
-        READ_MESSAGE_ID,
-        READ_TIMESTAMP,
+        READ_FIRST_CHUNK,
         READ_IP_ADDRESS,
-        READ_VERB,
-        READ_PARAMETERS,
+        READ_SECOND_CHUNK,
+        READ_PARAMETERS_DATA,
         READ_PAYLOAD_SIZE,
         READ_PAYLOAD
     }
+
+    /**
+     * The byte count for magic, msg id, timestamp values.
+     */
+    private static final int FIRST_SECTION_BYTE_COUNT = 12;
+
+    /**
+     * The byte count for the verb id and the number of parameters.
+     */
+    private static final int SECOND_SECTION_BYTE_COUNT = 8;
 
     private final InetAddress peer;
     private final int messagingVersion;
@@ -82,7 +98,7 @@ class MessageInHandler extends ChannelInboundHandlerAdapter
         this.peer = peer;
         this.messagingVersion = messagingVersion;
         this.messageConsumer = messageConsumer;
-        state = State.READ_MAGIC;
+        state = State.READ_FIRST_CHUNK;
     }
 
     /**
@@ -94,99 +110,153 @@ class MessageInHandler extends ChannelInboundHandlerAdapter
      * and will be caught by our last handler ({@link MessageInErrorHandler}), which closes the channel on error.
      */
     @SuppressWarnings("resource")
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+    public void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws IOException
     {
-        ByteBuf in = (ByteBuf)msg;
-        DataInputPlus inputPlus = new DataInputPlus.DataInputStreamPlus(new ByteBufInputStream(in));
-
-        // an imperfect optimization around calling in.readableBytes() all the time
-        int readableBytes = in.readableBytes();
-
-        switch (state)
+        ByteBufDataInputPlus inputPlus = new ByteBufDataInputPlus(in);
+        while (true)
         {
-            case READ_MAGIC:
-                if (readableBytes < 4)
-                    return;
-                int magic = in.readInt();
-                MessagingService.validateMagic(magic);
-                state = State.READ_MESSAGE_ID;
-                readableBytes -= 4;
-                // fall-through
-            case READ_MESSAGE_ID:
-                if (readableBytes < 4)
-                    return;
-                messageHeader = new MessageHeader();
-                messageHeader.messageId = in.readInt();
-                state = State.READ_TIMESTAMP;
-                readableBytes -= 4;
-                // fall-through
-            case READ_TIMESTAMP:
-                if (readableBytes < 4)
-                    return;
-                messageHeader.constructionTime = MessageIn.readConstructionTime(peer, inputPlus, System.currentTimeMillis());
-                state = State.READ_IP_ADDRESS;
-                readableBytes -= 4;
-                // fall-through
-            case READ_IP_ADDRESS:
-                // unfortunately, this assumes knowledge of how CompactEndpointSerializationHelper serializes data (the first byte is the size).
-                // first, check that we can actually read the size byte, then check if we can read that number of bytes.
-                // the "+ 1" is to make sure we have the size byte in addition to the serialized IP addr count of bytes in the buffer.
-                int serializedAddrSize;
-                if (readableBytes < 1 || readableBytes < (serializedAddrSize = in.getByte(in.readerIndex()) + 1))
-                    return;
-                messageHeader.from = CompactEndpointSerializationHelper.deserialize(inputPlus);
-                state = State.READ_VERB;
-                readableBytes -= serializedAddrSize;
-                // fall-through
-            case READ_VERB:
-                if (readableBytes < 4)
-                    return;
-                messageHeader.verb = MessagingService.verbValues[in.readInt()];
-                state = State.READ_PARAMETERS;
-                readableBytes -= 4;
-                // fall-through
-            case READ_PARAMETERS:
-                // unfortunately, we do not have a size in bytes value here (only the number of parameters).
-                // thus we must attempt to deserialize all the parameters and rely on an EOFException as indicator
-                // of not enough bytes.
-                in.markReaderIndex();
-                try
-                {
-                    messageHeader.parameters = MessageIn.readParameters(inputPlus);
-                }
-                catch (EOFException eof)
-                {
-                    // EOF is ok, just means we ran out of bytes. reset the read index and wait for more bytes to come in
-                    in.resetReaderIndex();
-                    return;
-                }
-                state = State.READ_PAYLOAD_SIZE;
-                readableBytes = in.readableBytes(); // we read an indeterminate number of bytes for the headers, so just ask the buffer again
-                // fall-through
-            case READ_PAYLOAD_SIZE:
-                if (readableBytes < 4)
-                    return;
-                messageHeader.payloadSize = in.readInt();
-                state = State.READ_PAYLOAD;
-                readableBytes -= 4;
-                // fall-through
-            case READ_PAYLOAD:
-                // TODO:JEB double check that the "payloadSize == 0" check is legit (for example, EchoMessage)
-                if (messageHeader.payloadSize == 0 || readableBytes >= messageHeader.payloadSize)
-                {
-                    // TODO consider deserailizing the messge not on the IO thread
+            // an imperfect optimization around calling in.readableBytes() all the time
+            int readableBytes = in.readableBytes();
+
+            switch (state)
+            {
+                case READ_FIRST_CHUNK:
+                    if (readableBytes < FIRST_SECTION_BYTE_COUNT)
+                        return;
+                    MessagingService.validateMagic(in.readInt());
+                    messageHeader = new MessageHeader();
+                    messageHeader.messageId = in.readInt();
+                    int messageTimestamp = in.readInt(); // make sure to readInt, even if cross_node_to is not enabled
+                    messageHeader.constructionTime = MessageIn.deriveConstructionTime(peer, messageTimestamp, ApproximateTime.currentTimeMillis());
+                    state = State.READ_IP_ADDRESS;
+                    readableBytes -= FIRST_SECTION_BYTE_COUNT;
+                    // fall-through
+                case READ_IP_ADDRESS:
+                    // unfortunately, this assumes knowledge of how CompactEndpointSerializationHelper serializes data (the first byte is the size).
+                    // first, check that we can actually read the size byte, then check if we can read that number of bytes.
+                    // the "+ 1" is to make sure we have the size byte in addition to the serialized IP addr count of bytes in the buffer.
+                    int serializedAddrSize;
+                    if (readableBytes < 1 || readableBytes < (serializedAddrSize = in.getByte(in.readerIndex()) + 1))
+                        return;
+                    messageHeader.from = CompactEndpointSerializationHelper.deserialize(inputPlus);
+                    state = State.READ_SECOND_CHUNK;
+                    readableBytes -= serializedAddrSize;
+                    // fall-through
+                case READ_SECOND_CHUNK:
+                    if (readableBytes < SECOND_SECTION_BYTE_COUNT)
+                        return;
+                    messageHeader.verb = MessagingService.verbValues[in.readInt()];
+                    int paramCount = in.readInt();
+                    messageHeader.parameterCount = paramCount;
+                    messageHeader.parameters = paramCount == 0 ? Collections.emptyMap() : new HashMap<>();
+                    state = State.READ_PARAMETERS_DATA;
+                    readableBytes -= SECOND_SECTION_BYTE_COUNT;
+                    // fall-through
+                case READ_PARAMETERS_DATA:
+                    if (messageHeader.parameterCount > 0)
+                    {
+                        if (!readParameters(in, inputPlus, messageHeader.parameterCount, messageHeader.parameters))
+                            return;
+                        readableBytes = in.readableBytes(); // we read an indeterminate number of bytes for the headers, so just ask the buffer again
+                    }
+                    state = State.READ_PAYLOAD_SIZE;
+                    // fall-through
+                case READ_PAYLOAD_SIZE:
+                    if (readableBytes < 4)
+                        return;
+                    messageHeader.payloadSize = in.readInt();
+                    state = State.READ_PAYLOAD;
+                    readableBytes -= 4;
+                    // fall-through
+                case READ_PAYLOAD:
+                    if (readableBytes < messageHeader.payloadSize)
+                        return;
+
+                    // TODO consider deserailizing the messge not on the event loop
                     MessageIn<Object> messageIn = MessageIn.read(inputPlus, messagingVersion,
                                                                  messageHeader.messageId, messageHeader.constructionTime, messageHeader.from,
                                                                  messageHeader.payloadSize, messageHeader.verb, messageHeader.parameters);
+
                     if (messageIn != null)
                         messageConsumer.accept(messageIn, messageHeader.messageId);
 
-                    state = State.READ_MAGIC;
+                    state = State.READ_FIRST_CHUNK;
                     messageHeader = null;
-                }
-                break;
+                    break;
+                default:
+                    throw new IllegalStateException("unknown/unhandled state: " + state);
+            }
         }
     }
+
+    /**
+     * @return <code>true</code> if all the parameters have been read from the {@link ByteBuf}; else, <code>false</code>.
+     */
+    private boolean readParameters(ByteBuf in, ByteBufDataInputPlus inputPlus, int parameterCount, Map<String, byte[]> parameters) throws IOException
+    {
+        // makes the assumption that map.size() is a constant time function (HashMap.size() is)
+        while (parameters.size() < parameterCount)
+        {
+            if (!canReadNextParam(in))
+                return false;
+
+            String key = DataInputStream.readUTF(inputPlus);
+            byte[] value = new byte[in.readInt()];
+            in.readBytes(value);
+            parameters.put(key, value);
+        }
+
+        return true;
+    }
+
+    /**
+     * Determine if we can read the next parameter from the {@link ByteBuf}. This method will *always* set the {@code in}
+     * readIndex back to where it was when this method was invoked.
+     *
+     * NOTE: this function would be sooo much simpler if we included a parameters length int in the messaging format,
+     * instead of checking the remaining readable bytes for each field as we're parsing it. c'est la vie ...
+     */
+    @VisibleForTesting
+    static boolean canReadNextParam(ByteBuf in)
+    {
+        in.markReaderIndex();
+        // capture the readableBytes value here to avoid all the virtual function calls.
+        // subtract 6 as we know we'll be reading a short and an int (for the utf and value lengths).
+        final int minimumBytesRequired = 6;
+        int readableBytes = in.readableBytes() - minimumBytesRequired;
+        if (readableBytes < 0)
+            return false;
+
+        // this is a tad invasive, but since we know the UTF string is prefaced with a 2-byte length,
+        // read that to make sure we have enough bytes to read the string itself.
+        short strLen = in.readShort();
+        // check if we can read that many bytes for the UTF
+        if (strLen > readableBytes)
+        {
+            in.resetReaderIndex();
+            return false;
+        }
+        in.skipBytes(strLen);
+        readableBytes -= strLen;
+
+        // check if we can read the value length
+        if (readableBytes < 4)
+        {
+            in.resetReaderIndex();
+            return false;
+        }
+        int valueLength = in.readInt();
+        // check if we read that many bytes for the value
+        if (valueLength > readableBytes)
+        {
+            in.resetReaderIndex();
+            return false;
+        }
+
+        in.resetReaderIndex();
+        return true;
+    }
+
 
     // should ony be used for testing!!!
     @VisibleForTesting
@@ -204,7 +274,13 @@ class MessageInHandler extends ChannelInboundHandlerAdapter
         long constructionTime;
         InetAddress from;
         MessagingService.Verb verb;
-        Map<String, byte[]> parameters;
         int payloadSize;
+
+        Map<String, byte[]> parameters = Collections.emptyMap();
+
+        /**
+         * Total number of incoming parameters.
+         */
+        int parameterCount;
     }
 }

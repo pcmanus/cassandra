@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 import com.google.common.base.Charsets;
 import org.junit.After;
@@ -33,11 +34,18 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.concurrent.Future;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.MessageInHandler.MessageHeader;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.NanoTimeToCurrentTimeMillis;
 
 public class MessageInHandlerTest
@@ -58,7 +66,7 @@ public class MessageInHandlerTest
     @After
     public void tearDown()
     {
-        if (buf != null)
+        if (buf != null && buf.refCnt() > 0)
             buf.release();
     }
 
@@ -87,17 +95,18 @@ public class MessageInHandlerTest
             msgOut = msgOut.withParameter(param.getKey(), param.getValue());
         serialize(msgOut);
 
-        MessageInHandler handler = new MessageInHandler(addr.getAddress(), MSG_VERSION);
-        List<Object> out = new ArrayList<>(2);
+        MessageInWrapper wrapper = new MessageInWrapper();
+        MessageInHandler handler = new MessageInHandler(addr.getAddress(), MSG_VERSION, wrapper.messageConsumer);
+        List<Object> out = new ArrayList<>();
         handler.decode(null, buf, out);
 
-        Assert.assertEquals(1, out.size());
-        MessageInWrapper result = (MessageInWrapper) out.get(0);
-        Assert.assertEquals(MSG_ID, result.id);
-        Assert.assertEquals(msgOut.from, result.messageIn.from);
-        Assert.assertEquals(msgOut.verb, result.messageIn.verb);
+        Assert.assertNotNull(wrapper.messageIn);
+        Assert.assertEquals(MSG_ID, wrapper.id);
+        Assert.assertEquals(msgOut.from, wrapper.messageIn.from);
+        Assert.assertEquals(msgOut.verb, wrapper.messageIn.verb);
+        Assert.assertTrue(out.isEmpty());
 
-        return result;
+        return wrapper;
     }
 
     private void serialize(MessageOut msgOut) throws IOException
@@ -110,12 +119,11 @@ public class MessageInHandlerTest
         msgOut.serialize(new ByteBufDataOutputPlus(buf), MSG_VERSION);
     }
 
-
     @Test
     public void decode_WithHalfReceivedParameters() throws Exception
     {
         MessageOut msgOut = new MessageOut(MessagingService.Verb.ECHO);
-            msgOut = msgOut.withParameter("p3", "val1".getBytes(Charsets.UTF_8));
+        msgOut = msgOut.withParameter("p3", "val1".getBytes(Charsets.UTF_8));
 
         serialize(msgOut);
 
@@ -124,19 +132,84 @@ public class MessageInHandlerTest
         int originalWriterIndex = buf.writerIndex();
         buf.writerIndex(originalWriterIndex - 6);
 
-        MessageInHandler handler = new MessageInHandler(addr.getAddress(), MSG_VERSION);
-        handler.decode(null, buf);
-        Assert.assertTrue(out.isEmpty());
+        MessageInWrapper wrapper = new MessageInWrapper();
+        MessageInHandler handler = new MessageInHandler(addr.getAddress(), MSG_VERSION, wrapper.messageConsumer);
+        List<Object> out = new ArrayList<>();
+        handler.decode(null, buf, out);
+
+        Assert.assertNull(wrapper.messageIn);
+
         MessageHeader header = handler.getMessageHeader();
         Assert.assertEquals(MSG_ID, header.messageId);
         Assert.assertEquals(msgOut.verb, header.verb);
         Assert.assertEquals(msgOut.from, header.from);
+        Assert.assertTrue(out.isEmpty());
 
         // now, set the writer index back to the original value to pretend that we actually got more bytes in
         buf.writerIndex(originalWriterIndex);
         handler.decode(null, buf, out);
-        Assert.assertFalse(out.isEmpty());
+        Assert.assertNotNull(wrapper.messageIn);
+        Assert.assertTrue(out.isEmpty());
     }
 
+    @Test
+    public void canReadNextParam_HappyPath() throws IOException
+    {
+        buildParamBuf(13);
+        Assert.assertTrue(MessageInHandler.canReadNextParam(buf));
+    }
 
+    @Test
+    public void canReadNextParam_OnlyFirstByte() throws IOException
+    {
+        buildParamBuf(13);
+        buf.writerIndex(1);
+        Assert.assertFalse(MessageInHandler.canReadNextParam(buf));
+    }
+
+    @Test
+    public void canReadNextParam_PartialUTF() throws IOException
+    {
+        buildParamBuf(13);
+        buf.writerIndex(5);
+        Assert.assertFalse(MessageInHandler.canReadNextParam(buf));
+    }
+
+    @Test
+    public void canReadNextParam_TruncatedValueLength() throws IOException
+    {
+        buildParamBuf(13);
+        buf.writerIndex(buf.writerIndex() - 13 - 2);
+        Assert.assertFalse(MessageInHandler.canReadNextParam(buf));
+    }
+
+    @Test
+    public void canReadNextParam_MissingLastBytes() throws IOException
+    {
+        buildParamBuf(13);
+        buf.writerIndex(buf.writerIndex() - 2);
+        Assert.assertFalse(MessageInHandler.canReadNextParam(buf));
+    }
+
+    private void buildParamBuf(int valueLength) throws IOException
+    {
+        buf = Unpooled.buffer(1024, 1024); // 1k should be enough for everybody!
+        ByteBufDataOutputPlus output = new ByteBufDataOutputPlus(buf);
+        output.writeUTF("name");
+        byte[] array = new byte[valueLength];
+        output.writeInt(array.length);
+        output.write(array);
+    }
+
+    private static class MessageInWrapper
+    {
+        MessageIn messageIn;
+        int id;
+
+        final BiConsumer<MessageIn, Integer> messageConsumer = (messageIn, integer) ->
+        {
+            this.messageIn = messageIn;
+            this.id = integer;
+        };
+    }
 }

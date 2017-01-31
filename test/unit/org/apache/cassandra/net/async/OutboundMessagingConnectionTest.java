@@ -20,6 +20,7 @@ package org.apache.cassandra.net.async;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -33,6 +34,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.State;
 
 import static org.apache.cassandra.net.MessagingService.Verb.ECHO;
@@ -50,7 +52,7 @@ public class OutboundMessagingConnectionTest
     private static final int MESSAGING_VERSION = MessagingService.current_version;
     private static final int PENDING_MESSAGES_COUNT = 12;
 
-    private OutboundMessagingConnection omc ;
+    private OutboundMessagingConnection omc;
     private EmbeddedChannel channel;
 
     @BeforeClass
@@ -62,10 +64,10 @@ public class OutboundMessagingConnectionTest
     @Before
     public void setup()
     {
-        omc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
-        omc.setPendingMessages(PENDING_MESSAGES_COUNT);
+        omc = new OutboundMessagingConnection(ConnectionType.SMALL_MESSAGE, REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
         channel = new EmbeddedChannel();
         omc.setChannel(channel);
+        omc.setPendingMessages(PENDING_MESSAGES_COUNT);
     }
 
     @After
@@ -92,17 +94,12 @@ public class OutboundMessagingConnectionTest
     @Test
     public void clearBacklog_OneMessage()
     {
-        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
         Assert.assertEquals(0, omc.backlogSize());
         omc.addToBacklog(new QueuedMessage(new MessageOut<>(ECHO), 1));
-        Assert.assertEquals(PENDING_MESSAGES_COUNT + 1, omc.getPendingMessages().intValue());
         Assert.assertEquals(1, omc.backlogSize());
 
         omc.writeBacklogToChannel();
-        // force a flush to ensure the message's netty callback is invoked
-        channel.flush();
         Assert.assertEquals(0, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
         Assert.assertTrue(channel.releaseOutbound());
     }
 
@@ -123,10 +120,7 @@ public class OutboundMessagingConnectionTest
         omc.setState(READY);
         omc.sendMessage(new MessageOut<>(ECHO), 1);
 
-        // force a flush to ensure the message's netty callback is invoked
-        channel.flush();
         Assert.assertEquals(0, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
         Assert.assertTrue(channel.releaseOutbound());
     }
 
@@ -146,7 +140,6 @@ public class OutboundMessagingConnectionTest
         promise.setSuccess();
         omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT - 1, omc.getPendingMessages().intValue());
     }
 
     @Test
@@ -159,7 +152,7 @@ public class OutboundMessagingConnectionTest
         // message will be retried
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(1, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
+        Assert.assertEquals(PENDING_MESSAGES_COUNT + 1, omc.getPendingMessages().intValue());
     }
 
     @Test
@@ -170,18 +163,19 @@ public class OutboundMessagingConnectionTest
         omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(ECHO), 1));
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(1, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
+        Assert.assertEquals(PENDING_MESSAGES_COUNT + 1, omc.getPendingMessages().intValue());
     }
 
     @Test
     public void handleMessagePromise_ExpiredException_DoNotRetryMsg()
     {
+        omc.setState(State.READY);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new ExpiredException());
         omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(ECHO), 1).retry(System.nanoTime()));
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT - 1, omc.getPendingMessages().intValue());
+        Assert.assertTrue(channel.releaseOutbound());
     }
 
     @Test
@@ -192,22 +186,20 @@ public class OutboundMessagingConnectionTest
         omc.handleMessageFuture(promise, null);
         Assert.assertTrue(channel.isActive());
         Assert.assertEquals(0, omc.backlogSize());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT - 1, omc.getPendingMessages().intValue());
+        Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
     }
 
     @Test
     public void handleMessagePromise_IOException_ChannelClosed_DoNotRetryMsg()
     {
-        State state = omc.getState();
+        omc.setState(State.NOT_READY);
         ChannelPromise promise = channel.newPromise();
         promise.setFailure(new IOException("this is a test"));
         channel.close();
         omc.handleMessageFuture(promise, new QueuedMessage(new MessageOut<>(ECHO), 1, 0, true, true).retry(System.nanoTime()));
 
         Assert.assertFalse(channel.isActive());
-        Assert.assertEquals(0, omc.backlogSize());
-        Assert.assertEquals(state, omc.getState());
-        Assert.assertEquals(PENDING_MESSAGES_COUNT - 1, omc.getPendingMessages().intValue());
+        Assert.assertEquals(1, omc.backlogSize());
     }
 
     @Test
@@ -221,7 +213,7 @@ public class OutboundMessagingConnectionTest
 
         omc.close(false);
         Assert.assertFalse(channel.isActive());
-        Assert.assertEquals(State.NOT_READY, omc.getState());
+        Assert.assertEquals(State.CLOSED, omc.getState());
         Assert.assertEquals(0, omc.backlogSize());
         Assert.assertEquals(PENDING_MESSAGES_COUNT, omc.getPendingMessages().intValue());
     }
@@ -278,7 +270,7 @@ public class OutboundMessagingConnectionTest
     @Test
     public void finishHandshake_GOOD()
     {
-        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, GOOD);
+        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, GOOD, new AtomicLong());
         omc.finishHandshake(result);
         Assert.assertEquals(channel, omc.getChannel());
         Assert.assertEquals(READY, omc.getState());
@@ -293,7 +285,7 @@ public class OutboundMessagingConnectionTest
             omc.addToBacklog(new QueuedMessage(new MessageOut<>(ECHO), i));
         Assert.assertEquals(count, omc.backlogSize());
 
-        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, DISCONNECT);
+        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, DISCONNECT, null);
         omc.finishHandshake(result);
         Assert.assertEquals(channel, omc.getChannel());
         Assert.assertEquals(NOT_READY, omc.getState());
@@ -309,7 +301,7 @@ public class OutboundMessagingConnectionTest
             omc.addToBacklog(new QueuedMessage(new MessageOut<>(ECHO), i));
         Assert.assertEquals(count, omc.backlogSize());
 
-        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, NEGOTIATION_FAILURE);
+        ConnectionHandshakeResult result = new ConnectionHandshakeResult(channel, MESSAGING_VERSION, NEGOTIATION_FAILURE, null);
         omc.finishHandshake(result);
         Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));

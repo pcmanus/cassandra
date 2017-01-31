@@ -24,5 +24,5 @@ package org.apache.cassandra.net.async;
 class ExpiredException extends Exception
 {
     @SuppressWarnings("ThrowableInstanceNeverThrown")
-    public static final ExpiredException INSTANCE = new ExpiredException();
+    static final ExpiredException INSTANCE = new ExpiredException();
 }

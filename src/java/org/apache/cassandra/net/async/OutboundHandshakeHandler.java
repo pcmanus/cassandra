@@ -185,7 +185,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         {
             logger.trace("peer's max version is {}; will reconnect with that version", peerMessagingVersion);
             ctx.close();
-            callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, Result.DISCONNECT));
+            callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, Result.DISCONNECT, null));
             return;
         }
 
@@ -218,7 +218,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
             ctx.close();
         }
 
-        callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, result));
+        callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, result, params.pendingMessageCount));
     }
 
     void setupPipeline(ChannelPipeline pipeline, int messagingVersion)
@@ -229,9 +229,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
         // only create an updated params instance if the messaging versions are different
         OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion ? params : params.updateProtocolVersion(messagingVersion);
-        pipeline.addLast("flushHandler", new FlushHandler(updatedParams));
         pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
-        pipeline.addLast("messageTimeoutHandler", new MessageOutTimeoutHandler(updatedParams));
         pipeline.addLast("errorLogger", new ErrorLoggingHandler());
     }
 

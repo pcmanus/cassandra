@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 
 /**
  * A collection of data opints to be passed around for outbound connections
@@ -41,10 +42,12 @@ class OutboundConnectionParams
     final AtomicLong droppedMessageCount;
     final AtomicLong completedMessageCount;
     final AtomicLong pendingMessageCount;
+    final ConnectionType connectionType;
 
     OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
                              Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, NettyFactory.Mode mode,
-                             boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount, AtomicLong pendingMessageCount)
+                             boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount,
+                             AtomicLong pendingMessageCount, ConnectionType connectionType)
     {
         this.localAddr = localAddr;
         this.remoteAddr = remoteAddr;
@@ -57,11 +60,13 @@ class OutboundConnectionParams
         this.droppedMessageCount = droppedMessageCount;
         this.completedMessageCount = completedMessageCount;
         this.pendingMessageCount = pendingMessageCount;
+        this.connectionType = connectionType;
     }
 
     OutboundConnectionParams updateProtocolVersion(int protocolVersion)
     {
         return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback,
-                                            encryptionOptions, mode, compress, coalesce, droppedMessageCount, completedMessageCount, pendingMessageCount);
+                                            encryptionOptions, mode, compress, coalesce, droppedMessageCount,
+                                            completedMessageCount, pendingMessageCount, connectionType);
     }
 }

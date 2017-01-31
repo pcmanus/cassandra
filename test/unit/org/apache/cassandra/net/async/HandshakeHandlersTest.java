@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -46,6 +45,7 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.schema.KeyspaceParams;
 
 import static org.apache.cassandra.net.async.InboundHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
@@ -59,9 +59,9 @@ public class HandshakeHandlersTest
     private static final InetSocketAddress LOCAL_ADDR = new InetSocketAddress("127.0.0.1", 9999);
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.2", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
+    private static final ConnectionType CONNECTION_TYPE = ConnectionType.SMALL_MESSAGE;
 
     private int receivedMessages;
-    private final Consumer<MessageInWrapper> COUNTING_CONSUMER = messageInWrapper -> receivedMessages++;
 
     @BeforeClass
     public static void beforeClass() throws ConfigurationException
@@ -86,10 +86,10 @@ public class HandshakeHandlersTest
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel inboundChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(CONNECTION_TYPE, REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
         OutboundConnectionParams params = new OutboundConnectionParams(LOCAL_ADDR, REMOTE_ADDR, MESSAGING_VERSION,
                                                                        imc::finishHandshake, null, NettyFactory.Mode.MESSAGING,
-                                                                       false, false, new AtomicLong(), new AtomicLong(), new AtomicLong());
+                                                                       false, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
         OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
         EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
         Assert.assertEquals(1, outboundChannel.outboundMessages().size());
@@ -144,7 +144,7 @@ public class HandshakeHandlersTest
         {
             if (i % 2 == 0)
             {
-                Mutation mutation = new RowUpdateBuilder(cfs1.metadata, 0, "k")
+                Mutation mutation = new RowUpdateBuilder(cfs1.metadata.get(), 0, "k")
                                     .clustering("bytes")
                                     .add("val", buf)
                                     .build();
@@ -172,10 +172,10 @@ public class HandshakeHandlersTest
     {
         OutboundConnectionParams params = new OutboundConnectionParams(LOCAL_ADDR, REMOTE_ADDR, MESSAGING_VERSION,
                                                                        this::nop, null, NettyFactory.Mode.MESSAGING,
-                                                                       compress, false, new AtomicLong(), new AtomicLong(), new AtomicLong());
+                                                                       compress, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
         OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
         EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
-        OutboundMessagingConnection omc = new OutboundMessagingConnection(REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection omc = new OutboundMessagingConnection(CONNECTION_TYPE, REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
         omc.setTargetVersion(MESSAGING_VERSION);
         outboundHandshakeHandler.setupPipeline(outboundChannel.pipeline(), MESSAGING_VERSION);
 
@@ -184,7 +184,7 @@ public class HandshakeHandlersTest
 
         InboundHandshakeHandler handler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel inboundChannel = new EmbeddedChannel(handler);
-        handler.setupMessagingPipeline(inboundChannel.pipeline(), InboundHandshakeHandler.createHandlers(REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION, COUNTING_CONSUMER));
+        handler.setupMessagingPipeline(inboundChannel.pipeline(), REMOTE_ADDR.getAddress(), compress, MESSAGING_VERSION);
 
         return new TestChannels(outboundChannel, inboundChannel);
     }

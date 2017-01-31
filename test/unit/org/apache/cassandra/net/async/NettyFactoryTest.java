@@ -20,15 +20,25 @@ package org.apache.cassandra.net.async;
 
 import java.net.InetSocketAddress;
 
+import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.auth.AllowAllInternodeAuthenticator;
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
 
 public class NettyFactoryTest
 {
     private static final int receiveBufferSize = 1 << 16;
+
+    @BeforeClass
+    public static void before()
+    {
+        DatabaseDescriptor.daemonInitialization();
+    }
 
     @Test(expected = ConfigurationException.class)
     public void createServerChannel_SecondAttemptToBind()
@@ -45,5 +55,14 @@ public class NettyFactoryTest
         InetSocketAddress addr = new InetSocketAddress("1.1.1.1", 9876);
         InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
         NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
+    }
+
+    @Test
+    public void deterineAcceptGroupSize()
+    {
+        Assert.assertEquals(1, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.none));
+        Assert.assertEquals(1, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.all));
+        Assert.assertEquals(2, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.rack));
+        Assert.assertEquals(2, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.dc));
     }
 }

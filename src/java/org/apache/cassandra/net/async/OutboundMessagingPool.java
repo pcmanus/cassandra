@@ -20,15 +20,14 @@ package org.apache.cassandra.net.async;
 
 import java.net.InetSocketAddress;
 
-import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.MessagingService.Verb;
+import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.utils.CoalescingStrategies;
 
 /**
@@ -58,11 +57,11 @@ public class OutboundMessagingPool
         this.backPressureState = backPressureState;
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
-        smallMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
-        largeMessageChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
+        smallMessageChannel = new OutboundMessagingConnection(ConnectionType.SMALL_MESSAGE, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
+        largeMessageChannel = new OutboundMessagingConnection(ConnectionType.LARGE_MESSAGE, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
 
         // don't attempt coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
-        gossipChannel = new OutboundMessagingConnection(preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, false));
+        gossipChannel = new OutboundMessagingConnection(ConnectionType.GOSSIP, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, false));
     }
 
     private static CoalescingStrategies.CoalescingStrategy coalescingStrategy(InetSocketAddress remoteAddr, boolean maybeCoalesce)
@@ -94,7 +93,7 @@ public class OutboundMessagingPool
             verb == Verb.GOSSIP_DIGEST_SYN || verb == Verb.GOSSIP_SHUTDOWN)
             return gossipChannel;
 
-        return msg.payloadSize(smallMessageChannel.getTargetVersion()) > LARGE_MESSAGE_THRESHOLD
+        return msg.serializedSize(smallMessageChannel.getTargetVersion()) > LARGE_MESSAGE_THRESHOLD
              ? largeMessageChannel
              : smallMessageChannel;
     }

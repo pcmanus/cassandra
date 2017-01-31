@@ -18,34 +18,14 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.WritableByteChannel;
-
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufOutputStream;
-import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.Memory;
+import io.netty.buffer.ByteBufInputStream;
+import org.apache.cassandra.io.util.DataInputPlus;
 
-public class ByteBufDataOutputPlus extends ByteBufOutputStream implements DataOutputPlus
+public class ByteBufDataInputPlus extends ByteBufInputStream implements DataInputPlus
 {
-    ByteBufDataOutputPlus(ByteBuf buffer)
+    public ByteBufDataInputPlus(ByteBuf buffer)
     {
         super(buffer);
-    }
-
-    public void write(ByteBuffer buffer) throws IOException
-    {
-        buffer().writeBytes(buffer);
-    }
-
-    public void write(Memory memory, long offset, long length) throws IOException
-    {
-        buffer().writeBytes(memory.asByteBuffer(offset, (int)length));
-    }
-
-    public <R> R applyToChannel(com.google.common.base.Function<WritableByteChannel, R> c) throws IOException
-    {
-        throw new UnsupportedOperationException();
     }
 }

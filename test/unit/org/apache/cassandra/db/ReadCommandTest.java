@@ -315,7 +315,7 @@ public class ReadCommandTest
     {
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE).getColumnFamilyStore(CF2);
 
-        new RowUpdateBuilder(cfs.metadata, 0, ByteBufferUtil.bytes("key"))
+        new RowUpdateBuilder(cfs.metadata.get(), 0, ByteBufferUtil.bytes("key"))
         .clustering("dd")
         .add("a", ByteBufferUtil.bytes("abcd"))
         .build()

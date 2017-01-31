@@ -50,6 +50,7 @@ import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.SupportedCipherSuiteFilter;
 import org.apache.cassandra.config.EncryptionOptions;
 
 /**
@@ -284,10 +285,10 @@ public final class SSLFactory
         }
         else
         {
-            builder = SslContextBuilder.forClient();
+            builder = SslContextBuilder.forClient().sslProvider(useOpenSsl ? SslProvider.OPENSSL : SslProvider.JDK);
         }
 
-        SslContext ctx = builder.ciphers(Arrays.asList(options.cipher_suites))
+        SslContext ctx = builder.ciphers(Arrays.asList(options.cipher_suites), SupportedCipherSuiteFilter.INSTANCE)
                         .trustManager(tmf)
                         .build();
 

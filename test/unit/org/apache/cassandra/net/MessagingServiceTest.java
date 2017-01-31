@@ -20,8 +20,6 @@
  */
 package org.apache.cassandra.net;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -39,9 +37,6 @@ import com.codahale.metrics.Timer;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.db.SystemKeyspace;
-import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
-import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.caffinitas.ohc.histo.EstimatedHistogram;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -252,13 +247,7 @@ public class MessagingServiceTest
 
     private static void addDCLatency(long sentAt, long nowTime) throws IOException
     {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (DataOutputStreamPlus out = new WrappedDataOutputStreamPlus(baos))
-        {
-            out.writeInt((int) sentAt);
-        }
-        DataInputStreamPlus in = new DataInputStreamPlus(new ByteArrayInputStream(baos.toByteArray()));
-        MessageIn.readConstructionTime(InetAddress.getLocalHost(), in, nowTime);
+        MessageIn.deriveConstructionTime(InetAddress.getLocalHost(), (int)sentAt, nowTime);
     }
 
     public static class MockBackPressureStrategy implements BackPressureStrategy<MockBackPressureStrategy.MockBackPressureState>

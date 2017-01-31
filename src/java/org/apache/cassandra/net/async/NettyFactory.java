@@ -16,6 +16,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.ServerChannel;
 import io.netty.channel.WriteBufferWaterMark;
+import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.epoll.EpollSocketChannel;
@@ -25,12 +26,17 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Slf4JLoggerFactory;
 import org.apache.cassandra.auth.IInternodeAuthenticator;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
+import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.NativeTransportService;
@@ -60,7 +66,25 @@ public final class NettyFactory
     }
 
     private static final boolean useEpoll = NativeTransportService.useEpoll();
-    private static final EventLoopGroup ACCEPT_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyAcceptor-Threads", false);
+    static
+    {
+        if (!useEpoll)
+            logger.warn("epoll not availble! {}", Epoll.unavailabilityCause());
+    }
+
+    private static final EventLoopGroup ACCEPT_GROUP = getEventLoopGroup(deterineAcceptGroupSize(DatabaseDescriptor.getServerEncryptionOptions().internode_encryption),
+                                                                         "MessagingService-NettyAcceptor-Threads", false);
+
+    /**
+     * Determine the number of accept threads we need, which is based upon the number of listening sockets we will have.
+     * We'll have either 1 or 2 listen sockets, depending on if we use SSL or not in combination with non-SSL. If we have both,
+     * we'll have two sockets, and thus need two threads; else one socket and one thread.
+     */
+    static int deterineAcceptGroupSize(InternodeEncryption internode_encryption)
+    {
+        return internode_encryption == InternodeEncryption.dc || internode_encryption == InternodeEncryption.rack ? 2 : 1;
+    }
+
     private static final EventLoopGroup INBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyInbound-Threads", false);
     private static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyOutbound-Threads", true);
 
@@ -71,10 +95,16 @@ public final class NettyFactory
             EpollEventLoopGroup eventLoopGroup = new EpollEventLoopGroup(threadCount, new DefaultThreadFactory(threadNamePrefix));
             if (boostIoRatio)
                 eventLoopGroup.setIoRatio(100);
+            logger.debug("using netty epoll event loop for pool prefix {}", threadNamePrefix);
             return eventLoopGroup;
         }
+
+        logger.debug("using netty nio event loop for pool prefix {}", threadNamePrefix);
         return new NioEventLoopGroup(threadCount, new DefaultThreadFactory(threadNamePrefix));
     }
+
+    private static final PooledByteBufAllocator INBOUND_ALLOCATOR = new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
+    private static final PooledByteBufAllocator OUTBOUND_ALLOCATOR = new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
 
     private NettyFactory()
     {   }
@@ -87,11 +117,12 @@ public final class NettyFactory
     {
 
         String nic = FBUtilities.getNetworkInterface(localAddr.getAddress());
-        logger.info("Starting Messaging Service on {} {}", localAddr, nic == null ? "" : String.format(" (%s)", nic));
+        logger.info("Starting Messaging Service on {} {}, encryption: {}",
+                    localAddr, nic == null ? "" : String.format(" (%s)", nic), encryptionLogStatement(initializer.encryptionOptions));
         Class<? extends ServerChannel> transport = useEpoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class;
         ServerBootstrap bootstrap = new ServerBootstrap().group(ACCEPT_GROUP, INBOUND_GROUP)
                                                          .channel(transport)
-                                                         .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                                                         .option(ChannelOption.ALLOCATOR, INBOUND_ALLOCATOR)
                                                          .option(ChannelOption.SO_BACKLOG, 500)
                                                          .childOption(ChannelOption.SO_KEEPALIVE, true)
                                                          .childOption(ChannelOption.TCP_NODELAY, true)
@@ -149,8 +180,9 @@ public final class NettyFactory
             if (encryptionOptions != null)
             {
                 SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, true);
-                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
-            }
+                SslHandler sslHandler = sslContext.newHandler(channel.alloc());
+                logger.debug("creating inbound netty SslContext: context={}, engine={}", sslContext.getClass().getName(), sslHandler.engine().getClass().getName());
+                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslHandler);            }
 
             if (WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
@@ -159,16 +191,27 @@ public final class NettyFactory
         }
     }
 
+    private static String encryptionLogStatement(ServerEncryptionOptions options)
+    {
+        if (options == null)
+            return "disabled";
+
+        String encryptionType = OpenSsl.isAvailable() ? "openssl" : "jdk";
+        return "enabled (" + encryptionType + ')';
+    }
+
     /**
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
     static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay)
     {
+        logger.debug("creating outbound bootstrap to peer {}, encryption: {}", initializer.params.remoteAddr,
+                    encryptionLogStatement(initializer.params.encryptionOptions));
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
         return new Bootstrap().group(OUTBOUND_GROUP)
                                              .channel(transport)
-                                             .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                                             .option(ChannelOption.ALLOCATOR, OUTBOUND_ALLOCATOR)
                                              .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
                                              .option(ChannelOption.SO_KEEPALIVE, true)
                                              .option(ChannelOption.SO_REUSEADDR, true)
@@ -196,7 +239,9 @@ public final class NettyFactory
             if (params.encryptionOptions != null)
             {
                 SslContext sslContext = SSLFactory.getSslContext(params.encryptionOptions, true, false);
-                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslContext.newHandler(channel.alloc()));
+                SslHandler sslHandler = sslContext.newHandler(channel.alloc());
+                logger.debug("creating outbound netty SslContext: context={}, engine={}", sslContext.getClass().getName(), sslHandler.engine().getClass().getName());
+                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslHandler);
             }
 
             if (NettyFactory.WIRETRACE)
