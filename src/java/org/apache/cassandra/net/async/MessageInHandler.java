@@ -19,6 +19,7 @@
 package org.apache.cassandra.net.async;
 
 import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Collections;
@@ -35,6 +36,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.cassandra.db.monitoring.ApproximateTime;
+import org.apache.cassandra.exceptions.UnknownTableException;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -110,82 +112,89 @@ class MessageInHandler extends ByteToMessageDecoder
      * and will be caught by our last handler ({@link MessageInErrorHandler}), which closes the channel on error.
      */
     @SuppressWarnings("resource")
-    public void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws IOException
+    public void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
     {
         ByteBufDataInputPlus inputPlus = new ByteBufDataInputPlus(in);
-        while (true)
+        try
         {
-            // an imperfect optimization around calling in.readableBytes() all the time
-            int readableBytes = in.readableBytes();
-
-            switch (state)
+            while (true)
             {
-                case READ_FIRST_CHUNK:
-                    if (readableBytes < FIRST_SECTION_BYTE_COUNT)
-                        return;
-                    MessagingService.validateMagic(in.readInt());
-                    messageHeader = new MessageHeader();
-                    messageHeader.messageId = in.readInt();
-                    int messageTimestamp = in.readInt(); // make sure to readInt, even if cross_node_to is not enabled
-                    messageHeader.constructionTime = MessageIn.deriveConstructionTime(peer, messageTimestamp, ApproximateTime.currentTimeMillis());
-                    state = State.READ_IP_ADDRESS;
-                    readableBytes -= FIRST_SECTION_BYTE_COUNT;
-                    // fall-through
-                case READ_IP_ADDRESS:
-                    // unfortunately, this assumes knowledge of how CompactEndpointSerializationHelper serializes data (the first byte is the size).
-                    // first, check that we can actually read the size byte, then check if we can read that number of bytes.
-                    // the "+ 1" is to make sure we have the size byte in addition to the serialized IP addr count of bytes in the buffer.
-                    int serializedAddrSize;
-                    if (readableBytes < 1 || readableBytes < (serializedAddrSize = in.getByte(in.readerIndex()) + 1))
-                        return;
-                    messageHeader.from = CompactEndpointSerializationHelper.deserialize(inputPlus);
-                    state = State.READ_SECOND_CHUNK;
-                    readableBytes -= serializedAddrSize;
-                    // fall-through
-                case READ_SECOND_CHUNK:
-                    if (readableBytes < SECOND_SECTION_BYTE_COUNT)
-                        return;
-                    messageHeader.verb = MessagingService.verbValues[in.readInt()];
-                    int paramCount = in.readInt();
-                    messageHeader.parameterCount = paramCount;
-                    messageHeader.parameters = paramCount == 0 ? Collections.emptyMap() : new HashMap<>();
-                    state = State.READ_PARAMETERS_DATA;
-                    readableBytes -= SECOND_SECTION_BYTE_COUNT;
-                    // fall-through
-                case READ_PARAMETERS_DATA:
-                    if (messageHeader.parameterCount > 0)
-                    {
-                        if (!readParameters(in, inputPlus, messageHeader.parameterCount, messageHeader.parameters))
+                // an imperfect optimization around calling in.readableBytes() all the time
+                int readableBytes = in.readableBytes();
+
+                switch (state)
+                {
+                    case READ_FIRST_CHUNK:
+                        if (readableBytes < FIRST_SECTION_BYTE_COUNT)
                             return;
-                        readableBytes = in.readableBytes(); // we read an indeterminate number of bytes for the headers, so just ask the buffer again
-                    }
-                    state = State.READ_PAYLOAD_SIZE;
-                    // fall-through
-                case READ_PAYLOAD_SIZE:
-                    if (readableBytes < 4)
-                        return;
-                    messageHeader.payloadSize = in.readInt();
-                    state = State.READ_PAYLOAD;
-                    readableBytes -= 4;
-                    // fall-through
-                case READ_PAYLOAD:
-                    if (readableBytes < messageHeader.payloadSize)
-                        return;
+                        MessagingService.validateMagic(in.readInt());
+                        messageHeader = new MessageHeader();
+                        messageHeader.messageId = in.readInt();
+                        int messageTimestamp = in.readInt(); // make sure to readInt, even if cross_node_to is not enabled
+                        messageHeader.constructionTime = MessageIn.deriveConstructionTime(peer, messageTimestamp, ApproximateTime.currentTimeMillis());
+                        state = State.READ_IP_ADDRESS;
+                        readableBytes -= FIRST_SECTION_BYTE_COUNT;
+                        // fall-through
+                    case READ_IP_ADDRESS:
+                        // unfortunately, this assumes knowledge of how CompactEndpointSerializationHelper serializes data (the first byte is the size).
+                        // first, check that we can actually read the size byte, then check if we can read that number of bytes.
+                        // the "+ 1" is to make sure we have the size byte in addition to the serialized IP addr count of bytes in the buffer.
+                        int serializedAddrSize;
+                        if (readableBytes < 1 || readableBytes < (serializedAddrSize = in.getByte(in.readerIndex()) + 1))
+                            return;
+                        messageHeader.from = CompactEndpointSerializationHelper.deserialize(inputPlus);
+                        state = State.READ_SECOND_CHUNK;
+                        readableBytes -= serializedAddrSize;
+                        // fall-through
+                    case READ_SECOND_CHUNK:
+                        if (readableBytes < SECOND_SECTION_BYTE_COUNT)
+                            return;
+                        messageHeader.verb = MessagingService.verbValues[in.readInt()];
+                        int paramCount = in.readInt();
+                        messageHeader.parameterCount = paramCount;
+                        messageHeader.parameters = paramCount == 0 ? Collections.emptyMap() : new HashMap<>();
+                        state = State.READ_PARAMETERS_DATA;
+                        readableBytes -= SECOND_SECTION_BYTE_COUNT;
+                        // fall-through
+                    case READ_PARAMETERS_DATA:
+                        if (messageHeader.parameterCount > 0)
+                        {
+                            if (!readParameters(in, inputPlus, messageHeader.parameterCount, messageHeader.parameters))
+                                return;
+                            readableBytes = in.readableBytes(); // we read an indeterminate number of bytes for the headers, so just ask the buffer again
+                        }
+                        state = State.READ_PAYLOAD_SIZE;
+                        // fall-through
+                    case READ_PAYLOAD_SIZE:
+                        if (readableBytes < 4)
+                            return;
+                        messageHeader.payloadSize = in.readInt();
+                        state = State.READ_PAYLOAD;
+                        readableBytes -= 4;
+                        // fall-through
+                    case READ_PAYLOAD:
+                        if (readableBytes < messageHeader.payloadSize)
+                            return;
 
-                    // TODO consider deserailizing the messge not on the event loop
-                    MessageIn<Object> messageIn = MessageIn.read(inputPlus, messagingVersion,
-                                                                 messageHeader.messageId, messageHeader.constructionTime, messageHeader.from,
-                                                                 messageHeader.payloadSize, messageHeader.verb, messageHeader.parameters);
+                        // TODO consider deserailizing the messge not on the event loop
+                        MessageIn<Object> messageIn = MessageIn.read(inputPlus, messagingVersion,
+                                                                     messageHeader.messageId, messageHeader.constructionTime, messageHeader.from,
+                                                                     messageHeader.payloadSize, messageHeader.verb, messageHeader.parameters);
 
-                    if (messageIn != null)
-                        messageConsumer.accept(messageIn, messageHeader.messageId);
+                        if (messageIn != null)
+                            messageConsumer.accept(messageIn, messageHeader.messageId);
 
-                    state = State.READ_FIRST_CHUNK;
-                    messageHeader = null;
-                    break;
-                default:
-                    throw new IllegalStateException("unknown/unhandled state: " + state);
+                        state = State.READ_FIRST_CHUNK;
+                        messageHeader = null;
+                        break;
+                    default:
+                        throw new IllegalStateException("unknown/unhandled state: " + state);
+                }
             }
+        }
+        catch (Exception e)
+        {
+            exceptionCaught(ctx, e);
         }
     }
 
@@ -257,6 +266,27 @@ class MessageInHandler extends ByteToMessageDecoder
         return true;
     }
 
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+    {
+        if (cause instanceof EOFException)
+            logger.trace("eof reading from socket; closing", cause);
+        else if (cause instanceof UnknownTableException)
+            logger.warn("UnknownColumnFamilyException reading from socket; closing", cause);
+        else if (cause instanceof IOException)
+            logger.trace("IOException reading from socket; closing", cause);
+        else
+            logger.warn("exception caught in inbound channel pipeline from " + ctx.channel().remoteAddress(), cause);
+
+        ctx.close();
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception
+    {
+        logger.debug("received channel closed message for peer {} on local addr {}", ctx.channel().remoteAddress(), ctx.channel().localAddress());
+        ctx.fireChannelInactive();
+    }
 
     // should ony be used for testing!!!
     @VisibleForTesting

@@ -221,8 +221,6 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
             pipeline.addLast(NettyFactory.INBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameDecoder());
 
         pipeline.addLast("messageInHandler", new MessageInHandler(peer, messagingVersion));
-        pipeline.addLast("messageInErrorProcessor", new MessageInErrorHandler());
-
         pipeline.remove(this);
     }
 

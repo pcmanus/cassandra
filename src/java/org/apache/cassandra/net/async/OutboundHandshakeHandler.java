@@ -230,21 +230,6 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         // only create an updated params instance if the messaging versions are different
         OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion ? params : params.updateProtocolVersion(messagingVersion);
         pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
-        pipeline.addLast("errorLogger", new ErrorLoggingHandler());
-    }
-
-    private class ErrorLoggingHandler extends ChannelDuplexHandler
-    {
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception
-        {
-            if (cause instanceof IOException)
-                logger.trace("io error from {}", remoteAddr, cause);
-            else
-                logger.warn("error on channel from {}", remoteAddr, cause);
-
-            ctx.close();
-        }
     }
 
     /**

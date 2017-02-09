@@ -92,7 +92,7 @@ class MessageOutHandler extends ChannelDuplexHandler
     }
 
     @Override
-    public void write(ChannelHandlerContext ctx, Object o, ChannelPromise promise) throws IOException
+    public void write(ChannelHandlerContext ctx, Object o, ChannelPromise promise)
     {
         if (!isMessageValid(o, promise))
             return;
@@ -120,7 +120,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         {
             if (out != null)
                 out.release();
-            throw e;
+            exceptionCaught(ctx, e);
         }
         finally
         {
@@ -207,7 +207,8 @@ class MessageOutHandler extends ChannelDuplexHandler
         // if we allocated too much buffer for this message, we'll log here.
         // if we allocated to little buffer space, we would have hit an exception when trying to write more bytes to it
         if (out.isWritable())
-            logger.error("reported message size {}, actual message size {}, msg {}", out.capacity(), out.writerIndex(), msg.message);
+            logger.error("{}: reported message size {}, actual message size {}, msg {}",
+                         connectionType, out.capacity(), out.writerIndex(), msg.message);
     }
 
     /**
@@ -243,6 +244,18 @@ class MessageOutHandler extends ChannelDuplexHandler
     {
         if (isCoalescing)
             ctx.flush();
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+    {
+        if (cause instanceof IOException)
+            logger.trace("io error from {} on {} channel", remoteAddr, connectionType, cause);
+        else
+            logger.warn("error on channel from {} on {} channel", remoteAddr, connectionType, cause);
+
+        ctx.fireExceptionCaught(cause);
+        ctx.close();
     }
 
     @Override
