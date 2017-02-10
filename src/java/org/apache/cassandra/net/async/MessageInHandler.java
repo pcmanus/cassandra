@@ -107,9 +107,6 @@ class MessageInHandler extends ByteToMessageDecoder
      * For each new message coming in, builds up a {@link MessageHeader} instance incrementatlly. This method
      * attempts to deserialize as much header information as it can out of the incoming {@link ByteBuf}, and
      * maintains a trivial state machine to remember progress across invocations.
-     *
-     * All exceptions are uncaught and thus percolate up to the netty channel, which will forward the exception down the pipeline
-     * and will be caught by our last handler ({@link MessageInErrorHandler}), which closes the channel on error.
      */
     @SuppressWarnings("resource")
     public void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out)
@@ -130,7 +127,7 @@ class MessageInHandler extends ByteToMessageDecoder
                         MessagingService.validateMagic(in.readInt());
                         messageHeader = new MessageHeader();
                         messageHeader.messageId = in.readInt();
-                        int messageTimestamp = in.readInt(); // make sure to readInt, even if cross_node_to is not enabled
+                        int messageTimestamp = in.readInt(); // make sure to read the sent timestamp, even if DatabaseDescriptor.hasCrossNodeTimeout() is not enabled
                         messageHeader.constructionTime = MessageIn.deriveConstructionTime(peer, messageTimestamp, ApproximateTime.currentTimeMillis());
                         state = State.READ_IP_ADDRESS;
                         readableBytes -= FIRST_SECTION_BYTE_COUNT;

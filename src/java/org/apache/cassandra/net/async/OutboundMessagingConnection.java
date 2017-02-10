@@ -74,6 +74,7 @@ public class OutboundMessagingConnection
     enum ConnectionType { GOSSIP, LARGE_MESSAGE, SMALL_MESSAGE }
 
     private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
+
     /**
      * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
      */
@@ -138,6 +139,8 @@ public class OutboundMessagingConnection
     }
 
     private volatile State state = State.NOT_READY;
+
+    @SuppressWarnings("unused")
     private volatile int scheduledFlushState;
 
     private final CoalescingStrategy coalescingStrategy;
@@ -151,7 +154,7 @@ public class OutboundMessagingConnection
     private volatile ChannelWrapper channelWrapper;
 
     /**
-     * the target protocol version to communiate to the peer with, discovered/negotiated via handshaking
+     * the target protocol version to communicate to the peer with, discovered/negotiated via handshaking
      */
     private int targetVersion;
 
@@ -198,7 +201,7 @@ public class OutboundMessagingConnection
 
         if (state == State.READY)
         {
-            // grab a local referene to the member field, in case it changes while we execute -
+            // grab a local reference to the member field, in case it changes while we execute -
             // mostly for the async coalesced flush
             ChannelWrapper wrapper = this.channelWrapper;
             wrapper.pendingMessageCount.incrementAndGet();
@@ -342,10 +345,21 @@ public class OutboundMessagingConnection
 
     private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
     {
-        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, preferredConnectAddress, messagingVersion,
-                                                                       this::finishHandshake, encryptionOptions, Mode.MESSAGING,
-                                                                       compress, coalescingStrategy.isCoalescing(), droppedMessageCount,
-                                                                       completedMessageCount, new AtomicLong(0), connectionType);
+        OutboundConnectionParams params = OutboundConnectionParams.builder()
+                                                                  .localAddr(localAddr)
+                                                                  .remoteAddr(preferredConnectAddress)
+                                                                  .protocolVersion(messagingVersion)
+                                                                  .callback(this::finishHandshake)
+                                                                  .encryptionOptions(encryptionOptions)
+                                                                  .mode(Mode.MESSAGING)
+                                                                  .compress(compress)
+                                                                  .coalesce(coalescingStrategy.isCoalescing())
+                                                                  .droppedMessageCount(droppedMessageCount)
+                                                                  .completedMessageCount(completedMessageCount)
+                                                                  .pendingMessageCount(new AtomicLong(0))
+                                                                  .connectionType(connectionType)
+                                                                  .build();
+
         OutboundChannelInitializer initializer = new OutboundChannelInitializer(params);
 
         boolean tcpNoDelay = isLocalDC(remoteAddr.getAddress()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();

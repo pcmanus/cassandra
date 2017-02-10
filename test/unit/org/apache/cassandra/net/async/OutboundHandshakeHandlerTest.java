@@ -53,6 +53,7 @@ public class OutboundHandshakeHandlerTest
     private EmbeddedChannel channel;
     private OutboundHandshakeHandler handler;
     private ConnectionHandshakeResult result;
+    OutboundConnectionParams params;
     private ByteBuf buf;
 
     @BeforeClass
@@ -65,9 +66,14 @@ public class OutboundHandshakeHandlerTest
     public void setup()
     {
         channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
-        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, remoteAddr, MESSAGING_VERSION,
-                                                                       this::callbackHandler, null, NettyFactory.Mode.MESSAGING,
-                                                                       false, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
+        params = OutboundConnectionParams.builder()
+                                         .localAddr(localAddr)
+                                         .remoteAddr(remoteAddr)
+                                         .protocolVersion(MESSAGING_VERSION)
+                                         .callback(this::callbackHandler)
+                                         .mode(NettyFactory.Mode.MESSAGING)
+                                         .connectionType(CONNECTION_TYPE)
+                                         .build();
         handler = new OutboundHandshakeHandler(params);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
         result = null;
@@ -162,9 +168,7 @@ public class OutboundHandshakeHandlerTest
 
         int msgVersion = MESSAGING_VERSION - 1;
         channel.pipeline().remove(HANDLER_NAME);
-        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, remoteAddr, msgVersion,
-                                                                       this::callbackHandler, null, NettyFactory.Mode.MESSAGING,
-                                                                       false, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
+        params = OutboundConnectionParams.builder(params).protocolVersion(msgVersion).build();
         handler = new OutboundHandshakeHandler(params);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
         channel.writeInbound(buf);
@@ -181,9 +185,7 @@ public class OutboundHandshakeHandlerTest
     public void setupPipeline_WithCompression()
     {
         ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
-        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, remoteAddr, MESSAGING_VERSION,
-                                                                       this::callbackHandler, null, NettyFactory.Mode.MESSAGING,
-                                                                       true, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
+        params = OutboundConnectionParams.builder(params).compress(true).build();
         handler = new OutboundHandshakeHandler(params);
         handler.setupPipeline(pipeline, MESSAGING_VERSION);
         Assert.assertNotNull(pipeline.get(Lz4FrameEncoder.class));
@@ -195,9 +197,7 @@ public class OutboundHandshakeHandlerTest
     public void setupPipeline_NoCompression()
     {
         ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
-        OutboundConnectionParams params = new OutboundConnectionParams(localAddr, remoteAddr, MESSAGING_VERSION,
-                                                                       this::callbackHandler, null, NettyFactory.Mode.MESSAGING,
-                                                                       false, false, new AtomicLong(), new AtomicLong(), new AtomicLong(), CONNECTION_TYPE);
+        params = OutboundConnectionParams.builder(params).compress(false).build();
         handler = new OutboundHandshakeHandler(params);
         handler.setupPipeline(pipeline, MESSAGING_VERSION);
         Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));

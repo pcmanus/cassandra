@@ -80,7 +80,7 @@ public class CoalescingStrategies
             return -1;
 
         // avoid the degenerate case of zero (very unlikely, but let's be safe)
-        if (averageGap == 0)
+        if (averageGap <= 0)
             return maxCoalesceWindow;
 
         // assume we receive as many messages as we expect; apply the same logic to the future batch:

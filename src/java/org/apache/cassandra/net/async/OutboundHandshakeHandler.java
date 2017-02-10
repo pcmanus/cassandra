@@ -228,7 +228,9 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
                                                                                                 XXHashFactory.fastestInstance().newStreamingHash32(LZ4_HASH_SEED).asChecksum()));
 
         // only create an updated params instance if the messaging versions are different
-        OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion ? params : params.updateProtocolVersion(messagingVersion);
+        OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion
+                                                 ? params
+                                                 : OutboundConnectionParams.builder(params).protocolVersion(messagingVersion).build();
         pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
     }
 

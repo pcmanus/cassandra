@@ -27,7 +27,7 @@ import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHand
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 
 /**
- * A collection of data opints to be passed around for outbound connections
+ * A collection of data points to be passed around for outbound connections.
  */
 class OutboundConnectionParams
 {
@@ -44,7 +44,7 @@ class OutboundConnectionParams
     final AtomicLong pendingMessageCount;
     final ConnectionType connectionType;
 
-    OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
+    private OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
                              Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, NettyFactory.Mode mode,
                              boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount,
                              AtomicLong pendingMessageCount, ConnectionType connectionType)
@@ -63,10 +63,127 @@ class OutboundConnectionParams
         this.connectionType = connectionType;
     }
 
-    OutboundConnectionParams updateProtocolVersion(int protocolVersion)
+    public static Builder builder()
     {
-        return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback,
-                                            encryptionOptions, mode, compress, coalesce, droppedMessageCount,
-                                            completedMessageCount, pendingMessageCount, connectionType);
+        return new Builder();
+    }
+
+    public static Builder builder(OutboundConnectionParams params)
+    {
+        return new Builder(params);
+    }
+    
+    public static class Builder
+    {
+        private InetSocketAddress localAddr;
+        private InetSocketAddress remoteAddr;
+        private int protocolVersion;
+        private Consumer<ConnectionHandshakeResult> callback;
+        private ServerEncryptionOptions encryptionOptions;
+        private NettyFactory.Mode mode;
+        private boolean compress;
+        private boolean coalesce;
+        private AtomicLong droppedMessageCount;
+        private AtomicLong completedMessageCount;
+        private AtomicLong pendingMessageCount;
+        private ConnectionType connectionType;
+
+        private Builder()
+        {   }
+
+        private Builder(OutboundConnectionParams params)
+        {
+            this.localAddr = params.localAddr;
+            this.remoteAddr = params.remoteAddr;
+            this.protocolVersion = params.protocolVersion;
+            this.callback = params.callback;
+            this.encryptionOptions = params.encryptionOptions;
+            this.mode = params.mode;
+            this.compress = params.compress;
+            this.coalesce = params.coalesce;
+            this.droppedMessageCount = params.droppedMessageCount;
+            this.completedMessageCount = params.completedMessageCount;
+            this.pendingMessageCount = params.pendingMessageCount;
+            this.connectionType = params.connectionType;
+        }
+
+        public Builder localAddr(InetSocketAddress localAddr)
+        {
+            this.localAddr = localAddr;
+            return this;
+        }
+
+        public Builder remoteAddr(InetSocketAddress remoteAddr)
+        {
+            this.remoteAddr = remoteAddr;
+            return this;
+        }
+
+        public Builder protocolVersion(int protocolVersion)
+        {
+            this.protocolVersion = protocolVersion;
+            return this;
+        }
+
+        public Builder callback(Consumer<ConnectionHandshakeResult> callback)
+        {
+            this.callback = callback;
+            return this;
+        }
+
+        public Builder encryptionOptions(ServerEncryptionOptions encryptionOptions)
+        {
+            this.encryptionOptions = encryptionOptions;
+            return this;
+        }
+
+        public Builder mode(NettyFactory.Mode mode)
+        {
+            this.mode = mode;
+            return this;
+        }
+
+        public Builder compress(boolean compress)
+        {
+            this.compress = compress;
+            return this;
+        }
+
+        public Builder coalesce(boolean coalesce)
+        {
+            this.coalesce = coalesce;
+            return this;
+        }
+
+        public Builder droppedMessageCount(AtomicLong droppedMessageCount)
+        {
+            this.droppedMessageCount = droppedMessageCount;
+            return this;
+        }
+
+        public Builder completedMessageCount(AtomicLong completedMessageCount)
+        {
+            this.completedMessageCount = completedMessageCount;
+            return this;
+        }
+
+        public Builder pendingMessageCount(AtomicLong pendingMessageCount)
+        {
+            this.pendingMessageCount = pendingMessageCount;
+            return this;
+        }
+
+        public Builder connectionType(ConnectionType connectionType)
+        {
+            this.connectionType = connectionType;
+            return this;
+        }
+
+        public OutboundConnectionParams build()
+        {
+            return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback, encryptionOptions,
+                                                mode, compress, coalesce, droppedMessageCount, completedMessageCount,
+                                                pendingMessageCount, connectionType);
+        }
     }
 }

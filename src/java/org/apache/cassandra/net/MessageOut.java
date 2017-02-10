@@ -57,7 +57,7 @@ public class MessageOut<T>
     private int serializedSize = -1;
 
     /**
-     * The internode protocol messaging version that was used to calculate the memozied serailized sizes.
+     * The internode protocol messaging version that was used to calculate the memoized serailized sizes.
      */
     private int serializedSizeVersion = SERIALIZED_SIZE_VERSION_UNDEFINED;
 
@@ -165,7 +165,7 @@ public class MessageOut<T>
     }
 
     /**
-     * Calculate the size of this message for the specified protocol versionand memoize the result for the specified
+     * Calculate the size of this message for the specified protocol version and memoize the result for the specified
      * protocol version. Memoization only covers the protocol version of the first invocation.
      *
      * It is not safe to call this function concurrently from multiple threads unless it has already been invoked

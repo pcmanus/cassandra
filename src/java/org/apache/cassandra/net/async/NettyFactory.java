@@ -72,7 +72,7 @@ public final class NettyFactory
             logger.warn("epoll not availble! {}", Epoll.unavailabilityCause());
     }
 
-    private static final EventLoopGroup ACCEPT_GROUP = getEventLoopGroup(deterineAcceptGroupSize(DatabaseDescriptor.getServerEncryptionOptions().internode_encryption),
+    private static final EventLoopGroup ACCEPT_GROUP = getEventLoopGroup(determineAcceptGroupSize(DatabaseDescriptor.getServerEncryptionOptions().internode_encryption),
                                                                          "MessagingService-NettyAcceptor-Threads", false);
 
     /**
@@ -80,27 +80,42 @@ public final class NettyFactory
      * We'll have either 1 or 2 listen sockets, depending on if we use SSL or not in combination with non-SSL. If we have both,
      * we'll have two sockets, and thus need two threads; else one socket and one thread.
      */
-    static int deterineAcceptGroupSize(InternodeEncryption internode_encryption)
+    static int determineAcceptGroupSize(InternodeEncryption internode_encryption)
     {
         return internode_encryption == InternodeEncryption.dc || internode_encryption == InternodeEncryption.rack ? 2 : 1;
     }
 
-    private static final EventLoopGroup INBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyInbound-Threads", false);
-    private static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors() * 4, "MessagingService-NettyOutbound-Threads", true);
+    // TODO:JEB chat more with Ariel about sizing the groups
+    private static final EventLoopGroup INBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyInbound-Threads", false);
+    private static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyOutbound-Threads", true);
 
+    /**
+     * Create an {@link EventLoopGroup}, for epoll or nio. The {@code boostIoRatio} flag passes a hint to the netty
+     * event loop threads to optimize comsuming all the tasks from the netty channel before checking for IO activity.
+     * By default, netty will process some maximum number of tasks off it's queue before it will check for activity on
+     * any of the open FDs, which basically amounts to checking for any incoming data. If you have a class of event loops
+     * that that do almost *no* inbound activity (like cassandra's outbound channels), then it behooves us to have the
+     * outbound netty channel consume as many tasks as it can before making the system calls to check up on the FDs,
+     * as we're not expecting any incoming data on those sockets, anyways. Thus, we pass the magic value {@code 100}
+     * to achieve the maximum consuption from the netty queue. (for implementation details, as of netty 4.1.8,
+     * see {@link io.netty.channel.epoll.EpollEventLoop#run()}.
+     */
     private static EventLoopGroup getEventLoopGroup(int threadCount, String threadNamePrefix, boolean boostIoRatio)
     {
         if (useEpoll)
         {
+            logger.debug("using netty epoll event loop for pool prefix {}", threadNamePrefix);
             EpollEventLoopGroup eventLoopGroup = new EpollEventLoopGroup(threadCount, new DefaultThreadFactory(threadNamePrefix));
             if (boostIoRatio)
                 eventLoopGroup.setIoRatio(100);
-            logger.debug("using netty epoll event loop for pool prefix {}", threadNamePrefix);
             return eventLoopGroup;
         }
 
         logger.debug("using netty nio event loop for pool prefix {}", threadNamePrefix);
-        return new NioEventLoopGroup(threadCount, new DefaultThreadFactory(threadNamePrefix));
+        NioEventLoopGroup eventLoopGroup = new NioEventLoopGroup(threadCount, new DefaultThreadFactory(threadNamePrefix));
+        if (boostIoRatio)
+            eventLoopGroup.setIoRatio(100);
+        return eventLoopGroup;
     }
 
     private static final PooledByteBufAllocator INBOUND_ALLOCATOR = new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());

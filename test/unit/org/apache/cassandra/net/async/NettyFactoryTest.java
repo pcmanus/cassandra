@@ -60,9 +60,9 @@ public class NettyFactoryTest
     @Test
     public void deterineAcceptGroupSize()
     {
-        Assert.assertEquals(1, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.none));
-        Assert.assertEquals(1, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.all));
-        Assert.assertEquals(2, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.rack));
-        Assert.assertEquals(2, NettyFactory.deterineAcceptGroupSize(InternodeEncryption.dc));
+        Assert.assertEquals(1, NettyFactory.determineAcceptGroupSize(InternodeEncryption.none));
+        Assert.assertEquals(1, NettyFactory.determineAcceptGroupSize(InternodeEncryption.all));
+        Assert.assertEquals(2, NettyFactory.determineAcceptGroupSize(InternodeEncryption.rack));
+        Assert.assertEquals(2, NettyFactory.determineAcceptGroupSize(InternodeEncryption.dc));
     }
 }
