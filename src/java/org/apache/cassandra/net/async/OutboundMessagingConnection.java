@@ -61,11 +61,15 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
  * and create the connection. Upon sucessfully setting up the connection/channel, the {@link #state} will be updated again
  * (to {@link State#READY}, which indicates to other threads that the channel is ready for business and can be written to.
  *
- * Note: when sending a message to the netty {@link Channel}, we call {@link Channel#writeAndFlush(Object)} versus
+ * Note on flushing: when sending a message to the netty {@link Channel}, we call {@link Channel#writeAndFlush(Object)} versus
  * {@link Channel#write(Object)} because, at least as of netty 4.1.8, {@link Channel#writeAndFlush(Object)} causes the
- * netty event thread to be woken up, whereas {@link Channel#write(Object)} does not wake up the thread. The problem
+ * netty event loop thread to be woken up, whereas {@link Channel#write(Object)} does not wake up the thread. The problem
  * becomes that without the thread being woken up, the write is not processed immediately and processing latency is
- * introduced.
+ * introduced. In the use case of message coalescing disabled, we want the event loop to be woken up (so the message
+ * can be processed immediately), whereas with coalescing enabled we do not want to wake up the thread until
+ * the conditions for the coalesce have been fulfilled (number of messages, elapsed time).
+ *
+ * For more details about the flushing behavior, please see the class-level documentation on {@link MessageOutHandler}.
  */
 public class OutboundMessagingConnection
 {
@@ -87,6 +91,8 @@ public class OutboundMessagingConnection
     {
         NOT_READY, CREATING_CHANNEL, READY, CLOSED
     }
+
+    private static final int MIN_MESSAGES_FOR_COALESCE = DatabaseDescriptor.getOtcCoalescingEnoughCoalescedMessages();
 
     /**
      * Backlog to hold messages passed by upstream threads while the Netty {@link Channel} is being set up or recreated.
@@ -204,7 +210,7 @@ public class OutboundMessagingConnection
             // grab a local reference to the member field, in case it changes while we execute -
             // mostly for the async coalesced flush
             ChannelWrapper wrapper = this.channelWrapper;
-            wrapper.pendingMessageCount.incrementAndGet();
+            long pendingCount = wrapper.pendingMessageCount.incrementAndGet();
             final Channel channelLocal = wrapper.channel;
 
             if (!isCoalescing)
@@ -214,29 +220,26 @@ public class OutboundMessagingConnection
                 return;
             }
 
-            coalescingStrategy.newArrival(queuedMessage);
-
-            // TODO:JEB there may be some race conditions here
-            // if we lost the race to set the state, simply write to the channel (no flush)
-            if (!(scheduledFlushStateUpdater.compareAndSet(this, 0, 1)))
-            {
-                ChannelFuture future = channelLocal.write(queuedMessage);
-                future.addListener(f -> handleMessageFuture(f, queuedMessage));
-                return;
-            }
-
-            long flushDelayNanos = coalescingStrategy.currentCoalescingTimeNanos();
-            // if we've run out of coalesce time, write and flush
-            if (flushDelayNanos <= 0)
-            {
-                scheduledFlushStateUpdater.set(this, 0);
-                ChannelFuture future = channelLocal.writeAndFlush(queuedMessage);
-                future.addListener(f -> handleMessageFuture(f, queuedMessage));
-                return;
-            }
-
             ChannelFuture future = channelLocal.write(queuedMessage);
             future.addListener(f -> handleMessageFuture(f, queuedMessage));
+            coalescingStrategy.newArrival(queuedMessage);
+
+            // if we lost the race to set the state, simply write to the channel (no flush)
+            if (scheduledFlushState == 1 || !(scheduledFlushStateUpdater.compareAndSet(this, 0, 1)))
+                return;
+
+            long flushDelayNanos;
+            // if we've hit the minimum number of messages for coalescing or we've run out of coalesce time, flush.
+            // note: we check the exact count, instead of greater than or equal to, of message shere to prevent a flush task
+            // for each message. There will be, of course, races with the consumer decrementing the pending counter,
+            // but that's still less excessive flushes.
+            if (pendingCount == MIN_MESSAGES_FOR_COALESCE
+                || (flushDelayNanos = coalescingStrategy.currentCoalescingTimeNanos()) <= 0)
+            {
+                scheduledFlushStateUpdater.set(this, 0);
+                channelLocal.flush();
+                return;
+            }
 
             // calling schedule() on the eventLoop will force it to wake up (it not already executing) and schedule the task
             channelLocal.eventLoop().schedule(() -> {
@@ -246,7 +249,8 @@ public class OutboundMessagingConnection
                 // flush() directly. by submitting via eventLoop().execute(), we ensure the flush task is enqueued
                 // at the end (after the write tasks).
                 channelLocal.eventLoop().execute(() -> channelLocal.flush());
-            }, flushDelayNanos, TimeUnit.NANOSECONDS);        }
+            }, flushDelayNanos, TimeUnit.NANOSECONDS);
+        }
         else
         {
             // TODO:JEB work out with pcmanus the best way to handle this
@@ -330,7 +334,7 @@ public class OutboundMessagingConnection
     public void connect()
     {
         // try to be the winning thread to create the channel
-        if (!stateUpdater.compareAndSet(this, State.NOT_READY, State.CREATING_CHANNEL))
+        if (state != State.NOT_READY || !stateUpdater.compareAndSet(this, State.NOT_READY, State.CREATING_CHANNEL))
             return;
 
         int messagingVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
