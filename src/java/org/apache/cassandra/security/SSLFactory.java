@@ -67,24 +67,6 @@ public final class SSLFactory
     private static AtomicReference<SslContext> clientSslContext = new AtomicReference<>();
     private static AtomicReference<SslContext> serverSslContext = new AtomicReference<>();
 
-    public static SSLServerSocket getServerSocket(EncryptionOptions options, InetAddress address, int port) throws IOException
-    {
-        SSLContext ctx = createSSLContext(options, true);
-        SSLServerSocket serverSocket = (SSLServerSocket)ctx.getServerSocketFactory().createServerSocket();
-        try
-        {
-            serverSocket.setReuseAddress(true);
-            prepareSocket(serverSocket, options);
-            serverSocket.bind(new InetSocketAddress(address, port), 500);
-            return serverSocket;
-        }
-        catch (IllegalArgumentException | SecurityException | IOException e)
-        {
-            serverSocket.close();
-            throw e;
-        }
-    }
-
     /** Create a socket and connect */
     public static SSLSocket getSocket(EncryptionOptions options, InetAddress address, int port, InetAddress localAddress, int localPort) throws IOException
     {
@@ -117,37 +99,6 @@ public final class SSLFactory
             socket.close();
             throw e;
         }
-    }
-
-    /** Just create a socket */
-    public static SSLSocket getSocket(EncryptionOptions options) throws IOException
-    {
-        SSLContext ctx = createSSLContext(options, true);
-        SSLSocket socket = (SSLSocket) ctx.getSocketFactory().createSocket();
-        try
-        {
-            prepareSocket(socket, options);
-            return socket;
-        }
-        catch (IllegalArgumentException e)
-        {
-            socket.close();
-            throw e;
-        }
-    }
-
-    /** Sets relevant socket options specified in encryption settings */
-    private static void prepareSocket(SSLServerSocket serverSocket, EncryptionOptions options)
-    {
-        String[] suites = filterCipherSuites(serverSocket.getSupportedCipherSuites(), options.cipher_suites);
-        if(options.require_endpoint_verification)
-        {
-            SSLParameters sslParameters = serverSocket.getSSLParameters();
-            sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
-            serverSocket.setSSLParameters(sslParameters);
-        }
-        serverSocket.setEnabledCipherSuites(suites);
-        serverSocket.setNeedClientAuth(options.require_client_auth);
     }
 
     /** Sets relevant socket options specified in encryption settings */

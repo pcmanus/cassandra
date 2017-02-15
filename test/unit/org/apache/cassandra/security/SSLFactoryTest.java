@@ -84,31 +84,6 @@ public class SSLFactoryTest
     }
 
     @Test
-    public void testServerSocketCiphers() throws IOException
-    {
-        ServerEncryptionOptions options = new EncryptionOptions.ServerEncryptionOptions();
-        options.keystore = "test/conf/keystore.jks";
-        options.keystore_password = "cassandra";
-        options.truststore = options.keystore;
-        options.truststore_password = options.keystore_password;
-        options.cipher_suites = new String[] {
-            "TLS_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_256_CBC_SHA",
-            "TLS_DHE_RSA_WITH_AES_128_CBC_SHA", "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
-            "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
-        };
-
-        // enabled ciphers must be a subset of configured ciphers with identical order
-        try (SSLServerSocket socket = SSLFactory.getServerSocket(options, InetAddress.getLocalHost(), 55123))
-        {
-            String[] enabled = socket.getEnabledCipherSuites();
-            String[] wanted = Iterables.toArray(Iterables.filter(Lists.newArrayList(options.cipher_suites),
-                                                                 Predicates.in(Lists.newArrayList(enabled))),
-                                                String.class);
-            assertArrayEquals(wanted, enabled);
-        }
-    }
-
-    @Test
     public void getSslContext_OpenSSL() throws IOException
     {
         // only try this test if OpenSsl is available
