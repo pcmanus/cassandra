@@ -22,6 +22,8 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
+import com.google.common.base.Preconditions;
+
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
@@ -31,6 +33,8 @@ import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType
  */
 class OutboundConnectionParams
 {
+    public static final int DEFAULT_SEND_BUFFER_SIZE = 1 << 16;
+
     final InetSocketAddress localAddr;
     final InetSocketAddress remoteAddr;
     final int protocolVersion;
@@ -43,11 +47,13 @@ class OutboundConnectionParams
     final AtomicLong completedMessageCount;
     final AtomicLong pendingMessageCount;
     final ConnectionType connectionType;
+    final int sendBufferSize;
+    final boolean tcpNoDelay;
 
     private OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
                              Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, NettyFactory.Mode mode,
                              boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount,
-                             AtomicLong pendingMessageCount, ConnectionType connectionType)
+                             AtomicLong pendingMessageCount, ConnectionType connectionType, int sendBufferSize, boolean tcpNoDelay)
     {
         this.localAddr = localAddr;
         this.remoteAddr = remoteAddr;
@@ -61,6 +67,8 @@ class OutboundConnectionParams
         this.completedMessageCount = completedMessageCount;
         this.pendingMessageCount = pendingMessageCount;
         this.connectionType = connectionType;
+        this.sendBufferSize = sendBufferSize;
+        this.tcpNoDelay = tcpNoDelay;
     }
 
     public static Builder builder()
@@ -87,6 +95,8 @@ class OutboundConnectionParams
         private AtomicLong completedMessageCount;
         private AtomicLong pendingMessageCount;
         private ConnectionType connectionType;
+        private int sendBufferSize = DEFAULT_SEND_BUFFER_SIZE;
+        private boolean tcpNoDelay;
 
         private Builder()
         {   }
@@ -105,6 +115,8 @@ class OutboundConnectionParams
             this.completedMessageCount = params.completedMessageCount;
             this.pendingMessageCount = params.pendingMessageCount;
             this.connectionType = params.connectionType;
+            this.sendBufferSize = params.sendBufferSize;
+            this.tcpNoDelay = params.tcpNoDelay;
         }
 
         public Builder localAddr(InetSocketAddress localAddr)
@@ -179,11 +191,25 @@ class OutboundConnectionParams
             return this;
         }
 
+        public Builder sendBufferSize(int sendBufferSize)
+        {
+            this.sendBufferSize = sendBufferSize;
+            return this;
+        }
+
+        public Builder tcpNoDelay(boolean tcpNoDelay)
+        {
+            this.tcpNoDelay = tcpNoDelay;
+            return this;
+        }
+
         public OutboundConnectionParams build()
         {
+            Preconditions.checkArgument(sendBufferSize > 0, "illegal send buffer size: " + sendBufferSize);
+
             return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback, encryptionOptions,
                                                 mode, compress, coalesce, droppedMessageCount, completedMessageCount,
-                                                pendingMessageCount, connectionType);
+                                                pendingMessageCount, connectionType, sendBufferSize, tcpNoDelay);
         }
     }
 }

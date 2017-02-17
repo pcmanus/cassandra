@@ -219,10 +219,10 @@ public final class NettyFactory
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
-    static Bootstrap createOutboundBootstrap(OutboundChannelInitializer initializer, int sendBufferSize, boolean tcpNoDelay)
+    static Bootstrap createOutboundBootstrap(OutboundConnectionParams params)
     {
-        logger.debug("creating outbound bootstrap to peer {}, encryption: {}", initializer.params.remoteAddr,
-                    encryptionLogStatement(initializer.params.encryptionOptions));
+        logger.debug("creating outbound bootstrap to peer {}, encryption: {}", params.remoteAddr,
+                    encryptionLogStatement(params.encryptionOptions));
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
         return new Bootstrap().group(OUTBOUND_GROUP)
                                              .channel(transport)
@@ -230,11 +230,11 @@ public final class NettyFactory
                                              .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
                                              .option(ChannelOption.SO_KEEPALIVE, true)
                                              .option(ChannelOption.SO_REUSEADDR, true)
-                                             .option(ChannelOption.SO_SNDBUF, sendBufferSize)
+                                             .option(ChannelOption.SO_SNDBUF, params.sendBufferSize)
                                              .option(ChannelOption.SO_RCVBUF, 1 << 15)
-                                             .option(ChannelOption.TCP_NODELAY, tcpNoDelay)
+                                             .option(ChannelOption.TCP_NODELAY, params.tcpNoDelay)
                                              .option(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT)
-                                             .handler(initializer);
+                                             .handler(new OutboundChannelInitializer(params));
     }
 
     static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>

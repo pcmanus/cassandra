@@ -349,6 +349,10 @@ public class OutboundMessagingConnection
 
     private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
     {
+        boolean tcpNoDelay = isLocalDC(remoteAddr.getAddress()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();
+        int sendBufferSize = OutboundConnectionParams.DEFAULT_SEND_BUFFER_SIZE;
+        if (DatabaseDescriptor.getInternodeSendBufferSize() > 0)
+            sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
         OutboundConnectionParams params = OutboundConnectionParams.builder()
                                                                   .localAddr(localAddr)
                                                                   .remoteAddr(preferredConnectAddress)
@@ -362,17 +366,11 @@ public class OutboundMessagingConnection
                                                                   .completedMessageCount(completedMessageCount)
                                                                   .pendingMessageCount(new AtomicLong(0))
                                                                   .connectionType(connectionType)
+                                                                  .sendBufferSize(sendBufferSize)
+                                                                  .tcpNoDelay(tcpNoDelay)
                                                                   .build();
 
-        OutboundChannelInitializer initializer = new OutboundChannelInitializer(params);
-
-        boolean tcpNoDelay = isLocalDC(remoteAddr.getAddress()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();
-
-        int sendBufferSize = 1 << 16;
-        if (DatabaseDescriptor.getInternodeSendBufferSize() > 0)
-            sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
-
-        return NettyFactory.createOutboundBootstrap(initializer, sendBufferSize, tcpNoDelay);
+        return NettyFactory.createOutboundBootstrap(params);
     }
 
     private boolean isLocalDC(InetAddress targetHost)
