@@ -350,9 +350,12 @@ public class OutboundMessagingConnection
     private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
     {
         boolean tcpNoDelay = isLocalDC(remoteAddr.getAddress()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();
-        int sendBufferSize = OutboundConnectionParams.DEFAULT_SEND_BUFFER_SIZE;
-        if (DatabaseDescriptor.getInternodeSendBufferSize() > 0)
-            sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize();
+        int sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize() > 0
+                             ? DatabaseDescriptor.getInternodeSendBufferSize()
+                             : OutboundConnectionParams.DEFAULT_SEND_BUFFER_SIZE;
+        int receiveBufferSize = DatabaseDescriptor.getInternodeRecvBufferSize() > 0
+                             ? DatabaseDescriptor.getInternodeRecvBufferSize()
+                             : OutboundConnectionParams.DEFAULT_RECEIVE_BUFFER_SIZE;
         OutboundConnectionParams params = OutboundConnectionParams.builder()
                                                                   .localAddr(localAddr)
                                                                   .remoteAddr(preferredConnectAddress)
@@ -367,6 +370,7 @@ public class OutboundMessagingConnection
                                                                   .pendingMessageCount(new AtomicLong(0))
                                                                   .connectionType(connectionType)
                                                                   .sendBufferSize(sendBufferSize)
+                                                                  .receiveBufferSize(receiveBufferSize)
                                                                   .tcpNoDelay(tcpNoDelay)
                                                                   .build();
 

@@ -34,6 +34,7 @@ import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType
 class OutboundConnectionParams
 {
     public static final int DEFAULT_SEND_BUFFER_SIZE = 1 << 16;
+    public static final int DEFAULT_RECEIVE_BUFFER_SIZE = 1 << 15;
 
     final InetSocketAddress localAddr;
     final InetSocketAddress remoteAddr;
@@ -48,12 +49,13 @@ class OutboundConnectionParams
     final AtomicLong pendingMessageCount;
     final ConnectionType connectionType;
     final int sendBufferSize;
+    final int receiveBufferSize;
     final boolean tcpNoDelay;
 
     private OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
                              Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, NettyFactory.Mode mode,
                              boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount,
-                             AtomicLong pendingMessageCount, ConnectionType connectionType, int sendBufferSize, boolean tcpNoDelay)
+                             AtomicLong pendingMessageCount, ConnectionType connectionType, int sendBufferSize, int receiveBufferSize, boolean tcpNoDelay)
     {
         this.localAddr = localAddr;
         this.remoteAddr = remoteAddr;
@@ -68,6 +70,7 @@ class OutboundConnectionParams
         this.pendingMessageCount = pendingMessageCount;
         this.connectionType = connectionType;
         this.sendBufferSize = sendBufferSize;
+        this.receiveBufferSize = receiveBufferSize;
         this.tcpNoDelay = tcpNoDelay;
     }
 
@@ -96,6 +99,7 @@ class OutboundConnectionParams
         private AtomicLong pendingMessageCount;
         private ConnectionType connectionType;
         private int sendBufferSize = DEFAULT_SEND_BUFFER_SIZE;
+        private int receiveBufferSize = DEFAULT_RECEIVE_BUFFER_SIZE;
         private boolean tcpNoDelay;
 
         private Builder()
@@ -116,6 +120,7 @@ class OutboundConnectionParams
             this.pendingMessageCount = params.pendingMessageCount;
             this.connectionType = params.connectionType;
             this.sendBufferSize = params.sendBufferSize;
+            this.receiveBufferSize = params.receiveBufferSize;
             this.tcpNoDelay = params.tcpNoDelay;
         }
 
@@ -197,6 +202,12 @@ class OutboundConnectionParams
             return this;
         }
 
+        public Builder receiveBufferSize(int receiveBufferSize)
+        {
+            this.receiveBufferSize = receiveBufferSize;
+            return this;
+        }
+
         public Builder tcpNoDelay(boolean tcpNoDelay)
         {
             this.tcpNoDelay = tcpNoDelay;
@@ -209,7 +220,7 @@ class OutboundConnectionParams
 
             return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback, encryptionOptions,
                                                 mode, compress, coalesce, droppedMessageCount, completedMessageCount,
-                                                pendingMessageCount, connectionType, sendBufferSize, tcpNoDelay);
+                                                pendingMessageCount, connectionType, sendBufferSize, receiveBufferSize, tcpNoDelay);
         }
     }
 }
