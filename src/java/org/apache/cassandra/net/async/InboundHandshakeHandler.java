@@ -1,6 +1,5 @@
 package org.apache.cassandra.net.async;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -14,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
@@ -22,8 +20,10 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.compression.Lz4FrameDecoder;
 import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.HandshakeProtocol.FirstHandshakeMessage;
+import org.apache.cassandra.net.async.HandshakeProtocol.SecondHandshakeMessage;
+import org.apache.cassandra.net.async.HandshakeProtocol.ThirdHandshakeMessage;
 
 /**
  * 'Server'-side component that negotiates the internode handshake when establishing a new connection.
@@ -131,15 +131,13 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     State handleStart(ChannelHandlerContext ctx, ByteBuf in) throws IOException
     {
-        if (in.readableBytes() < OutboundHandshakeHandler.FIRST_MESSAGE_LENGTH)
+        FirstHandshakeMessage msg = FirstHandshakeMessage.maybeDecode(in);
+        if (msg == null)
             return State.START;
 
-        MessagingService.validateMagic(in.readInt());
-        int header = in.readInt();
-        version = MessagingService.getBits(header, 15, 8);
+        version = msg.messagingVersion;
 
-        boolean isStream = MessagingService.getBits(header, 3, 1) == 1;
-        if (isStream)
+        if (msg.mode == NettyFactory.Mode.STREAMING)
         {
             // TODO fill in once streaming is moved to netty
             ctx.close();
@@ -155,13 +153,12 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
             }
 
             logger.trace("Connection version {} from {}", version, ctx.channel().remoteAddress());
-            compressed = MessagingService.getBits(header, 2, 1) == 1;
+            compressed = msg.compressionEnabled;
 
             // if this version is < the MS version the other node is trying
             // to connect with, the other node will disconnect
-            ByteBuf outBuf = ctx.alloc().buffer(OutboundHandshakeHandler.SECOND_MESSAGE_LENGTH);
-            outBuf.writeInt(MessagingService.current_version);
-            ctx.writeAndFlush(outBuf).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+            ctx.writeAndFlush(new SecondHandshakeMessage(MessagingService.current_version).encode(ctx.alloc()))
+               .addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
 
             // outbound side will reconnect to change the version
             if (version > MessagingService.current_version)
@@ -184,7 +181,8 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
     @VisibleForTesting
     State handleMessagingStartResponse(ChannelHandlerContext ctx, ByteBuf in) throws IOException
     {
-        if (in.readableBytes() < OutboundHandshakeHandler.THIRD_MESSAGE_LENGTH_MIN)
+        ThirdHandshakeMessage msg = ThirdHandshakeMessage.maybeDecode(in);
+        if (msg == null)
             return State.AWAIT_MESSAGING_START_RESPONSE;
 
         if (handshakeTimeout != null)
@@ -193,7 +191,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
             handshakeTimeout = null;
         }
 
-        int maxVersion = in.readInt();
+        int maxVersion = msg.messagingVersion;
         if (maxVersion > MessagingService.current_version)
         {
             logger.error("peer wants to use a messaging version higher ({}) than what this node supports ({})", maxVersion, MessagingService.current_version);
@@ -202,9 +200,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
         }
 
         // record the (true) version of the endpoint
-        @SuppressWarnings("resource")
-        DataInput inputStream = new ByteBufInputStream(in);
-        final InetAddress from = CompactEndpointSerializationHelper.deserialize(inputStream);
+        InetAddress from = msg.address;
         MessagingService.instance().setVersion(from, maxVersion);
         logger.trace("Set version for {} to {} (will use {})", from, maxVersion, MessagingService.instance().getVersion(from));
 

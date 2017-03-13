@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.DataOutput;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -31,8 +29,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufOutputStream;
-import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
@@ -42,8 +38,10 @@ import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.HandshakeProtocol.FirstHandshakeMessage;
+import org.apache.cassandra.net.async.HandshakeProtocol.SecondHandshakeMessage;
+import org.apache.cassandra.net.async.HandshakeProtocol.ThirdHandshakeMessage;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result;
 import org.apache.cassandra.utils.FBUtilities;
@@ -64,25 +62,6 @@ import org.apache.cassandra.utils.FBUtilities;
 class OutboundHandshakeHandler extends ByteToMessageDecoder
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundHandshakeHandler.class);
-
-    /**
-     * The length of the first message of the internode messaging handshake. Contains the PROTOCOL_MAGIC (int) and
-     * "header" (int).
-     */
-    static final int FIRST_MESSAGE_LENGTH = 8;
-
-    /**
-     * The length of the second message of the internode messaging handshake. Contains the messaging version from the
-     * other peer (int).
-     */
-    static final int SECOND_MESSAGE_LENGTH = 4;
-
-    /**
-     * The length of the third message in the internode message handshake protocol. We need to receive an int (version)
-     * and an IP addr. If IPv4, that's 5 more bytes; if IPv6, it's 17 more bytes. Since we can't know apriori if the IP address
-     * will be v4 or v6, go with the minimum requires bytes (5), and hope that if the address is v6, we'll have the extra 12 bytes in the packet.
-     */
-    static final int THIRD_MESSAGE_LENGTH_MIN = 9;
 
     private static final int LZ4_HASH_SEED = 0x9747b28c;
 
@@ -128,31 +107,11 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     public void channelActive(final ChannelHandlerContext ctx) throws Exception
     {
         logger.debug("starting handshake with {}", remoteAddr);
-        ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().buffer(FIRST_MESSAGE_LENGTH), createHeader(messagingVersion, params.compress, mode)));
+        ctx.writeAndFlush(new FirstHandshakeMessage(messagingVersion, mode, params.compress).encode(ctx.alloc()));
+
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
         timeoutFuture = ctx.executor().schedule(() -> abortHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
         ctx.fireChannelActive();
-    }
-
-    @VisibleForTesting
-    static ByteBuf firstHandshakeMessage(ByteBuf handshakeBuf, int header)
-    {
-        handshakeBuf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        handshakeBuf.writeInt(header);
-        return handshakeBuf;
-    }
-
-    @VisibleForTesting
-    static int createHeader(int version, boolean compressionEnabled, NettyFactory.Mode mode)
-    {
-        int header = 0;
-        if (compressionEnabled)
-            header |= 1 << 2;
-        if (mode == NettyFactory.Mode.STREAMING)
-            header |= 8;
-
-        header |= (version << 8);
-        return header;
     }
 
     /**
@@ -172,7 +131,8 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         if (isCancelled)
             return;
 
-        if (in.readableBytes() < SECOND_MESSAGE_LENGTH)
+        SecondHandshakeMessage msg = SecondHandshakeMessage.maybeDecode(in);
+        if (msg == null)
             return;
 
         if (timeoutFuture != null)
@@ -181,7 +141,8 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
             timeoutFuture = null;
         }
 
-        final int peerMessagingVersion = in.readInt();
+        final int peerMessagingVersion = msg.messagingVersion;
+
         // we expected a higher protocol version, but it was actually lower
         if (messagingVersion > peerMessagingVersion)
         {
@@ -191,22 +152,16 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
             return;
         }
 
-        ByteBuf buf = ctx.alloc().buffer(Integer.BYTES + CompactEndpointSerializationHelper.serializedSize(localAddr.getAddress()));
         Result result;
         try
         {
-            buf.writeInt(MessagingService.current_version);
-            @SuppressWarnings("resource")
-            DataOutput bbos = new ByteBufOutputStream(buf);
-            CompactEndpointSerializationHelper.serialize(localAddr.getAddress(), bbos);
-            ctx.writeAndFlush(buf);
+            ctx.writeAndFlush(new ThirdHandshakeMessage(MessagingService.current_version, localAddr.getAddress()).encode(ctx.alloc()));
             setupPipeline(ctx.channel().pipeline(), peerMessagingVersion);
             result = Result.GOOD;
         }
         catch (Exception e)
         {
             logger.info("failed to write last internode messaging handshake message", e);
-            buf.release();
             ctx.close();
             result = Result.NEGOTIATION_FAILURE;
         }

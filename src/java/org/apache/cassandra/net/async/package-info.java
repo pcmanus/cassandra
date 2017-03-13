@@ -34,52 +34,8 @@
  * the host listening on a socket, waiting for a connection (the 'server').
  *
  * <h3>handshake protocol</h3>
- * <p>The internode messaging handshake protocol is similar to the TCP three-way handshake, in that three messages
- * are exchanged. The nodes try to agree on a protocol version and several other data points. The messages do not
- * have formal names, so we will use "message 1", "message 2", and "message 3".
  *
- * - message 1 (sent by node1): contains the protocol version node1 thinks they should use, as well as flags to indicate:
- * -- if the connection is for streaming or messaging
- * -- if messages will be compressed (applies to messaging connections only, currently)
- *
- * - message 2 (sent by node2): contains node2's protocol version.
- *
- * - message 3 (sent by node1): contains's node1's protocol version (which may be different from the protocol version
- * the nodes choose to communicate with), and it's identifying IP address (which might be different from the address
- * it is connecting from).
- *
- * <p>If the connection is for streaming, then only the first message of this protocol applies as streaming has a
- * separate protocol (not documented here).
- *
- * <h3>handshake message specification</h3>
- * <p>message 1 (sent from node1): a message of 8 bytes, consisting of a 4 byte magic value
- * ({@link org.apache.cassandra.net.MessagingService#PROTOCOL_MAGIC}, and a 4 byte heaaer. The header is defined as:
- *
- * <pre>
- * {@code
- *                      1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
- *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
- * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- * |U U C         S|                |                               |
- * |N N M         T|     VERSION    |             unused            |
- * |U U P         R|                |                               |
- * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- * }
- * </pre>
- * UNU - unused bits lowest two bits; from a historical note: used to be "serializer type," which was always Binary
- * CMP - compression enabled bit
- * STR - flag to indicate if the connection is for streaming; if not, it is for internode messaging
- * VERSION - if a streaming connection, indicates the streaming protocol version {@link org.apache.cassandra.streaming.messages.StreamMessage#CURRENT_VERSION};
- * if a messaging connection, indicates the messaging protocol version node1 *thinks* node2 is on, or if no data on node2,
- * {@link org.apache.cassandra.net.MessagingService#current_version}.
- *
- * <p>message 2 (sent from node2): a message of 4 four bytes, consisting of one (4 byte) value: node2's
- * messaging protocol version {@link org.apache.cassandra.net.MessagingService#current_version}.
- *
- * <p>message 3 (sent from node1): a meesage of 9 or 21 bytes, in which node1 sends it's
- * {@link org.apache.cassandra.net.MessagingService#current_version} (4 bytes), follwed by it's broadcast address.
- * The address is encoded as per {@link org.apache.cassandra.net.CompactEndpointSerializationHelper}, which writes out
- * 5 bytes for an IPv4 address, or 17 bytes for IPv6.
+ * The internode messaging handshake protocol is described in details in {@link org.apache.cassandra.net.async.HandshakeProtocol}.
  *
  * <h2>Sending messages</h2>
  * <p>After the connection is established and handshake successful, node1 is can start sending messages at will.

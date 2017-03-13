@@ -20,7 +20,6 @@ package org.apache.cassandra.net.async;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.function.Consumer;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -29,6 +28,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelPipeline;
@@ -38,12 +38,15 @@ import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.HandshakeProtocol.FirstHandshakeMessage;
+import org.apache.cassandra.net.async.HandshakeProtocol.ThirdHandshakeMessage;
 import org.apache.cassandra.net.async.InboundHandshakeHandler.State;
 
 public class InboundHandshakeHandlerTest
 {
     private static final InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 0);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
+    private static final int VERSION_30 = MessagingService.VERSION_30;
 
     private InboundHandshakeHandler handler;
     private EmbeddedChannel channel;
@@ -105,8 +108,13 @@ public class InboundHandshakeHandlerTest
         InboundHandshakeHandler handler = new InboundHandshakeHandler(new TestAuthenticator(false));
         EmbeddedChannel channel = new EmbeddedChannel(handler);
         buf = Unpooled.buffer(32, 32);
+
+        FirstHandshakeMessage first = new FirstHandshakeMessage(MESSAGING_VERSION,
+                                                                NettyFactory.Mode.MESSAGING,
+                                                                true);
+
         buf.writeInt(MessagingService.PROTOCOL_MAGIC << 2);
-        CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
+        buf.writeInt(first.encodeHeader());
         handler.handleStart(channel.pipeline().firstContext(), buf);
     }
 
@@ -114,11 +122,11 @@ public class InboundHandshakeHandlerTest
     public void handleStart_VersionTooHigh() throws IOException
     {
         channel.eventLoop();
-        buf = Unpooled.buffer(32, 32);
-        buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(OutboundHandshakeHandler.createHeader(MESSAGING_VERSION + 1, true, NettyFactory.Mode.MESSAGING));
-        CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
-        State state = handler.handleStart(channel.pipeline().firstContext(), buf);
+        FirstHandshakeMessage first = new FirstHandshakeMessage(MESSAGING_VERSION + 1,
+                                                                NettyFactory.Mode.MESSAGING,
+                                                                true);
+
+        State state = handler.handleStart(channel.pipeline().firstContext(), first.encode(ByteBufAllocator.DEFAULT));
         Assert.assertEquals(State.HANDSHAKE_FAIL, state);
         Assert.assertFalse(channel.isOpen());
         Assert.assertFalse(channel.isActive());
@@ -127,12 +135,12 @@ public class InboundHandshakeHandlerTest
     @Test
     public void handleStart_VersionLessThan3_0() throws IOException
     {
-        buf = Unpooled.buffer(32, 32);
-        buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(OutboundHandshakeHandler.createHeader(MessagingService.VERSION_30 - 1, true, NettyFactory.Mode.MESSAGING));
-        CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
-        State state = handler.handleStart(channel.pipeline().firstContext(), buf);
+        FirstHandshakeMessage first = new FirstHandshakeMessage(VERSION_30 - 1,
+                                                                NettyFactory.Mode.MESSAGING,
+                                                                true);
+        State state = handler.handleStart(channel.pipeline().firstContext(), first.encode(ByteBufAllocator.DEFAULT));
         Assert.assertEquals(State.HANDSHAKE_FAIL, state);
+
         Assert.assertFalse(channel.isOpen());
         Assert.assertFalse(channel.isActive());
     }
@@ -140,12 +148,16 @@ public class InboundHandshakeHandlerTest
     @Test
     public void handleStart_HappyPath_Messaging() throws IOException
     {
-        buf = Unpooled.buffer(32, 32);
-        buf.writeInt(MessagingService.PROTOCOL_MAGIC);
-        buf.writeInt(OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING));
-        CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
-        State state = handler.handleStart(channel.pipeline().firstContext(), buf);
+        FirstHandshakeMessage first = new FirstHandshakeMessage(MESSAGING_VERSION,
+                                                                NettyFactory.Mode.MESSAGING,
+                                                                true);
+        State state = handler.handleStart(channel.pipeline().firstContext(), first.encode(ByteBufAllocator.DEFAULT));
         Assert.assertEquals(State.AWAIT_MESSAGING_START_RESPONSE, state);
+
+        ThirdHandshakeMessage third = new ThirdHandshakeMessage(MESSAGING_VERSION, addr.getAddress());
+        state = handler.handleMessagingStartResponse(channel.pipeline().firstContext(), third.encode(ByteBufAllocator.DEFAULT));
+
+        Assert.assertEquals(State.MESSAGING_HANDSHAKE_COMPLETE, state);
         Assert.assertTrue(channel.isOpen());
         Assert.assertTrue(channel.isActive());
         Assert.assertFalse(channel.outboundMessages().isEmpty());

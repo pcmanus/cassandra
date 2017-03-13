@@ -18,11 +18,9 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -79,45 +77,12 @@ public class OutboundHandshakeHandlerTest
         result = null;
     }
 
-
-
     @After
     public void tearDown()
     {
         if (buf != null && buf.refCnt() > 0)
             buf.release();
         Assert.assertFalse(channel.finishAndReleaseAll());
-    }
-
-    @Test
-    public void createHeader_FramedNoCompression()
-    {
-        int header = OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, false, NettyFactory.Mode.MESSAGING);
-        int version = MessagingService.getBits(header, 15, 8);
-        Assert.assertEquals(MESSAGING_VERSION, version);
-        boolean compressed = MessagingService.getBits(header, 2, 1) == 1;
-        Assert.assertFalse(compressed);
-    }
-
-    @Test
-    public void createHeader_FramedWithCompression()
-    {
-        int header = OutboundHandshakeHandler.createHeader(MESSAGING_VERSION, true, NettyFactory.Mode.MESSAGING);
-        int version = MessagingService.getBits(header, 15, 8);
-        Assert.assertEquals(MESSAGING_VERSION, version);
-        boolean compressed = MessagingService.getBits(header, 2, 1) == 1;
-        Assert.assertTrue(compressed);
-    }
-
-    @Test
-    public void firstHandshakeMessage() throws IOException
-    {
-        buf = Unpooled.buffer(128, 128);
-        int fakeHeader = 498234;
-        OutboundHandshakeHandler.firstHandshakeMessage(buf, fakeHeader);
-        MessagingService.validateMagic(buf.readInt());
-        Assert.assertEquals(fakeHeader, buf.readInt());
-        Assert.assertEquals(buf.writerIndex(), buf.readerIndex());
     }
 
     @Test
