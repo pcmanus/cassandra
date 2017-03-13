@@ -48,7 +48,7 @@ import org.apache.cassandra.utils.UUIDGen;
 
 /**
  * A Netty {@link ChannelHandler} for serializing outbound messages. This handler also contains the story
- * for flushing data to the socket. Unfortunetly, it's a complicated story.
+ * for flushing data to the socket. Unfortunately, it's a complicated story.
  * <p>
  * We don't flush to the socket on every message as it's a bit of a performance drag (making the system call,
  * copying the buffer, sending out a small packet). Thus, by waiting until we have a decent chunk of data
@@ -64,17 +64,17 @@ import org.apache.cassandra.utils.UUIDGen;
  * <p>
  * Another complicating piece is message coalescing {@link CoalescingStrategy}. The idea there is to (artificially)
  * delay the flushing of data in order to aggregate even more data before sending a group of packets out.
- *<p>
+ * <p>
  * The trick is in the composition of these pieces, primarily when coalescing is enabled or disabled. In all cases,
- * we want to flush when the netty outnound buffer is full or over capacity.
+ * we want to flush when the netty outbound buffer is full or over capacity.
  * <p>
  * Further there's a possible race of when the event loop wakes up on it's own (after epoll_wait timeout) vs. when a
  * coalescing needs to occur. If the event loop wakes up before a scheduled coalesce time, then we could get some unexpected/
- * uninteded flushing behavior. However, beacuse the coalesce strategy window times are (if configured sanely) dramatically
+ * unintended flushing behavior. However, because the coalesce strategy window times are (if configured sanely) dramatically
  * lower than the epoll_wait timeout, this "shouldn't" be a real-world problem (patches accepted if it is).
  *
  * <p>
- * [1] For those deperately interested, and only after you've read the entire class-level doc: You can register a custom
+ * [1] For those desperately interested, and only after you've read the entire class-level doc: You can register a custom
  * {@link MessageSizeEstimator} with a netty channel. When a message is written to the channel, it will check the
  * message size, and if the max ({@link ChannelOutboundBuffer}) size will be exceeded, a task to signal the "channel
  * writability changed" will be executed in the channel. That task, however, will wake up the event loop.
@@ -114,8 +114,8 @@ class MessageOutHandler extends ChannelDuplexHandler
 
     MessageOutHandler(OutboundConnectionParams params)
     {
-        this (params.remoteAddr, params.protocolVersion, params.completedMessageCount,
-              params.pendingMessageCount, params.coalesce, params.connectionType, params.droppedMessageCount);
+        this(params.remoteAddr, params.protocolVersion, params.completedMessageCount,
+             params.pendingMessageCount, params.coalesce, params.connectionType, params.droppedMessageCount);
     }
 
     MessageOutHandler(InetSocketAddress remoteAddr, int targetMessagingVersion, AtomicLong completedMessageCount,
@@ -263,10 +263,10 @@ class MessageOutHandler extends ChannelDuplexHandler
     /**
      * {@inheritDoc}
      *
-     * This method will be triggered when a producer thread writes a message the channel, and the size
+     * This method will be triggered when a producer thread writes a message to the channel, and the size
      * of that message pushes the "open" count of bytes in the channel over the high water mark. The mechanics
      * of netty will wake up the event loop thread (if it's not already executing), trigger the
-     * "channelWritabilityChanged" function, which be invoked *after* executing any pending write tasks in the netty queue.
+     * "channelWritabilityChanged" function, which is invoked *after* executing any pending write tasks in the netty queue.
      * Thus, when this method is invoked it's a great time to flush, to push all the written buffers to the kernel
      * for sending.
      *

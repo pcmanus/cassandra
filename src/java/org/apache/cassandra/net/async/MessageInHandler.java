@@ -104,7 +104,7 @@ class MessageInHandler extends ByteToMessageDecoder
     }
 
     /**
-     * For each new message coming in, builds up a {@link MessageHeader} instance incrementatlly. This method
+     * For each new message coming in, builds up a {@link MessageHeader} instance incrementally. This method
      * attempts to deserialize as much header information as it can out of the incoming {@link ByteBuf}, and
      * maintains a trivial state machine to remember progress across invocations.
      */
@@ -269,11 +269,11 @@ class MessageInHandler extends ByteToMessageDecoder
         if (cause instanceof EOFException)
             logger.trace("eof reading from socket; closing", cause);
         else if (cause instanceof UnknownTableException)
-            logger.warn("UnknownColumnFamilyException reading from socket; closing", cause);
+            logger.warn("Got message from unknown table while reading from socket; closing", cause);
         else if (cause instanceof IOException)
             logger.trace("IOException reading from socket; closing", cause);
         else
-            logger.warn("exception caught in inbound channel pipeline from " + ctx.channel().remoteAddress(), cause);
+            logger.warn("Unexpected exception caught in inbound channel pipeline from " + ctx.channel().remoteAddress(), cause);
 
         ctx.close();
     }

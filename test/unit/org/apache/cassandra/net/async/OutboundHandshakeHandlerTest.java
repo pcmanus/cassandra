@@ -187,6 +187,7 @@ public class OutboundHandshakeHandlerTest
         ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
         params = OutboundConnectionParams.builder(params).compress(true).build();
         handler = new OutboundHandshakeHandler(params);
+        pipeline.addFirst(handler);
         handler.setupPipeline(pipeline, MESSAGING_VERSION);
         Assert.assertNotNull(pipeline.get(Lz4FrameEncoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
@@ -199,6 +200,7 @@ public class OutboundHandshakeHandlerTest
         ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
         params = OutboundConnectionParams.builder(params).compress(false).build();
         handler = new OutboundHandshakeHandler(params);
+        pipeline.addFirst(handler);
         handler.setupPipeline(pipeline, MESSAGING_VERSION);
         Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));

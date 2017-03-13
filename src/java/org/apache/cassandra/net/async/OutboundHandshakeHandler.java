@@ -51,11 +51,11 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
  * As soon as the handler is added to the channel via {@link #channelActive(ChannelHandlerContext)}
- * (which is only invoked if the underlying connectionwas properly established), the first message of
+ * (which is only invoked if the underlying connection was properly established), the first message of
  * the internode messaging protocol is automatically sent out.
  *
  * Upon completion of the handshake (on success, fail or timeout), the {@link #callback} is invoked to let the listener
- * know the result of th connect/handshake.
+ * know the result of the connect/handshake.
  *
  * This class extends {@link ByteToMessageDecoder}, which is a {@link ChannelInboundHandler}, because after the
  * first message is sent on becoming active in the channel, it waits for the peer's response (the second message
@@ -66,12 +66,14 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     private static final Logger logger = LoggerFactory.getLogger(OutboundHandshakeHandler.class);
 
     /**
-     * The length of the first message of the internode messaging handshake.
+     * The length of the first message of the internode messaging handshake. Contains the PROTOCOL_MAGIC (int) and
+     * "header" (int).
      */
     static final int FIRST_MESSAGE_LENGTH = 8;
 
     /**
-     * The length of the second message of the internode messaging handshake.
+     * The length of the second message of the internode messaging handshake. Contains the messaging version from the
+     * other peer (int).
      */
     static final int SECOND_MESSAGE_LENGTH = 4;
 
@@ -199,7 +201,6 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
             CompactEndpointSerializationHelper.serialize(localAddr.getAddress(), bbos);
             ctx.writeAndFlush(buf);
             setupPipeline(ctx.channel().pipeline(), peerMessagingVersion);
-            ctx.channel().pipeline().remove(this);
             result = Result.GOOD;
         }
         catch (Exception e)
@@ -232,6 +233,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
                                                  ? params
                                                  : OutboundConnectionParams.builder(params).protocolVersion(messagingVersion).build();
         pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
+        pipeline.remove(this);
     }
 
     /**

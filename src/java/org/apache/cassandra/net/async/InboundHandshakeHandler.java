@@ -28,7 +28,7 @@ import org.apache.cassandra.net.MessagingService;
 /**
  * 'Server'-side component that negotiates the internode handshake when establishing a new connection.
  * This handler will be the first in the netty channel for each incoming connection, and once the handshake is successful,
- * it will configure ther proper handlers for and remove itself from the working pipeline.
+ * it will configure the proper handlers (mostly {@link MessageInHandler}) for and remove itself from the working pipeline.
  */
 class InboundHandshakeHandler extends ByteToMessageDecoder
 {

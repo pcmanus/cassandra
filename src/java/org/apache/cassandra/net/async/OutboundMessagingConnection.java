@@ -40,6 +40,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -47,7 +48,6 @@ import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.NettyFactory.Mode;
-import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
@@ -61,13 +61,14 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
  * and create the connection. Upon sucessfully setting up the connection/channel, the {@link #state} will be updated again
  * (to {@link State#READY}, which indicates to other threads that the channel is ready for business and can be written to.
  *
- * Note on flushing: when sending a message to the netty {@link Channel}, we call {@link Channel#writeAndFlush(Object)} versus
- * {@link Channel#write(Object)} because, at least as of netty 4.1.8, {@link Channel#writeAndFlush(Object)} causes the
- * netty event loop thread to be woken up, whereas {@link Channel#write(Object)} does not wake up the thread. The problem
- * becomes that without the thread being woken up, the write is not processed immediately and processing latency is
- * introduced. In the use case of message coalescing disabled, we want the event loop to be woken up (so the message
- * can be processed immediately), whereas with coalescing enabled we do not want to wake up the thread until
- * the conditions for the coalesce have been fulfilled (number of messages, elapsed time).
+ * Note on flushing: when sending a message to the netty {@link Channel}, we call {@link Channel#write(Object)} when
+ * coalescing is enabled but {@link Channel#writeAndFlush(Object)} is disabled. The reason is that, at least as of netty
+ * 4.1.8, {@link Channel#writeAndFlush(Object)} causes the  netty event loop thread to be woken up, whereas
+ * {@link Channel#write(Object)} does not. And without coalescing, we want the thread to wake up so the write is
+ * processed immediately or otherwise processing latency would be introduced (this doesn't trigger a genuine flush
+ * however due to our overriding in {@link MessageOutHandler#flush(ChannelHandlerContext)}). With coalescing however,
+ * there is no point in waking up the thread until the conditions for the coalesce have been fulfilled (number of
+ * messages, elapsed time).
  *
  * For more details about the flushing behavior, please see the class-level documentation on {@link MessageOutHandler}.
  */
@@ -146,6 +147,10 @@ public class OutboundMessagingConnection
 
     private volatile State state = State.NOT_READY;
 
+    /**
+     * Basically an AtomicBoolean (0 for false, 1 for true, there is no AtomicBooleanFiledUpdater) use when coalescing
+     * so only one flush is scheduled at a time
+     **/
     @SuppressWarnings("unused")
     private volatile int scheduledFlushState;
 
@@ -241,7 +246,7 @@ public class OutboundMessagingConnection
                 return;
             }
 
-            // calling schedule() on the eventLoop will force it to wake up (it not already executing) and schedule the task
+            // calling schedule() on the eventLoop will force it to wake up (if not already executing) and schedule the task
             channelLocal.eventLoop().schedule(() -> {
                 scheduledFlushStateUpdater.set(this, 0);
                 // we then execute() the flush() like this because netty runs the scheduled tasks before consuming from
@@ -281,7 +286,7 @@ public class OutboundMessagingConnection
         {
             logger.trace("error writing to peer {} (at address {}). error: {}", remoteAddr, preferredConnectAddress, cause);
 
-            // because we get the reference the channel to which the message was sent, we don't have to worry about
+            // because we get the reference of the channel to which the message was sent, we don't have to worry about
             // a race of the callback being invoked but the OMC already setting up a new channel (and thus we won't attempt to close that new channel)
             ChannelFuture channelFuture = (ChannelFuture) future;
             // check that it's safe to change the state (to kick off the reconnect); basically make sure the instance hasn't been closed
@@ -304,7 +309,7 @@ public class OutboundMessagingConnection
         else
         {
             // Non IO exceptions are likely a programming error so let's not silence them
-            logger.error("error writing to peer {} (on address {})", remoteAddr, preferredConnectAddress, cause);
+            logger.error("Unexpected error writing to peer {} (on address {})", remoteAddr, preferredConnectAddress, cause);
         }
 
         if (requeue)
@@ -323,7 +328,7 @@ public class OutboundMessagingConnection
     }
 
     /**
-     * Intiate all the actions required to establish a working, valid connection. This includes
+     * Initiate all the actions required to establish a working, valid connection. This includes
      * opening the socket, negotiating the internode messaging handshake, and setting up the working
      * Netty {@link Channel}. However, this method will not block for all those actions: it will only
      * kick off the connection attempt via {@link OutboundConnector} as everything is asynchronous.
@@ -400,7 +405,7 @@ public class OutboundMessagingConnection
             // if we got this far, always cancel the connector
             initiatingConnector.cancel();
 
-            // if the parameter initiatingConnector is the same as the same as the member field,
+            // if the parameter initiatingConnector is the same as the member field,
             // no other thread has attempted a reconnect (and put a new instance into the member field)
             if (initiatingConnector == outboundConnector)
             {
@@ -492,7 +497,6 @@ public class OutboundMessagingConnection
 
     private boolean shouldCompressConnection(InetAddress addr)
     {
-        // assumes version >= 1.2
         return (DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.all)
                || ((DatabaseDescriptor.internodeCompression() == Config.InternodeCompression.dc) && !isLocalDC(addr));
     }

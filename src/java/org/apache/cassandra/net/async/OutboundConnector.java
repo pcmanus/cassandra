@@ -35,7 +35,7 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
 /**
  * Asynchronously connects to a remote peer, via netty. The sole responsibility of this class is to
  * establish a TCP socket connection. On connection failures, it will retry the connect unless cancelled by an external caller.
- * There are callbacks or return values as it is expected that the handlers in the netty pipeline will start
+ * There are no callbacks or return values as it is expected that the handlers in the netty pipeline will start
  * the internode messaging handshake automatically.
  */
 class OutboundConnector
