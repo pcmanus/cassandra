@@ -38,7 +38,6 @@ import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 
 public class OutboundHandshakeHandlerTest
 {
@@ -46,9 +45,9 @@ public class OutboundHandshakeHandlerTest
     private static final InetSocketAddress localAddr = new InetSocketAddress("127.0.0.1", 0);
     private static final InetSocketAddress remoteAddr = new InetSocketAddress("127.0.0.2", 0);
     private static final String HANDLER_NAME = "clientHandshakeHandler";
-    private static final ConnectionType CONNECTION_TYPE = ConnectionType.SMALL_MESSAGE;
 
     private EmbeddedChannel channel;
+    private OutboundConnectionIdentifier connectionId;
     private OutboundHandshakeHandler handler;
     private ConnectionHandshakeResult result;
     OutboundConnectionParams params;
@@ -64,13 +63,12 @@ public class OutboundHandshakeHandlerTest
     public void setup()
     {
         channel = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        connectionId = OutboundConnectionIdentifier.small(localAddr, remoteAddr);
         params = OutboundConnectionParams.builder()
-                                         .localAddr(localAddr)
-                                         .remoteAddr(remoteAddr)
-                                         .protocolVersion(MESSAGING_VERSION)
+                                         .connectionId(connectionId)
+                                         .coalescingStrategy(new FakeCoalescingStrategy(false))
                                          .callback(this::callbackHandler)
                                          .mode(NettyFactory.Mode.MESSAGING)
-                                         .connectionType(CONNECTION_TYPE)
                                          .build();
         handler = new OutboundHandshakeHandler(params);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
@@ -133,27 +131,24 @@ public class OutboundHandshakeHandlerTest
 
         int msgVersion = MESSAGING_VERSION - 1;
         channel.pipeline().remove(HANDLER_NAME);
-        params = OutboundConnectionParams.builder(params).protocolVersion(msgVersion).build();
-        handler = new OutboundHandshakeHandler(params);
+        handler = new OutboundHandshakeHandler(params, msgVersion);
         channel.pipeline().addFirst(HANDLER_NAME, handler);
         channel.writeInbound(buf);
         Assert.assertEquals(buf.writerIndex(), buf.readerIndex());
 
         Assert.assertEquals(MESSAGING_VERSION, result.negotiatedMessagingVersion);
         Assert.assertEquals(ConnectionHandshakeResult.Result.DISCONNECT, result.result);
-        Assert.assertFalse(channel.isOpen());
-        Assert.assertFalse(channel.outboundMessages().isEmpty());
-        Assert.assertTrue(channel.releaseOutbound());
     }
 
     @Test
     public void setupPipeline_WithCompression()
     {
-        ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
+        EmbeddedChannel chan = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ChannelPipeline pipeline =  chan.pipeline();
         params = OutboundConnectionParams.builder(params).compress(true).build();
         handler = new OutboundHandshakeHandler(params);
         pipeline.addFirst(handler);
-        handler.setupPipeline(pipeline, MESSAGING_VERSION);
+        handler.setupPipeline(chan, MESSAGING_VERSION);
         Assert.assertNotNull(pipeline.get(Lz4FrameEncoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
         Assert.assertNotNull(pipeline.get(MessageOutHandler.class));
@@ -162,11 +157,12 @@ public class OutboundHandshakeHandlerTest
     @Test
     public void setupPipeline_NoCompression()
     {
-        ChannelPipeline pipeline = new EmbeddedChannel(new ChannelOutboundHandlerAdapter()).pipeline();
+        EmbeddedChannel chan = new EmbeddedChannel(new ChannelOutboundHandlerAdapter());
+        ChannelPipeline pipeline =  chan.pipeline();
         params = OutboundConnectionParams.builder(params).compress(false).build();
         handler = new OutboundHandshakeHandler(params);
         pipeline.addFirst(handler);
-        handler.setupPipeline(pipeline, MESSAGING_VERSION);
+        handler.setupPipeline(chan, MESSAGING_VERSION);
         Assert.assertNull(pipeline.get(Lz4FrameEncoder.class));
         Assert.assertNull(pipeline.get(Lz4FrameDecoder.class));
         Assert.assertNotNull(pipeline.get(MessageOutHandler.class));

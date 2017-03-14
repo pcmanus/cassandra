@@ -38,7 +38,6 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.schema.KeyspaceParams;
 
 import static org.apache.cassandra.net.async.InboundHandshakeHandler.State.MESSAGING_HANDSHAKE_COMPLETE;
@@ -52,7 +51,7 @@ public class HandshakeHandlersTest
     private static final InetSocketAddress LOCAL_ADDR = new InetSocketAddress("127.0.0.1", 9999);
     private static final InetSocketAddress REMOTE_ADDR = new InetSocketAddress("127.0.0.2", 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
-    private static final ConnectionType CONNECTION_TYPE = ConnectionType.SMALL_MESSAGE;
+    private static final OutboundConnectionIdentifier connectionId = OutboundConnectionIdentifier.small(LOCAL_ADDR, REMOTE_ADDR);
 
     @BeforeClass
     public static void beforeClass() throws ConfigurationException
@@ -71,14 +70,12 @@ public class HandshakeHandlersTest
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel inboundChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(CONNECTION_TYPE, REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(connectionId, null, new FakeCoalescingStrategy(false));
         OutboundConnectionParams params = OutboundConnectionParams.builder()
-                                                                  .localAddr(LOCAL_ADDR)
-                                                                  .remoteAddr(REMOTE_ADDR)
-                                                                  .protocolVersion(MESSAGING_VERSION)
+                                                                  .connectionId(connectionId)
+                                                                  .coalescingStrategy(new FakeCoalescingStrategy(false))
                                                                   .callback(imc::finishHandshake)
                                                                   .mode(NettyFactory.Mode.MESSAGING)
-                                                                  .connectionType(CONNECTION_TYPE)
                                                                   .build();
         OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
         EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
@@ -161,19 +158,17 @@ public class HandshakeHandlersTest
     private TestChannels buildChannels(boolean compress)
     {
         OutboundConnectionParams params = OutboundConnectionParams.builder()
-                                                                  .localAddr(LOCAL_ADDR)
-                                                                  .remoteAddr(REMOTE_ADDR)
-                                                                  .protocolVersion(MESSAGING_VERSION)
+                                                                  .connectionId(connectionId)
                                                                   .callback(this::nop)
                                                                   .mode(NettyFactory.Mode.MESSAGING)
-                                                                  .connectionType(CONNECTION_TYPE)
+                                                                  .coalescingStrategy(new FakeCoalescingStrategy(false))
                                                                   .compress(compress)
                                                                   .build();
         OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
         EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
-        OutboundMessagingConnection omc = new OutboundMessagingConnection(CONNECTION_TYPE, REMOTE_ADDR, LOCAL_ADDR, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection omc = new OutboundMessagingConnection(connectionId, null, new FakeCoalescingStrategy(false));
         omc.setTargetVersion(MESSAGING_VERSION);
-        outboundHandshakeHandler.setupPipeline(outboundChannel.pipeline(), MESSAGING_VERSION);
+        outboundHandshakeHandler.setupPipeline(outboundChannel, MESSAGING_VERSION);
 
         // remove the outbound handshake message from the outbound messages
         outboundChannel.outboundMessages().clear();

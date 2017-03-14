@@ -19,67 +19,32 @@
 package org.apache.cassandra.net.async;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPromise;
-import io.netty.channel.MessageSizeEstimator;
 import io.netty.handler.codec.UnsupportedMessageTypeException;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.NanoTimeToCurrentTimeMillis;
 import org.apache.cassandra.utils.NoSpamLogger;
 import org.apache.cassandra.utils.UUIDGen;
 
 /**
- * A Netty {@link ChannelHandler} for serializing outbound messages. This handler also contains the story
- * for flushing data to the socket. Unfortunately, it's a complicated story.
+ * A Netty {@link ChannelHandler} for serializing outbound messages.
  * <p>
- * We don't flush to the socket on every message as it's a bit of a performance drag (making the system call,
- * copying the buffer, sending out a small packet). Thus, by waiting until we have a decent chunk of data
- * (for some definition of 'decent'), we can achieve better efficiency and improved performance (yay!).
- * There are some basic conditions under which we want to flush:
- * - we've filled up or exceeded the netty outbound buffer ({@link ChannelOutboundBuffer}) [1]
- * - there are no more messages in the queue left to process
- * <p>
- * One thing complicating this is how netty's event loop executes. It is woken up by external callers to the channel
- * invoking a flush (either {@link Channel#flush()} or one of the {@link Channel#writeAndFlush(Object)} methods).
- * (It is also woken up by it's own internal timeout on the epoll_wait() system call.)
- * A plain {@link Channel#write(Object)} will only queue the message in the channel, and not wake up the event loop.
- * <p>
- * Another complicating piece is message coalescing {@link CoalescingStrategy}. The idea there is to (artificially)
- * delay the flushing of data in order to aggregate even more data before sending a group of packets out.
- * <p>
- * The trick is in the composition of these pieces, primarily when coalescing is enabled or disabled. In all cases,
- * we want to flush when the netty outbound buffer is full or over capacity.
- * <p>
- * Further there's a possible race of when the event loop wakes up on it's own (after epoll_wait timeout) vs. when a
- * coalescing needs to occur. If the event loop wakes up before a scheduled coalesce time, then we could get some unexpected/
- * unintended flushing behavior. However, because the coalesce strategy window times are (if configured sanely) dramatically
- * lower than the epoll_wait timeout, this "shouldn't" be a real-world problem (patches accepted if it is).
- *
- * <p>
- * [1] For those desperately interested, and only after you've read the entire class-level doc: You can register a custom
- * {@link MessageSizeEstimator} with a netty channel. When a message is written to the channel, it will check the
- * message size, and if the max ({@link ChannelOutboundBuffer}) size will be exceeded, a task to signal the "channel
- * writability changed" will be executed in the channel. That task, however, will wake up the event loop.
- * Thus if coalescing is enabled, the event loop will wake up prematurely and process (and flush!) the messages
- * currently in the queue, thus defeating an aspect of coalescing. Hence, we're not using that feature.
+ * On top of transforming {@link QueuedMessage} into bytes, this handler also feed back his progress to the linked
+ * {@link OutChannel} so that the latter can take decision on when data should be flush (and this with and without
+ * coalescing). See the javadoc on {@link OutChannel} for more details.
  */
 class MessageOutHandler extends ChannelDuplexHandler
 {
@@ -91,43 +56,20 @@ class MessageOutHandler extends ChannelDuplexHandler
      */
     private static final int MESSAGE_PREFIX_SIZE = 12;
 
-    private final InetSocketAddress remoteAddr;
+    private final OutboundConnectionIdentifier connectionId;
 
     /**
      * The version of the messaging protocol we're communicating at.
      */
     private final int targetMessagingVersion;
 
-    private final AtomicLong completedMessageCount;
+    private final OutChannel outChannel;
 
-    private final AtomicLong pendingMessageCount;
-
-    private final AtomicLong droppedMessageCount;
-
-    /**
-     * Flag to indicate if messages on this channel are being coalesced. This informs how the flushing behavior
-     * is actually executed; meaning, we do different things if coalescing is enabled or not (see the class-level javadoc).
-     */
-    private final boolean isCoalescing;
-
-    private final ConnectionType connectionType;
-
-    MessageOutHandler(OutboundConnectionParams params)
+    MessageOutHandler(OutboundConnectionIdentifier connectionId, int targetMessagingVersion, OutChannel outChannel)
     {
-        this(params.remoteAddr, params.protocolVersion, params.completedMessageCount,
-             params.pendingMessageCount, params.coalesce, params.connectionType, params.droppedMessageCount);
-    }
-
-    MessageOutHandler(InetSocketAddress remoteAddr, int targetMessagingVersion, AtomicLong completedMessageCount,
-                      AtomicLong pendingMessageCount, boolean isCoalescing, ConnectionType connectionType, AtomicLong droppedMessageCount)
-    {
-        this.remoteAddr = remoteAddr;
+        this.connectionId = connectionId;
         this.targetMessagingVersion = targetMessagingVersion;
-        this.completedMessageCount = completedMessageCount;
-        this.pendingMessageCount = pendingMessageCount;
-        this.isCoalescing = isCoalescing;
-        this.connectionType = connectionType;
-        this.droppedMessageCount = droppedMessageCount;
+        this.outChannel = outChannel;
     }
 
     @Override
@@ -145,7 +87,7 @@ class MessageOutHandler extends ChannelDuplexHandler
             long currentFrameSize = MESSAGE_PREFIX_SIZE + msg.message.serializedSize(targetMessagingVersion);
             if (currentFrameSize > Integer.MAX_VALUE || currentFrameSize < 0)
             {
-                errorLogger.warn("{} illegal frame size: {}, ignoring message", peerIdentifier(), currentFrameSize);
+                errorLogger.warn("{} illegal frame size: {}, ignoring message", connectionId, currentFrameSize);
                 return;
             }
 
@@ -163,20 +105,9 @@ class MessageOutHandler extends ChannelDuplexHandler
         }
         finally
         {
-            // put the counter modifications here to make sure that, in the case of failure, we still update correctly
-            completedMessageCount.incrementAndGet();
-            // see class-level javadoc for details about flushing
-            if (pendingMessageCount.decrementAndGet() == 0 && !isCoalescing)
-                ctx.flush();
+            // Make sure we signal the outChanel even in case of errors.
+            outChannel.onMessageProcessed(ctx);
         }
-    }
-
-    /**
-     * Centralized mechanism for identifying the peer and connection type to be used in error logging.
-     */
-    private String peerIdentifier()
-    {
-        return String.format("%s (%s)", remoteAddr.toString(), connectionType.toString() + ':');
     }
 
     /**
@@ -199,11 +130,9 @@ class MessageOutHandler extends ChannelDuplexHandler
         }
         else
         {
-            promise.setFailure(new UnsupportedMessageTypeException(peerIdentifier() +
-                                                                   " msg must be an instancce of " + QueuedMessage.class.getSimpleName()));
+            promise.setFailure(new UnsupportedMessageTypeException(connectionId +
+                                                                   " msg must be an instance of " + QueuedMessage.class.getSimpleName()));
         }
-
-        droppedMessageCount.incrementAndGet();
         return false;
     }
 
@@ -220,7 +149,7 @@ class MessageOutHandler extends ChannelDuplexHandler
                 UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
                 TraceState state = Tracing.instance.get(sessionId);
                 String message = String.format("Sending %s message to %s, size = %d bytes",
-                                               msg.message.verb, remoteAddr, msg.message.serializedSize(targetMessagingVersion) + MESSAGE_PREFIX_SIZE);
+                                               msg.message.verb, connectionId.connectionAddress(), msg.message.serializedSize(targetMessagingVersion) + MESSAGE_PREFIX_SIZE);
                 // session may have already finished; see CASSANDRA-5668
                 if (state == null)
                 {
@@ -238,7 +167,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         }
         catch (Exception e)
         {
-            logger.warn("{} failed to capture the tracing info for an outbound message, ignoring", peerIdentifier(), e);
+            logger.warn("{} failed to capture the tracing info for an outbound message, ignoring", connectionId, e);
         }
     }
 
@@ -257,7 +186,7 @@ class MessageOutHandler extends ChannelDuplexHandler
         // if we allocated to little buffer space, we would have hit an exception when trying to write more bytes to it
         if (out.isWritable())
             errorLogger.error("{} reported message size {}, actual message size {}, msg {}",
-                         peerIdentifier(), out.capacity(), out.writerIndex(), msg.message);
+                         connectionId, out.capacity(), out.writerIndex(), msg.message);
     }
 
     /**
@@ -282,26 +211,19 @@ class MessageOutHandler extends ChannelDuplexHandler
         ctx.fireChannelWritabilityChanged();
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * When message coalescing is enabled, we must respect this flush invocation. If coalesce is disabled, we only flush
-     * on the conditions stated in the class-level documentation.
-     */
     @Override
     public void flush(ChannelHandlerContext ctx)
     {
-        if (isCoalescing)
-            ctx.flush();
+        outChannel.onTriggeredFlush(ctx);
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
     {
         if (cause instanceof IOException)
-            logger.trace("{} io error", peerIdentifier(), cause);
+            logger.trace("{} io error", connectionId, cause);
         else
-            logger.warn("{} error", peerIdentifier(), cause);
+            logger.warn("{} error", connectionId, cause);
 
         ctx.fireExceptionCaught(cause);
         ctx.close();

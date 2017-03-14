@@ -20,7 +20,6 @@ package org.apache.cassandra.net.async;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -36,17 +35,12 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
-import static org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType.SMALL_MESSAGE;
-
 public class MessageOutHandlerTest
 {
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
     private EmbeddedChannel channel;
     private MessageOutHandler handler;
-    private AtomicLong completedMessages = new AtomicLong(0);
-    private AtomicLong pendingMessages = new AtomicLong(0);
-    private AtomicLong droppedMessages = new AtomicLong(0);
 
     @BeforeClass
     public static void before()
@@ -57,24 +51,19 @@ public class MessageOutHandlerTest
     @Before
     public void setup()
     {
-        completedMessages.set(0);
-        droppedMessages.set(0);
-        pendingMessages.set(0);
-        droppedMessages = new AtomicLong(0);
-        handler = new MessageOutHandler(new InetSocketAddress("127.0.0.1", 0), MESSAGING_VERSION, completedMessages,
-                                        pendingMessages, false, SMALL_MESSAGE, droppedMessages);
+        OutboundConnectionIdentifier connectionId = OutboundConnectionIdentifier.small(new InetSocketAddress("127.0.0.1", 0),
+                                                                                       new InetSocketAddress("127.0.0.1", 0));
         channel = new EmbeddedChannel(handler);
+        OutChannel outChan = OutChannel.create(channel, new FakeCoalescingStrategy(false));
+        handler = new MessageOutHandler(connectionId, MESSAGING_VERSION, outChan);
     }
 
     @Test
     public void serializeMessage() throws IOException
     {
-        pendingMessages.incrementAndGet();
         QueuedMessage msg = new QueuedMessage(new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE), 1);
         ChannelFuture future = channel.writeAndFlush(msg);
 
-        Assert.assertEquals(1, completedMessages.get());
-        Assert.assertEquals(0, pendingMessages.get());
         Assert.assertTrue(future.isSuccess());
         Assert.assertTrue(1 <= channel.outboundMessages().size());
         Assert.assertTrue(channel.releaseOutbound());
@@ -89,7 +78,6 @@ public class MessageOutHandlerTest
         Assert.assertFalse(promise.isSuccess());
         Assert.assertNotNull(promise.cause());
         Assert.assertSame(UnsupportedMessageTypeException.class, promise.cause().getClass());
-        Assert.assertEquals(1, droppedMessages.get());
     }
 
     @Test
@@ -101,7 +89,6 @@ public class MessageOutHandlerTest
 
         // we won't know if it was successful yet, but we'll know if it's a failure because cause will be set
         Assert.assertNull(promise.cause());
-        Assert.assertEquals(0, droppedMessages.get());
     }
 
     @Test
@@ -115,6 +102,5 @@ public class MessageOutHandlerTest
         Assert.assertNotNull(promise.cause());
         Assert.assertSame(ExpiredException.class, promise.cause().getClass());
         Assert.assertTrue(channel.outboundMessages().isEmpty());
-        Assert.assertEquals(1, droppedMessages.get());
     }
 }

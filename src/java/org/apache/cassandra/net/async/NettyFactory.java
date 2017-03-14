@@ -221,7 +221,7 @@ public final class NettyFactory
      */
     static Bootstrap createOutboundBootstrap(OutboundConnectionParams params)
     {
-        logger.debug("creating outbound bootstrap to peer {}, encryption: {}", params.remoteAddr,
+        logger.debug("creating outbound bootstrap to peer {}, encryption: {}", params.connectionId.connectionAddress(),
                     encryptionLogStatement(params.encryptionOptions));
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
         return new Bootstrap().group(OUTBOUND_GROUP)

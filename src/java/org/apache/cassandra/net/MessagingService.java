@@ -1211,7 +1211,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
         for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
-            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().largeMessageChannel.getCompletedMesssages());
+            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().largeMessageChannel.getCompletedMessages());
         return completedTasks;
     }
 
@@ -1235,7 +1235,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
         for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
-            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().smallMessageChannel.getCompletedMesssages());
+            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().smallMessageChannel.getCompletedMessages());
         return completedTasks;
     }
 
@@ -1259,7 +1259,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         Map<String, Long> completedTasks = new HashMap<String, Long>(channelManagers.size());
         for (Map.Entry<InetAddress, OutboundMessagingPool> entry : channelManagers.entrySet())
-            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().gossipChannel.getCompletedMesssages());
+            completedTasks.put(entry.getKey().getHostAddress(), entry.getValue().gossipChannel.getCompletedMessages());
         return completedTasks;
     }
 

@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Queue;
@@ -26,7 +25,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
@@ -36,10 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
@@ -49,7 +44,6 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.NettyFactory.Mode;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
-import org.apache.cassandra.utils.JVMStabilityInspector;
 
 /**
  * Represents one connection to a peer, and handles the state transistions on the connection and the netty {@link Channel}
@@ -76,8 +70,6 @@ public class OutboundMessagingConnection
 {
     static final Logger logger = LoggerFactory.getLogger(OutboundMessagingConnection.class);
 
-    enum ConnectionType { GOSSIP, LARGE_MESSAGE, SMALL_MESSAGE }
-
     private static final String INTRADC_TCP_NODELAY_PROPERTY = Config.PROPERTY_PREFIX + "otc_intradc_tcp_nodelay";
 
     /**
@@ -93,34 +85,17 @@ public class OutboundMessagingConnection
         NOT_READY, CREATING_CHANNEL, READY, CLOSED
     }
 
-    private static final int MIN_MESSAGES_FOR_COALESCE = DatabaseDescriptor.getOtcCoalescingEnoughCoalescedMessages();
-
     /**
      * Backlog to hold messages passed by upstream threads while the Netty {@link Channel} is being set up or recreated.
      */
     private final Queue<QueuedMessage> backlog;
 
-    private final ConnectionType connectionType;
     private final ScheduledExecutorService scheduledExecutor;
 
-    private final AtomicLong droppedMessageCount;
-    private final AtomicLong completedMessageCount;
+    final AtomicLong droppedMessageCount;
+    final AtomicLong completedMessageCount;
 
-    /**
-     * Memoization of the local node's broadcast address.
-     */
-    private final InetSocketAddress localAddr;
-
-    /**
-     * An identifier for the peer. Use {@link #preferredConnectAddress} as the address to actually connect on.
-     */
-    private final InetSocketAddress remoteAddr;
-
-    /**
-     * An override address on which to communicate with the peer. Typically used for something like EC2 public IP address
-     * which need to be used for communication between EC2 regions.
-     */
-    private volatile InetSocketAddress preferredConnectAddress;
+    private volatile OutboundConnectionIdentifier connectionId;
 
     private final ServerEncryptionOptions encryptionOptions;
 
@@ -137,59 +112,48 @@ public class OutboundMessagingConnection
      */
     @SuppressWarnings("rawtypes")
     private static final AtomicReferenceFieldUpdater<OutboundMessagingConnection, State> stateUpdater;
-    private static final AtomicIntegerFieldUpdater<OutboundMessagingConnection> scheduledFlushStateUpdater;
 
     static
     {
         stateUpdater = AtomicReferenceFieldUpdater.newUpdater(OutboundMessagingConnection.class, State.class, "state");
-        scheduledFlushStateUpdater = AtomicIntegerFieldUpdater.newUpdater(OutboundMessagingConnection.class, "scheduledFlushState");
     }
 
     private volatile State state = State.NOT_READY;
 
-    /**
-     * Basically an AtomicBoolean (0 for false, 1 for true, there is no AtomicBooleanFiledUpdater) use when coalescing
-     * so only one flush is scheduled at a time
-     **/
-    @SuppressWarnings("unused")
-    private volatile int scheduledFlushState;
-
     private final CoalescingStrategy coalescingStrategy;
-    private final boolean isCoalescing;
 
     private OutboundConnector outboundConnector;
 
     /**
      * The channel once a socket connection is established; it won't be in it's normal working state until the handshake is complete.
      */
-    private volatile ChannelWrapper channelWrapper;
+    private volatile OutChannel outChannel;
 
     /**
      * the target protocol version to communicate to the peer with, discovered/negotiated via handshaking
      */
     private int targetVersion;
 
-    OutboundMessagingConnection(ConnectionType connectionType, InetSocketAddress remoteAddr, InetSocketAddress localAddr,
-                                ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy)
+    OutboundMessagingConnection(OutboundConnectionIdentifier connectionId,
+                                ServerEncryptionOptions encryptionOptions,
+                                CoalescingStrategy coalescingStrategy)
     {
-        this(connectionType, remoteAddr, localAddr, encryptionOptions, coalescingStrategy, ScheduledExecutors.scheduledFastTasks);
+        this(connectionId, encryptionOptions, coalescingStrategy, ScheduledExecutors.scheduledFastTasks);
     }
 
     @VisibleForTesting
-    OutboundMessagingConnection(ConnectionType connectionType, InetSocketAddress remoteAddr, InetSocketAddress localAddr,
-                                ServerEncryptionOptions encryptionOptions, CoalescingStrategy coalescingStrategy, ScheduledExecutorService sceduledExecutor)
+    OutboundMessagingConnection(OutboundConnectionIdentifier connectionId,
+                                ServerEncryptionOptions encryptionOptions,
+                                CoalescingStrategy coalescingStrategy,
+                                ScheduledExecutorService sceduledExecutor)
     {
-        this.connectionType = connectionType;
-        this.localAddr = localAddr;
-        this.remoteAddr = remoteAddr;
-        preferredConnectAddress = remoteAddr;
+        this.connectionId = connectionId;
         this.encryptionOptions = encryptionOptions;
         backlog = new ConcurrentLinkedQueue<>();
         droppedMessageCount = new AtomicLong(0);
         completedMessageCount = new AtomicLong(0);
         this.scheduledExecutor = sceduledExecutor;
         this.coalescingStrategy = coalescingStrategy;
-        isCoalescing = coalescingStrategy.isCoalescing();
 
         // We want to use the most precise protocol version we know because while there is version detection on connect(),
         // the target version might be accessed by the pool (in getConnection()) before we actually connect (as we
@@ -198,13 +162,13 @@ public class OutboundMessagingConnection
         // unless it has been gossiped to us or it has connected to us, and in both cases that will set the version).
         // In that case we won't rely on that targetVersion before we're actually connected and so the version
         // detection in connect() will do its job.
-        targetVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
+        targetVersion = MessagingService.instance().getVersion(connectionId.remote());
     }
 
     /**
-     * If the {@link #channelWrapper#channel} is set up and ready to use (the normal case), simply send the message to it and return.
-     * If the {@link #channelWrapper#channel} is not set up, then one lucky thread is selected to create the Channel, while other threads
-     * just add the {@code msg} to the backlog queue.
+     * If the connection is set up and ready to use (the normal case), simply send the message to it and return.
+     * Otherwise, one lucky thread is selected to create the Channel, while other threads just add the {@code msg} to
+     * the backlog queue.
      */
     void sendMessage(MessageOut msg, int id)
     {
@@ -212,49 +176,7 @@ public class OutboundMessagingConnection
 
         if (state == State.READY)
         {
-            // grab a local reference to the member field, in case it changes while we execute -
-            // mostly for the async coalesced flush
-            ChannelWrapper wrapper = this.channelWrapper;
-            long pendingCount = wrapper.pendingMessageCount.incrementAndGet();
-            final Channel channelLocal = wrapper.channel;
-
-            if (!isCoalescing)
-            {
-                ChannelFuture future = channelLocal.writeAndFlush(queuedMessage);
-                future.addListener(f -> handleMessageFuture(f, queuedMessage));
-                return;
-            }
-
-            ChannelFuture future = channelLocal.write(queuedMessage);
-            future.addListener(f -> handleMessageFuture(f, queuedMessage));
-            coalescingStrategy.newArrival(queuedMessage);
-
-            // if we lost the race to set the state, simply write to the channel (no flush)
-            if (scheduledFlushState == 1 || !(scheduledFlushStateUpdater.compareAndSet(this, 0, 1)))
-                return;
-
-            long flushDelayNanos;
-            // if we've hit the minimum number of messages for coalescing or we've run out of coalesce time, flush.
-            // note: we check the exact count, instead of greater than or equal to, of message shere to prevent a flush task
-            // for each message. There will be, of course, races with the consumer decrementing the pending counter,
-            // but that's still less excessive flushes.
-            if (pendingCount == MIN_MESSAGES_FOR_COALESCE
-                || (flushDelayNanos = coalescingStrategy.currentCoalescingTimeNanos()) <= 0)
-            {
-                scheduledFlushStateUpdater.set(this, 0);
-                channelLocal.flush();
-                return;
-            }
-
-            // calling schedule() on the eventLoop will force it to wake up (if not already executing) and schedule the task
-            channelLocal.eventLoop().schedule(() -> {
-                scheduledFlushStateUpdater.set(this, 0);
-                // we then execute() the flush() like this because netty runs the scheduled tasks before consuming from
-                // it's queue, which means it would process the flush() before any of the write tasks if we had just called
-                // flush() directly. by submitting via eventLoop().execute(), we ensure the flush task is enqueued
-                // at the end (after the write tasks).
-                channelLocal.eventLoop().execute(() -> channelLocal.flush());
-            }, flushDelayNanos, TimeUnit.NANOSECONDS);
+            outChannel.write(queuedMessage, this);
         }
         else
         {
@@ -265,63 +187,9 @@ public class OutboundMessagingConnection
     }
 
     /**
-     * Handles the result of attempting to send a message. If we've had an IOException, we typically want to create a new connection/channel.
-     * Hence, we need a way of bounding the attempts per failed channel to reconnect as we could get into a weird
-     * race where because the channel will call future.fail for each message in the dead channel (and hence invoke this callback),
-     * we don't want all those callbacks to attempt to create a new channel.
-     * <p>
-     * Note: this is called from the netty event loop, so it's safe to perform actions on the channel.
-     */
-    void handleMessageFuture(io.netty.util.concurrent.Future<? super Void> future, QueuedMessage msg)
-    {
-        // checking the cause() is an optimized way to tell if the operation was successful (as the cause will be null)
-        Throwable cause = future.cause();
-        if (cause == null)
-            return;
-
-        JVMStabilityInspector.inspectThrowable(cause);
-
-        boolean requeue = false;
-        if (future.isCancelled() || cause instanceof IOException || cause.getCause() instanceof IOException)
-        {
-            logger.trace("error writing to peer {} (at address {}). error: {}", remoteAddr, preferredConnectAddress, cause);
-
-            // because we get the reference of the channel to which the message was sent, we don't have to worry about
-            // a race of the callback being invoked but the OMC already setting up a new channel (and thus we won't attempt to close that new channel)
-            ChannelFuture channelFuture = (ChannelFuture) future;
-            // check that it's safe to change the state (to kick off the reconnect); basically make sure the instance hasn't been closed
-            // and that another thread hasn't already created a new channel. Basically, only the first message to fail on this channel
-            // should trigger the reconnect.
-            if (state == State.READY && channelWrapper.channel.id().equals(channelFuture.channel().id()))
-            {
-                reconnect();
-                channelFuture.channel().close();
-            }
-
-            if (msg.shouldRetry())
-                requeue = true;
-        }
-        // ExpiredException is thrown when the message sits in the queue/channel for too long before being sent
-        else if (cause instanceof ExpiredException && msg.shouldRetry())
-        {
-            requeue = true;
-        }
-        else
-        {
-            // Non IO exceptions are likely a programming error so let's not silence them
-            logger.error("Unexpected error writing to peer {} (on address {})", remoteAddr, preferredConnectAddress, cause);
-        }
-
-        if (requeue)
-        {
-            sendMessage(msg.message, msg.id);
-        }
-    }
-
-    /**
      * Sets the state properly so {@link #connect()} can attempt to reconnect.
      */
-    private void reconnect()
+    void reconnect()
     {
         stateUpdater.set(this, State.NOT_READY);
         connect();
@@ -342,19 +210,18 @@ public class OutboundMessagingConnection
         if (state != State.NOT_READY || !stateUpdater.compareAndSet(this, State.NOT_READY, State.CREATING_CHANNEL))
             return;
 
-        int messagingVersion = MessagingService.instance().getVersion(remoteAddr.getAddress());
-        boolean compress = shouldCompressConnection(remoteAddr.getAddress());
-        Bootstrap bootstrap = buildBootstrap(messagingVersion, compress);
-        outboundConnector = new OutboundConnector(bootstrap, localAddr, preferredConnectAddress);
+        boolean compress = shouldCompressConnection(connectionId.remote());
+        Bootstrap bootstrap = buildBootstrap(compress);
+        outboundConnector = new OutboundConnector(bootstrap, connectionId);
         outboundConnector.connect();
 
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
         connectionTimeoutFuture = scheduledExecutor.schedule(() -> connectionTimeout(outboundConnector), timeout, TimeUnit.MILLISECONDS);
     }
 
-    private Bootstrap buildBootstrap(int messagingVersion, boolean compress)
+    private Bootstrap buildBootstrap(boolean compress)
     {
-        boolean tcpNoDelay = isLocalDC(remoteAddr.getAddress()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();
+        boolean tcpNoDelay = isLocalDC(connectionId.remote()) ? INTRADC_TCP_NODELAY : DatabaseDescriptor.getInterDCTcpNoDelay();
         int sendBufferSize = DatabaseDescriptor.getInternodeSendBufferSize() > 0
                              ? DatabaseDescriptor.getInternodeSendBufferSize()
                              : OutboundConnectionParams.DEFAULT_SEND_BUFFER_SIZE;
@@ -362,18 +229,12 @@ public class OutboundMessagingConnection
                              ? DatabaseDescriptor.getInternodeRecvBufferSize()
                              : OutboundConnectionParams.DEFAULT_RECEIVE_BUFFER_SIZE;
         OutboundConnectionParams params = OutboundConnectionParams.builder()
-                                                                  .localAddr(localAddr)
-                                                                  .remoteAddr(preferredConnectAddress)
-                                                                  .protocolVersion(messagingVersion)
+                                                                  .connectionId(connectionId)
                                                                   .callback(this::finishHandshake)
                                                                   .encryptionOptions(encryptionOptions)
                                                                   .mode(Mode.MESSAGING)
                                                                   .compress(compress)
-                                                                  .coalesce(coalescingStrategy.isCoalescing())
-                                                                  .droppedMessageCount(droppedMessageCount)
-                                                                  .completedMessageCount(completedMessageCount)
-                                                                  .pendingMessageCount(new AtomicLong(0))
-                                                                  .connectionType(connectionType)
+                                                                  .coalescingStrategy(coalescingStrategy)
                                                                   .sendBufferSize(sendBufferSize)
                                                                   .receiveBufferSize(receiveBufferSize)
                                                                   .tcpNoDelay(tcpNoDelay)
@@ -385,7 +246,7 @@ public class OutboundMessagingConnection
     private boolean isLocalDC(InetAddress targetHost)
     {
         String remoteDC = DatabaseDescriptor.getEndpointSnitch().getDatacenter(targetHost);
-        String localDC = DatabaseDescriptor.getEndpointSnitch().getDatacenter(localAddr.getAddress());
+        String localDC = DatabaseDescriptor.getEndpointSnitch().getDatacenter(connectionId.local());
         return remoteDC != null && remoteDC.equals(localDC);
     }
 
@@ -435,15 +296,14 @@ public class OutboundMessagingConnection
         if (result.result != ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE)
         {
             targetVersion = result.negotiatedMessagingVersion;
-            MessagingService.instance().setVersion(remoteAddr.getAddress(), targetVersion);
+            MessagingService.instance().setVersion(connectionId.remote(), targetVersion);
         }
-        Channel channel = result.channel;
 
         switch (result.result)
         {
             case GOOD:
-                logger.debug("successfully connected to {} for connection type {}, coalescing = {}", remoteAddr, connectionType, isCoalescing);
-                channelWrapper = new ChannelWrapper(channel, result.pendingMessages);
+                logger.debug("successfully connected to {}, coalescing = {}", connectionId, coalescingStrategy.isCoalescing());
+                outChannel = result.outChannel;
                 // TODO:JEB work out with pcmanus the best way to handle this
                 // drain the backlog to the channel
                 writeBacklogToChannel();
@@ -454,13 +314,9 @@ public class OutboundMessagingConnection
                 break;
             case DISCONNECT:
                 stateUpdater.set(this, State.NOT_READY);
-                if (channel != null)
-                    channel.close();
                 break;
             case NEGOTIATION_FAILURE:
                 stateUpdater.set(this, State.NOT_READY);
-                if (channel != null)
-                    channel.close();
                 backlog.clear();
                 break;
             default:
@@ -474,25 +330,10 @@ public class OutboundMessagingConnection
      * path for coalescing - they were delayed due to setting up the socket connection, not the normal incoming rate,
      * so let's not unduly skew the {@link #coalescingStrategy}.
      */
+    @VisibleForTesting
     void writeBacklogToChannel()
     {
-        boolean wroteOnce = false;
-        final Channel channel = channelWrapper.channel;
-        final AtomicLong pendingMessages = channelWrapper.pendingMessageCount;
-        while (true)
-        {
-            final QueuedMessage msg = backlog.poll();
-            if (msg == null)
-                break;
-            pendingMessages.incrementAndGet();
-            ChannelFuture future = channel.write(msg);
-            future.addListener(f -> handleMessageFuture(f, msg));
-            wroteOnce = true;
-        }
-
-        // as this is an infrequent operation, don't bother coordinating with the instance-level flush task
-        if (wroteOnce)
-            channel.flush();
+        outChannel.writeBacklog(backlog, this);
     }
 
     private boolean shouldCompressConnection(InetAddress addr)
@@ -515,15 +356,15 @@ public class OutboundMessagingConnection
     void reconnectWithNewIp(InetSocketAddress newAddr)
     {
         // capture a reference to the current channel, in case it gets swapped out before we can call close() on it
-        Channel currentChannel = channelWrapper.channel;
-        preferredConnectAddress = newAddr;
+        OutChannel currentChannel = outChannel;
+        connectionId = connectionId.withNewConnectionAddress(newAddr);
 
         // kick off connecting on the new address. all new incoming messages will go that route, as well as any currently backlogged.
         reconnect();
 
         // lastly, push through anything remaining in the existing channel.
         if (currentChannel != null)
-            currentChannel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+            currentChannel.softClose();
     }
 
     public void close(boolean softClose)
@@ -544,16 +385,25 @@ public class OutboundMessagingConnection
         stateUpdater.set(this, State.CLOSED);
 
         // drain the backlog
-        ChannelWrapper wrapper = this.channelWrapper;
-        Object o;
-        while ((o = backlog.poll()) != null)
+        if (outChannel != null)
         {
-            if (softClose && wrapper != null && wrapper.channel != null)
-                wrapper.channel.write(o);
+            if (softClose)
+            {
+                outChannel.writeBacklog(backlog, null);
+                outChannel.softClose();
+            }
+            else
+            {
+                backlog.clear();
+                outChannel.close();
+            }
         }
+    }
 
-        if (wrapper != null && wrapper.channel != null)
-            wrapper.channel.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE);
+    @Override
+    public String toString()
+    {
+        return connectionId.toString();
     }
 
     /**
@@ -570,34 +420,43 @@ public class OutboundMessagingConnection
             GOOD, DISCONNECT, NEGOTIATION_FAILURE
         }
 
-        public final Channel channel;
+        public final OutChannel outChannel;
         public final int negotiatedMessagingVersion;
         public final Result result;
-        public final AtomicLong pendingMessages;
 
-        ConnectionHandshakeResult(Channel channel, int negotiatedMessagingVersion, Result result, AtomicLong pendingMessages)
+        private ConnectionHandshakeResult(OutChannel outChannel, int negotiatedMessagingVersion, Result result)
         {
-            this.channel = channel;
+            this.outChannel = outChannel;
             this.negotiatedMessagingVersion = negotiatedMessagingVersion;
             this.result = result;
-            this.pendingMessages = pendingMessages;
+        }
+
+        static ConnectionHandshakeResult success(OutChannel channel, int negotiatedMessagingVersion)
+        {
+            return new ConnectionHandshakeResult(channel, negotiatedMessagingVersion, Result.GOOD);
+        }
+
+        static ConnectionHandshakeResult disconnect(int negotiatedMessagingVersion)
+        {
+            return new ConnectionHandshakeResult(null, negotiatedMessagingVersion, Result.DISCONNECT);
         }
 
         static ConnectionHandshakeResult failed()
         {
-            return new ConnectionHandshakeResult(null, -1, Result.NEGOTIATION_FAILURE, null);
+            return new ConnectionHandshakeResult(null, -1, Result.NEGOTIATION_FAILURE);
         }
     }
 
     public Integer getPendingMessages()
     {
         int pending = backlog.size();
-        ChannelWrapper channelWrapper = this.channelWrapper;
-        pending += channelWrapper != null ? channelWrapper.pendingMessageCount.intValue() : 0;
+        OutChannel chan = outChannel;
+        if (chan != null)
+            pending += (int)chan.pendingMessageCount();
         return pending;
     }
 
-    public Long getCompletedMesssages()
+    public Long getCompletedMessages()
     {
         return completedMessageCount.get();
     }
@@ -605,25 +464,6 @@ public class OutboundMessagingConnection
     public Long getDroppedMessages()
     {
         return droppedMessageCount.get();
-    }
-
-    /**
-     * A simple struct to wrap the {@link Channel} and any other channel-specific things we might need.
-     */
-    private static final class ChannelWrapper
-    {
-        private final Channel channel;
-
-        /**
-         * The number of currently pending messages on this channel.
-         */
-        private final AtomicLong pendingMessageCount;
-
-        private ChannelWrapper(Channel channel, AtomicLong pendingMessageCount)
-        {
-            this.channel = channel;
-            this.pendingMessageCount = pendingMessageCount;
-        }
     }
 
     /*
@@ -643,15 +483,15 @@ public class OutboundMessagingConnection
     }
 
     @VisibleForTesting
-    void setChannel(Channel channel)
+    void setOutChannel(OutChannel outChannel)
     {
-        this.channelWrapper = new ChannelWrapper(channel, new AtomicLong());
+        this.outChannel = outChannel;
     }
 
     @VisibleForTesting
-    Channel getChannel()
+    OutChannel getOutChannel()
     {
-        return channelWrapper.channel;
+        return outChannel;
     }
 
     @VisibleForTesting
@@ -676,11 +516,5 @@ public class OutboundMessagingConnection
     void setTargetVersion(int targetVersion)
     {
         this.targetVersion = targetVersion;
-    }
-
-    @VisibleForTesting
-    void setPendingMessages(int i)
-    {
-        channelWrapper.pendingMessageCount.set(i);
     }
 }

@@ -27,7 +27,6 @@ import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService.Verb;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
 import org.apache.cassandra.utils.CoalescingStrategies;
 
 /**
@@ -57,11 +56,12 @@ public class OutboundMessagingPool
         this.backPressureState = backPressureState;
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
-        smallMessageChannel = new OutboundMessagingConnection(ConnectionType.SMALL_MESSAGE, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
-        largeMessageChannel = new OutboundMessagingConnection(ConnectionType.LARGE_MESSAGE, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, true));
+
+        smallMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.small(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, true));
+        largeMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.large(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, true));
 
         // don't attempt coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
-        gossipChannel = new OutboundMessagingConnection(ConnectionType.GOSSIP, preferredRemoteAddr, localAddr, encryptionOptions, coalescingStrategy(remoteAddr, false));
+        gossipChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.gossip(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, false));
     }
 
     private static CoalescingStrategies.CoalescingStrategy coalescingStrategy(InetSocketAddress remoteAddr, boolean maybeCoalesce)

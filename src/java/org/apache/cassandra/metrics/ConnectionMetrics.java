@@ -83,7 +83,7 @@ public class ConnectionMetrics
         {
             public Long getValue()
             {
-                return messagingPool.largeMessageChannel.getCompletedMesssages();
+                return messagingPool.largeMessageChannel.getCompletedMessages();
             }
         });
         largeMessageDroppedTasks = Metrics.register(factory.createMetricName("LargeMessageDroppedTasks"), new Gauge<Long>()
@@ -104,7 +104,7 @@ public class ConnectionMetrics
         {
             public Long getValue()
             {
-                return messagingPool.smallMessageChannel.getCompletedMesssages();
+                return messagingPool.smallMessageChannel.getCompletedMessages();
             }
         });
         smallMessageDroppedTasks = Metrics.register(factory.createMetricName("SmallMessageDroppedTasks"), new Gauge<Long>()
@@ -125,7 +125,7 @@ public class ConnectionMetrics
         {
             public Long getValue()
             {
-                return messagingPool.gossipChannel.getCompletedMesssages();
+                return messagingPool.gossipChannel.getCompletedMessages();
             }
         });
         gossipMessageDroppedTasks = Metrics.register(factory.createMetricName("GossipMessageDroppedTasks"), new Gauge<Long>()

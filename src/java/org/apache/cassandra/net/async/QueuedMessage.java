@@ -67,9 +67,4 @@ public class QueuedMessage implements CoalescingStrategies.Coalescable
     {
         return timestampNanos;
     }
-
-    QueuedMessage retry(long newTimestampNanos)
-    {
-        return new QueuedMessage(message, id, newTimestampNanos, droppable, retryable);
-    }
 }

@@ -19,9 +19,7 @@
 package org.apache.cassandra.net.async;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -52,8 +50,8 @@ class OutboundConnector
      * assuming, of course, we aren't switching IP addresses, and so on...
      */
     private final Bootstrap bootstrap;
-    private final InetSocketAddress localAddr;
-    private final InetSocketAddress remoteAddr;
+
+    private final OutboundConnectionIdentifier connectionId;
 
     private volatile boolean isCancelled;
 
@@ -68,11 +66,10 @@ class OutboundConnector
     private volatile ChannelFuture connectFuture;
 
     @VisibleForTesting
-    OutboundConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
+    OutboundConnector(Bootstrap bootstrap, OutboundConnectionIdentifier connectionId)
     {
         this.bootstrap = bootstrap;
-        this.localAddr = localAddr;
-        this.remoteAddr = remoteAddr;
+        this.connectionId = connectionId;
     }
 
     public void connect()
@@ -80,8 +77,8 @@ class OutboundConnector
         if (isCancelled)
             return;
         connectAttemptCount++;
-        logger.debug("attempting to connect to {}", remoteAddr);
-        connectFuture = bootstrap.connect(remoteAddr);
+        logger.debug("attempting to connect to {}", connectionId);
+        connectFuture = bootstrap.connect(connectionId.connectionAddress());
         connectFuture.addListener(this::connectCallback);
     }
 
@@ -106,7 +103,7 @@ class OutboundConnector
         Throwable cause = future.cause();
         if (cause instanceof IOException)
         {
-            logger.trace("unable to connect to {}", remoteAddr, cause);
+            logger.trace("unable to connect to {}", connectionId, cause);
 
             // it's safe to get a reference to the channel from the Future instance, thus we can get the executor
             channelFuture.channel().eventLoop().schedule(this::connect, OPEN_RETRY_DELAY * connectAttemptCount, TimeUnit.MILLISECONDS);
@@ -114,7 +111,7 @@ class OutboundConnector
         else
         {
             JVMStabilityInspector.inspectThrowable(cause);
-            logger.error("non-IO error attempting to connect to {}", remoteAddr, cause);
+            logger.error("non-IO error attempting to connect to {}", connectionId, cause);
         }
         return false;
     }

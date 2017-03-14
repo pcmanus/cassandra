@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.net.async;
 
-import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
@@ -43,8 +43,6 @@ import org.apache.cassandra.net.async.HandshakeProtocol.FirstHandshakeMessage;
 import org.apache.cassandra.net.async.HandshakeProtocol.SecondHandshakeMessage;
 import org.apache.cassandra.net.async.HandshakeProtocol.ThirdHandshakeMessage;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult.Result;
-import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
@@ -65,12 +63,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
     private static final int LZ4_HASH_SEED = 0x9747b28c;
 
-    /**
-     * The IP address to identify this node to the peer. Memoizing this value eliminates a dependency on {@link FBUtilities#getBroadcastAddress()}.
-     */
-    private final InetSocketAddress localAddr;
-
-    private final InetSocketAddress remoteAddr;
+    private final OutboundConnectionIdentifier connectionId;
 
     /**
      * The expected messaging service version to use.
@@ -94,10 +87,15 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
 
     OutboundHandshakeHandler(OutboundConnectionParams params)
     {
+        this(params, MessagingService.instance().getVersion(params.connectionId.remote()));
+    }
+
+    @VisibleForTesting
+    OutboundHandshakeHandler(OutboundConnectionParams params, int messagingVersion)
+    {
         this.params = params;
-        this.localAddr = params.localAddr;
-        this.remoteAddr = params.remoteAddr;
-        this.messagingVersion = params.protocolVersion;
+        this.connectionId = params.connectionId;
+        this.messagingVersion = messagingVersion;
         this.callback = params.callback;
         this.mode = params.mode;
     }
@@ -106,7 +104,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception
     {
-        logger.debug("starting handshake with {}", remoteAddr);
+        logger.debug("starting handshake with {}", connectionId.connectionAddress());
         ctx.writeAndFlush(new FirstHandshakeMessage(messagingVersion, mode, params.compress).encode(ctx.alloc()));
 
         long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
@@ -148,47 +146,43 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         {
             logger.trace("peer's max version is {}; will reconnect with that version", peerMessagingVersion);
             ctx.close();
-            callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, Result.DISCONNECT, null));
+            callback.accept(ConnectionHandshakeResult.disconnect(peerMessagingVersion));
+            return;
+        }
+        // we anticipate a version that is lower than what peer is actually running
+        else if (messagingVersion < peerMessagingVersion && messagingVersion < MessagingService.current_version)
+        {
+            logger.trace("peer has a higher max version than expected {} (previous value {})", peerMessagingVersion, messagingVersion);
+            ctx.close();
+            callback.accept(ConnectionHandshakeResult.disconnect(peerMessagingVersion));
             return;
         }
 
-        Result result;
         try
         {
-            ctx.writeAndFlush(new ThirdHandshakeMessage(MessagingService.current_version, localAddr.getAddress()).encode(ctx.alloc()));
-            setupPipeline(ctx.channel().pipeline(), peerMessagingVersion);
-            result = Result.GOOD;
+            ctx.writeAndFlush(new ThirdHandshakeMessage(MessagingService.current_version, connectionId.local()).encode(ctx.alloc()));
+            OutChannel outChannel = setupPipeline(ctx.channel(), peerMessagingVersion);
+            callback.accept(ConnectionHandshakeResult.success(outChannel, peerMessagingVersion));
         }
         catch (Exception e)
         {
             logger.info("failed to write last internode messaging handshake message", e);
             ctx.close();
-            result = Result.NEGOTIATION_FAILURE;
+            callback.accept(ConnectionHandshakeResult.failed());
         }
-
-        // we anticipate a version that is lower than what peer is actually running
-        if (messagingVersion < peerMessagingVersion && messagingVersion < MessagingService.current_version)
-        {
-            logger.trace("peer has a higher max version than expected {} (previous value {})", peerMessagingVersion, messagingVersion);
-            result = Result.DISCONNECT;
-            ctx.close();
-        }
-
-        callback.accept(new ConnectionHandshakeResult(ctx.channel(), peerMessagingVersion, result, params.pendingMessageCount));
     }
 
-    void setupPipeline(ChannelPipeline pipeline, int messagingVersion)
+    OutChannel setupPipeline(Channel channel, int messagingVersion)
     {
+        ChannelPipeline pipeline = channel.pipeline();
         if (params.compress)
             pipeline.addLast(NettyFactory.OUTBOUND_COMPRESSOR_HANDLER_NAME, new Lz4FrameEncoder(LZ4Factory.fastestInstance(), false, 1 << 14,
                                                                                                 XXHashFactory.fastestInstance().newStreamingHash32(LZ4_HASH_SEED).asChecksum()));
 
-        // only create an updated params instance if the messaging versions are different
-        OutboundConnectionParams updatedParams = messagingVersion == params.protocolVersion
-                                                 ? params
-                                                 : OutboundConnectionParams.builder(params).protocolVersion(messagingVersion).build();
-        pipeline.addLast("messageOutHandler", new MessageOutHandler(updatedParams));
+        OutChannel outChannel = OutChannel.create(channel, params.coalescingStrategy);
+        pipeline.addLast("messageOutHandler", new MessageOutHandler(connectionId, messagingVersion, outChannel));
         pipeline.remove(this);
+        return outChannel;
     }
 
     /**
