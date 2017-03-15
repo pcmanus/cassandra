@@ -34,7 +34,6 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundHandshakeHandler.HandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.State;
-import org.apache.cassandra.utils.CoalescingStrategies;
 
 import static org.apache.cassandra.net.MessagingService.Verb.ECHO;
 import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.CREATING_CHANNEL;
@@ -62,10 +61,9 @@ public class OutboundMessagingConnectionTest
     public void setup()
     {
         connectionId = OutboundConnectionIdentifier.small(LOCAL_ADDR, REMOTE_ADDR);
-        CoalescingStrategies.CoalescingStrategy strategy = new FakeCoalescingStrategy(false);
-        omc = new OutboundMessagingConnection(connectionId, null, strategy);
+        omc = new OutboundMessagingConnection(connectionId, null, null);
         channel = new EmbeddedChannel();
-        outChannel = OutChannel.create(channel, strategy);
+        outChannel = OutChannel.create(channel, null);
         omc.setOutChannel(outChannel);
     }
 

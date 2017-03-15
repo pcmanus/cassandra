@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.utils.CoalescingStrategies.Coalescable;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
-import org.apache.cassandra.utils.CoalescingStrategies.DisabledCoalescingStrategy;
 import org.apache.cassandra.utils.CoalescingStrategies.FixedCoalescingStrategy;
 import org.apache.cassandra.utils.CoalescingStrategies.MovingAverageCoalescingStrategy;
 import org.apache.cassandra.utils.CoalescingStrategies.TimeHorizonMovingAverageCoalescingStrategy;
@@ -63,15 +62,6 @@ public class CoalescingStrategiesTest
     {
         CoalescingStrategy cs = new FixedCoalescingStrategy(WINDOW_IN_MICROS, logger, DISPLAY_NAME);
         Assert.assertEquals(WINDOW_IN_NANOS, cs.currentCoalescingTimeNanos());
-        Assert.assertTrue(cs.isCoalescing());
-    }
-
-    @Test
-    public void testDisabledCoalescingStrategy()
-    {
-        CoalescingStrategy cs = new DisabledCoalescingStrategy(logger, DISPLAY_NAME);
-        Assert.assertTrue(cs.currentCoalescingTimeNanos() <= 0);
-        Assert.assertFalse(cs.isCoalescing());
     }
 
     @Test

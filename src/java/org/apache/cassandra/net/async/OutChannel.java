@@ -122,9 +122,9 @@ abstract class OutChannel
      */
     static OutChannel create(Channel channel, CoalescingStrategy coalescingStrategy)
     {
-        return coalescingStrategy.isCoalescing()
-               ? new CoalescingOutChannel(channel, coalescingStrategy)
-               : new SimpleOutChannel(channel);
+        return coalescingStrategy == null
+               ? new SimpleOutChannel(channel)
+               : new CoalescingOutChannel(channel, coalescingStrategy);
     }
 
     long pendingMessageCount()

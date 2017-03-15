@@ -29,6 +29,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import javax.annotation.Nullable;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,6 +122,7 @@ public class OutboundMessagingConnection
 
     private volatile State state = State.NOT_READY;
 
+    @Nullable
     private final CoalescingStrategy coalescingStrategy;
 
     private OutboundConnector outboundConnector;
@@ -302,7 +305,7 @@ public class OutboundMessagingConnection
         switch (result.outcome)
         {
             case SUCCESS:
-                logger.debug("successfully connected to {}, coalescing = {}", connectionId, coalescingStrategy.isCoalescing());
+                logger.debug("successfully connected to {}, coalescing = {}", connectionId, coalescingStrategy != null);
                 outChannel = result.outChannel;
                 // TODO:JEB work out with pcmanus the best way to handle this
                 // drain the backlog to the channel

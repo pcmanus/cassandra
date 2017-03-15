@@ -70,10 +70,9 @@ public class HandshakeHandlersTest
         InboundHandshakeHandler inboundHandshakeHandler = new InboundHandshakeHandler(new TestAuthenticator(true));
         EmbeddedChannel inboundChannel = new EmbeddedChannel(inboundHandshakeHandler);
 
-        OutboundMessagingConnection imc = new OutboundMessagingConnection(connectionId, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection imc = new OutboundMessagingConnection(connectionId, null, null);
         OutboundConnectionParams params = OutboundConnectionParams.builder()
                                                                   .connectionId(connectionId)
-                                                                  .coalescingStrategy(new FakeCoalescingStrategy(false))
                                                                   .callback(imc::finishHandshake)
                                                                   .mode(NettyFactory.Mode.MESSAGING)
                                                                   .build();
@@ -161,12 +160,11 @@ public class HandshakeHandlersTest
                                                                   .connectionId(connectionId)
                                                                   .callback(this::nop)
                                                                   .mode(NettyFactory.Mode.MESSAGING)
-                                                                  .coalescingStrategy(new FakeCoalescingStrategy(false))
                                                                   .compress(compress)
                                                                   .build();
         OutboundHandshakeHandler outboundHandshakeHandler = new OutboundHandshakeHandler(params);
         EmbeddedChannel outboundChannel = new EmbeddedChannel(outboundHandshakeHandler);
-        OutboundMessagingConnection omc = new OutboundMessagingConnection(connectionId, null, new FakeCoalescingStrategy(false));
+        OutboundMessagingConnection omc = new OutboundMessagingConnection(connectionId, null, null);
         omc.setTargetVersion(MESSAGING_VERSION);
         outboundHandshakeHandler.setupPipeline(outboundChannel, MESSAGING_VERSION);
 

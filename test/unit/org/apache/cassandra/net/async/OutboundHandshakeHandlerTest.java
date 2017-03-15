@@ -66,7 +66,6 @@ public class OutboundHandshakeHandlerTest
         connectionId = OutboundConnectionIdentifier.small(localAddr, remoteAddr);
         params = OutboundConnectionParams.builder()
                                          .connectionId(connectionId)
-                                         .coalescingStrategy(new FakeCoalescingStrategy(false))
                                          .callback(this::callbackHandler)
                                          .mode(NettyFactory.Mode.MESSAGING)
                                          .build();

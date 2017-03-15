@@ -124,14 +124,6 @@ public class CoalescingStrategies
          * transient thing).
          */
         long currentCoalescingTimeNanos();
-
-        /**
-         * Whether the strategy is doing any coalescing.
-         *
-         * @return {@code true} is the strategy is doing any coalescing, that is {@link #currentCoalescingTimeNanos()} ever
-         * return a strictly positive number, {@code false} otherwise.
-         */
-        public boolean isCoalescing();
     }
 
     public static abstract class AbstractCoalescingStrategy implements CoalescingStrategy
@@ -205,11 +197,6 @@ public class CoalescingStrategies
                     debugTimestamp(coalescable.timestampNanos());
                 }
             }
-        }
-
-        public boolean isCoalescing()
-        {
-            return true;
         }
     }
 
@@ -417,69 +404,35 @@ public class CoalescingStrategies
         }
     }
 
-    /**
-     * A coalesscing strategy that just returns all currently available elements
-     */
-    @VisibleForTesting
-    static class DisabledCoalescingStrategy extends AbstractCoalescingStrategy
-    {
-        public DisabledCoalescingStrategy(Logger logger, String displayName)
-        {
-            super(logger, displayName);
-        }
-
-        public void newArrival(Coalescable message)
-        {
-            debugTimestamp(message.timestampNanos());
-        }
-
-        public long currentCoalescingTimeNanos()
-        {
-            return -1;
-        }
-
-        @Override
-        public boolean isCoalescing()
-        {
-            return false;
-        }
-
-        @Override
-        public String toString()
-        {
-            return "Disabled";
-        }
-    }
-
     public static CoalescingStrategy newCoalescingStrategy(String strategy, int coalesceWindow, Logger logger, String displayName)
     {
         String strategyCleaned = strategy.trim().toUpperCase(Locale.ENGLISH);
         switch(strategyCleaned)
         {
-        case MOVING_AVERAGE:
-            return new MovingAverageCoalescingStrategy(coalesceWindow, logger, displayName);
-        case FIXED:
-            return new FixedCoalescingStrategy(coalesceWindow, logger, displayName);
-        case TIME_HORIZON:
-            long initialEpoch = System.nanoTime();
-            return new TimeHorizonMovingAverageCoalescingStrategy(coalesceWindow, logger, displayName, initialEpoch);
-        case DISABLED:
-            return new DisabledCoalescingStrategy(logger, displayName);
-        default:
-            try
-            {
-                Class<?> clazz = Class.forName(strategy);
+            case MOVING_AVERAGE:
+                return new MovingAverageCoalescingStrategy(coalesceWindow, logger, displayName);
+            case FIXED:
+                return new FixedCoalescingStrategy(coalesceWindow, logger, displayName);
+            case TIME_HORIZON:
+                long initialEpoch = System.nanoTime();
+                return new TimeHorizonMovingAverageCoalescingStrategy(coalesceWindow, logger, displayName, initialEpoch);
+            case DISABLED:
+                return null;
+            default:
+                try
+                {
+                    Class<?> clazz = Class.forName(strategy);
 
-                if (!CoalescingStrategy.class.isAssignableFrom(clazz))
-                    throw new RuntimeException(strategy + " is not an instance of CoalescingStrategy");
+                    if (!CoalescingStrategy.class.isAssignableFrom(clazz))
+                        throw new RuntimeException(strategy + " is not an instance of CoalescingStrategy");
 
-                Constructor<?> constructor = clazz.getConstructor(int.class, Logger.class, String.class);
-                return (CoalescingStrategy)constructor.newInstance(coalesceWindow, logger, displayName);
-            }
-            catch (Exception e)
-            {
-                throw new RuntimeException(e);
-            }
+                    Constructor<?> constructor = clazz.getConstructor(int.class, Logger.class, String.class);
+                    return (CoalescingStrategy)constructor.newInstance(coalesceWindow, logger, displayName);
+                }
+                catch (Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
         }
     }
 }

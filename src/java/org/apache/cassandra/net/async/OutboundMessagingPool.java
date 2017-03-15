@@ -57,16 +57,16 @@ public class OutboundMessagingPool
         metrics = new ConnectionMetrics(localAddr.getAddress(), this);
 
 
-        smallMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.small(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, true));
-        largeMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.large(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, true));
+        smallMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.small(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr));
+        largeMessageChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.large(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr));
 
         // don't attempt coalesce the gossip messages, just ship them out asap (let's not anger the FD on any peer node by any artificial delays)
-        gossipChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.gossip(localAddr, preferredRemoteAddr), encryptionOptions, coalescingStrategy(remoteAddr, false));
+        gossipChannel = new OutboundMessagingConnection(OutboundConnectionIdentifier.gossip(localAddr, preferredRemoteAddr), encryptionOptions, null);
     }
 
-    private static CoalescingStrategies.CoalescingStrategy coalescingStrategy(InetSocketAddress remoteAddr, boolean maybeCoalesce)
+    private static CoalescingStrategies.CoalescingStrategy coalescingStrategy(InetSocketAddress remoteAddr)
     {
-        String strategyName = maybeCoalesce ? DatabaseDescriptor.getOtcCoalescingStrategy() : CoalescingStrategies.DISABLED;
+        String strategyName = DatabaseDescriptor.getOtcCoalescingStrategy();
         String displayName = remoteAddr.getAddress().getHostAddress();
         return CoalescingStrategies.newCoalescingStrategy(strategyName,
                                                           DatabaseDescriptor.getOtcCoalescingWindow(),

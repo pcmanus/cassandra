@@ -54,7 +54,7 @@ public class MessageOutHandlerTest
         OutboundConnectionIdentifier connectionId = OutboundConnectionIdentifier.small(new InetSocketAddress("127.0.0.1", 0),
                                                                                        new InetSocketAddress("127.0.0.1", 0));
         channel = new EmbeddedChannel(handler);
-        OutChannel outChan = OutChannel.create(channel, new FakeCoalescingStrategy(false));
+        OutChannel outChan = OutChannel.create(channel, null);
         handler = new MessageOutHandler(connectionId, MESSAGING_VERSION, outChan);
     }
 
