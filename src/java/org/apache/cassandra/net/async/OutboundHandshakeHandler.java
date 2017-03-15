@@ -42,7 +42,6 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.HandshakeProtocol.FirstHandshakeMessage;
 import org.apache.cassandra.net.async.HandshakeProtocol.SecondHandshakeMessage;
 import org.apache.cassandra.net.async.HandshakeProtocol.ThirdHandshakeMessage;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 
 /**
  * A {@link ChannelHandler} to execute the send-side of the internode communication handshake protocol.
@@ -73,7 +72,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     /**
      * A function to invoke upon completion of the attempt, success or failure, to connect to the peer.
      */
-    private final Consumer<ConnectionHandshakeResult> callback;
+    private final Consumer<HandshakeResult> callback;
     private final NettyFactory.Mode mode;
     private final OutboundConnectionParams params;
 
@@ -146,7 +145,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         {
             logger.trace("peer's max version is {}; will reconnect with that version", peerMessagingVersion);
             ctx.close();
-            callback.accept(ConnectionHandshakeResult.disconnect(peerMessagingVersion));
+            callback.accept(HandshakeResult.disconnect(peerMessagingVersion));
             return;
         }
         // we anticipate a version that is lower than what peer is actually running
@@ -154,7 +153,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         {
             logger.trace("peer has a higher max version than expected {} (previous value {})", peerMessagingVersion, messagingVersion);
             ctx.close();
-            callback.accept(ConnectionHandshakeResult.disconnect(peerMessagingVersion));
+            callback.accept(HandshakeResult.disconnect(peerMessagingVersion));
             return;
         }
 
@@ -162,13 +161,13 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         {
             ctx.writeAndFlush(new ThirdHandshakeMessage(MessagingService.current_version, connectionId.local()).encode(ctx.alloc()));
             OutChannel outChannel = setupPipeline(ctx.channel(), peerMessagingVersion);
-            callback.accept(ConnectionHandshakeResult.success(outChannel, peerMessagingVersion));
+            callback.accept(HandshakeResult.success(outChannel, peerMessagingVersion));
         }
         catch (Exception e)
         {
             logger.info("failed to write last internode messaging handshake message", e);
             ctx.close();
-            callback.accept(ConnectionHandshakeResult.failed());
+            callback.accept(HandshakeResult.failed());
         }
     }
 
@@ -198,7 +197,7 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         isCancelled = true;
         ctx.close();
         if (callback != null)
-            callback.accept(ConnectionHandshakeResult.failed());
+            callback.accept(HandshakeResult.failed());
 
         if (timeoutFuture != null)
             timeoutFuture.cancel(false);
@@ -223,5 +222,53 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
     boolean isCancelled()
     {
         return isCancelled;
+    }
+
+
+    /**
+     * The result of the handshake. Handshake has 3 possible outcome:
+     *  1) it can be successful, in which case the channel and version to used is returned in this result.
+     *  2) we may decide to disconnect to reconnect with another version (that version is passed in this result).
+     *  3) we can have a negotiation failure for an unknown reason.
+     */
+    static class HandshakeResult
+    {
+        /**
+         * Describes the result of receiving the response back from the peer (Message 2 of the handshake)
+         * and implies an action that should be taken.
+         */
+        enum Outcome
+        {
+            SUCCESS, DISCONNECT, NEGOTIATION_FAILURE
+        }
+
+        /** The channel for the connection, only set for successful handshake. */
+        final OutChannel outChannel;
+        /** The version negotiated with the peer. Set unless this is a {@link Outcome#NEGOTIATION_FAILURE}. */
+        final int negotiatedMessagingVersion;
+        /** The handshake {@link Outcome}. */
+        final Outcome outcome;
+
+        private HandshakeResult(OutChannel outChannel, int negotiatedMessagingVersion, Outcome outcome)
+        {
+            this.outChannel = outChannel;
+            this.negotiatedMessagingVersion = negotiatedMessagingVersion;
+            this.outcome = outcome;
+        }
+
+        static HandshakeResult success(OutChannel channel, int negotiatedMessagingVersion)
+        {
+            return new HandshakeResult(channel, negotiatedMessagingVersion, Outcome.SUCCESS);
+        }
+
+        static HandshakeResult disconnect(int negotiatedMessagingVersion)
+        {
+            return new HandshakeResult(null, negotiatedMessagingVersion, Outcome.DISCONNECT);
+        }
+
+        static HandshakeResult failed()
+        {
+            return new HandshakeResult(null, -1, Outcome.NEGOTIATION_FAILURE);
+        }
     }
 }

@@ -192,7 +192,7 @@ public class HandshakeHandlersTest
         }
     }
 
-    private Void nop(OutboundMessagingConnection.ConnectionHandshakeResult connectionHandshakeResult)
+    private Void nop(OutboundHandshakeHandler.HandshakeResult handshakeResult)
     {
         // do nothing, really
         return null;

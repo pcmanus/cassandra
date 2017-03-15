@@ -254,7 +254,7 @@ public class OutboundMessagingConnection
      * A callback for handling timeouts when creating a connection.
      * <p>
      * Note: this method is *not* invoked from the netty event loop,
-     * so there's an inherent race with {@link #finishHandshake(ConnectionHandshakeResult)},
+     * so there's an inherent race with {@link #finishHandshake(OutboundHandshakeHandler.HandshakeResult)},
      * as well as any possible connect() reattempts (a seemingly remote race condition, however).
      * Therefore, this function tries to lose any races, as much as possible.
      */
@@ -283,7 +283,7 @@ public class OutboundMessagingConnection
      * Note: this method will be invoked from the netty event loop,
      * so there's an inherent race with {@link #connectionTimeout(OutboundConnector)}.
      */
-    void finishHandshake(ConnectionHandshakeResult result)
+    void finishHandshake(OutboundHandshakeHandler.HandshakeResult result)
     {
         // clean up the connector instances before changing the state
         if (connectionTimeoutFuture != null)
@@ -293,15 +293,15 @@ public class OutboundMessagingConnection
         }
         outboundConnector = null;
 
-        if (result.result != ConnectionHandshakeResult.Result.NEGOTIATION_FAILURE)
+        if (result.outcome != OutboundHandshakeHandler.HandshakeResult.Outcome.NEGOTIATION_FAILURE)
         {
             targetVersion = result.negotiatedMessagingVersion;
             MessagingService.instance().setVersion(connectionId.remote(), targetVersion);
         }
 
-        switch (result.result)
+        switch (result.outcome)
         {
-            case GOOD:
+            case SUCCESS:
                 logger.debug("successfully connected to {}, coalescing = {}", connectionId, coalescingStrategy.isCoalescing());
                 outChannel = result.outChannel;
                 // TODO:JEB work out with pcmanus the best way to handle this
@@ -320,7 +320,7 @@ public class OutboundMessagingConnection
                 backlog.clear();
                 break;
             default:
-                throw new IllegalArgumentException("unhandled result type: " + result.result);
+                throw new IllegalArgumentException("unhandled result type: " + result.outcome);
         }
     }
 
@@ -404,47 +404,6 @@ public class OutboundMessagingConnection
     public String toString()
     {
         return connectionId.toString();
-    }
-
-    /**
-     * A simple class to hold the result of completed connection attempt.
-     */
-    static class ConnectionHandshakeResult
-    {
-        /**
-         * Describes the result of receiving the response back from the peer (Message 2 of the handshake)
-         * and implies an action that should be taken.
-         */
-        enum Result
-        {
-            GOOD, DISCONNECT, NEGOTIATION_FAILURE
-        }
-
-        public final OutChannel outChannel;
-        public final int negotiatedMessagingVersion;
-        public final Result result;
-
-        private ConnectionHandshakeResult(OutChannel outChannel, int negotiatedMessagingVersion, Result result)
-        {
-            this.outChannel = outChannel;
-            this.negotiatedMessagingVersion = negotiatedMessagingVersion;
-            this.result = result;
-        }
-
-        static ConnectionHandshakeResult success(OutChannel channel, int negotiatedMessagingVersion)
-        {
-            return new ConnectionHandshakeResult(channel, negotiatedMessagingVersion, Result.GOOD);
-        }
-
-        static ConnectionHandshakeResult disconnect(int negotiatedMessagingVersion)
-        {
-            return new ConnectionHandshakeResult(null, negotiatedMessagingVersion, Result.DISCONNECT);
-        }
-
-        static ConnectionHandshakeResult failed()
-        {
-            return new ConnectionHandshakeResult(null, -1, Result.NEGOTIATION_FAILURE);
-        }
     }
 
     public Integer getPendingMessages()

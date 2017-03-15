@@ -32,7 +32,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundHandshakeHandler.HandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.State;
 import org.apache.cassandra.utils.CoalescingStrategies;
 
@@ -240,7 +240,7 @@ public class OutboundMessagingConnectionTest
     @Test
     public void finishHandshake_GOOD()
     {
-        ConnectionHandshakeResult result = ConnectionHandshakeResult.success(outChannel, MESSAGING_VERSION);
+        HandshakeResult result = HandshakeResult.success(outChannel, MESSAGING_VERSION);
         omc.finishHandshake(result);
         Assert.assertEquals(outChannel, omc.getOutChannel());
         Assert.assertEquals(READY, omc.getState());
@@ -255,7 +255,7 @@ public class OutboundMessagingConnectionTest
             omc.addToBacklog(new QueuedMessage(new MessageOut<>(ECHO), i));
         Assert.assertEquals(count, omc.backlogSize());
 
-        ConnectionHandshakeResult result = ConnectionHandshakeResult.disconnect(MESSAGING_VERSION);
+        HandshakeResult result = HandshakeResult.disconnect(MESSAGING_VERSION);
         omc.finishHandshake(result);
         Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));
@@ -270,7 +270,7 @@ public class OutboundMessagingConnectionTest
             omc.addToBacklog(new QueuedMessage(new MessageOut<>(ECHO), i));
         Assert.assertEquals(count, omc.backlogSize());
 
-        ConnectionHandshakeResult result = ConnectionHandshakeResult.failed();
+        HandshakeResult result = HandshakeResult.failed();
         omc.finishHandshake(result);
         Assert.assertEquals(NOT_READY, omc.getState());
         Assert.assertEquals(MESSAGING_VERSION, MessagingService.instance().getVersion(REMOTE_ADDR.getAddress()));

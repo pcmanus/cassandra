@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundHandshakeHandler.HandshakeResult;
 import org.apache.cassandra.utils.CoalescingStrategies;
 
 /**
@@ -35,7 +35,7 @@ class OutboundConnectionParams
     public static final int DEFAULT_RECEIVE_BUFFER_SIZE = 1 << 15;
 
     final OutboundConnectionIdentifier connectionId;
-    final Consumer<ConnectionHandshakeResult> callback;
+    final Consumer<HandshakeResult> callback;
     final ServerEncryptionOptions encryptionOptions;
     final NettyFactory.Mode mode;
     final boolean compress;
@@ -45,7 +45,7 @@ class OutboundConnectionParams
     final boolean tcpNoDelay;
 
     private OutboundConnectionParams(OutboundConnectionIdentifier connectionId,
-                                     Consumer<ConnectionHandshakeResult> callback,
+                                     Consumer<HandshakeResult> callback,
                                      ServerEncryptionOptions encryptionOptions,
                                      NettyFactory.Mode mode,
                                      boolean compress,
@@ -78,7 +78,7 @@ class OutboundConnectionParams
     public static class Builder
     {
         private OutboundConnectionIdentifier connectionId;
-        private Consumer<ConnectionHandshakeResult> callback;
+        private Consumer<HandshakeResult> callback;
         private ServerEncryptionOptions encryptionOptions;
         private NettyFactory.Mode mode;
         private boolean compress;
@@ -109,7 +109,7 @@ class OutboundConnectionParams
             return this;
         }
 
-        public Builder callback(Consumer<ConnectionHandshakeResult> callback)
+        public Builder callback(Consumer<HandshakeResult> callback)
         {
             this.callback = callback;
             return this;

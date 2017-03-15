@@ -37,7 +37,7 @@ import io.netty.handler.codec.compression.Lz4FrameDecoder;
 import io.netty.handler.codec.compression.Lz4FrameEncoder;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
+import org.apache.cassandra.net.async.OutboundHandshakeHandler.HandshakeResult;
 
 public class OutboundHandshakeHandlerTest
 {
@@ -49,7 +49,7 @@ public class OutboundHandshakeHandlerTest
     private EmbeddedChannel channel;
     private OutboundConnectionIdentifier connectionId;
     private OutboundHandshakeHandler handler;
-    private ConnectionHandshakeResult result;
+    private HandshakeResult result;
     OutboundConnectionParams params;
     private ByteBuf buf;
 
@@ -104,7 +104,7 @@ public class OutboundHandshakeHandlerTest
         channel.releaseOutbound(); // throw away any responses from decode()
 
         Assert.assertEquals(MESSAGING_VERSION, result.negotiatedMessagingVersion);
-        Assert.assertEquals(ConnectionHandshakeResult.Result.GOOD, result.result);
+        Assert.assertEquals(HandshakeResult.Outcome.SUCCESS, result.outcome);
     }
 
     @Test
@@ -118,7 +118,7 @@ public class OutboundHandshakeHandlerTest
         Assert.assertTrue(channel.inboundMessages().isEmpty());
 
         Assert.assertEquals(msgVersion, result.negotiatedMessagingVersion);
-        Assert.assertEquals(ConnectionHandshakeResult.Result.DISCONNECT, result.result);
+        Assert.assertEquals(HandshakeResult.Outcome.DISCONNECT, result.outcome);
         Assert.assertFalse(channel.isOpen());
         Assert.assertTrue(channel.outboundMessages().isEmpty());
     }
@@ -137,7 +137,7 @@ public class OutboundHandshakeHandlerTest
         Assert.assertEquals(buf.writerIndex(), buf.readerIndex());
 
         Assert.assertEquals(MESSAGING_VERSION, result.negotiatedMessagingVersion);
-        Assert.assertEquals(ConnectionHandshakeResult.Result.DISCONNECT, result.result);
+        Assert.assertEquals(HandshakeResult.Outcome.DISCONNECT, result.outcome);
     }
 
     @Test
@@ -168,9 +168,9 @@ public class OutboundHandshakeHandlerTest
         Assert.assertNotNull(pipeline.get(MessageOutHandler.class));
     }
 
-    private Void callbackHandler(ConnectionHandshakeResult connectionHandshakeResult)
+    private Void callbackHandler(HandshakeResult handshakeResult)
     {
-        result = connectionHandshakeResult;
+        result = handshakeResult;
         return null;
     }
 }
