@@ -355,4 +355,24 @@ public class AlterTest extends CQLTester
             assertEquals(errorMsg, e.getMessage());
         }
     }
+
+    @Test
+    public void testAlterDropEmptySSTable() throws Throwable
+    {
+        createTable("CREATE TABLE %s(k int PRIMARY KEY, x int, y int)");
+
+        execute("UPDATE %s SET x = 1 WHERE k = 0");
+
+        flush();
+
+        execute("UPDATE %s SET x = 1, y = 1 WHERE k = 0");
+
+        flush();
+
+        execute("ALTER TABLE %s DROP x");
+
+        compact();
+
+        assertRows(execute("SELECT * FROM %s"), row(0, 1));
+    }
 }
