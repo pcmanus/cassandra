@@ -26,8 +26,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.PeekingIterator;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.util.DataInputPlus;
@@ -43,8 +41,6 @@ import org.apache.cassandra.net.MessagingService;
  */
 public abstract class UnfilteredDeserializer
 {
-    private static final Logger logger = LoggerFactory.getLogger(UnfilteredDeserializer.class);
-
     protected final CFMetaData metadata;
     protected final DataInputPlus in;
     protected final SerializationHelper helper;
@@ -636,8 +632,6 @@ public abstract class UnfilteredDeserializer
                 {
                     assert openMarkerToReturn != null;
                     Unfiltered toReturn = openMarkerToReturn;
-                    if (!Thread.currentThread().getName().contains("CompactionExecutor"))
-                        logger.info("[Legacy on {}.{}] Poping open tombstone: {}", metadata.ksName, metadata.cfName, toReturn.toString(metadata));
                     openMarkerToReturn = null;
                     return toReturn;
                 }
@@ -672,8 +666,8 @@ public abstract class UnfilteredDeserializer
                 }
 
                  /**
-                  * Pop whatever next marker needs to be poped. This is called when all atoms have been consumed to "empty"
-                  * the tracker.
+                  * Pop whatever next marker needs to be popped. This should be called as many time as necessary (until
+                  * {@link #hasOpenTombstones} returns {@false}) when all atoms have been consumed to "empty" the tracker.
                   */
                  public Unfiltered popMarker()
                  {
@@ -687,7 +681,7 @@ public abstract class UnfilteredDeserializer
                  *
                  * Note that this method assumes that:
                  +  1) the added tombstone is not fully shadowed: !isShadowed(tombstone).
-                 +  2) there is outstanding marker to open that open strictly before this new tombsone: !hasOpeningMarkerBefore(tombstone).
+                 +  2) there is no marker to open that open strictly before this new tombstone: !hasOpeningMarkerBefore(tombstone).
                  +  3) no opened tombstone closes before that tombstone: !hasClosingMarkerBefore(tombstone).
                  + One can check that this is only called after the condition above have been checked in UnfilteredIterator.hasNext above.
                  */
