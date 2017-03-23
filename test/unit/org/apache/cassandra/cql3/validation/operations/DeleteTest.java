@@ -1334,7 +1334,6 @@ public class DeleteTest extends CQLTester
         for (int i = 0; i < 10; i++)
             execute("INSERT INTO %s(k, i, v) VALUES (?, ?, ?) USING TIMESTAMP 3", "a", i*2, longText);
 
-        //execute("DELETE FROM %s USING TIMESTAMP 1 WHERE k = ? AND i >= ? AND i <= ?", "a", 4, 10);
         execute("DELETE FROM %s USING TIMESTAMP 1 WHERE k = ? AND i >= ? AND i <= ?", "a", 12, 16);
 
         flush();
