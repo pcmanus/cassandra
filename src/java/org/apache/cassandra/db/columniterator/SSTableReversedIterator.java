@@ -69,8 +69,8 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
 
         // Set in loadFromDisk () and used in setIterator to handle range tombstone extending on multiple index block. See
         // loadFromDisk for details. Note that those are always false for non-indexed readers.
-        protected boolean skipFirst;
-        protected boolean skipLast;
+        protected boolean skipFirstIteratedItem;
+        protected boolean skipLastIteratedItem;
 
         private ReverseReader(FileDataInput file, boolean shouldCloseFile)
         {
@@ -128,10 +128,10 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             if (!iterator.hasNext())
                 return;
 
-            if (skipFirst)
+            if (skipFirstIteratedItem)
                 iterator.next();
 
-            if (skipLast)
+            if (skipLastIteratedItem)
                 iterator = new SkipLastIterator(iterator);
         }
 
@@ -168,8 +168,8 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             assert start == null || !hasNextBlock;
 
             buffer.reset();
-            skipFirst = false;
-            skipLast = false;
+            skipFirstIteratedItem = false;
+            skipLastIteratedItem = false;
 
             boolean isFirst = true;
 
@@ -197,11 +197,12 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 // If it's not the last block however, in which case we know we'll have start == null, it means this marker is really
                 // open in a previous block and so while we do need to add it the buffer for the reason mentioned above, we don't
                 // want to "return" it just yet, we'll wait until we reach it in the previous blocks. That's why we trigger
-                // skipLast in that case.
+                // skipLastIteratedItem in that case (this is first item of the block, but we're iterating in reverse order
+                // so it will be last returned by the iterator).
                 RangeTombstone.Bound markerStart = start == null ? RangeTombstone.Bound.BOTTOM : RangeTombstone.Bound.fromSliceBound(start);
                 buffer.add(new RangeTombstoneBoundMarker(markerStart, openMarker));
                 if (hasNextBlock)
-                    skipLast = true;
+                    skipLastIteratedItem = true;
             }
 
             // Now deserialize everything until we reach our requested end (if we have one)
@@ -230,11 +231,12 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
                 // If it's note our first block (for the slice) however, it means that marker closed in a previously read
                 // block and we have already returned it. So while we should still add it to the buffer for the sake of
                 // not breaking ImmutableBTreePartition, we should skip it when returning from the iterator, hence the
-                // skipFirst.
+                // skipFirstIteratedItem (this is the last item of the block, but we're iterating in reverse order so it will
+                // be the first returned by the iterator).
                 RangeTombstone.Bound markerEnd = end == null ? RangeTombstone.Bound.TOP : RangeTombstone.Bound.fromSliceBound(end);
                 buffer.add(new RangeTombstoneBoundMarker(markerEnd, getAndClearOpenMarker()));
                 if (hasPreviousBlock)
-                    skipFirst = true;
+                    skipFirstIteratedItem = true;
             }
 
             buffer.build();
@@ -293,10 +295,10 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             // Note that even if we were already set on the proper block (which would happen if the previous slice
             // requested ended on the same block this one start), we can't reuse it because when reading the previous
             // slice we've only read that block from the previous slice start. Re-reading also handles
-            // skipFirst/skipLast that we would need to handle otherwise.
+            // skipFirstIteratedItem/skipLastIteratedItem that we would need to handle otherwise.
             indexState.setToBlock(startIdx);
 
-            readCurrentBlock(true, false, startIdx != lastBlockIdx);
+            readCurrentBlock(false, startIdx != lastBlockIdx);
         }
 
         @Override
@@ -305,14 +307,14 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
             if (super.hasNextInternal())
                 return true;
 
-            // We have nothing more for our current block, move the previous one.
-            int previousBlockIdx = indexState.currentBlockIdx() - 1;
-            if (previousBlockIdx < 0 || previousBlockIdx < lastBlockIdx)
+            // We have nothing more for our current block, move the next one (so the one before on disk).
+            int nextBlockIdx = indexState.currentBlockIdx() - 1;
+            if (nextBlockIdx < 0 || nextBlockIdx < lastBlockIdx)
                 return false;
 
             // The slice start can be in 
-            indexState.setToBlock(previousBlockIdx);
-            readCurrentBlock(false, true, previousBlockIdx == lastBlockIdx);
+            indexState.setToBlock(nextBlockIdx);
+            readCurrentBlock(true, nextBlockIdx != lastBlockIdx);
             // since that new block is within the bounds we've computed in setToSlice(), we know there will
             // always be something matching the slice unless we're on the lastBlockIdx (in which case there
             // may or may not be results, but if there isn't, we're done for the slice).
@@ -322,16 +324,20 @@ public class SSTableReversedIterator extends AbstractSSTableIterator
         /**
          * Reads the current block, the last one we've set.
          *
-         * @param canIncludeSliceEnd whether the block can include the slice end.
+         * @param hasPreviousBlock is whether we have already read a previous block for the current slice.
+         * @param hasNextBlock is whether we have more blocks to read for the current slice.
          */
-        private void readCurrentBlock(boolean canIncludeSliceEnd, boolean hasPreviousBlock, boolean hasNextBlock) throws IOException
+        private void readCurrentBlock(boolean hasPreviousBlock, boolean hasNextBlock) throws IOException
         {
             if (buffer == null)
                 buffer = createBuffer(indexState.blocksCount());
 
             int currentBlock = indexState.currentBlockIdx();
 
-            boolean canIncludeSliceStart = currentBlock == lastBlockIdx;
+            // The slice start (resp. slice end) is only meaningful on the last (resp. first) block read (since again,
+            // we read blocks in reverse order).
+            boolean canIncludeSliceStart = !hasNextBlock;
+            boolean canIncludeSliceEnd = !hasPreviousBlock;
 
             // When dealing with old format sstable, we have the problem that a row can span 2 index block, i.e. it can
             // start at the end of a block and end at the beginning of the next one. That's not a problem per se for
