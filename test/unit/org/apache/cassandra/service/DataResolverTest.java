@@ -630,7 +630,7 @@ public class DataResolverTest
     @Test
     public void testRepairRangeTombstoneWithPartitionDeletion()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime());
         InetAddress peer1 = peer();
         InetAddress peer2 = peer();
 
@@ -669,7 +669,7 @@ public class DataResolverTest
     @Test
     public void testRepairRangeTombstoneWithPartitionDeletion2()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime());
         InetAddress peer1 = peer();
         InetAddress peer2 = peer();
 
