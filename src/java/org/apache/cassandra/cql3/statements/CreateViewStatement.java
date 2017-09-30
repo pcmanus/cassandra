@@ -125,6 +125,12 @@ public class CreateViewStatement extends SchemaAlteringStatement
 
         properties.validate();
 
+        if (cfName.getColumnFamily().isEmpty())
+            throw new InvalidRequestException("View name cannot be empty.");
+
+        if (baseName.getColumnFamily().isEmpty())
+            throw new InvalidRequestException("Base table name cannot be empty.");
+
         if (properties.useCompactStorage)
             throw new InvalidRequestException("Cannot use 'COMPACT STORAGE' when defining a materialized view");
 
@@ -133,7 +139,8 @@ public class CreateViewStatement extends SchemaAlteringStatement
         if (!baseName.getKeyspace().equals(keyspace()))
             throw new InvalidRequestException("Cannot create a materialized view on a table in a separate keyspace");
 
-        CFMetaData cfm = ThriftValidation.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily());
+        // CASSANDRA-10857: Schema changes are not allowed in non-compact mode
+        CFMetaData cfm = Schema.instance.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily(), false);
 
         if (cfm.isCounter())
             throw new InvalidRequestException("Materialized views are not supported on counter tables");
@@ -203,7 +210,7 @@ public class CreateViewStatement extends SchemaAlteringStatement
         rawSelect.prepareKeyspace(state);
         rawSelect.setBoundVariables(getBoundVariables());
 
-        ParsedStatement.Prepared prepared = rawSelect.prepare(true);
+        ParsedStatement.Prepared prepared = rawSelect.prepare(true, queryState.getClientState());
         SelectStatement select = (SelectStatement) prepared.statement;
         StatementRestrictions restrictions = select.getRestrictions();
 

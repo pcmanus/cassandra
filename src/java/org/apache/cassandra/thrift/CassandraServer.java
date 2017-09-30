@@ -549,7 +549,7 @@ public class CassandraServer implements Cassandra.Iface
                                                                              ClientState cState)
     throws org.apache.cassandra.exceptions.InvalidRequestException, UnavailableException, TimedOutException
     {
-        CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, column_parent.column_family);
+        CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, column_parent.column_family, false);
         ThriftValidation.validateColumnParent(metadata, column_parent);
         ThriftValidation.validatePredicate(metadata, column_parent, predicate);
 
@@ -592,7 +592,7 @@ public class CassandraServer implements Cassandra.Iface
             String keyspace = cState.getKeyspace();
             cState.hasColumnFamilyAccess(keyspace, column_path.column_family, Permission.SELECT);
 
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, column_path.column_family);
+            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, column_path.column_family, false);
             ThriftValidation.validateColumnPath(metadata, column_path);
             org.apache.cassandra.db.ConsistencyLevel consistencyLevel = ThriftConversion.fromThrift(consistency_level);
             consistencyLevel.validateForRead(keyspace);
@@ -1122,7 +1122,7 @@ public class CassandraServer implements Cassandra.Iface
 
                 cState.hasColumnFamilyAccess(keyspace, cfName, Permission.MODIFY);
 
-                CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, cfName);
+                CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, cfName, false);
                 if (metadata.isView())
                     throw new org.apache.cassandra.exceptions.InvalidRequestException("Cannot modify Materialized Views directly");
 
@@ -1493,7 +1493,7 @@ public class CassandraServer implements Cassandra.Iface
             String keyspace = cState.getKeyspace();
             cState.hasColumnFamilyAccess(keyspace, column_parent.column_family, Permission.SELECT);
 
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, column_parent.column_family);
+            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, column_parent.column_family, false);
             ThriftValidation.validateColumnParent(metadata, column_parent);
             ThriftValidation.validatePredicate(metadata, column_parent, predicate);
             ThriftValidation.validateKeyRange(metadata, column_parent.super_column, range);
@@ -1582,7 +1582,7 @@ public class CassandraServer implements Cassandra.Iface
             String keyspace = cState.getKeyspace();
             cState.hasColumnFamilyAccess(keyspace, column_family, Permission.SELECT);
 
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, column_family);
+            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, column_family, false);
             ThriftValidation.validateKeyRange(metadata, null, range);
 
             org.apache.cassandra.db.ConsistencyLevel consistencyLevel = ThriftConversion.fromThrift(consistency_level);
@@ -1920,7 +1920,7 @@ public class CassandraServer implements Cassandra.Iface
             String keyspace = cState.getKeyspace();
             cState.hasColumnFamilyAccess(keyspace, column_family, Permission.DROP);
 
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, column_family);
+            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, column_family, false);
             if (metadata.isView())
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("Cannot drop Materialized Views from Thrift");
 
@@ -2415,7 +2415,7 @@ public class CassandraServer implements Cassandra.Iface
             ClientState cState = state();
             String keyspace = cState.getKeyspace();
             state().hasColumnFamilyAccess(keyspace, request.getColumn_parent().column_family, Permission.SELECT);
-            CFMetaData metadata = ThriftValidation.validateColumnFamily(keyspace, request.getColumn_parent().column_family);
+            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace, request.getColumn_parent().column_family, false);
             if (metadata.isSuper())
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("get_multi_slice does not support super columns");
             ThriftValidation.validateColumnParent(metadata, request.getColumn_parent());

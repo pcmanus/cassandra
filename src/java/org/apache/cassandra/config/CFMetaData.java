@@ -79,10 +79,6 @@ public final class CFMetaData
     public final Pair<String, String> ksAndCFName;
     public final byte[] ksAndCFBytes;
 
-    private final ImmutableSet<Flag> flags;
-    private final boolean isDense;
-    private final boolean isCompound;
-    private final boolean isSuper;
     private final boolean isCounter;
     private final boolean isView;
     private final boolean isIndex;
@@ -94,6 +90,11 @@ public final class CFMetaData
     private final Serializers serializers;
 
     // non-final, for now
+    private volatile ImmutableSet<Flag> flags;
+    private volatile boolean isDense;
+    private volatile boolean isCompound;
+    private volatile boolean isSuper;
+
     public volatile TableParams params = TableParams.DEFAULT;
 
     private volatile Map<ByteBuffer, DroppedColumn> droppedColumns = new HashMap<>();
@@ -330,6 +331,9 @@ public final class CFMetaData
     // are kept because they are often useful in a different format.
     private void rebuild()
     {
+        // A non-compact copy will be created lazily
+        this.nonCompactCopy = null;
+
         if (isCompactTable())
         {
             this.compactValueColumn = isSuper() ?
@@ -503,6 +507,38 @@ public final class CFMetaData
                    .gcGraceSeconds(0);
 
         return params(indexParams.build());
+    }
+
+    private volatile CFMetaData nonCompactCopy = null;
+
+    /**
+     * Returns a cached non-compact version of this table. Cached version has to be invalidated
+     * every time the table is rebuilt.
+     */
+    public CFMetaData asNonCompact()
+    {
+        assert isCompactTable() : "Can't get non-compact version of a CQL table";
+
+        if (nonCompactCopy == null)
+        {
+            nonCompactCopy = copyOpts(new CFMetaData(ksName,
+                                                     cfName,
+                                                     cfId,
+                                                     false,
+                                                     isCounter,
+                                                     false,
+                                                     true,
+                                                     isView,
+                                                     copy(partitionKeyColumns),
+                                                     copy(clusteringColumns),
+                                                     copy(partitionColumns),
+                                                     partitioner,
+                                                     superCfKeyColumn,
+                                                     superCfValueColumn),
+                                      this);
+        }
+
+        return nonCompactCopy;
     }
 
     public CFMetaData copy()
@@ -842,6 +878,12 @@ public final class CFMetaData
         superCfKeyColumn = cfm.superCfKeyColumn;
         superCfValueColumn = cfm.superCfValueColumn;
 
+        isDense = cfm.isDense;
+        isCompound = cfm.isCompound;
+        isSuper = cfm.isSuper;
+
+        flags = cfm.flags;
+
         rebuild();
 
         // compaction thresholds are checked by ThriftValidation. We shouldn't be doing
@@ -874,12 +916,6 @@ public final class CFMetaData
         if (!cfm.cfId.equals(cfId))
             throw new ConfigurationException(String.format("Column family ID mismatch (found %s; expected %s)",
                                                            cfm.cfId, cfId));
-
-        // Dense flag can get set, see CASSANDRA-12373 for details. We have to remove flag from both parts because
-        // there's no guaranteed call order in the call.
-
-        if (!cfm.flags.equals(flags) && (!isSuper() || !Sets.difference(cfm.flags, Sets.immutableEnumSet(Flag.DENSE)).equals(Sets.difference(flags, Sets.immutableEnumSet(Flag.DENSE)))))
-            throw new ConfigurationException("Types do not match: " + cfm.flags + " != " + flags);
     }
 
 
@@ -1055,6 +1091,9 @@ public final class CFMetaData
 
     public void renameColumn(ColumnIdentifier from, ColumnIdentifier to) throws InvalidRequestException
     {
+        if (!to.bytes.hasRemaining())
+            throw new InvalidRequestException("Column name cannot be empty");
+
         ColumnDefinition def = getColumnDefinition(from);
 
         if (def == null)

@@ -87,6 +87,11 @@ public class ClientState
     private volatile AuthenticatedUser user;
     private volatile String keyspace;
 
+    /**
+     * Allow Compact Tables to be represented as CQL ones for the current client session
+     */
+    private volatile boolean nonCompactMode;
+
     private static final QueryHandler cqlQueryHandler;
     static
     {
@@ -259,6 +264,16 @@ public class ClientState
         keyspace = ks;
     }
 
+    public void setNonCompactMode()
+    {
+        this.nonCompactMode = true;
+    }
+
+    public boolean isNonCompactMode()
+    {
+        return nonCompactMode;
+    }
+
     /**
      * Attempts to login the given user.
      */
@@ -289,7 +304,7 @@ public class ClientState
     public void hasColumnFamilyAccess(String keyspace, String columnFamily, Permission perm)
     throws UnauthorizedException, InvalidRequestException
     {
-        ThriftValidation.validateColumnFamily(keyspace, columnFamily);
+        Schema.instance.validateColumnFamily(keyspace, columnFamily, false);
         hasAccess(keyspace, perm, DataResource.table(keyspace, columnFamily));
     }
 

@@ -191,7 +191,7 @@ public class CreateTableStatement extends SchemaAlteringStatement
         /**
          * Transform this raw statement into a CreateTableStatement.
          */
-        public ParsedStatement.Prepared prepare() throws RequestValidationException
+        public ParsedStatement.Prepared prepare(ClientState clientState) throws RequestValidationException
         {
             KeyspaceMetadata ksm = Schema.instance.getKSMetaData(keyspace());
             if (ksm == null)
@@ -220,6 +220,9 @@ public class CreateTableStatement extends SchemaAlteringStatement
             for (Map.Entry<ColumnIdentifier, CQL3Type.Raw> entry : definitions.entrySet())
             {
                 ColumnIdentifier id = entry.getKey();
+                if (!id.bytes.hasRemaining())
+                    throw new InvalidRequestException("Column name cannot be empty.");
+
                 CQL3Type pt = entry.getValue().prepare(keyspace(), udts);
                 if (pt.isCollection() && ((CollectionType)pt.getType()).isMultiCell())
                     stmt.collections.put(id.bytes, (CollectionType)pt.getType());

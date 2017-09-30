@@ -45,7 +45,7 @@ public class TruncateStatement extends CFStatement implements CQLStatement
         return 0;
     }
 
-    public Prepared prepare() throws InvalidRequestException
+    public Prepared prepare(ClientState clientState) throws InvalidRequestException
     {
         return new Prepared(this);
     }
@@ -57,7 +57,7 @@ public class TruncateStatement extends CFStatement implements CQLStatement
 
     public void validate(ClientState state) throws InvalidRequestException
     {
-        ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
+        Schema.instance.validateColumnFamily(keyspace(), columnFamily(), false);
     }
 
     public ResultMessage execute(QueryState state, QueryOptions options) throws InvalidRequestException, TruncateException

@@ -76,7 +76,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
         this.ifNotExists = ifNotExists;
     }
 
-    public Prepared prepare() throws InvalidRequestException
+    public Prepared prepare(ClientState clientState) throws InvalidRequestException
     {
         if (new HashSet<>(argNames).size() != argNames.size())
             throw new InvalidRequestException(String.format("duplicate argument names for given function %s with argument names %s",
@@ -87,7 +87,7 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
             argTypes.add(prepareType("arguments", rawType));
 
         returnType = prepareType("return type", rawReturnType);
-        return super.prepare();
+        return super.prepare(clientState);
     }
 
     public void prepareKeyspace(ClientState state) throws InvalidRequestException
@@ -130,6 +130,15 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
     public void validate(ClientState state) throws InvalidRequestException
     {
         UDFunction.assertUdfsEnabled(language);
+
+        if (functionName.functionName().isEmpty())
+            throw new InvalidRequestException("Function name cannot be empty.");
+
+        for (ColumnIdentifier argName : argNames)
+        {
+            if (!argName.bytes.hasRemaining())
+                throw new InvalidRequestException("Function argument name cannot be empty");
+        }
 
         if (ifNotExists && orReplace)
             throw new InvalidRequestException("Cannot use both 'OR REPLACE' and 'IF NOT EXISTS' directives");

@@ -968,4 +968,28 @@ public class UFTest extends CQLTester
         assertRows(execute("SELECT " + fNameICC + "(empty_int) FROM %s"), row(0));
         assertRows(execute("SELECT " + fNameICN + "(empty_int) FROM %s"), row(new Object[]{ null }));
     }
+
+    @Test(expected = InvalidRequestException.class)
+    public void testEmptyFunctionName() throws Throwable
+    {
+        execute("CREATE FUNCTION IF NOT EXISTS " + KEYSPACE + ".\"\" (arg int)\n" +
+                "  RETURNS NULL ON NULL INPUT\n" +
+                "  RETURNS int\n" +
+                "  LANGUAGE java\n" +
+                "  AS $$\n" +
+                "    return a;\n" +
+                "  $$");
+    }
+
+    @Test(expected = InvalidRequestException.class)
+    public void testEmptyArgName() throws Throwable
+    {
+        execute("CREATE FUNCTION IF NOT EXISTS " + KEYSPACE + ".myfn (\"\" int)\n" +
+                "  RETURNS NULL ON NULL INPUT\n" +
+                "  RETURNS int\n" +
+                "  LANGUAGE java\n" +
+                "  AS $$\n" +
+                "    return a;\n" +
+                "  $$");
+    }
 }

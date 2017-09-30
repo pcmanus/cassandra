@@ -60,7 +60,7 @@ public abstract class SchemaAlteringStatement extends CFStatement implements CQL
     }
 
     @Override
-    public Prepared prepare()
+    public Prepared prepare(ClientState clientState)
     {
         return new Prepared(this);
     }

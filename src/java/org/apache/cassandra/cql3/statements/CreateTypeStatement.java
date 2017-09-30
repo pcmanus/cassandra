@@ -67,12 +67,21 @@ public class CreateTypeStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws RequestValidationException
     {
+        if (name.getStringTypeName().isEmpty())
+            throw new InvalidRequestException("User type name cannot be empty");
+
         KeyspaceMetadata ksm = Schema.instance.getKSMetaData(name.getKeyspace());
         if (ksm == null)
             throw new InvalidRequestException(String.format("Cannot add type in unknown keyspace %s", name.getKeyspace()));
 
         if (ksm.types.get(name.getUserTypeName()).isPresent() && !ifNotExists)
             throw new InvalidRequestException(String.format("A user type of name %s already exists", name));
+
+        for (ColumnIdentifier columnName : columnNames)
+        {
+            if (columnName.toString().isEmpty())
+                throw new InvalidRequestException("Column name cannot be empty");
+        }
 
         for (CQL3Type.Raw type : columnTypes)
             if (type.isCounter())
