@@ -131,15 +131,6 @@ public final class CreateFunctionStatement extends SchemaAlteringStatement
     {
         UDFunction.assertUdfsEnabled(language);
 
-        if (functionName.functionName().isEmpty())
-            throw new InvalidRequestException("Function name cannot be empty.");
-
-        for (ColumnIdentifier argName : argNames)
-        {
-            if (!argName.bytes.hasRemaining())
-                throw new InvalidRequestException("Function argument name cannot be empty");
-        }
-
         if (ifNotExists && orReplace)
             throw new InvalidRequestException("Cannot use both 'OR REPLACE' and 'IF NOT EXISTS' directives");
 

@@ -49,6 +49,7 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.marshal.AsciiType;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -1377,14 +1378,13 @@ public class ViewTest extends CQLTester
                    row(0, "[[\"a\", \"1\"], [\"b\", \"2\"], [\"c\", \"3\"]]"));
     }
 
-
-    @Test(expected = InvalidRequestException.class)
+    @Test(expected = SyntaxException.class)
     public void emptyViewNameTest() throws Throwable
     {
         execute("CREATE MATERIALIZED VIEW \"\" AS SELECT a, b FROM tbl WHERE b IS NOT NULL PRIMARY KEY (b, a)");
     }
 
-     @Test(expected = InvalidRequestException.class)
+     @Test(expected = SyntaxException.class)
      public void emptyBaseTableNameTest() throws Throwable
      {
          execute("CREATE MATERIALIZED VIEW myview AS SELECT a, b FROM \"\" WHERE b IS NOT NULL PRIMARY KEY (b, a)");

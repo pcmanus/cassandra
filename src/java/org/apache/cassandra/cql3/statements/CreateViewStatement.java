@@ -125,12 +125,6 @@ public class CreateViewStatement extends SchemaAlteringStatement
 
         properties.validate();
 
-        if (cfName.getColumnFamily().isEmpty())
-            throw new InvalidRequestException("View name cannot be empty.");
-
-        if (baseName.getColumnFamily().isEmpty())
-            throw new InvalidRequestException("Base table name cannot be empty.");
-
         if (properties.useCompactStorage)
             throw new InvalidRequestException("Cannot use 'COMPACT STORAGE' when defining a materialized view");
 

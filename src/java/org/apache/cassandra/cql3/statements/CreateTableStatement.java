@@ -220,9 +220,6 @@ public class CreateTableStatement extends SchemaAlteringStatement
             for (Map.Entry<ColumnIdentifier, CQL3Type.Raw> entry : definitions.entrySet())
             {
                 ColumnIdentifier id = entry.getKey();
-                if (!id.bytes.hasRemaining())
-                    throw new InvalidRequestException("Column name cannot be empty.");
-
                 CQL3Type pt = entry.getValue().prepare(keyspace(), udts);
                 if (pt.isCollection() && ((CollectionType)pt.getType()).isMultiCell())
                     stmt.collections.put(id.bytes, (CollectionType)pt.getType());

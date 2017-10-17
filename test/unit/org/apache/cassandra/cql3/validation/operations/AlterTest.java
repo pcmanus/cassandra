@@ -264,7 +264,7 @@ public class AlterTest extends CQLTester
         execute("alter table %s add v int");
     }
 
-    @Test(expected = InvalidRequestException.class)
+    @Test(expected = SyntaxException.class)
     public void renameToEmptyTest() throws Throwable
     {
         createTable("CREATE TABLE %s (k int, c1 int, v int, PRIMARY KEY (k, c1))");

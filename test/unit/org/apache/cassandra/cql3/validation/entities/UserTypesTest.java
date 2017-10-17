@@ -714,19 +714,19 @@ public class UserTypesTest extends CQLTester
                        row(1, 1,set(userType(1), userType(1, 1), userType(1, 2), userType(2), userType(2, 1)), 2));
     }
 
-    @Test(expected = InvalidRequestException.class)
+    @Test(expected = SyntaxException.class)
     public void emptyTypeNameTest() throws Throwable
     {
         execute("CREATE TYPE \"\" (a int, b int)");
     }
 
-    @Test(expected = InvalidRequestException.class)
+    @Test(expected = SyntaxException.class)
     public void emptyFieldNameTest() throws Throwable
     {
         execute("CREATE TYPE mytype (\"\" int, b int)");
     }
 
-    @Test(expected = InvalidRequestException.class)
+    @Test(expected = SyntaxException.class)
     public void renameColumnToEmpty() throws Throwable
     {
         String typeName = createType("CREATE TYPE %s (a int, b int)");

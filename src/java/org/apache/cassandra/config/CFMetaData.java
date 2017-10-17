@@ -1094,9 +1094,6 @@ public final class CFMetaData
 
     public void renameColumn(ColumnIdentifier from, ColumnIdentifier to) throws InvalidRequestException
     {
-        if (!to.bytes.hasRemaining())
-            throw new InvalidRequestException("Column name cannot be empty");
-
         ColumnDefinition def = getColumnDefinition(from);
 
         if (def == null)

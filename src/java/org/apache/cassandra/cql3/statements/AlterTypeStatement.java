@@ -302,10 +302,6 @@ public abstract class AlterTypeStatement extends SchemaAlteringStatement
                 int idx = getIdxOfField(toUpdate, from);
                 if (idx < 0)
                     throw new InvalidRequestException(String.format("Unknown field %s in type %s", from, name));
-
-                if (!to.bytes.hasRemaining())
-                    throw new InvalidRequestException("User type name cannot be empty");
-
                 newNames.set(idx, to.bytes);
             }
 

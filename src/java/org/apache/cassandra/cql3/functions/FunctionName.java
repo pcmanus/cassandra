@@ -74,11 +74,6 @@ public final class FunctionName
         return Objects.equal(this.name, nativeFunction.name);
     }
 
-    public String functionName()
-    {
-        return name;
-    }
-
     @Override
     public String toString()
     {
