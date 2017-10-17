@@ -826,7 +826,7 @@ alterTableStatement returns [AlterTableStatement expr]
           | K_DROP  id=cident                               { type = AlterTableStatement.Type.DROP; }
           | K_DROP  id=cident K_USING K_TIMESTAMP t=INTEGER { type = AlterTableStatement.Type.DROP;
                                                               dropTimestamp = Long.parseLong(Constants.Literal.integer($t.text).getText()); }
-          | K_DROP  K_COMPACT K_STORAGE                     { type = AlterTableStatement.Type.DROP_COMPACT_STORAGE; }                        
+          | K_DROP  K_COMPACT K_STORAGE                     { type = AlterTableStatement.Type.DROP_COMPACT_STORAGE; }
           | K_WITH  properties[attrs]                       { type = AlterTableStatement.Type.OPTS; }
           | K_RENAME                                        { type = AlterTableStatement.Type.RENAME; }
                id1=cident K_TO toId1=cident { renames.put(id1, toId1); }

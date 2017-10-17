@@ -128,6 +128,9 @@ public final class CFMetaData
     private volatile ColumnDefinition superCfKeyColumn;
     private volatile ColumnDefinition superCfValueColumn;
 
+    /** Caches a non-compact version of the metadata for compact tables to be used with the NO_COMPACT protocol option. */
+    private volatile CFMetaData nonCompactCopy = null;
+
     public boolean isSuperColumnKeyColumn(ColumnDefinition cd)
     {
         return cd.name.equals(superCfKeyColumn.name);
@@ -509,8 +512,6 @@ public final class CFMetaData
         return params(indexParams.build());
     }
 
-    private volatile CFMetaData nonCompactCopy = null;
-
     /**
      * Returns a cached non-compact version of this table. Cached version has to be invalidated
      * every time the table is rebuilt.
@@ -519,6 +520,8 @@ public final class CFMetaData
     {
         assert isCompactTable() : "Can't get non-compact version of a CQL table";
 
+        // Note that this is racy, but re-computing the non-compact copy a few times on first uses isn't a big deal so
+        // we don't bother.
         if (nonCompactCopy == null)
         {
             nonCompactCopy = copyOpts(new CFMetaData(ksName,

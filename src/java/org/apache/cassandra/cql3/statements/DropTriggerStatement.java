@@ -56,8 +56,7 @@ public class DropTriggerStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws RequestValidationException
     {
-        // CASSANDRA-10857: Schema changes are not allowed in non-compact mode
-        Schema.instance.validateColumnFamily(keyspace(), columnFamily(), false);
+        ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
     }
 
     public Event.SchemaChange announceMigration(QueryState queryState, boolean isLocalOnly) throws ConfigurationException, InvalidRequestException

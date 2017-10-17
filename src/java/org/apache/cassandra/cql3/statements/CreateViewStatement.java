@@ -139,8 +139,7 @@ public class CreateViewStatement extends SchemaAlteringStatement
         if (!baseName.getKeyspace().equals(keyspace()))
             throw new InvalidRequestException("Cannot create a materialized view on a table in a separate keyspace");
 
-        // CASSANDRA-10857: Schema changes are not allowed in non-compact mode
-        CFMetaData cfm = Schema.instance.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily(), false);
+        CFMetaData cfm = ThriftValidation.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily());
 
         if (cfm.isCounter())
             throw new InvalidRequestException("Materialized views are not supported on counter tables");

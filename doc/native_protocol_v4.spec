@@ -273,7 +273,8 @@ Table of Contents
       This is optional; if not specified no compression will be used.
     - "NO_COMPACT": whether or not connection has to be established in compatibility
       mode. This mode will make all Thrift and Compact Tables to be exposed as if
-      they were CQL Tables.
+      they were CQL Tables. This is optional; if not specified, the option will
+      not be used.
 
 
 4.1.2. AUTH_RESPONSE

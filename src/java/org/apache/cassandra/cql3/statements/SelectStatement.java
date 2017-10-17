@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.cql3.CFName;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.ColumnIdentifier;
@@ -895,7 +894,7 @@ public class SelectStatement implements CQLStatement
 
         public ParsedStatement.Prepared prepare(boolean forView, ClientState clientState) throws InvalidRequestException
         {
-            CFMetaData cfm = Schema.instance.validateColumnFamily(keyspace(), columnFamily(), clientState.isNonCompactMode());
+            CFMetaData cfm = ThriftValidation.validateColumnFamilyWithCompactMode(keyspace(), columnFamily(), clientState.isNoCompactMode());
             VariableSpecifications boundNames = getBoundVariables();
 
             Selection selection = selectClause.isEmpty()

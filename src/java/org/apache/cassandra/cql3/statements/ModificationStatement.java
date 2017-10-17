@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.config.ViewDefinition;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.ColumnIdentifier.Raw;
@@ -798,13 +797,12 @@ public abstract class ModificationStatement implements CQLStatement
         {
             VariableSpecifications boundNames = getBoundVariables();
             ModificationStatement statement = prepare(boundNames, clientState);
-            CFMetaData cfm = Schema.instance.validateColumnFamily(keyspace(), columnFamily(), clientState.isNonCompactMode());
-            return new ParsedStatement.Prepared(statement, boundNames, boundNames.getPartitionKeyBindIndexes(cfm));
+            return new ParsedStatement.Prepared(statement, boundNames, boundNames.getPartitionKeyBindIndexes(statement.cfm));
         }
 
         public ModificationStatement prepare(VariableSpecifications boundNames, ClientState clientState)
         {
-            CFMetaData metadata = Schema.instance.validateColumnFamily(keyspace(), columnFamily(), clientState.isNonCompactMode());
+            CFMetaData metadata = ThriftValidation.validateColumnFamilyWithCompactMode(keyspace(), columnFamily(), clientState.isNoCompactMode());
 
             Attributes preparedAttributes = attrs.prepare(keyspace(), columnFamily());
             preparedAttributes.collectMarkerSpecification(boundNames);

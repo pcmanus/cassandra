@@ -32,7 +32,6 @@ import org.apache.cassandra.auth.AuthKeyspace;
 import org.apache.cassandra.cql3.functions.*;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.KeyspaceNotDefinedException;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -295,25 +294,6 @@ public class Schema
         return ksm == null
              ? null
              : ksm.getTableOrViewNullable(cfName);
-    }
-
-    // To be used when the operation should be authorized whether this is a counter CF or not
-    public CFMetaData validateColumnFamily(String keyspaceName, String cfName, boolean nonCompactMode) throws org.apache.cassandra.exceptions.InvalidRequestException
-    {
-        if (!keyspaces.containsKey(keyspaceName))
-            throw new KeyspaceNotDefinedException("Keyspace " + keyspaceName + " does not exist");
-
-        if (cfName.isEmpty())
-            throw new org.apache.cassandra.exceptions.InvalidRequestException("non-empty table is required");
-
-        CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, cfName);
-        if (metadata == null)
-            throw new org.apache.cassandra.exceptions.InvalidRequestException("unconfigured table " + cfName);
-
-        if (metadata.isCompactTable() && nonCompactMode)
-            return metadata.asNonCompact();
-        else
-            return metadata;
     }
 
     /**

@@ -87,7 +87,7 @@ public class ThriftValidation
 
     public static CFMetaData validateColumnFamily(String keyspaceName, String cfName, boolean isCommutativeOp) throws org.apache.cassandra.exceptions.InvalidRequestException
     {
-        CFMetaData metadata = Schema.instance.validateColumnFamily(keyspaceName, cfName, false);
+        CFMetaData metadata = validateColumnFamily(keyspaceName, cfName);
 
         if (isCommutativeOp)
         {
@@ -100,6 +100,28 @@ public class ThriftValidation
                 throw new org.apache.cassandra.exceptions.InvalidRequestException("invalid operation for commutative table " + cfName);
         }
         return metadata;
+    }
+
+    // To be used when the operation should be authorized whether this is a counter CF or not
+    public static CFMetaData validateColumnFamily(String keyspaceName, String cfName) throws org.apache.cassandra.exceptions.InvalidRequestException
+    {
+        return validateColumnFamilyWithCompactMode(keyspaceName, cfName, false);
+    }
+
+    public static CFMetaData validateColumnFamilyWithCompactMode(String keyspaceName, String cfName, boolean noCompactMode) throws org.apache.cassandra.exceptions.InvalidRequestException
+    {
+        validateKeyspace(keyspaceName);
+        if (cfName.isEmpty())
+            throw new org.apache.cassandra.exceptions.InvalidRequestException("non-empty table is required");
+
+        CFMetaData metadata = Schema.instance.getCFMetaData(keyspaceName, cfName);
+        if (metadata == null)
+            throw new org.apache.cassandra.exceptions.InvalidRequestException("unconfigured table " + cfName);
+
+        if (metadata.isCompactTable() && noCompactMode)
+            return metadata.asNonCompact();
+        else
+            return metadata;
     }
 
     /**

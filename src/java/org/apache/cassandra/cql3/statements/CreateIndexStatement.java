@@ -74,8 +74,7 @@ public class CreateIndexStatement extends SchemaAlteringStatement
 
     public void validate(ClientState state) throws RequestValidationException
     {
-        // CASSANDRA-10857: Schema changes are not allowed in non-compact mode
-        CFMetaData cfm = Schema.instance.validateColumnFamily(keyspace(), columnFamily(), false);
+        CFMetaData cfm = ThriftValidation.validateColumnFamily(keyspace(), columnFamily());
 
         if (cfm.isCounter())
             throw new InvalidRequestException("Secondary indexes are not supported on counter tables");

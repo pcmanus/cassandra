@@ -41,6 +41,8 @@ import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.transport.Event;
 
+import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
+
 public class AlterTableStatement extends SchemaAlteringStatement
 {
     public enum Type
@@ -87,8 +89,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
     public Event.SchemaChange announceMigration(QueryState queryState, boolean isLocalOnly) throws RequestValidationException
     {
-        // CASSANDRA-10857: Schema changes are not allowed in non-compact mode
-        CFMetaData meta = Schema.instance.validateColumnFamily(keyspace(), columnFamily(), false);
+        CFMetaData meta = validateColumnFamily(keyspace(), columnFamily());
         if (meta.isView())
             throw new InvalidRequestException("Cannot use ALTER TABLE on Materialized View");
 
@@ -242,7 +243,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 break;
             case DROP_COMPACT_STORAGE:
                 if (!meta.isCompactTable())
-                    throw new InvalidRequestException("Cannot set force_non_compact on table without COMPACT STORAGE");
+                    throw new InvalidRequestException("Cannot DROP COMPACT STORAGE on table without COMPACT STORAGE");
 
                 cfm = meta.asNonCompact();
                 break;
