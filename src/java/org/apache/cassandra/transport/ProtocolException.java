@@ -20,11 +20,17 @@ package org.apache.cassandra.transport;
 import org.apache.cassandra.exceptions.ExceptionCode;
 import org.apache.cassandra.exceptions.TransportException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
 /**
  * Exceptions thrown when a client didn't respect the protocol.
  */
 public class ProtocolException extends RuntimeException implements TransportException
 {
+    private static final Logger logger = LoggerFactory.getLogger(ProtocolException.class);
+
     private final Integer attemptedLowProtocolVersion;
 
     public ProtocolException(String msg)
@@ -36,6 +42,8 @@ public class ProtocolException extends RuntimeException implements TransportExce
     {
         super(msg);
         this.attemptedLowProtocolVersion = attemptedLowProtocolVersion;
+
+        logger.info("Got a ProtocolException saying '{}'!!!", msg, new RuntimeException());
     }
 
     public ExceptionCode code()
