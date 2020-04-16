@@ -955,7 +955,7 @@ public final class SchemaKeyspace
 
         Set<TableMetadata.Flag> flags = TableMetadata.Flag.fromStringSet(row.getFrozenSet("flags", UTF8Type.instance));
 
-        if (!TableMetadata.Flag.isCQLCompatible(flags))
+        if (!TableMetadata.Flag.isSupported(flags))
         {
             throw new IllegalArgumentException(TableMetadata.COMPACT_STORAGE_HALT_MESSAGE);
         }
