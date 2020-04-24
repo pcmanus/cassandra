@@ -105,9 +105,7 @@ public class ScrubTest
                        standardCFMD(KEYSPACE, CF3),
                        counterCFMD(KEYSPACE, COUNTER_CF).compression(getCompressionParameters(COMPRESSION_CHUNK_LENGTH)),
                        standardCFMD(KEYSPACE, CF_UUID, 0, UUIDType.instance),
-                       SchemaLoader.keysIndexCFMD(KEYSPACE, CF_INDEX1, true),
                        SchemaLoader.compositeIndexCFMD(KEYSPACE, CF_INDEX2, true),
-                       SchemaLoader.keysIndexCFMD(KEYSPACE, CF_INDEX1_BYTEORDERED, true).partitioner(ByteOrderedPartitioner.instance),
                        SchemaLoader.compositeIndexCFMD(KEYSPACE, CF_INDEX2_BYTEORDERED, true).partitioner(ByteOrderedPartitioner.instance));
     }
 

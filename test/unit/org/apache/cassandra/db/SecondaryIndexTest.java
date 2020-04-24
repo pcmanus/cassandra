@@ -68,8 +68,7 @@ public class SecondaryIndexTest
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.compositeIndexCFMD(KEYSPACE1, WITH_COMPOSITE_INDEX, true, true).gcGraceSeconds(0),
                                     SchemaLoader.compositeIndexCFMD(KEYSPACE1, COMPOSITE_INDEX_TO_BE_ADDED, false).gcGraceSeconds(0),
-                                    SchemaLoader.compositeMultipleIndexCFMD(KEYSPACE1, WITH_MULTIPLE_COMPOSITE_INDEX).gcGraceSeconds(0),
-                                    SchemaLoader.keysIndexCFMD(KEYSPACE1, WITH_KEYS_INDEX, true).gcGraceSeconds(0));
+                                    SchemaLoader.compositeMultipleIndexCFMD(KEYSPACE1, WITH_MULTIPLE_COMPOSITE_INDEX).gcGraceSeconds(0));
     }
 
     @Before

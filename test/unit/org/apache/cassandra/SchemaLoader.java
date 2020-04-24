@@ -135,8 +135,6 @@ public class SchemaLoader
                 standardCFMD(ks1, "StandardGCGS0").gcGraceSeconds(0).build(),
                 standardCFMD(ks1, "StandardLong1").build(),
                 standardCFMD(ks1, "StandardLong2").build(),
-                keysIndexCFMD(ks1, "Indexed1", true).build(),
-                keysIndexCFMD(ks1, "Indexed2", false).build(),
                 jdbcCFMD(ks1, "JdbcUtf8", UTF8Type.instance).addColumn(utf8Column(ks1, "JdbcUtf8")).build(),
                 jdbcCFMD(ks1, "JdbcLong", LongType.instance).build(),
                 jdbcCFMD(ks1, "JdbcBytes", bytes).build(),
@@ -155,7 +153,6 @@ public class SchemaLoader
                 // Column Families
                 standardCFMD(ks2, "Standard1").build(),
                 standardCFMD(ks2, "Standard3").build(),
-                keysIndexCFMD(ks2, "Indexed1", true).build(),
                 compositeIndexCFMD(ks2, "Indexed2", true).build(),
                 compositeIndexCFMD(ks2, "Indexed3", true).gcGraceSeconds(0).build())));
 
@@ -163,8 +160,7 @@ public class SchemaLoader
         schema.add(KeyspaceMetadata.create(ks3,
                 KeyspaceParams.simple(5),
                 Tables.of(
-                standardCFMD(ks3, "Standard1").build(),
-                keysIndexCFMD(ks3, "Indexed1", true).build())));
+                standardCFMD(ks3, "Standard1").build())));
 
         // Keyspace 4
         schema.add(KeyspaceMetadata.create(ks4,
@@ -177,11 +173,6 @@ public class SchemaLoader
         schema.add(KeyspaceMetadata.create(ks5,
                 KeyspaceParams.simple(2),
                 Tables.of(standardCFMD(ks5, "Standard1").build())));
-
-        // Keyspace 6
-        schema.add(KeyspaceMetadata.create(ks6,
-                KeyspaceParams.simple(1),
-                Tables.of(keysIndexCFMD(ks6, "Indexed1", true).build())));
 
         // Keyspace 7
         schema.add(KeyspaceMetadata.create(ks7,
@@ -459,32 +450,6 @@ public class SchemaLoader
 
 
         return builder.indexes(indexes.build());
-    }
-
-    public static TableMetadata.Builder keysIndexCFMD(String ksName, String cfName, boolean withIndex)
-    {
-        TableMetadata.Builder builder =
-            TableMetadata.builder(ksName, cfName)
-                         .addPartitionKeyColumn("key", AsciiType.instance)
-                         .addClusteringColumn("c1", AsciiType.instance)
-                         .addStaticColumn("birthdate", LongType.instance)
-                         .addStaticColumn("notbirthdate", LongType.instance)
-                         .addRegularColumn("value", LongType.instance)
-                         .compression(getCompressionParameters());
-
-        if (withIndex)
-        {
-            IndexMetadata index =
-                IndexMetadata.fromIndexTargets(
-                Collections.singletonList(new IndexTarget(new ColumnIdentifier("birthdate", true),
-                                                                                         IndexTarget.Type.VALUES)),
-                                                                                         cfName + "_birthdate_composite_index",
-                                                                                         IndexMetadata.Kind.KEYS,
-                                                                                         Collections.EMPTY_MAP);
-            builder.indexes(Indexes.builder().add(index).build());
-        }
-
-        return builder;
     }
 
     public static TableMetadata.Builder customIndexCFMD(String ksName, String cfName)

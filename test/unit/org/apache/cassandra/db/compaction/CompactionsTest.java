@@ -110,7 +110,6 @@ public class CompactionsTest
                                                 .compaction(CompactionParams.stcs(compactionOptions)),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD3),
-                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD4),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD4));
     }
 

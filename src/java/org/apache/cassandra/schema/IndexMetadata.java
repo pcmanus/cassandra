@@ -42,6 +42,8 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDSerializer;
 
+import static java.util.stream.Collectors.toSet;
+
 /**
  * An immutable representation of secondary index metadata.
  */
@@ -57,7 +59,15 @@ public final class IndexMetadata
 
     public enum Kind
     {
-        KEYS, CUSTOM, COMPOSITES
+        CUSTOM,
+        COMPOSITES,
+        @Deprecated KEYS;
+
+
+        public static boolean isSupportedIndex(IndexMetadata.Kind kind)
+        {
+            return kind.toString().equals(Kind.KEYS);
+        }
     }
 
     // UUID for serialization. This is a deterministic UUID generated from the index name
@@ -176,11 +186,6 @@ public final class IndexMetadata
     public boolean isCustom()
     {
         return kind == Kind.CUSTOM;
-    }
-
-    public boolean isKeys()
-    {
-        return kind == Kind.KEYS;
     }
 
     public boolean isComposites()

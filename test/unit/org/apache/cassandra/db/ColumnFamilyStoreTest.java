@@ -67,8 +67,7 @@ public class ColumnFamilyStoreTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1),
-                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
-                                    SchemaLoader.keysIndexCFMD(KEYSPACE1, CF_INDEX1, true));
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2));
         SchemaLoader.createKeyspace(KEYSPACE2,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE2, CF_STANDARD1));

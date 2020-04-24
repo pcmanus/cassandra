@@ -557,7 +557,7 @@ public class CassandraIndexTest extends CQLTester
         // check that there are no other rows in the built indexes table
         rs = execute(selectBuiltIndexesQuery);
         int sizeAfterBuild = rs.size();
-        assertRowsIgnoringOrderAndExtra(rs, row(KEYSPACE, indexName, null));
+        assertRowsIgnoringOrderAndExtra(rs, row(KEYSPACE, indexName));
 
         // rebuild the index and verify the built status table
         getCurrentColumnFamilyStore().rebuildSecondaryIndex(indexName);
@@ -566,7 +566,7 @@ public class CassandraIndexTest extends CQLTester
         // check that there are no other rows in the built indexes table
         rs = execute(selectBuiltIndexesQuery);
         assertEquals(sizeAfterBuild, rs.size());
-        assertRowsIgnoringOrderAndExtra(rs, row(KEYSPACE, indexName, null));
+        assertRowsIgnoringOrderAndExtra(rs, row(KEYSPACE, indexName));
 
         // check that dropping the index removes it from the built indexes table
         dropIndex("DROP INDEX %s." + indexName);

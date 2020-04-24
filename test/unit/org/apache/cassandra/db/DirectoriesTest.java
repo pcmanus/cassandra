@@ -180,7 +180,7 @@ public class DirectoriesTest
             IndexMetadata.fromIndexTargets(
             Collections.singletonList(new IndexTarget(col, IndexTarget.Type.VALUES)),
                                            "idx",
-                                           IndexMetadata.Kind.KEYS,
+                                           IndexMetadata.Kind.COMPOSITES,
                                            Collections.emptyMap());
         builder.indexes(Indexes.of(indexDef));
 

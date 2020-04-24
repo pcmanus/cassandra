@@ -423,7 +423,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         // create the private ColumnFamilyStores for the secondary column indexes
         indexManager = new SecondaryIndexManager(this);
         for (IndexMetadata info : metadata.get().indexes)
+        {
             indexManager.addIndex(info, true);
+        }
 
         if (registerBookeeping)
         {
@@ -448,6 +450,15 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         streamManager = new CassandraStreamManager(this);
         repairManager = new CassandraTableRepairManager(this);
         sstableImporter = new SSTableImporter(this);
+
+        Iterator<IndexMetadata> iterator = metadata.get().indexes.iterator();
+        while(iterator.hasNext())
+        {
+            if(!IndexMetadata.Kind.isSupportedIndex(iterator.next().kind))
+            {
+                throw new IllegalArgumentException(TableMetadata.LEGACY_INDEXES_UNSUPPORTED_MESSAGE);
+            }
+        }
     }
 
     public void updateSpeculationThreshold()
@@ -990,7 +1001,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
              * In doing so it also tells the write operations to update the commitLogUpperBound of the memtable, so
              * that we know the CL position we are dirty to, which can be marked clean when we complete.
              */
-            writeBarrier = keyspace.writeOrder.newBarrier();
+            writeBarrier = Keyspace.writeOrder.newBarrier();
 
             // submit flushes for the memtable for any indexed sub-cfses, and our own
             AtomicReference<CommitLogPosition> commitLogUpperBound = new AtomicReference<>();
