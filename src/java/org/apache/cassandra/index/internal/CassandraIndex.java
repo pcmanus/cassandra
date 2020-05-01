@@ -769,9 +769,13 @@ public abstract class CassandraIndex implements Index
             {
                 case LIST:
                     return CassandraIndexFunctions.COLLECTION_VALUE_INDEX_FUNCTIONS;
+                case SET:
+                    return CassandraIndexFunctions.COLLECTION_KEY_INDEX_FUNCTIONS;
                 case MAP:
                     switch (target.right)
                     {
+                        case KEYS:
+                            return CassandraIndexFunctions.COLLECTION_KEY_INDEX_FUNCTIONS;
                         case KEYS_AND_VALUES:
                             return CassandraIndexFunctions.COLLECTION_ENTRY_INDEX_FUNCTIONS;
                         case VALUES:

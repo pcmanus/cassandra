@@ -123,6 +123,19 @@ public interface CassandraIndexFunctions
         }
     };
 
+    static final CassandraIndexFunctions COLLECTION_KEY_INDEX_FUNCTIONS = new CassandraIndexFunctions()
+    {
+        public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
+        {
+            return new CollectionKeyIndex(baseCfs, indexMetadata);
+        }
+
+        public AbstractType<?> getIndexedValueType(ColumnMetadata indexedColumn)
+        {
+            return ((CollectionType) indexedColumn.type).nameComparator();
+        }
+    };
+
     static final CassandraIndexFunctions COLLECTION_VALUE_INDEX_FUNCTIONS = new CassandraIndexFunctions()
     {
 

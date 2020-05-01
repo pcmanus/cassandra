@@ -74,7 +74,7 @@ public final class TableMetadata implements SchemaElement
 
         public static boolean isSupported(Set<Flag> flags)
         {
-            return !flags.contains(Flag.DENSE) && !flags.contains(Flag.SUPER) && flags.contains(Flag.COMPOUND);
+            return !flags.contains(Flag.DENSE) && !flags.contains(Flag.SUPER);
         }
 
         public static Set<Flag> fromStringSet(Set<String> strings)

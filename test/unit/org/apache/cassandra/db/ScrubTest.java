@@ -446,7 +446,7 @@ public class ScrubTest
         assertEquals(expectedSize, size);
     }
 
-    protected void fillCF(ColumnFamilyStore cfs, int partitionsPerSSTable)
+    public static void fillCF(ColumnFamilyStore cfs, int partitionsPerSSTable)
     {
         for (int i = 0; i < partitionsPerSSTable; i++)
         {
@@ -519,15 +519,6 @@ public class ScrubTest
         CompactionManager.instance.performScrub(cfs2, false, false, 2);
     }
 
-
-    @Test /* CASSANDRA-5174 */
-    public void testScrubKeysIndex_preserveOrder() throws IOException, ExecutionException, InterruptedException
-    {
-        //If the partitioner preserves the order then SecondaryIndex uses BytesType comparator,
-        // otherwise it uses LocalByPartitionerType
-        testScrubIndex(CF_INDEX1_BYTEORDERED, COL_INDEX, false, true);
-    }
-
     @Test /* CASSANDRA-5174 */
     public void testScrubCompositeIndex_preserveOrder() throws IOException, ExecutionException, InterruptedException
     {
@@ -535,21 +526,9 @@ public class ScrubTest
     }
 
     @Test /* CASSANDRA-5174 */
-    public void testScrubKeysIndex() throws IOException, ExecutionException, InterruptedException
-    {
-        testScrubIndex(CF_INDEX1, COL_INDEX, false, true);
-    }
-
-    @Test /* CASSANDRA-5174 */
     public void testScrubCompositeIndex() throws IOException, ExecutionException, InterruptedException
     {
         testScrubIndex(CF_INDEX2, COL_INDEX, true, true);
-    }
-
-    @Test /* CASSANDRA-5174 */
-    public void testFailScrubKeysIndex() throws IOException, ExecutionException, InterruptedException
-    {
-        testScrubIndex(CF_INDEX1, COL_INDEX, false, false);
     }
 
     @Test /* CASSANDRA-5174 */
@@ -561,7 +540,7 @@ public class ScrubTest
     @Test /* CASSANDRA-5174 */
     public void testScrubTwice() throws IOException, ExecutionException, InterruptedException
     {
-        testScrubIndex(CF_INDEX1, COL_INDEX, false, true, true);
+        testScrubIndex(CF_INDEX2, COL_INDEX, true, true, true);
     }
 
     private void testScrubIndex(String cfName, String colName, boolean composite, boolean ... scrubs)

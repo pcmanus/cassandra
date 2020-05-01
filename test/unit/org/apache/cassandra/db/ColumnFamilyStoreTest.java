@@ -214,7 +214,7 @@ public class ColumnFamilyStoreTest
         // don't do snapshot-based repair on Windows, we just skip this test.
         Assume.assumeTrue(!FBUtilities.isWindows);
 
-        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_INDEX1);
+        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(CF_STANDARD1);
 
         //cleanup any previous test gargbage
         cfs.clearSnapshot("");
@@ -226,7 +226,7 @@ public class ColumnFamilyStoreTest
             colValues[i] = (i % 4 == 0 ? 1L : 2L); // index column
             colValues[i+1] = 3L; //other column
         }
-        ScrubTest.fillIndexCF(cfs, false, colValues);
+        ScrubTest.fillCF(cfs, 2);
 
         cfs.snapshot("nonEphemeralSnapshot", null, false, false);
         cfs.snapshot("ephemeralSnapshot", null, true, false);

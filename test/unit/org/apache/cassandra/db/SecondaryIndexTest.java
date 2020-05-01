@@ -57,7 +57,6 @@ public class SecondaryIndexTest
     public static final String KEYSPACE1 = "SecondaryIndexTest1";
     public static final String WITH_COMPOSITE_INDEX = "WithCompositeIndex";
     public static final String WITH_MULTIPLE_COMPOSITE_INDEX = "WithMultipleCompositeIndex";
-    public static final String WITH_KEYS_INDEX = "WithKeysIndex";
     public static final String COMPOSITE_INDEX_TO_BE_ADDED = "CompositeIndexToBeAdded";
 
     @BeforeClass
@@ -77,7 +76,6 @@ public class SecondaryIndexTest
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(WITH_COMPOSITE_INDEX).truncateBlocking();
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(COMPOSITE_INDEX_TO_BE_ADDED).truncateBlocking();
         Keyspace.open(KEYSPACE1).getColumnFamilyStore(WITH_MULTIPLE_COMPOSITE_INDEX).truncateBlocking();
-        Keyspace.open(KEYSPACE1).getColumnFamilyStore(WITH_KEYS_INDEX).truncateBlocking();
     }
 
     @Test
@@ -288,42 +286,6 @@ public class SecondaryIndexTest
     }
 
     @Test
-    public void testDeleteOfInconsistentValuesInKeysIndex() throws Exception
-    {
-        Keyspace keyspace = Keyspace.open(KEYSPACE1);
-        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(WITH_KEYS_INDEX);
-
-        ByteBuffer col = ByteBufferUtil.bytes("birthdate");
-
-        // create a row and update the "birthdate" value
-        new RowUpdateBuilder(cfs.metadata(), 1, "k1").noRowMarker().add("birthdate", 1L).build().applyUnsafe();
-
-        // force a flush, so our index isn't being read from a memtable
-        keyspace.getColumnFamilyStore(WITH_KEYS_INDEX).forceBlockingFlush();
-
-        // now apply another update, but force the index update to be skipped
-        keyspace.apply(new RowUpdateBuilder(cfs.metadata(), 2, "k1").noRowMarker().add("birthdate", 2L).build(),
-                       true,
-                       false);
-
-        // Now searching the index for either the old or new value should return 0 rows
-        // because the new value was not indexed and the old value should be ignored
-        // (and in fact purged from the index cf).
-        // first check for the old value
-        assertIndexedNone(cfs, col, 1L);
-        assertIndexedNone(cfs, col, 2L);
-
-        // now, reset back to the original value, still skipping the index update, to
-        // make sure the value was expunged from the index when it was discovered to be inconsistent
-        keyspace.apply(new RowUpdateBuilder(cfs.metadata(), 3, "k1").noRowMarker().add("birthdate", 1L).build(),
-                       true,
-                       false);
-        assertIndexedNone(cfs, col, 1L);
-        ColumnFamilyStore indexCfs = cfs.indexManager.getAllIndexColumnFamilyStores().iterator().next();
-        assertIndexCfsIsEmpty(indexCfs);
-    }
-
-    @Test
     public void testDeleteOfInconsistentValuesFromCompositeIndex() throws Exception
     {
         runDeleteOfInconsistentValuesFromCompositeIndexTest(false);
@@ -410,29 +372,6 @@ public class SecondaryIndexTest
         assertIndexedNone(cfs, colName, 10l);
     }
 
-    @Test
-    public void testDeleteKeysIndex() throws Exception
-    {
-        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE1).getColumnFamilyStore(WITH_KEYS_INDEX);
-
-        ByteBuffer colName = ByteBufferUtil.bytes("birthdate");
-
-        // Insert indexed value.
-        new RowUpdateBuilder(cfs.metadata(), 1, "k1").add("birthdate", 10l).build().applyUnsafe();
-
-        // Now delete the value
-        RowUpdateBuilder.deleteRow(cfs.metadata(), 2, "k1").applyUnsafe();
-
-        // We want the data to be gcable, but even if gcGrace == 0, we still need to wait 1 second
-        // since we won't gc on a tie.
-        try { Thread.sleep(1000); } catch (Exception e) {}
-
-        // Read the index and we check we do get no value (and no NPE)
-        // Note: the index will return the entry because it hasn't been deleted (we
-        // haven't read yet nor compacted) but the data read itself will return null
-        assertIndexedNone(cfs, colName, 10l);
-    }
-
     // See CASSANDRA-2628
     @Test
     public void testIndexScanWithLimitOne()
@@ -508,21 +447,6 @@ public class SecondaryIndexTest
         Future future = cfs.indexManager.addIndex(indexDef, false);
         future.get();
         assertIndexedOne(cfs, ByteBufferUtil.bytes("birthdate"), 1L);
-    }
-
-    @Test
-    public void testKeysSearcherSimple() throws Exception
-    {
-        //  Create secondary index and flush to disk
-        Keyspace keyspace = Keyspace.open(KEYSPACE1);
-        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(WITH_KEYS_INDEX);
-
-        for (int i = 0; i < 10; i++)
-            new RowUpdateBuilder(cfs.metadata(), 0, "k" + i).noRowMarker().add("birthdate", 1l).build().applyUnsafe();
-
-        assertIndexedCount(cfs, ByteBufferUtil.bytes("birthdate"), 1l, 10);
-        cfs.forceBlockingFlush();
-        assertIndexedCount(cfs, ByteBufferUtil.bytes("birthdate"), 1l, 10);
     }
 
     @Test
