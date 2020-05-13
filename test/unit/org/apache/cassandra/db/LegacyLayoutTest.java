@@ -24,16 +24,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import org.apache.cassandra.db.LegacyLayout.CellGrouper;
+import org.apache.cassandra.db.LegacyLayout.LegacyBound;
+import org.apache.cassandra.db.LegacyLayout.LegacyCell;
+import org.apache.cassandra.db.LegacyLayout.LegacyRangeTombstone;
 import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.partitions.ImmutableBTreePartition;
+import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.rows.BufferCell;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.RowIterator;
-import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.SerializationHelper;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIteratorSerializer;
-import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.db.transform.FilteredRows;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.DataInputBuffer;
@@ -60,10 +62,10 @@ import org.apache.cassandra.db.rows.BTreeRow;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Hex;
 
 import static org.apache.cassandra.net.MessagingService.VERSION_21;
+import static org.apache.cassandra.utils.ByteBufferUtil.bytes;
 import static org.junit.Assert.*;
 
 public class LegacyLayoutTest
@@ -96,7 +98,7 @@ public class LegacyLayoutTest
         builder.addComplexDeletion(b, new DeletionTime(1L, 1));
         Row row = builder.build();
 
-        ByteBuffer key = ByteBufferUtil.bytes(1);
+        ByteBuffer key = bytes(1);
         PartitionUpdate upd = PartitionUpdate.singleRowUpdate(table, key, row);
 
         LegacyLayout.LegacyUnfilteredPartition p = LegacyLayout.fromUnfilteredRowIterator(null, upd.unfilteredIterator());
@@ -214,7 +216,7 @@ public class LegacyLayoutTest
         builder.addCell(new BufferCell(v, 1L, Cell.NO_TTL, Cell.NO_DELETION_TIME, Int32Serializer.instance.serialize(1), null));
         Row row = builder.build();
 
-        DecoratedKey pk = table.decorateKey(ByteBufferUtil.bytes(1));
+        DecoratedKey pk = table.decorateKey(bytes(1));
         PartitionUpdate upd = PartitionUpdate.singleRowUpdate(table, pk, row, staticRow);
 
         try (RowIterator before = FilteredRows.filter(upd.unfilteredIterator(), FBUtilities.nowInSeconds());
@@ -241,7 +243,7 @@ public class LegacyLayoutTest
         builder.addComplexDeletion(bug, new DeletionTime(1L, 1));
         Row row = builder.build();
 
-        DecoratedKey pk = table.decorateKey(ByteBufferUtil.bytes(1));
+        DecoratedKey pk = table.decorateKey(bytes(1));
         PartitionUpdate upd = PartitionUpdate.singleRowUpdate(table, pk, row);
 
         UnfilteredRowIterator afterRoundTripVia32 = roundTripVia21(upd.unfilteredIterator());
@@ -275,7 +277,7 @@ public class LegacyLayoutTest
         builder.addComplexDeletion(bug, new DeletionTime(1L, 1));
         Row row = builder.build();
 
-        DecoratedKey pk = table.decorateKey(ByteBufferUtil.bytes(1));
+        DecoratedKey pk = table.decorateKey(bytes(1));
         PartitionUpdate upd = PartitionUpdate.singleRowUpdate(table, pk, row);
 
         // we need to perform the round trip in two parts here, with a column drop inbetween
@@ -369,5 +371,68 @@ public class LegacyLayoutTest
 
         LegacyLayout.fromUnfilteredRowIterator(null, p.unfilteredIterator());
         LegacyLayout.serializedSizeAsLegacyPartition(null, p.unfilteredIterator(), VERSION_21);
+    }
+
+    private static LegacyCell cell(Clustering clustering, ColumnDefinition column, ByteBuffer value, long timestamp)
+    {
+        return new LegacyCell(LegacyCell.Kind.REGULAR,
+                              new LegacyLayout.LegacyCellName(clustering, column, null),
+                              value,
+                              timestamp,
+                              Cell.NO_DELETION_TIME,
+                              Cell.NO_TTL);
+    }
+
+    /**
+     * This tests that when {@link CellGrouper} gets a collection tombstone for
+     * a non-fetched collection, then that tombstone does not incorrectly stop the grouping of the current row, as
+     * was done before CASSANDRA-15805.
+     *
+     * <p>Please note that this rely on a query only _fetching_ some of the table columns, which in practice only
+     * happens for thrift queries, and thrift queries shouldn't mess up with CQL tables and collection tombstones,
+     * so this test is not of the utmost importance. Nonetheless, the pre-CASSANDRA-15805 behavior was incorrect and
+     * this ensure it is fixed.
+     */
+    @Test
+    public void testCellGrouperOnNonFecthedCollectionTombstone()
+    {
+        // CREATE TABLE %s (pk int, ck int, a text, b set<text>, c text, PRIMARY KEY (pk, ck))
+        CFMetaData cfm = CFMetaData.Builder.create("ks", "table")
+                                           .addPartitionKey("pk", Int32Type.instance)
+                                           .addClusteringColumn("ck", Int32Type.instance)
+                                           .addRegularColumn("a", UTF8Type.instance)
+                                           .addRegularColumn("b", SetType.getInstance(UTF8Type.instance, true))
+                                           .addRegularColumn("c", UTF8Type.instance)
+                                           .build();
+
+        // Creates a filter that _only_ fetches a and c, but not b.
+        ColumnFilter filter = ColumnFilter.selectionBuilder()
+                                          .add(cfm.getColumnDefinition(bytes("a")))
+                                          .add(cfm.getColumnDefinition(bytes("c")))
+                                          .build();
+        SerializationHelper helper = new SerializationHelper(cfm,
+                                                             MessagingService.VERSION_22,
+                                                             SerializationHelper.Flag.LOCAL,
+                                                             filter);
+        CellGrouper grouper = new CellGrouper(cfm, helper);
+        Clustering clustering = new Clustering(bytes(1));
+
+        // We add a cell for a, then a collection tombstone for b, and then a cell for c (for the same clustering).
+        // All those additions should return 'true' as all belong to the same row.
+        LegacyCell ca = cell(clustering, cfm.getColumnDefinition(bytes("a")), bytes("v1"), 1);
+        assertTrue(grouper.addAtom(ca));
+
+        Slice.Bound startBound = Slice.Bound.inclusiveStartOf(bytes(1));
+        Slice.Bound endBound = Slice.Bound.inclusiveEndOf(bytes(1));
+        ColumnDefinition bDef = cfm.getColumnDefinition(bytes("b"));
+        assert bDef != null;
+        LegacyBound start = new LegacyBound(startBound, false, bDef);
+        LegacyBound end = new LegacyBound(endBound, false, bDef);
+        LegacyRangeTombstone rtb = new LegacyRangeTombstone(start, end, new DeletionTime(1, 1588598040));
+        assertTrue(rtb.isCollectionTombstone()); // Ensure we're testing what we think
+        assertTrue(grouper.addAtom(rtb));
+
+        LegacyCell cc = cell(clustering, cfm.getColumnDefinition(bytes("c")), bytes("v2"), 1);
+        assertTrue(grouper.addAtom(cc));
     }
 }
