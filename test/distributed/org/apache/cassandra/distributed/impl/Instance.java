@@ -26,7 +26,6 @@ import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -37,7 +36,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
 import javax.management.ListenerNotFoundException;
 import javax.management.Notification;
 import javax.management.NotificationListener;
@@ -65,6 +63,8 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.SystemKeyspaceMigrator40;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.action.GossipHelper;
 import org.apache.cassandra.distributed.api.ICluster;
@@ -80,7 +80,9 @@ import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbe;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbeFactory;
 import org.apache.cassandra.exceptions.StartupException;
+import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.hints.HintsService;
 import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.io.IVersionedAsymmetricSerializer;
@@ -530,6 +532,85 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
     {
         Map<String,Object> params = ((InstanceConfig) overrides).getParams();
         return YamlConfigurationLoader.fromMap(params, Config.class);
+    }
+
+    public static void addToRing(boolean bootstrapping, IInstance peer)
+    {
+        try
+        {
+            IInstanceConfig config = peer.config();
+            IPartitioner partitioner = FBUtilities.newPartitioner(config.getString("partitioner"));
+            Token token = partitioner.getTokenFactory().fromString(config.getString("initial_token"));
+            InetAddressAndPort addressAndPort = toCassandraInetAddressAndPort(peer.broadcastAddress());
+
+            UUID hostId = config.hostId();
+            Gossiper.runInGossipStageBlocking(() -> {
+                Gossiper.instance.initializeNodeUnsafe(addressAndPort, hostId, 1);
+                Gossiper.instance.injectApplicationState(addressAndPort,
+                                                         ApplicationState.TOKENS,
+                                                         new VersionedValue.VersionedValueFactory(partitioner).tokens(Collections.singleton(token)));
+                StorageService.instance.onChange(addressAndPort,
+                                                 ApplicationState.STATUS,
+                                                 bootstrapping
+                                                 ? new VersionedValue.VersionedValueFactory(partitioner).bootstrapping(Collections.singleton(token))
+                                                 : new VersionedValue.VersionedValueFactory(partitioner).normal(Collections.singleton(token)));
+                Gossiper.instance.realMarkAlive(addressAndPort, Gossiper.instance.getEndpointStateForEndpoint(addressAndPort));
+            });
+            int messagingVersion = peer.isShutdown()
+                    ? MessagingService.current_version
+                    : Math.min(MessagingService.current_version, peer.getMessagingVersion());
+            MessagingService.instance().versions.set(addressAndPort, messagingVersion);
+
+            assert bootstrapping || StorageService.instance.getTokenMetadata().isMember(addressAndPort);
+            PendingRangeCalculatorService.instance.blockUntilFinished();
+        }
+        catch (Throwable e) // UnknownHostException
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void removeFromRing(IInstance peer)
+    {
+        try
+        {
+            IInstanceConfig config = peer.config();
+            IPartitioner partitioner = FBUtilities.newPartitioner(config.getString("partitioner"));
+            Token token = partitioner.getTokenFactory().fromString(config.getString("initial_token"));
+            InetAddressAndPort addressAndPort = toCassandraInetAddressAndPort(peer.broadcastAddress());
+
+            Gossiper.runInGossipStageBlocking(() -> {
+                StorageService.instance.onChange(addressAndPort,
+                        ApplicationState.STATUS,
+                        new VersionedValue.VersionedValueFactory(partitioner).left(Collections.singleton(token), 0L));
+                Gossiper.instance.removeEndpoint(addressAndPort);
+            });
+            PendingRangeCalculatorService.instance.blockUntilFinished();
+        }
+        catch (Throwable e) // UnknownHostException
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void addToRingNormal(IInstance peer)
+    {
+        addToRing(false, peer);
+        assert StorageService.instance.getTokenMetadata().isMember(toCassandraInetAddressAndPort(peer.broadcastAddress()));
+    }
+
+    public static void addToRingBootstrapping(IInstance peer)
+    {
+        addToRing(true, peer);
+    }
+
+    private static void initializeRing(ICluster cluster)
+    {
+        for (int i = 1 ; i <= cluster.size() ; ++i)
+            addToRing(false, cluster.get(i));
+
+        for (int i = 1; i <= cluster.size(); ++i)
+            assert StorageService.instance.getTokenMetadata().isMember(toCassandraInetAddressAndPort(cluster.get(i).broadcastAddress()));
     }
 
     public Future<Void> shutdown()

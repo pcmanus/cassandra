@@ -5,6 +5,7 @@
  * Throw BufferOverflowException from DataOutputBuffer for better visibility (CASSANDRA-16214)
 Merged from 3.11:
 Merged from 3.0:
+ * Fix serial read/non-applying CAS linearizability (CASSANDRA-12126)
  * Prevent invoking enable/disable gossip when not in NORMAL (CASSANDRA-16146)
 
 4.0-beta3
