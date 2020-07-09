@@ -105,7 +105,9 @@ public class ScrubTest
                        standardCFMD(KEYSPACE, CF3),
                        counterCFMD(KEYSPACE, COUNTER_CF).compression(getCompressionParameters(COMPRESSION_CHUNK_LENGTH)),
                        standardCFMD(KEYSPACE, CF_UUID, 0, UUIDType.instance),
+                       SchemaLoader.keysIndexCFMD(KEYSPACE, CF_INDEX1, true),
                        SchemaLoader.compositeIndexCFMD(KEYSPACE, CF_INDEX2, true),
+                       SchemaLoader.keysIndexCFMD(KEYSPACE, CF_INDEX1_BYTEORDERED, true).partitioner(ByteOrderedPartitioner.instance),
                        SchemaLoader.compositeIndexCFMD(KEYSPACE, CF_INDEX2_BYTEORDERED, true).partitioner(ByteOrderedPartitioner.instance));
     }
 
@@ -446,7 +448,7 @@ public class ScrubTest
         assertEquals(expectedSize, size);
     }
 
-    public static void fillCF(ColumnFamilyStore cfs, int partitionsPerSSTable)
+    protected void fillCF(ColumnFamilyStore cfs, int partitionsPerSSTable)
     {
         for (int i = 0; i < partitionsPerSSTable; i++)
         {
@@ -520,15 +522,35 @@ public class ScrubTest
     }
 
     @Test /* CASSANDRA-5174 */
+    public void testScrubKeysIndex_preserveOrder() throws IOException, ExecutionException, InterruptedException
+    {
+        //If the partitioner preserves the order then SecondaryIndex uses BytesType comparator,
+        // otherwise it uses LocalByPartitionerType
+        testScrubIndex(CF_INDEX1_BYTEORDERED, COL_INDEX, false, true);
+    }
+
+    @Test /* CASSANDRA-5174 */
     public void testScrubCompositeIndex_preserveOrder() throws IOException, ExecutionException, InterruptedException
     {
         testScrubIndex(CF_INDEX2_BYTEORDERED, COL_INDEX, true, true);
     }
 
     @Test /* CASSANDRA-5174 */
+    public void testScrubKeysIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testScrubIndex(CF_INDEX1, COL_INDEX, false, true);
+    }
+
+    @Test /* CASSANDRA-5174 */
     public void testScrubCompositeIndex() throws IOException, ExecutionException, InterruptedException
     {
         testScrubIndex(CF_INDEX2, COL_INDEX, true, true);
+    }
+
+    @Test /* CASSANDRA-5174 */
+    public void testFailScrubKeysIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testScrubIndex(CF_INDEX1, COL_INDEX, false, false);
     }
 
     @Test /* CASSANDRA-5174 */
@@ -540,7 +562,7 @@ public class ScrubTest
     @Test /* CASSANDRA-5174 */
     public void testScrubTwice() throws IOException, ExecutionException, InterruptedException
     {
-        testScrubIndex(CF_INDEX2, COL_INDEX, true, true, true);
+        testScrubIndex(CF_INDEX2, COL_INDEX, false, true, true);
     }
 
     private void testScrubIndex(String cfName, String colName, boolean composite, boolean ... scrubs)

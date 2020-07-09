@@ -59,15 +59,7 @@ public final class IndexMetadata
 
     public enum Kind
     {
-        CUSTOM,
-        COMPOSITES,
-        @Deprecated KEYS;
-
-
-        public static boolean isSupportedIndex(IndexMetadata.Kind kind)
-        {
-            return kind.toString().equals(Kind.KEYS);
-        }
+        KEYS, CUSTOM, COMPOSITES
     }
 
     // UUID for serialization. This is a deterministic UUID generated from the index name
@@ -187,6 +179,8 @@ public final class IndexMetadata
     {
         return kind == Kind.CUSTOM;
     }
+
+    public boolean isKeys() { return kind == Kind.KEYS; }
 
     public boolean isComposites()
     {

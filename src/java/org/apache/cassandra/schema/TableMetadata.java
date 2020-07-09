@@ -51,19 +51,13 @@ import static org.apache.cassandra.schema.IndexMetadata.isNameValid;
 public final class TableMetadata implements SchemaElement
 {
     public static final String COMPACT_STORAGE_HALT_MESSAGE =
-             "Compact Tables are not allowed in Cassandra starting with 4.0 version.\n " +
-             "Use `ALTER ... DROP COMPACT STORAGE` command supplied in 3.x/3.11 Cassandra\n " +
-             "in order to migrate off Compact Storage. Then recreate your indexes.\n"+
-             "1) Use 'DROP INDEX IS EXISTS ...' to remove the old index.\n"+
-             "2) Use 'CREATE INDEX ... ON ...' to create the new index.";
+            "Compact Tables are not allowed in Cassandra starting with 4.0 version. " +
+            "Use `ALTER ... DROP COMPACT STORAGE` command supplied in 3.x/3.11 Cassandra " +
+            "in order to migrate off Compact Storage.";
 
     private static final String LEGACY_FLAGS_UNSUPPORTED_MESSAGE =
              "Incorrect set of flags was detected. \n" +
              "Starting with version 4.0, SUPER and DENSE flags are deprecated.";
-
-    public static final String LEGACY_INDEXES_UNSUPPORTED_MESSAGE =
-    "Incorrect indexes were detected. \n" +
-    "Starting with version 4.0, KEYS kind is deprecated.";
 
     public enum Flag
     {

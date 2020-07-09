@@ -451,14 +451,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         repairManager = new CassandraTableRepairManager(this);
         sstableImporter = new SSTableImporter(this);
 
-        /*Iterator<IndexMetadata> iterator = metadata.get().indexes.iterator();
-        while(iterator.hasNext())
-        {
-            if(!IndexMetadata.Kind.isSupportedIndex(iterator.next().kind))
-            {
-                throw new IllegalArgumentException(TableMetadata.LEGACY_INDEXES_UNSUPPORTED_MESSAGE);
-            }
-        }*/
+        Iterator<IndexMetadata> iterator = metadata.get().indexes.iterator();
     }
 
     public void updateSpeculationThreshold()

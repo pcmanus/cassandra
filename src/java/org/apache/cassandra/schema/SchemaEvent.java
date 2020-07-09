@@ -257,6 +257,7 @@ public final class SchemaEvent extends DiagnosticEvent
         ret.put("id", index.id);
         ret.put("options", new HashMap<>(index.options));
         ret.put("isCustom", index.isCustom());
+        ret.put("isKeys", index.isKeys());
         ret.put("isComposites", index.isComposites());
         return ret;
     }

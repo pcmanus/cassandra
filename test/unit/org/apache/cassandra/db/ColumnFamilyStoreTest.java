@@ -67,7 +67,8 @@ public class ColumnFamilyStoreTest
         SchemaLoader.createKeyspace(KEYSPACE1,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD1),
-                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2));
+                                    SchemaLoader.standardCFMD(KEYSPACE1, CF_STANDARD2),
+                                    SchemaLoader.keysIndexCFMD(KEYSPACE1, CF_INDEX1, true));
         SchemaLoader.createKeyspace(KEYSPACE2,
                                     KeyspaceParams.simple(1),
                                     SchemaLoader.standardCFMD(KEYSPACE2, CF_STANDARD1));
@@ -226,7 +227,7 @@ public class ColumnFamilyStoreTest
             colValues[i] = (i % 4 == 0 ? 1L : 2L); // index column
             colValues[i+1] = 3L; //other column
         }
-        ScrubTest.fillCF(cfs, 2);
+        ScrubTest.fillIndexCF(cfs, false, colValues);
 
         cfs.snapshot("nonEphemeralSnapshot", null, false, false);
         cfs.snapshot("ephemeralSnapshot", null, true, false);

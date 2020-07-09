@@ -187,7 +187,7 @@ public class CacheProviderTest
         tm = TableMetadata.builder("ks", "tab.indexFoo", id1)
                           .kind(TableMetadata.Kind.INDEX)
                           .addPartitionKeyColumn("pk", UTF8Type.instance)
-                          .indexes(Indexes.of(IndexMetadata.fromSchemaMetadata("indexFoo", IndexMetadata.Kind.COMPOSITES, Collections.emptyMap())))
+                          .indexes(Indexes.of(IndexMetadata.fromSchemaMetadata("indexFoo", IndexMetadata.Kind.KEYS, Collections.emptyMap())))
                           .build();
         assertTrue(key1.sameTable(tm));
 

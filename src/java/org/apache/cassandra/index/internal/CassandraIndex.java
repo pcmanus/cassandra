@@ -52,6 +52,7 @@ import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.*;
 import org.apache.cassandra.index.internal.composites.CompositesSearcher;
+import org.apache.cassandra.index.internal.keys.KeysSearcher;
 import org.apache.cassandra.index.transactions.IndexTransaction;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
@@ -299,6 +300,9 @@ public abstract class CassandraIndex implements Index
             {
                 case COMPOSITES:
                     return new CompositesSearcher(command, target.get(), this);
+                case KEYS:
+                    return new KeysSearcher(command, target.get(), this);
+
                 default:
                     throw new IllegalStateException(String.format("Unsupported index type %s for index %s on %s",
                                                                   metadata.kind,
@@ -741,9 +745,12 @@ public abstract class CassandraIndex implements Index
                          .addPartitionKeyColumn(indexedColumn.name, indexedColumn.type)
                          .addClusteringColumn("partition_key", baseCfsMetadata.partitioner.partitionOrdering());
 
-        // The clustering columns for a table backing a non-KEYS index are dependent
-        // on the specific type of index (there are specializations for indexes on collections)
-        utils.addIndexClusteringColumns(builder, baseCfsMetadata, indexedColumn);
+        if (!indexMetadata.isKeys())
+        {
+            // The clustering columns for a table backing a non-KEYS index are dependent
+            // on the specific type of index (there are specializations for indexes on collections)
+            utils.addIndexClusteringColumns(builder, baseCfsMetadata, indexedColumn);
+        }
 
         return builder.build().updateIndexTableMetadata(baseCfsMetadata.params);
     }
@@ -762,6 +769,9 @@ public abstract class CassandraIndex implements Index
     static CassandraIndexFunctions getFunctions(IndexMetadata indexDef,
                                                 Pair<ColumnMetadata, IndexTarget.Type> target)
     {
+        if (indexDef.isKeys())
+            return CassandraIndexFunctions.KEYS_INDEX_FUNCTIONS;
+
         ColumnMetadata indexedColumn = target.left;
         if (indexedColumn.type.isCollection() && indexedColumn.type.isMultiCell())
         {

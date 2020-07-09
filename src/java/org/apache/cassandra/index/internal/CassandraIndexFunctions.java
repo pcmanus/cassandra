@@ -27,6 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.CompositeType;
 import org.apache.cassandra.index.internal.composites.*;
+import org.apache.cassandra.index.internal.keys.KeysIndex;
 import org.apache.cassandra.schema.IndexMetadata;
 
 public interface CassandraIndexFunctions
@@ -80,6 +81,14 @@ public interface CassandraIndexFunctions
      * implementations providing specializations for the built in index types
      */
 
+    static final CassandraIndexFunctions KEYS_INDEX_FUNCTIONS = new CassandraIndexFunctions()
+    {
+        public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
+        {
+            return new KeysIndex(baseCfs, indexMetadata);
+        }
+    };
+
     static final CassandraIndexFunctions REGULAR_COLUMN_INDEX_FUNCTIONS = new CassandraIndexFunctions()
     {
         public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
@@ -115,14 +124,6 @@ public interface CassandraIndexFunctions
         }
     };
 
-    static final CassandraIndexFunctions PARTITION_KEY_INDEX_FUNCTIONS = new CassandraIndexFunctions()
-    {
-        public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
-        {
-            return new PartitionKeyIndex(baseCfs, indexMetadata);
-        }
-    };
-
     static final CassandraIndexFunctions COLLECTION_KEY_INDEX_FUNCTIONS = new CassandraIndexFunctions()
     {
         public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
@@ -133,6 +134,14 @@ public interface CassandraIndexFunctions
         public AbstractType<?> getIndexedValueType(ColumnMetadata indexedColumn)
         {
             return ((CollectionType) indexedColumn.type).nameComparator();
+        }
+    };
+
+    static final CassandraIndexFunctions PARTITION_KEY_INDEX_FUNCTIONS = new CassandraIndexFunctions()
+    {
+        public CassandraIndex newIndexInstance(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
+        {
+            return new PartitionKeyIndex(baseCfs, indexMetadata);
         }
     };
 
