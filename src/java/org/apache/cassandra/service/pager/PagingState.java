@@ -428,7 +428,7 @@ public class PagingState
             if (CompositeType.isStaticName(value))
                 return Clustering.STATIC_CLUSTERING;
 
-            List<ByteBuffer> components = Collections.singletonList(value);
+            List<ByteBuffer> components = CompositeType.splitName(value);
 
             return Clustering.make(components.subList(0, Math.min(csize, components.size())).toArray(new ByteBuffer[csize]));
         }
