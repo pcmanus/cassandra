@@ -667,6 +667,11 @@ public final class TableMetadata implements SchemaElement
         private Kind kind = Kind.REGULAR;
         private TableParams.Builder params = TableParams.builder();
 
+        // COMPOUND is a left-over from pre-4.0 legacy code and does not carry meaning anymore (all tables are
+        // "compound" according to the legacy definition). However, we still use the absence of that flag to detect the
+        // case where a user tries to upgrade to 4.0 but hasn't run 'DROP COMPACT STORAGE' on their compact tables, so
+        // for now, we need to explicitly set it on all tables. In the future, whenever upgrades from pre-4.0 is not
+        // supported anymore, we can remove that flag completely.
         private Set<Flag> flags = EnumSet.of(Flag.COMPOUND);
         private Triggers triggers = Triggers.none();
         private Indexes indexes = Indexes.none();

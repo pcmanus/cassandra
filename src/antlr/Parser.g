@@ -1343,12 +1343,6 @@ describeStatement returns [DescribeStatement stmt]
 
 /** DEFINITIONS **/
 
-// Column Identifiers.  These need to be treated differently from other
-// identifiers because the underlying comparator is not necessarily text. See
-// CASSANDRA-8178 for details.
-// Also, we need to support the internal of the super column map (for backward
-// compatibility) which is empty (we only want to allow this is in data manipulation
-// queries, not in schema defition etc).
 // Like ident, but for case where we take a column name that can be the legacy super column empty name. Importantly,
 // this should not be used in DDL statements, as we don't want let user create such column.
 cident returns [ColumnIdentifier id]

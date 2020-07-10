@@ -889,8 +889,8 @@ public interface Selectable extends AssignmentTestable
     /**
      * {@code Selectable} for literal Maps or UDTs.
      * <p>The parser cannot differentiate between a Map or a UDT in the selection cause because a
-     * <p>The parser cannot differentiate between a Map or a UDT in the selection clause because a
      * {@code ColumnIdentifier} is equivalent to a {@code FieldIdentifier} from a syntax point of view.
+     * By consequence, we are forced to wait until the type is known to be able to differentiate them.</p>
      */
     public static class WithMapOrUdt implements Selectable
     {

@@ -63,7 +63,7 @@ public class UpdateStatement extends ModificationStatement
         {
             params.newRow(clustering);
 
-            // We update the row timestamp (ex-row marker) only on INSERT (#6782)
+            // We update the row timestamp only on INSERT (#6782)
             if (type.isInsert())
                 params.addPrimaryKeyLivenessInfo();
 
