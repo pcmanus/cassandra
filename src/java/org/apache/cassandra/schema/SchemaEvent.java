@@ -197,7 +197,7 @@ public final class SchemaEvent extends DiagnosticEvent
         ret.put("triggers", Lists.newArrayList(repr(table.triggers)));
         ret.put("columns", Lists.newArrayList(table.columns.values().stream().map(this::repr).iterator()));
         ret.put("droppedColumns", Lists.newArrayList(table.droppedColumns.values().stream().map(this::repr).iterator()));
-        ret.put("isCompound", table.isCompound());
+        ret.put("isCounter", table.isCounter());
         ret.put("isIndex", table.isIndex());
         ret.put("isView", table.isView());
         ret.put("isVirtual", table.isVirtual());

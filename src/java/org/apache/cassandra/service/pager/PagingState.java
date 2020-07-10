@@ -391,15 +391,6 @@ public class PagingState
         {
             boolean isStatic = clustering == Clustering.STATIC_CLUSTERING;
 
-            if (!metadata.isCompound())
-            {
-                if (isStatic)
-                    return columnName;
-
-                assert clustering.size() == 1 : "Expected clustering size to be 1, but was " + clustering.size();
-                return clustering.get(0);
-            }
-
             // We use comparator.size() rather than clustering.size() because of static clusterings
             int clusteringSize = metadata.comparator.size();
             int size = clusteringSize + 1 + (collectionElement == null ? 0 : 1);
@@ -434,12 +425,10 @@ public class PagingState
             if (csize == 0)
                 return Clustering.EMPTY;
 
-            if (metadata.isCompound() &&  CompositeType.isStaticName(value))
+            if (CompositeType.isStaticName(value))
                 return Clustering.STATIC_CLUSTERING;
 
-            List<ByteBuffer> components = metadata.isCompound()
-                                          ? CompositeType.splitName(value)
-                                          : Collections.singletonList(value);
+            List<ByteBuffer> components = Collections.singletonList(value);
 
             return Clustering.make(components.subList(0, Math.min(csize, components.size())).toArray(new ByteBuffer[csize]));
         }
