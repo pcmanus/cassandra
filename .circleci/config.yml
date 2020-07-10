@@ -3,10 +3,10 @@ jobs:
   j8_jvm_upgrade_dtests:
     docker:
     - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
-    resource_class: medium
+    resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 1
+    parallelism: 10
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -93,11 +93,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j8_cqlsh-dtests-py2-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -174,7 +174,7 @@ jobs:
     resource_class: medium
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -262,11 +262,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j8_cqlsh-dtests-py38-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -339,11 +339,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j11_cqlsh-dtests-py3-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -417,11 +417,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j11_cqlsh-dtests-py3-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -495,11 +495,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j11_cqlsh-dtests-py38-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -573,11 +573,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j8_cqlsh-dtests-py3-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -650,11 +650,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j8_cqlsh-dtests-py2-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -727,11 +727,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j11_cqlsh-dtests-py2-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -805,11 +805,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j11_dtests-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -886,11 +886,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j8_dtests-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -945,10 +945,10 @@ jobs:
   j8_upgradetests-no-vnodes:
     docker:
     - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
-    resource_class: medium
+    resource_class: xlarge
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 100
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1092,7 +1092,7 @@ jobs:
     resource_class: medium
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1352,11 +1352,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j11_cqlsh-dtests-py2-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1430,11 +1430,11 @@ jobs:
     - CASSANDRA_USE_JDK11: true
   j8_dtests-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1488,11 +1488,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j11_cqlsh-dtests-py38-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1567,10 +1567,10 @@ jobs:
   j8_jvm_dtests:
     docker:
     - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
-    resource_class: medium
+    resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 1
+    parallelism: 10
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1737,11 +1737,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j8_cqlsh-dtests-py3-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1814,11 +1814,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j8_cqlsh-dtests-py38-with-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -1981,11 +1981,11 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j11_dtests-no-vnodes:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11:20200406
+    - image: nastra/cassandra-testing-ubuntu1910-java11:20200603
     resource_class: large
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 50
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -2066,7 +2066,7 @@ jobs:
     resource_class: medium
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
-    parallelism: 4
+    parallelism: 25
     steps:
     - attach_workspace:
         at: /home/cassandra
@@ -2153,8 +2153,8 @@ jobs:
     - JDK_HOME: /usr/lib/jvm/java-8-openjdk-amd64
   j8_dtest_jars_build:
     docker:
-    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200406
-    resource_class: large
+    - image: nastra/cassandra-testing-ubuntu1910-java11-w-dependencies:20200603
+    resource_class: medium
     working_directory: ~/
     shell: /bin/bash -eo pipefail -l
     parallelism: 1
