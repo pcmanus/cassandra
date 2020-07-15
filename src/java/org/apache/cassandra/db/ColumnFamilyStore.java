@@ -404,6 +404,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             initialMemtable = new Memtable(new AtomicReference<>(CommitLog.instance.getContext()), this);
         data = new Tracker(initialMemtable, loadSSTables);
 
+        // Note that this needs to happen before we load the first sstables, or the global sstable tracker will not
+        // be notified on the initial loading.
+        data.subscribe(StorageService.instance.sstablesTracker);
+
         // scan for sstables corresponding to this cf and load them
         if (data.loadsstables)
         {

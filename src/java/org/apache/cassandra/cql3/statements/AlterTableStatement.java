@@ -17,10 +17,16 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.*;
@@ -34,18 +40,30 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.EmptyType;
 import org.apache.cassandra.db.view.View;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.gms.ApplicationState;
+import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.io.sstable.format.SSTableFormat;
+import org.apache.cassandra.io.sstable.format.VersionAndType;
+import org.apache.cassandra.io.sstable.format.big.BigFormat;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.Indexes;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.Event;
+import org.apache.cassandra.utils.NoSpamLogger;
 
+import static java.lang.String.format;
 import static org.apache.cassandra.thrift.ThriftValidation.validateColumnFamily;
 
 public class AlterTableStatement extends SchemaAlteringStatement
 {
+    private static final Logger logger = LoggerFactory.getLogger(AlterTableStatement.class);
+    private static final NoSpamLogger noSpamLogger = NoSpamLogger.getLogger(logger, 5L, TimeUnit.MINUTES);
+
     public enum Type
     {
         ADD, ALTER, DROP, DROP_COMPACT_STORAGE, OPTS, RENAME
@@ -124,8 +142,8 @@ public class AlterTableStatement extends SchemaAlteringStatement
                         break;
                     }
 
-                    throw new InvalidRequestException(String.format("Compact value type can only be changed to BytesType, but %s was given.",
-                                                                    validator.getType()));
+                    throw new InvalidRequestException(format("Compact value type can only be changed to BytesType, but %s was given.",
+                                                             validator.getType()));
                 }
                 else
                 {
@@ -152,9 +170,9 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     {
                         case PARTITION_KEY:
                         case CLUSTERING:
-                            throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with a PRIMARY KEY part", columnName));
+                            throw new InvalidRequestException(format("Invalid column name %s because it conflicts with a PRIMARY KEY part", columnName));
                         default:
-                            throw new InvalidRequestException(String.format("Invalid column name %s because it conflicts with an existing column", columnName));
+                            throw new InvalidRequestException(format("Invalid column name %s because it conflicts with an existing column", columnName));
                     }
                 }
 
@@ -177,7 +195,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     if (droppedColumn.kind != toAdd.kind)
                     {
                         String message =
-                            String.format("Cannot re-add previously dropped column '%s' of kind %s, incompatible with previous kind %s",
+                            format("Cannot re-add previously dropped column '%s' of kind %s, incompatible with previous kind %s",
                                           columnName,
                                           toAdd.kind,
                                           droppedColumn.kind == null ? "UNKNOWN" : droppedColumn.kind);
@@ -189,7 +207,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     if (!type.isValueCompatibleWith(droppedColumn.type))
                     {
                         String message =
-                            String.format("Cannot re-add previously dropped column '%s' of type %s, incompatible with previous type %s",
+                            format("Cannot re-add previously dropped column '%s' of type %s, incompatible with previous type %s",
                                           columnName,
                                           type.asCQL3Type(),
                                           droppedColumn.type.asCQL3Type());
@@ -198,7 +216,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
 
                     // Cannot re-add a dropped counter column. See #7831.
                     if (meta.isCounter())
-                        throw new InvalidRequestException(String.format("Cannot re-add previously dropped counter column %s", columnName));
+                        throw new InvalidRequestException(format("Cannot re-add previously dropped counter column %s", columnName));
                 }
 
                 cfm.addColumnDefinition(toAdd);
@@ -226,7 +244,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     throw new InvalidRequestException("Cannot drop columns from a non-CQL3 table");
 
                 if (def == null)
-                    throw new InvalidRequestException(String.format("Column %s was not found in table %s", columnName, columnFamily()));
+                    throw new InvalidRequestException(format("Column %s was not found in table %s", columnName, columnFamily()));
 
                 cfm = meta.copy();
 
@@ -234,7 +252,7 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 {
                     case PARTITION_KEY:
                     case CLUSTERING:
-                        throw new InvalidRequestException(String.format("Cannot drop PRIMARY KEY part %s", columnName));
+                        throw new InvalidRequestException(format("Cannot drop PRIMARY KEY part %s", columnName));
                     case REGULAR:
                     case STATIC:
                         ColumnDefinition toDelete = null;
@@ -260,22 +278,24 @@ public class AlterTableStatement extends SchemaAlteringStatement
                     ColumnFamilyStore store = Keyspace.openAndGetStore(cfm);
                     Set<IndexMetadata> dependentIndexes = store.indexManager.getDependentIndexes(def);
                     if (!dependentIndexes.isEmpty())
-                        throw new InvalidRequestException(String.format("Cannot drop column %s because it has " +
-                                                                        "dependent secondary indexes (%s)",
-                                                                        def,
-                                                                        dependentIndexes.stream()
+                        throw new InvalidRequestException(format("Cannot drop column %s because it has " +
+                                                                 "dependent secondary indexes (%s)",
+                                                                 def,
+                                                                 dependentIndexes.stream()
                                                                                         .map(i -> i.name)
                                                                                         .collect(Collectors.joining(","))));
                 }
 
                 if (!Iterables.isEmpty(views))
-                    throw new InvalidRequestException(String.format("Cannot drop column %s on base table %s with materialized views.",
-                                                                    columnName.toString(),
-                                                                    columnFamily()));
+                    throw new InvalidRequestException(format("Cannot drop column %s on base table %s with materialized views.",
+                                                             columnName.toString(),
+                                                             columnFamily()));
                 break;
             case DROP_COMPACT_STORAGE:
                 if (!meta.isCompactTable())
                     throw new InvalidRequestException("Cannot DROP COMPACT STORAGE on table without COMPACT STORAGE");
+
+                validateCanDropCompactStorage();
 
                 cfm = meta.asNonCompact();
                 break;
@@ -337,9 +357,79 @@ public class AlterTableStatement extends SchemaAlteringStatement
         return new Event.SchemaChange(Event.SchemaChange.Change.UPDATED, Event.SchemaChange.Target.TABLE, keyspace(), columnFamily());
     }
 
+    /**
+     * Throws if DROP COMPACT STORAGE cannot be used (yet) because the cluster is not sufficiently upgraded. To be able
+     * to use DROP COMPACT STORAGE, we need to ensure that no pre-3.0 sstables exists in the cluster, as we won't be
+     * able to read them anymore once COMPACT STORAGE is dropped (see CASSANDRA-15897). In practice, his method checks
+     * 3 things:
+     *   1) that all nodes are on 3.0+. We need this because 2.x nodes didn't advertise their sstable versions.
+     *   2) for 3.0+, we use the new (CASSANDRA-15897) sstables versions set gossiped by all nodes to ensure all
+     *      sstables have been upgraded cluster-wise.
+     *   3) if the cluster still has some 3.0 nodes that predates CASSANDRA-15897, we will not have the sstable versions
+     *      for them. In that case, we also refuse DROP COMPACT (even though it may well be safe at this point) and ask
+     *      the user to upgrade all nodes.
+     */
+    private void validateCanDropCompactStorage()
+    {
+        Set<InetAddress> before3 = new HashSet<>();
+        Set<InetAddress> preC15897nodes = new HashSet<>();
+        Set<InetAddress> with2xSStables = new HashSet<>();
+        Splitter onComma = Splitter.on(',').omitEmptyStrings().trimResults();
+        for (InetAddress node : StorageService.instance.getTokenMetadata().getAllEndpoints())
+        {
+            if (MessagingService.instance().getVersion(node) < MessagingService.VERSION_30)
+            {
+                before3.add(node);
+                continue;
+            }
+
+            String sstableVersionsString = Gossiper.instance.getApplicationState(node, ApplicationState.SSTABLE_VERSIONS);
+            if (sstableVersionsString == null)
+            {
+                preC15897nodes.add(node);
+                continue;
+            }
+
+            try
+            {
+                // Note: 'storeRows' is basically a marker for 3.0+ sstables.
+                boolean has2xSStables = onComma.splitToList(sstableVersionsString)
+                                               .stream()
+                                               .map(VersionAndType::fromString)
+                                               .anyMatch(v -> !v.version().storeRows());
+                if (has2xSStables)
+                    with2xSStables.add(node);
+            }
+            catch (IllegalArgumentException e)
+            {
+                // Means VersionType::fromString didn't parse a version correctly. Which shouldn't happen, we shouldn't
+                // have garbage in Gossip. But crashing the request is not ideal, so we log the error but ignore the
+                // node otherwise.
+                noSpamLogger.error("Unexpected error parsing sstable versions from gossip for {} (gossiped value " +
+                                   "is '{}'). This is a bug and should be reported. Cannot ensure that {} has no " +
+                                   "non-upgraded 2.x sstables anymore. If after this DROP COMPACT STORAGE some old " +
+                                   "sstables cannot be read anymore, please use `upgradesstables` with the " +
+                                   "`--force-compact-storage-on` option.", node, sstableVersionsString, node);
+            }
+        }
+
+        if (!before3.isEmpty())
+            throw new InvalidRequestException(format("Cannot DROP COMPACT STORAGE as some nodes in the cluster (%s) " +
+                                                     "are not on 3.0+ yet. Please upgrade those nodes and run " +
+                                                     "`upgradesstables` before retrying.", before3));
+        if (!preC15897nodes.isEmpty())
+            throw new InvalidRequestException(format("Cannot guarantee that DROP COMPACT STORAGE is safe as some nodes " +
+                                                     "in the cluster (%s) do not have https://issues.apache.org/jira/browse/CASSANDRA-15897. " +
+                                                     "Please upgrade those nodes and retry.", preC15897nodes));
+        if (!with2xSStables.isEmpty())
+            throw new InvalidRequestException(format("Cannot DROP COMPACT STORAGE as some nodes in the cluster (%s) " +
+                                                     "has some non-upgraded 2.x sstables. Please run `upgradesstables` " +
+                                                     "on those nodes before retrying", with2xSStables));
+    }
+
     public String toString()
     {
-        return String.format("AlterTableStatement(name=%s, type=%s, column=%s, validator=%s)",
+        return format("AlterTableStatement(name=%s, type=%s, column=%s, validator=%s)",
                              cfName,
                              oType,
                              rawColumnName,

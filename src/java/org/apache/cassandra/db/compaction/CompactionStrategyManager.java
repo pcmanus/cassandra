@@ -246,6 +246,11 @@ public class CompactionStrategyManager implements INotificationConsumer
         if (notification instanceof SSTableAddedNotification)
         {
             SSTableAddedNotification flushedNotification = (SSTableAddedNotification) notification;
+            // If this is ColumnFamilyStore initialization, we ignore those sstables: they have been loaded by the
+            // startup() method already.
+            if (flushedNotification.isInitialization)
+                return;
+
             for (SSTableReader sstable : flushedNotification.added)
             {
                 if (sstable.isRepaired())

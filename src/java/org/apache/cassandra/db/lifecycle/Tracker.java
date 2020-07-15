@@ -185,18 +185,25 @@ public class Tracker
 
     public void addInitialSSTables(Iterable<SSTableReader> sstables)
     {
-        if (!isDummy())
-            setupOnline(sstables);
-        apply(updateLiveSet(emptySet(), sstables));
-        maybeFail(updateSizeTracking(emptySet(), sstables, null));
-        // no notifications or backup necessary
+        addSSTablesInternal(sstables, true, false);
     }
 
     public void addSSTables(Iterable<SSTableReader> sstables)
     {
-        addInitialSSTables(sstables);
-        maybeIncrementallyBackup(sstables);
-        notifyAdded(sstables);
+        addSSTablesInternal(sstables, false, true);
+    }
+
+    private void addSSTablesInternal(Iterable<SSTableReader> sstables,
+                                     boolean isInitialSSTables,
+                                     boolean maybeIncrementallyBackup)
+    {
+        if (!isDummy())
+            setupOnline(sstables);
+        apply(updateLiveSet(emptySet(), sstables));
+        maybeFail(updateSizeTracking(emptySet(), sstables, null));
+        if (maybeIncrementallyBackup)
+            maybeIncrementallyBackup(sstables);
+        notifyAdded(sstables, isInitialSSTables);
     }
 
     /** (Re)initializes the tracker, purging all references. */
@@ -354,7 +361,7 @@ public class Tracker
         Throwable fail;
         fail = updateSizeTracking(emptySet(), sstables, null);
         // TODO: if we're invalidated, should we notifyadded AND removed, or just skip both?
-        fail = notifyAdded(sstables, fail);
+        fail = notifyAdded(sstables, false, fail);
 
         if (!isDummy() && !cfstore.isValid())
             dropSSTables();
@@ -412,9 +419,9 @@ public class Tracker
         return accumulate;
     }
 
-    Throwable notifyAdded(Iterable<SSTableReader> added, Throwable accumulate)
+    Throwable notifyAdded(Iterable<SSTableReader> added, boolean isInitialSSTables, Throwable accumulate)
     {
-        INotification notification = new SSTableAddedNotification(added);
+        INotification notification = new SSTableAddedNotification(added, isInitialSSTables);
         for (INotificationConsumer subscriber : subscribers)
         {
             try
@@ -429,9 +436,9 @@ public class Tracker
         return accumulate;
     }
 
-    public void notifyAdded(Iterable<SSTableReader> added)
+    void notifyAdded(Iterable<SSTableReader> added, boolean isInitialSSTables)
     {
-        maybeFail(notifyAdded(added, null));
+        maybeFail(notifyAdded(added, isInitialSSTables, null));
     }
 
     public void notifySSTableRepairedStatusChanged(Collection<SSTableReader> repairStatusesChanged)

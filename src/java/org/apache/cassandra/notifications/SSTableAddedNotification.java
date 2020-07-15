@@ -17,13 +17,19 @@
  */
 package org.apache.cassandra.notifications;
 
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 
 public class SSTableAddedNotification implements INotification
 {
     public final Iterable<SSTableReader> added;
-    public SSTableAddedNotification(Iterable<SSTableReader> added)
+    /** {@code true} if the addition corresponds to the {@link ColumnFamilyStore} initialization, that if the sstables
+     * are those loaded at startup. */
+    public final boolean isInitialization;
+
+    public SSTableAddedNotification(Iterable<SSTableReader> added, boolean isInitialization)
     {
         this.added = added;
+        this.isInitialization = isInitialization;
     }
 }

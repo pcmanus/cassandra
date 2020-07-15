@@ -22,6 +22,13 @@ import org.junit.Test;
 
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.shared.Versions;
+import org.assertj.core.util.Throwables;
+
+import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
+import static org.apache.cassandra.distributed.api.Feature.NATIVE_PROTOCOL;
+import static org.apache.cassandra.distributed.api.Feature.NETWORK;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 public class DropCompactStorageTest extends UpgradeTestBase
 {
@@ -42,6 +49,7 @@ public class DropCompactStorageTest extends UpgradeTestBase
         new TestCase()
         .nodes(1)
         .upgrade(Versions.Major.v22, upgradeTo)
+        .withConfig(config -> config.with(GOSSIP, NETWORK, NATIVE_PROTOCOL))
         .setup((cluster) -> {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (id int, ck int, v int, PRIMARY KEY (id, ck)) WITH COMPACT STORAGE");
             for (int i = 0; i < 5; i++)
@@ -49,8 +57,13 @@ public class DropCompactStorageTest extends UpgradeTestBase
             cluster.get(1).flush(KEYSPACE);
         })
         .runAfterNodeUpgrade((cluster, node) -> {
+            Throwable thrown = catchThrowable(() -> cluster.schemaChange("ALTER TABLE "+KEYSPACE+".tbl DROP COMPACT STORAGE"));
+            assertThat(thrown).hasMessageContainingAll("Cannot DROP COMPACT STORAGE as some nodes in the cluster",
+                                                       "has some non-upgraded 2.x sstables");
+
+            assertThat(cluster.get(1).nodetool("upgradesstables")).isEqualTo(0);
             cluster.schemaChange("ALTER TABLE "+KEYSPACE+".tbl DROP COMPACT STORAGE");
-            cluster.coordinator(1).execute("SELECT * FROM "+KEYSPACE+".tbl", ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl", ConsistencyLevel.ALL);
         })
         .run();
     }
