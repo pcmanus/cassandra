@@ -426,7 +426,7 @@ public final class ColumnMetadata extends ColumnSpecification implements Selecta
             ((UserType)type).nameComparator().validate(path.get(0));
     }
 
-    public void appendCqlTo(CqlBuilder builder, boolean ignoreStatic)
+    public void appendCqlTo(CqlBuilder builder)
     {
         builder.append(name)
                .append(' ')

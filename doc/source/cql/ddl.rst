@@ -244,7 +244,7 @@ Creating a new table uses the ``CREATE TABLE`` statement:
    partition_key: `column_name`
                 : | '(' `column_name` ( ',' `column_name` )* ')'
    clustering_columns: `column_name` ( ',' `column_name` )*
-   table_options: CLUSTERING ORDER BY '(' `clustering_order` ')' [ AND `table_options` ]
+   table_options: CLUSTERING ORDER BY '(' `clustering_order` ')' [ AND `options` ]
                    : | `options`
    clustering_order: `column_name` (ASC | DESC) ( ',' `column_name` (ASC | DESC) )*
 
@@ -450,11 +450,11 @@ Table options
 ~~~~~~~~~~~~~
 
 A CQL table has a number of options that can be set at creation (and, for most of them, :ref:`altered
-<alter-table-statement>` later). These options are specified after the ``WITH`` keyword.
+<alter-table-statement>` later). These options are specified after the ``WITH`` keyword and are described
+in the following sections.
 
-Amongst those options, important one cannot be changed after creation and influence which queries can be done
-against the table: the ``CLUSTERING ORDER`` option. This one, as well as the other
-options of a table are described in the following sections.
+But please bear in mind that the ``CLUSTERING ORDER`` option cannot be changed after table creation and
+has influences on the performance of some queries.
 
 .. _clustering-order:
 

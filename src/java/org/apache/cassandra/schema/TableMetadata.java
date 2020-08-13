@@ -51,24 +51,34 @@ import static org.apache.cassandra.schema.IndexMetadata.isNameValid;
 public final class TableMetadata implements SchemaElement
 {
     public static final String COMPACT_STORAGE_HALT_MESSAGE =
-            "Compact Tables are not allowed in Cassandra starting with 4.0 version. " +
-            "Use `ALTER ... DROP COMPACT STORAGE` command supplied in 3.x/3.11 Cassandra " +
-            "in order to migrate off Compact Storage.";
+            "Detected table %s.%s with COMPACT STORAGE flags (%s). " +
+            "Compact Tables are not supported in Cassandra starting with version 4.0. " +
+            "Use the `ALTER ... DROP COMPACT STORAGE` command supplied in 3.x/3.11 Cassandra " +
+            "in order to migrate off Compact Storage before upgrading.";
 
-    private static final String LEGACY_FLAGS_UNSUPPORTED_MESSAGE =
-             "Incorrect set of flags was detected. \n" +
-             "Starting with version 4.0, SUPER and DENSE flags are deprecated.";
-
+    // Please note that currently the only one truly useful flag is COUNTER, as the rest of the flags were about
+    // differencing between CQL tables and the various types of COMPACT STORAGE tables (pre-4.0). As those "compact"
+    // tables are not supported anymore, no tables should be either SUPER or DENSE, and they should all be COMPOUND.
     public enum Flag
     {
+        // As mentioned above, all tables on 4.0+ will have the COMPOUND flag, making the flag of little value. However,
+        // on upgrade from pre-4.0, we want to detect if a tables does _not_ have this flag, in which case this would
+        // be a compact table on which DROP COMPACT STORAGE has _not_ be used and fail startup. This is also why we
+        // still write this flag for all tables. Once we drop support for upgrading from pre-4.0 versions (and so are
+        // sure all tables do have the flag), we can stop writing this flag and ignore it when present (deprecate it).
+        // Later, we'll be able to drop the flag from this enum completely.
         COMPOUND,
         COUNTER,
+        // The only reason we still have those is that on the first startup after an upgrade from pre-4.0, we cannot
+        // guarantee some tables won't have those flags (users having forgotten to use DROP COMPACT STORAGE before
+        // upgrading). So we still "deserialize" those flags correctly, but otherwise prevent startup if any table
+        // have them. Once we drop support for upgrading from pre-4.0, we can remove those values.
         @Deprecated SUPER,
         @Deprecated DENSE;
 
-        public static boolean isSupported(Set<Flag> flags)
+        static boolean isLegacyCompactTable(Set<Flag> flags)
         {
-            return !flags.contains(Flag.DENSE) && !flags.contains(Flag.SUPER) && flags.contains(Flag.COMPOUND);
+            return flags.contains(Flag.DENSE) || flags.contains(Flag.SUPER) || !flags.contains(Flag.COMPOUND);
         }
 
         public static Set<Flag> fromStringSet(Set<String> strings)
@@ -124,9 +134,11 @@ public final class TableMetadata implements SchemaElement
 
     private TableMetadata(Builder builder)
     {
-        // We should get unsupported flags here since we have a startup check that refuse startup if we have any.
-        if (!Flag.isSupported(builder.flags))
-            throw new RuntimeException(LEGACY_FLAGS_UNSUPPORTED_MESSAGE);
+        if (Flag.isLegacyCompactTable(builder.flags))
+            throw new IllegalStateException(format(COMPACT_STORAGE_HALT_MESSAGE,
+                                                   builder.keyspace,
+                                                   builder.name,
+                                                   builder.flags));
 
         flags = Sets.immutableEnumSet(builder.flags);
         keyspace = builder.keyspace;
@@ -242,11 +254,6 @@ public final class TableMetadata implements SchemaElement
         return clusteringColumns;
     }
 
-    public ImmutableList<ColumnMetadata> createStatementClusteringColumns()
-    {
-        return clusteringColumns;
-    }
-
     public RegularAndStaticColumns regularAndStaticColumns()
     {
         return regularAndStaticColumns;
@@ -280,7 +287,7 @@ public final class TableMetadata implements SchemaElement
     public Iterator<ColumnMetadata> allColumnsInCreateOrder()
     {
         Iterator<ColumnMetadata> partitionKeyIter = partitionKeyColumns.iterator();
-        Iterator<ColumnMetadata> clusteringIter = createStatementClusteringColumns().iterator();
+        Iterator<ColumnMetadata> clusteringIter = clusteringColumns.iterator();
         Iterator<ColumnMetadata> otherColumns = regularAndStaticColumns.iterator();
 
         return columnsIterator(partitionKeyIter, clusteringIter, otherColumns);
@@ -407,7 +414,7 @@ public final class TableMetadata implements SchemaElement
     }
 
     /**
-     * To support backward compatibility with thrift super columns int the C* 3.0+ storage engine, we encode said super
+     * To support backward compatibility with thrift super columns in the C* 3.0+ storage engine, we encode said super
      * columns as a CQL {@code map<blob, blob>}. To ensure the name of this map did not conflict with any other user
      * defined columns, we used the empty name (which is otherwise not allowed for user created columns).
      * <p>
@@ -667,11 +674,7 @@ public final class TableMetadata implements SchemaElement
         private Kind kind = Kind.REGULAR;
         private TableParams.Builder params = TableParams.builder();
 
-        // COMPOUND is a left-over from pre-4.0 legacy code and does not carry meaning anymore (all tables are
-        // "compound" according to the legacy definition). However, we still use the absence of that flag to detect the
-        // case where a user tries to upgrade to 4.0 but hasn't run 'DROP COMPACT STORAGE' on their compact tables, so
-        // for now, we need to explicitly set it on all tables. In the future, whenever upgrades from pre-4.0 is not
-        // supported anymore, we can remove that flag completely.
+        // See the comment on Flag.COMPOUND definition for why we (still) inconditionally add this flag.
         private Set<Flag> flags = EnumSet.of(Flag.COMPOUND);
         private Triggers triggers = Triggers.none();
         private Indexes indexes = Indexes.none();
@@ -1175,7 +1178,7 @@ public final class TableMetadata implements SchemaElement
             if (includeDroppedColumns && droppedColumns.containsKey(column.name.bytes))
                 continue;
 
-            column.appendCqlTo(builder, false);
+            column.appendCqlTo(builder);
 
             if (hasSingleColumnPrimaryKey && column.isPartitionKey())
                 builder.append(" PRIMARY KEY");
@@ -1192,7 +1195,7 @@ public final class TableMetadata implements SchemaElement
             while (iterDropped.hasNext())
             {
                 DroppedColumn dropped = iterDropped.next();
-                dropped.column.appendCqlTo(builder, false);
+                dropped.column.appendCqlTo(builder);
 
                 if (!hasSingleColumnPrimaryKey || iter.hasNext())
                     builder.append(',');
@@ -1205,7 +1208,7 @@ public final class TableMetadata implements SchemaElement
     void appendPrimaryKey(CqlBuilder builder)
     {
         List<ColumnMetadata> partitionKeyColumns = partitionKeyColumns();
-        List<ColumnMetadata> clusteringColumns = createStatementClusteringColumns();
+        List<ColumnMetadata> clusteringColumns = clusteringColumns();
 
         builder.append("PRIMARY KEY (");
         if (partitionKeyColumns.size() > 1)
@@ -1238,7 +1241,7 @@ public final class TableMetadata implements SchemaElement
                    .newLine()
                    .append("AND ");
 
-        List<ColumnMetadata> clusteringColumns = createStatementClusteringColumns();
+        List<ColumnMetadata> clusteringColumns = clusteringColumns();
         if (!clusteringColumns.isEmpty())
         {
             builder.append("CLUSTERING ORDER BY (")
@@ -1282,7 +1285,7 @@ public final class TableMetadata implements SchemaElement
                        .append(toString())
                        .append(" ADD ");
 
-                column.appendCqlTo(builder, false);
+                column.appendCqlTo(builder);
 
                 builder.append(';');
             }

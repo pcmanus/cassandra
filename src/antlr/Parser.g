@@ -1344,7 +1344,7 @@ describeStatement returns [DescribeStatement stmt]
 /** DEFINITIONS **/
 
 // Like ident, but for case where we take a column name that can be the legacy super column empty name. Importantly,
-// this should not be used in DDL statements, as we don't want let user create such column.
+// this should not be used in DDL statements, as we don't want to let users create such column.
 cident returns [ColumnIdentifier id]
     : EMPTY_QUOTED_NAME    { $id = ColumnIdentifier.getInterned("", true); }
     | t=ident              { $id = t; }

@@ -450,8 +450,6 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         streamManager = new CassandraStreamManager(this);
         repairManager = new CassandraTableRepairManager(this);
         sstableImporter = new SSTableImporter(this);
-
-        Iterator<IndexMetadata> iterator = metadata.get().indexes.iterator();
     }
 
     public void updateSpeculationThreshold()

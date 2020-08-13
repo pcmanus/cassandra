@@ -42,8 +42,6 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDSerializer;
 
-import static java.util.stream.Collectors.toSet;
-
 /**
  * An immutable representation of secondary index metadata.
  */
@@ -180,7 +178,10 @@ public final class IndexMetadata
         return kind == Kind.CUSTOM;
     }
 
-    public boolean isKeys() { return kind == Kind.KEYS; }
+    public boolean isKeys()
+    {
+        return kind == Kind.KEYS;
+    }
 
     public boolean isComposites()
     {

@@ -341,7 +341,7 @@ public abstract class SimpleBuilders
             if (initiated)
                 return;
 
-            //Adds the row liveness
+            // Adds the row liveness
             if (!noPrimaryKeyLivenessInfo)
                 builder.addPrimaryKeyLivenessInfo(LivenessInfo.create(timestamp, ttl, nowInSec));
 

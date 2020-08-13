@@ -745,12 +745,8 @@ public abstract class CassandraIndex implements Index
                          .addPartitionKeyColumn(indexedColumn.name, indexedColumn.type)
                          .addClusteringColumn("partition_key", baseCfsMetadata.partitioner.partitionOrdering());
 
-        if (!indexMetadata.isKeys())
-        {
-            // The clustering columns for a table backing a non-KEYS index are dependent
-            // on the specific type of index (there are specializations for indexes on collections)
-            utils.addIndexClusteringColumns(builder, baseCfsMetadata, indexedColumn);
-        }
+        // Adding clustering columns, which depends on the index type.
+        builder = utils.addIndexClusteringColumns(builder, baseCfsMetadata, indexedColumn);
 
         return builder.build().updateIndexTableMetadata(baseCfsMetadata.params);
     }
