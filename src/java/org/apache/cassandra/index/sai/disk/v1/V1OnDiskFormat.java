@@ -39,7 +39,9 @@ import org.apache.cassandra.index.sai.disk.PerIndexWriter;
 import org.apache.cassandra.index.sai.disk.PerSSTableWriter;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
 import org.apache.cassandra.index.sai.disk.SearchableIndex;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.format.IndexFeatureSet;
 import org.apache.cassandra.index.sai.disk.format.OnDiskFormat;
@@ -83,7 +85,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     /**
      * Global limit on heap consumed by all index segment building that occurs outside the context of Memtable flush.
      *
-     * Note that to avoid flushing extremely small index segments, a segment is only flushed when
+     * Note that to avoid flushing extremly small index segments, a segment is only flushed when
      * both the global size of all building segments has breached the limit and the size of the
      * segment in question reaches (segment_write_buffer_space_mb / # currently building column indexes).
      *
@@ -145,7 +147,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     @Override
     public PrimaryKeyMap.Factory newPrimaryKeyMapFactory(IndexDescriptor indexDescriptor, SSTableReader sstable) throws IOException
     {
-        return new PartitionAwarePrimaryKeyMap.PartitionAwarePrimaryKeyMapFactory(indexDescriptor, sstable);
+        return new PartitionAwarePrimaryKeyMap.PartitionAwarePrimaryKeyMapFactory(indexDescriptor.perSSTableGroup(), sstable, indexDescriptor.primaryKeyFactory);
     }
 
     @Override
@@ -168,7 +170,7 @@ public class V1OnDiskFormat implements OnDiskFormat
     @Override
     public PerSSTableWriter newPerSSTableWriter(IndexDescriptor indexDescriptor) throws IOException
     {
-        return new SSTableComponentsWriter(indexDescriptor);
+        return new SSTableComponentsWriter(indexDescriptor.newPerSSTableGroupWriter());
     }
 
     @Override
@@ -178,6 +180,7 @@ public class V1OnDiskFormat implements OnDiskFormat
                                             RowMapping rowMapping,
                                             long keyCount)
     {
+        ComponentGroup.Writer groupWriter = indexDescriptor.newPerIndexGroupWriter(index.getIndexContext());
         // If we're not flushing or we haven't yet started the initialization build, flush from SSTable contents.
         if (tracker.opType() != OperationType.FLUSH || !index.canFlushFromMemtableIndex())
         {
@@ -185,50 +188,18 @@ public class V1OnDiskFormat implements OnDiskFormat
             logger.debug(index.getIndexContext().logMessage("Starting a compaction index build. Global segment memory usage: {}"),
                          prettyPrintMemory(limiter.currentBytesUsed()));
 
-            return new SSTableIndexWriter(indexDescriptor, index.getIndexContext(), limiter, index.isIndexValid(), keyCount);
+            return new SSTableIndexWriter(groupWriter, limiter, index.isIndexValid(), keyCount);
         }
 
         return new MemtableIndexWriter(index.getIndexContext().getPendingMemtableIndex(tracker),
-                                       indexDescriptor,
-                                       index.getIndexContext(),
+                                       groupWriter,
                                        rowMapping);
     }
 
-    @Override
-    public boolean validatePerSSTableComponents(IndexDescriptor indexDescriptor, boolean checksum)
-    {
-        for (IndexComponent indexComponent : perSSTableComponents())
-        {
-            if (isBuildCompletionMarker(indexComponent))
-                continue;
-
-            try (IndexInput input = indexDescriptor.openPerSSTableInput(indexComponent))
-            {
-                Version earliest = getExpectedEarliestVersion(indexComponent);
-                if (checksum)
-                    SAICodecUtils.validateChecksum(input);
-                else
-                    SAICodecUtils.validate(input, earliest);
-            }
-            catch (Throwable e)
-            {
-                if (logger.isDebugEnabled())
-                {
-                    logger.debug(indexDescriptor.logMessage("{} failed for index component {} on SSTable {}"),
-                                 (checksum ? "Checksum validation" : "Validation"),
-                                 indexComponent,
-                                 indexDescriptor.descriptor);
-                }
-                return false;
-            }
-        }
-        return true;
-    }
-
-    protected Version getExpectedEarliestVersion(IndexComponent indexComponent)
+    protected Version getExpectedEarliestVersion(IndexContext context, IndexComponent indexComponent)
     {
         Version earliest = Version.EARLIEST;
-        if (isVectorDataComponent(indexComponent))
+        if (isVectorDataComponent(context, indexComponent))
         {
             if (!Version.latest().onOrAfter(Version.VECTOR_EARLIEST))
                 throw new IllegalStateException("Configured latest version " + Version.latest() + " is not compatible with vector index");
@@ -238,33 +209,35 @@ public class V1OnDiskFormat implements OnDiskFormat
     }
 
     @Override
-    public boolean validateOneIndexComponent(IndexComponent component, IndexDescriptor descriptor, IndexContext context, boolean checksum)
+    public boolean validateIndexComponent(IndexComponentInfo.Reader component, boolean checksum)
     {
-        if (isBuildCompletionMarker(component))
+        if (component.isCompletionMarker())
             return true;
+
         // starting with v3, vector components include proper headers and checksum; skip for earlier versions
-        if (context.isVector()
-            && isVectorDataComponent(component)
-            && !descriptor.getVersion(context).onDiskFormat().indexFeatureSet().hasVectorIndexChecksum())
+        IndexContext context = component.group().context();
+        if (isVectorDataComponent(context, component.component())
+            && !component.group().version().onDiskFormat().indexFeatureSet().hasVectorIndexChecksum())
         {
             return true;
         }
 
-        try (IndexInput input = descriptor.openPerIndexInput(component, context))
+        Version earliest = getExpectedEarliestVersion(context, component.component());
+        try (IndexInput input = component.openInput())
         {
             if (checksum)
                 SAICodecUtils.validateChecksum(input);
             else
-                SAICodecUtils.validate(input);
+                SAICodecUtils.validate(input, earliest);
         }
         catch (Throwable e)
         {
             if (logger.isDebugEnabled())
             {
-                logger.debug(descriptor.logMessage("{} failed for index component {} on SSTable {}"),
+                logger.debug(component.group().logMessage("{} failed for index component {} on SSTable {}"),
                              (checksum ? "Checksum validation" : "Validation"),
                              component,
-                             descriptor.descriptor,
+                             component.group().descriptor(),
                              e);
             }
             return false;
@@ -305,15 +278,12 @@ public class V1OnDiskFormat implements OnDiskFormat
         return ByteOrder.BIG_ENDIAN;
     }
 
-    protected boolean isBuildCompletionMarker(IndexComponent indexComponent)
-    {
-        return indexComponent == IndexComponent.GROUP_COMPLETION_MARKER ||
-               indexComponent == IndexComponent.COLUMN_COMPLETION_MARKER;
-    }
-
     /** vector data components (that did not have checksums before v3) */
-    private boolean isVectorDataComponent(IndexComponent indexComponent)
+    private boolean isVectorDataComponent(IndexContext context, IndexComponent indexComponent)
     {
+        if (context == null || !context.isVector())
+            return false;
+
         return indexComponent == IndexComponent.VECTOR ||
                indexComponent == IndexComponent.PQ ||
                indexComponent == IndexComponent.TERMS_DATA ||

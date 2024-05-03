@@ -40,7 +40,7 @@ import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.analyzer.ByteLimitedMaterializer;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.RAMStringIndexer;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.io.BytesRefUtil;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.BKDTreeRamBuffer;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.NumericIndexWriter;
@@ -78,6 +78,8 @@ public abstract class SegmentBuilder
     /** Minimum flush size, dynamically updated as segment builds are started and completed/aborted. */
     private static volatile long minimumFlushBytes;
 
+    protected final ComponentGroup.Writer componentsWriter;
+
     final AbstractType<?> termComparator;
 
     // track memory usage for this segment so we can flush when it gets too big
@@ -108,6 +110,7 @@ public abstract class SegmentBuilder
     protected final QuickSlidingWindowReservoir termSizeReservoir = new QuickSlidingWindowReservoir(100);
     protected AtomicReference<Throwable> asyncThrowable = new AtomicReference<>();
 
+
     public boolean requiresFlush()
     {
         return false;
@@ -119,17 +122,16 @@ public abstract class SegmentBuilder
         private final BKDTreeRamBuffer kdTreeRamBuffer;
         private final IndexWriterConfig indexWriterConfig;
 
-        KDTreeSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig)
+        KDTreeSegmentBuilder(ComponentGroup.Writer componentsWriter, long rowIdOffset, NamedMemoryLimiter limiter, IndexWriterConfig indexWriterConfig)
         {
-            super(rowIdOffset, termComparator, limiter);
+            super(componentsWriter, rowIdOffset, limiter);
 
             int typeSize = TypeUtil.fixedSizeOf(termComparator);
             this.kdTreeRamBuffer = new BKDTreeRamBuffer(1, typeSize);
             this.buffer = new byte[typeSize];
             this.indexWriterConfig = indexWriterConfig;
             totalBytesAllocated = kdTreeRamBuffer.ramBytesUsed();
-            totalBytesAllocatedConcurrent.add(totalBytesAllocated);
-        }
+            totalBytesAllocatedConcurrent.add(totalBytesAllocated);}
 
         public boolean isEmpty()
         {
@@ -143,10 +145,9 @@ public abstract class SegmentBuilder
         }
 
         @Override
-        protected SegmentMetadata.ComponentMetadataMap flushInternal(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+        protected SegmentMetadata.ComponentMetadataMap flushInternal() throws IOException
         {
-            try (NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                    indexContext,
+            try (NumericIndexWriter writer = new NumericIndexWriter(componentsWriter,
                                                                     TypeUtil.fixedSizeOf(termComparator),
                                                                     maxSegmentRowId,
                                                                     rowCount,
@@ -163,9 +164,9 @@ public abstract class SegmentBuilder
 
         final BytesRefBuilder stringBuffer = new BytesRefBuilder();
 
-        RAMStringSegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter)
+        RAMStringSegmentBuilder(ComponentGroup.Writer componentsWriter, long rowIdOffset, NamedMemoryLimiter limiter)
         {
-            super(rowIdOffset, termComparator, limiter);
+            super(componentsWriter, rowIdOffset, limiter);
 
             ramIndexer = new RAMStringIndexer(termComparator);
             totalBytesAllocated = ramIndexer.estimatedBytesUsed();
@@ -184,10 +185,9 @@ public abstract class SegmentBuilder
         }
 
         @Override
-        protected SegmentMetadata.ComponentMetadataMap flushInternal(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+        protected SegmentMetadata.ComponentMetadataMap flushInternal() throws IOException
         {
-            try (InvertedIndexWriter writer = new InvertedIndexWriter(indexDescriptor,
-                                                                      indexContext))
+            try (InvertedIndexWriter writer = new InvertedIndexWriter(componentsWriter))
             {
                 return writer.writeAll(ramIndexer.getTermsWithPostings());
             }
@@ -198,12 +198,12 @@ public abstract class SegmentBuilder
     {
         private final CompactionGraph graphIndex;
 
-        public VectorOffHeapSegmentBuilder(IndexDescriptor descriptor, IndexContext context, long rowIdOffset, long keyCount, NamedMemoryLimiter limiter, ProductQuantization pq, boolean unitVectors)
+        public VectorOffHeapSegmentBuilder(ComponentGroup.Writer componentsWriter, long rowIdOffset, long keyCount, NamedMemoryLimiter limiter, ProductQuantization pq, boolean unitVectors)
         {
-            super(rowIdOffset, context.getValidator(), limiter);
+            super(componentsWriter, rowIdOffset, limiter);
             try
             {
-                graphIndex = new CompactionGraph(descriptor, context, pq, unitVectors, keyCount);
+                graphIndex = new CompactionGraph(componentsWriter, pq, unitVectors, keyCount);
             }
             catch (IOException e)
             {
@@ -272,9 +272,9 @@ public abstract class SegmentBuilder
         }
 
         @Override
-        protected SegmentMetadata.ComponentMetadataMap flushInternal(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+        protected SegmentMetadata.ComponentMetadataMap flushInternal() throws IOException
         {
-            return graphIndex.flush(indexDescriptor, Set.of());
+            return graphIndex.flush(Set.of());
         }
 
         @Override
@@ -308,10 +308,10 @@ public abstract class SegmentBuilder
     {
         private final CassandraOnHeapGraph<Integer> graphIndex;
 
-        public VectorOnHeapSegmentBuilder(IndexDescriptor descriptor, IndexContext context, long rowIdOffset, long keyCount, NamedMemoryLimiter limiter)
+        public VectorOnHeapSegmentBuilder(ComponentGroup.Writer componentsWriter, long rowIdOffset, long keyCount, NamedMemoryLimiter limiter)
         {
-            super(rowIdOffset, context.getValidator(), limiter);
-            graphIndex = new CassandraOnHeapGraph<>(context, false);
+            super(componentsWriter, rowIdOffset, limiter);
+            graphIndex = new CassandraOnHeapGraph<>(componentsWriter.context(), false);
             totalBytesAllocated = graphIndex.ramBytesUsed();
             totalBytesAllocatedConcurrent.add(totalBytesAllocated);
         }
@@ -360,13 +360,13 @@ public abstract class SegmentBuilder
         }
 
         @Override
-        protected SegmentMetadata.ComponentMetadataMap flushInternal(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+        protected SegmentMetadata.ComponentMetadataMap flushInternal() throws IOException
         {
             // VSTODO this is a bit of a hack. We call computeDeletedOrdinals to call computeRowIds on each
             // VectorPostings, which will populate the rowIds field, but if we refactor the code, we could skip that.
             var deletedOrdinals = graphIndex.computeDeletedOrdinals(p -> p);
             assert deletedOrdinals.isEmpty() : "Deleted ordinals should be empty when built during compaction";
-            return graphIndex.flush(indexDescriptor, Set.of());
+            return graphIndex.flush(componentsWriter, Set.of());
         }
 
         @Override
@@ -376,9 +376,10 @@ public abstract class SegmentBuilder
         }
     }
 
-    private SegmentBuilder(long rowIdOffset, AbstractType<?> termComparator, NamedMemoryLimiter limiter)
+    private SegmentBuilder(ComponentGroup.Writer componentsWriter, long rowIdOffset, NamedMemoryLimiter limiter)
     {
-        this.termComparator = termComparator;
+        this.componentsWriter = componentsWriter;
+        this.termComparator = componentsWriter.context().getValidator();
         this.limiter = limiter;
         this.segmentRowIdOffset = rowIdOffset;
         this.lastValidSegmentRowID = testLastValidSegmentRowId >= 0 ? testLastValidSegmentRowId : LAST_VALID_SEGMENT_ROW_ID;
@@ -386,18 +387,18 @@ public abstract class SegmentBuilder
         minimumFlushBytes = limiter.limitBytes() / ACTIVE_BUILDER_COUNT.getAndIncrement();
     }
 
-    public SegmentMetadata flush(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+    public SegmentMetadata flush() throws IOException
     {
         assert !flushed;
         flushed = true;
 
         if (getRowCount() == 0)
         {
-            logger.warn(indexContext.logMessage("No rows to index during flush of SSTable {}."), indexDescriptor.descriptor);
+            logger.warn(componentsWriter.logMessage("No rows to index during flush of SSTable {}."), componentsWriter.descriptor());
             return null;
         }
 
-        SegmentMetadata.ComponentMetadataMap indexMetas = flushInternal(indexDescriptor, indexContext);
+        SegmentMetadata.ComponentMetadataMap indexMetas = flushInternal();
 
         return new SegmentMetadata(segmentRowIdOffset, rowCount, minSSTableRowId, maxSSTableRowId, minKey, maxKey, minTerm, maxTerm, indexMetas);
     }
@@ -515,7 +516,7 @@ public abstract class SegmentBuilder
 
     protected abstract long addInternal(ByteBuffer term, int segmentRowId);
 
-    protected abstract SegmentMetadata.ComponentMetadataMap flushInternal(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException;
+    protected abstract SegmentMetadata.ComponentMetadataMap flushInternal() throws IOException;
 
     int getRowCount()
     {

@@ -25,8 +25,9 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.io.IndexOutputWriter;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.v1.LongArray;
 import org.apache.cassandra.index.sai.disk.v1.MetadataSource;
 import org.apache.cassandra.index.sai.disk.v1.MetadataWriter;
@@ -113,17 +114,14 @@ public class SortedTermsBenchmark extends AbstractOnDiskBenchmark
     @Setup(Level.Trial)
     public void perTrialSetup2() throws IOException
     {
-        try (IndexOutputWriter trieWriter = indexDescriptor.openPerSSTableOutput(IndexComponent.PRIMARY_KEY_TRIE);
-             IndexOutputWriter bytesWriter = indexDescriptor.openPerSSTableOutput(IndexComponent.PRIMARY_KEY_BLOCKS);
-             MetadataWriter metadataWriter = new MetadataWriter(indexDescriptor.openPerSSTableOutput(IndexComponent.GROUP_META));
-             NumericValuesWriter blockFPWriter = new NumericValuesWriter(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS),
-                                                                         indexDescriptor.openPerSSTableOutput(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS),
+        ComponentGroup.Writer group = indexDescriptor.newPerSSTableGroupWriter();
+        try (MetadataWriter metadataWriter = new MetadataWriter(group);
+             NumericValuesWriter blockFPWriter = new NumericValuesWriter(group.addOrGet(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS),
                                                                          metadataWriter, true);
-             SortedTermsWriter writer = new SortedTermsWriter(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCKS),
+             SortedTermsWriter writer = new SortedTermsWriter(group.addOrGet(IndexComponent.PRIMARY_KEY_BLOCKS),
                                                               metadataWriter,
-                                                              bytesWriter,
                                                               blockFPWriter,
-                                                              trieWriter))
+                                                              group.addOrGet(IndexComponent.PRIMARY_KEY_TRIE)))
         {
             for (int x = 0; x < NUM_ROWS; x++)
             {
@@ -168,12 +166,15 @@ public class SortedTermsBenchmark extends AbstractOnDiskBenchmark
         rowIds = new int[NUM_ROWS];
         tokenValues = new long[NUM_ROWS];
 
-        MetadataSource metadataSource = MetadataSource.loadGroupMetadata(indexDescriptor);
-        NumericValuesMeta blockOffsetMeta = new NumericValuesMeta(metadataSource.get(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS)));
-        SortedTermsMeta sortedTermsMeta = new SortedTermsMeta(metadataSource.get(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCKS)));
-        trieFile = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_TRIE);
-        termsData = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_BLOCKS);
-        blockOffsets = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS);
+        ComponentGroup.Reader group = indexDescriptor.perSSTableGroup();
+        MetadataSource metadataSource = MetadataSource.loadMetadata(group);
+        IndexComponentInfo.Reader blocksComponent = group.get(IndexComponent.PRIMARY_KEY_BLOCKS);
+        IndexComponentInfo.Reader blockOffsetsComponent = group.get(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS);
+        NumericValuesMeta blockOffsetMeta = new NumericValuesMeta(metadataSource.get(blockOffsetsComponent));
+        SortedTermsMeta sortedTermsMeta = new SortedTermsMeta(metadataSource.get(blocksComponent));
+        trieFile = group.get(IndexComponent.PRIMARY_KEY_TRIE).createFileHandle();
+        termsData = blocksComponent.createFileHandle();
+        blockOffsets = blockOffsetsComponent.createFileHandle();
 
         sortedTermsReader = new SortedTermsReader(termsData,blockOffsets, trieFile, sortedTermsMeta, blockOffsetMeta);
 

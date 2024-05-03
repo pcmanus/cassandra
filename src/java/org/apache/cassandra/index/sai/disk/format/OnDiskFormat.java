@@ -134,37 +134,14 @@ public interface OnDiskFormat
                                             long keyCount);
 
     /**
-     * Validate all the per-SSTable on-disk components and throw if a component is not valid
+     * Validate the provided on-disk components (that must be for this version).
      *
-     * @param indexDescriptor The {@link IndexDescriptor} for the SSTable
+     * @param component The component to validate
      * @param checksum {@code true} if the checksum should be tested as part of the validation
      *
-     * @return true if all the per-SSTable components are valid
+     * @return true if the component is valid
      */
-    public boolean validatePerSSTableComponents(IndexDescriptor indexDescriptor, boolean checksum);
-
-    /**
-     * Validate all the per-index on-disk components and throw if a component is not valid
-     *
-     * @param descriptor The {@link IndexDescriptor} for the SSTable
-     * @param context The {@link IndexContext} holding the per-index information for the index
-     * @param checksum {@code true} if the checksum should be tested as part of the validation
-     *
-     * @return true if all the per-index components are valid
-     */
-    default boolean validatePerIndexComponents(IndexDescriptor descriptor, IndexContext context, boolean checksum)
-    {
-        for (IndexComponent component : perIndexComponents(context))
-        {
-            if (descriptor.isIndexEmpty(context))
-                continue;
-            if (!validateOneIndexComponent(component, descriptor, context, checksum))
-                return false;
-        }
-        return true;
-    }
-
-    boolean validateOneIndexComponent(IndexComponent component, IndexDescriptor descriptor, IndexContext context, boolean checksum);
+    boolean validateIndexComponent(IndexComponentInfo.Reader component, boolean checksum);
 
     /**
      * Returns the set of {@link IndexComponent} for the per-SSTable part of an index.

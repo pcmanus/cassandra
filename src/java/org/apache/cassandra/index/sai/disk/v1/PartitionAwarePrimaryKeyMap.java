@@ -26,8 +26,9 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.v1.bitpack.BlockPackedReader;
 import org.apache.cassandra.index.sai.disk.v1.bitpack.MonotonicBlockPackedReader;
 import org.apache.cassandra.index.sai.disk.v1.bitpack.NumericValuesMeta;
@@ -70,22 +71,26 @@ public class PartitionAwarePrimaryKeyMap implements PrimaryKeyMap
         private FileHandle token = null;
         private FileHandle offset = null;
 
-        public PartitionAwarePrimaryKeyMapFactory(IndexDescriptor indexDescriptor, SSTableReader sstable)
+        public PartitionAwarePrimaryKeyMapFactory(ComponentGroup.Reader group, SSTableReader sstable, PrimaryKey.Factory primaryKeyFactory)
         {
             try
             {
-                this.metadata = MetadataSource.loadGroupMetadata(indexDescriptor);
-                NumericValuesMeta offsetsMeta = new NumericValuesMeta(this.metadata.get(indexDescriptor.componentFileName(IndexComponent.OFFSETS_VALUES)));
-                NumericValuesMeta tokensMeta = new NumericValuesMeta(this.metadata.get(indexDescriptor.componentFileName(IndexComponent.TOKEN_VALUES)));
+                this.metadata = MetadataSource.loadMetadata(group);
 
-                token = indexDescriptor.createPerSSTableFileHandle(IndexComponent.TOKEN_VALUES);
-                offset = indexDescriptor.createPerSSTableFileHandle(IndexComponent.OFFSETS_VALUES);
+                IndexComponentInfo.Reader offsetsComponent = group.get(IndexComponent.OFFSETS_VALUES);
+                IndexComponentInfo.Reader tokensComponent = group.get(IndexComponent.TOKEN_VALUES);
+
+                NumericValuesMeta offsetsMeta = new NumericValuesMeta(this.metadata.get(offsetsComponent));
+                NumericValuesMeta tokensMeta = new NumericValuesMeta(this.metadata.get(tokensComponent));
+
+                token = tokensComponent.createFileHandle();
+                offset = offsetsComponent.createFileHandle();
 
                 this.tokenReaderFactory = new BlockPackedReader(token, tokensMeta);
                 this.offsetReaderFactory = new MonotonicBlockPackedReader(offset, offsetsMeta);
-                this.partitioner = indexDescriptor.partitioner;
+                this.partitioner = sstable.metadata().partitioner;
                 this.keyFetcher = new KeyFetcher(sstable);
-                this.primaryKeyFactory = indexDescriptor.primaryKeyFactory;
+                this.primaryKeyFactory = primaryKeyFactory;
                 this.sstableId = sstable.getId();
             }
             catch (Throwable t)

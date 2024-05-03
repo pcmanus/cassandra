@@ -37,8 +37,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableSet;
 
-import org.apache.cassandra.index.sai.disk.vector.VectorValidation;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +64,7 @@ import org.apache.cassandra.index.sai.analyzer.AbstractAnalyzer;
 import org.apache.cassandra.index.sai.disk.format.IndexFeatureSet;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.v1.IndexWriterConfig;
+import org.apache.cassandra.index.sai.disk.vector.VectorValidation;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
 import org.apache.cassandra.index.sai.memory.MemtableRangeIterator;
 import org.apache.cassandra.index.sai.metrics.ColumnQueryMetrics;
@@ -819,7 +818,7 @@ public class IndexContext
                 {
                     if (!context.indexDescriptor.validatePerIndexComponents(this))
                     {
-                        logger.warn(logMessage("Invalid per-column component for SSTable {}"), context.descriptor());
+                        // Note that a precise warning is already logged by the validation if there is an issue.
                         invalid.add(context);
                         return;
                     }

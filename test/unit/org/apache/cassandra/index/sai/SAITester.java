@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
@@ -38,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import javax.management.AttributeNotFoundException;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
@@ -274,7 +274,7 @@ public class SAITester extends CQLTester
 
         for (SSTableReader sstable : cfs.getLiveSSTables())
         {
-            File file = IndexDescriptor.createFrom(sstable).fileFor(indexComponent);
+            File file = IndexDescriptor.create(sstable).perSSTableGroup().get(indexComponent).file();
             corruptionType.corrupt(file);
         }
     }
@@ -285,7 +285,7 @@ public class SAITester extends CQLTester
 
         for (SSTableReader sstable : cfs.getLiveSSTables())
         {
-            File file = IndexDescriptor.createFrom(sstable).fileFor(indexComponent, indexContext);
+            File file = IndexDescriptor.create(sstable).perIndexGroup(indexContext).get(indexComponent).file();
             corruptionType.corrupt(file);
         }
     }
@@ -334,7 +334,7 @@ public class SAITester extends CQLTester
 
         for (SSTableReader sstable : cfs.getLiveSSTables())
         {
-            IndexDescriptor indexDescriptor = IndexDescriptor.createFrom(sstable);
+            IndexDescriptor indexDescriptor = IndexDescriptor.create(sstable);
             if (indexDescriptor.isIndexEmpty(context))
                 continue;
             if (!indexDescriptor.validatePerSSTableComponentsChecksum() || !indexDescriptor.validatePerIndexComponentsChecksum(context))
@@ -500,6 +500,28 @@ public class SAITester extends CQLTester
         assertTrue(indexFiles().size() == 0);
     }
 
+    // Verify every sstables is indexed correctly and the components are valid.
+    protected void verifyIndexComponentFiles(@Nullable IndexContext numericIndexContext, @Nullable IndexContext stringIndexContext)
+    {
+        ColumnFamilyStore cfs = Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable());
+        for (SSTableReader sstable : cfs.getLiveSSTables())
+        {
+            // We create a descriptor from scratch, to ensure this discover from disk directly.
+            IndexDescriptor descriptor = IndexDescriptor.create(sstable);
+
+            // Note that validation makes sure that all expected components exists, on top of validating those.
+            descriptor.perSSTableGroup().validateComponents(true);
+            if (numericIndexContext != null)
+                descriptor.perIndexGroup(numericIndexContext).validateComponents(true);
+            if (stringIndexContext != null)
+                descriptor.perIndexGroup(stringIndexContext).validateComponents(true);
+        }
+    }
+
+
+    // Note: this assumes the checked component files are at generation 0, which is not always the case with rebuild.
+    // The `verifyIndexComponentFiles` method is probably a safer replacement overall, but many test still use this so
+    // we keep it for now.
     protected void verifyIndexFiles(IndexContext numericIndexContext, IndexContext literalIndexContext, int numericFiles, int literalFiles)
     {
         verifyIndexFiles(numericIndexContext,
@@ -511,6 +533,7 @@ public class SAITester extends CQLTester
                          literalFiles);
     }
 
+    // Same as namesake
     protected void verifyIndexFiles(IndexContext numericIndexContext,
                                     IndexContext literalIndexContext,
                                     int perSSTableFiles,
@@ -523,7 +546,7 @@ public class SAITester extends CQLTester
 
         for (IndexComponent indexComponent : Version.latest().onDiskFormat().perSSTableComponents())
         {
-            Set<File> tableFiles = componentFiles(indexFiles, new Component(Component.Type.CUSTOM, Version.latest().fileNameFormatter().format(indexComponent, null)));
+            Set<File> tableFiles = componentFiles(indexFiles, new Component(Component.Type.CUSTOM, Version.latest().fileNameFormatter().format(indexComponent, null, 0)));
             assertEquals(tableFiles.toString(), perSSTableFiles, tableFiles.size());
         }
 
@@ -534,7 +557,8 @@ public class SAITester extends CQLTester
                 Set<File> stringIndexFiles = componentFiles(indexFiles,
                                                             new Component(Component.Type.CUSTOM,
                                                                           Version.latest().fileNameFormatter().format(indexComponent,
-                                                                                                                    literalIndexContext)));
+                                                                                                                    literalIndexContext,
+                                                                                                                    0)));
                 if (isBuildCompletionMarker(indexComponent))
                     assertEquals(literalCompletionMarkers, stringIndexFiles.size());
                 else
@@ -549,7 +573,8 @@ public class SAITester extends CQLTester
                 Set<File> numericIndexFiles = componentFiles(indexFiles,
                                                              new Component(Component.Type.CUSTOM,
                                                                            Version.latest().fileNameFormatter().format(indexComponent,
-                                                                                                                     numericIndexContext)));
+                                                                                                                     numericIndexContext,
+                                                                                                                     0)));
                 if (isBuildCompletionMarker(indexComponent))
                     assertEquals(numericCompletionMarkers, numericIndexFiles.size());
                 else
@@ -568,25 +593,12 @@ public class SAITester extends CQLTester
     protected Set<File> indexFiles()
     {
         ColumnFamilyStore cfs = Keyspace.open(KEYSPACE).getColumnFamilyStore(currentTable());
-        Set<Component> components = cfs.indexManager.listIndexGroups()
-                                                    .stream()
-                                                    .filter(g -> g instanceof StorageAttachedIndexGroup)
-                                                    .map(Index.Group::getComponents)
-                                                    .flatMap(Set::stream)
-                                                    .collect(Collectors.toSet());
-
-        Set<File> indexFiles = new HashSet<>();
-        for (Component component : components)
-        {
-            List<File> files = cfs.getDirectories().getCFDirectories()
-                    .stream()
-                    .flatMap(dir -> Arrays.stream(dir.tryList()))
-                    .filter(File::isFile)
-                    .filter(f -> f.name().endsWith(component.name))
-                    .collect(Collectors.toList());
-            indexFiles.addAll(files);
-        }
-        return indexFiles;
+        return cfs.getDirectories().getCFDirectories()
+                  .stream()
+                  .flatMap(dir -> Arrays.stream(dir.tryList()))
+                  .filter(File::isFile)
+                  .filter(file -> Version.tryParseFileName(file.name()).isPresent())
+                  .collect(Collectors.toSet());
     }
 
     protected ObjectName bufferSpaceObjectName(String name) throws MalformedObjectNameException
@@ -760,11 +772,11 @@ public class SAITester extends CQLTester
     private void verifySSTableComponents(String table, boolean indexComponentsExist) throws Exception
     {
         ColumnFamilyStore cfs = Objects.requireNonNull(Schema.instance.getKeyspaceInstance(KEYSPACE)).getColumnFamilyStore(table);
-        for (SSTable sstable : cfs.getLiveSSTables())
+        for (SSTableReader sstable : cfs.getLiveSSTables())
         {
             Set<Component> components = sstable.components;
             StorageAttachedIndexGroup group = StorageAttachedIndexGroup.getIndexGroup(cfs);
-            Set<Component> ndiComponents = group == null ? Collections.emptySet() : group.getComponents();
+            Set<Component> ndiComponents = group == null ? Collections.emptySet() : group.activeComponents(sstable);
 
             Set<Component> diff = Sets.difference(ndiComponents, components);
             if (indexComponentsExist)
@@ -785,7 +797,7 @@ public class SAITester extends CQLTester
 
     protected Set<File> componentFiles(Collection<File> indexFiles, IndexComponent indexComponent, IndexContext indexContext)
     {
-        String componentName = Version.latest().fileNameFormatter().format(indexComponent, indexContext);
+        String componentName = Version.latest().fileNameFormatter().format(indexComponent, indexContext, 0);
         return indexFiles.stream().filter(c -> c.name().endsWith(componentName)).collect(Collectors.toSet());
     }
 

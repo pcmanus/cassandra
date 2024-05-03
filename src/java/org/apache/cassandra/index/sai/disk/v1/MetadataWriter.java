@@ -25,9 +25,9 @@ import java.util.Map;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import org.apache.cassandra.index.sai.disk.ModernResettableByteBuffersIndexOutput;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.io.IndexOutput;
 import org.apache.cassandra.index.sai.disk.oldlucene.LegacyResettableByteBuffersIndexOutput;
-import org.apache.cassandra.index.sai.disk.oldlucene.ResettableByteBuffersIndexOutput;
 import org.apache.cassandra.index.sai.utils.SAICodecUtils;
 import org.apache.lucene.util.BytesRef;
 
@@ -37,9 +37,9 @@ public class MetadataWriter implements Closeable
     private final IndexOutput output;
     private final Map<String, BytesRef> map = new HashMap<>();
 
-    public MetadataWriter(IndexOutput output)
+    public MetadataWriter(ComponentGroup.Writer group) throws IOException
     {
-        this.output = output;
+        this.output = group.addOrGet(group.metadataComponent()).openOutput();
     }
 
     public IndexOutput builder(String name)

@@ -45,6 +45,7 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
@@ -111,7 +112,7 @@ public class SegmentFlushTest
     private void testFlushBetweenRowIds(long sstableRowId1, long sstableRowId2, int segments) throws Exception
     {
         Path tmpDir = Files.createTempDirectory("SegmentFlushTest");
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)),
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(tmpDir.toFile()), "ks", "cf", new SequenceBasedSSTableId(1)),
                                                                     Murmur3Partitioner.instance,
                                                                     SAITester.EMPTY_COMPARATOR);
 
@@ -127,7 +128,8 @@ public class SegmentFlushTest
                                                      config,
                                                      MockSchema.newCFS("ks"));
 
-        SSTableIndexWriter writer = new SSTableIndexWriter(indexDescriptor, indexContext, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true, 2);
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        SSTableIndexWriter writer = new SSTableIndexWriter(group, V1OnDiskFormat.SEGMENT_BUILD_MEMORY_LIMITER, () -> true, 2);
 
         List<DecoratedKey> keys = Arrays.asList(dk("1"), dk("2"));
         Collections.sort(keys);
@@ -145,7 +147,7 @@ public class SegmentFlushTest
 
         writer.complete(Stopwatch.createStarted());
 
-        MetadataSource source = MetadataSource.loadColumnMetadata(indexDescriptor, indexContext);
+        MetadataSource source = MetadataSource.loadMetadata(group);
 
         // verify segment count
         List<SegmentMetadata> segmentMetadatas = SegmentMetadata.load(source, indexDescriptor.primaryKeyFactory);
@@ -163,7 +165,7 @@ public class SegmentFlushTest
         maxTerm = segments == 1 ? term2 : term1;
         numRowsPerSegment = segments == 1 ? 2 : 1;
         verifySegmentMetadata(segmentMetadata);
-        verifyStringIndex(indexDescriptor, indexContext, segmentMetadata);
+        verifyStringIndex(group, segmentMetadata);
 
         if (segments > 1)
         {
@@ -179,18 +181,18 @@ public class SegmentFlushTest
 
             segmentMetadata = segmentMetadatas.get(1);
             verifySegmentMetadata(segmentMetadata);
-            verifyStringIndex(indexDescriptor, indexContext, segmentMetadata);
+            verifyStringIndex(group, segmentMetadata);
         }
     }
 
-    private void verifyStringIndex(IndexDescriptor indexDescriptor, IndexContext indexContext, SegmentMetadata segmentMetadata) throws IOException
+    private void verifyStringIndex(ComponentGroup.Reader group, SegmentMetadata segmentMetadata) throws IOException
     {
-        FileHandle termsData = indexDescriptor.createPerIndexFileHandle(IndexComponent.TERMS_DATA, indexContext);
-        FileHandle postingLists = indexDescriptor.createPerIndexFileHandle(IndexComponent.POSTING_LISTS, indexContext);
+        FileHandle termsData = group.get(IndexComponent.TERMS_DATA).createFileHandle();
+        FileHandle postingLists = group.get(IndexComponent.POSTING_LISTS).createFileHandle();
 
         long termsFooterPointer = Long.parseLong(segmentMetadata.componentMetadatas.get(IndexComponent.TERMS_DATA).attributes.get(SAICodecUtils.FOOTER_POINTER));
 
-        try (TermsReader reader = new TermsReader(indexContext,
+        try (TermsReader reader = new TermsReader(group.context(),
                                                   termsData,
                                                   postingLists,
                                                   segmentMetadata.componentMetadatas.get(IndexComponent.TERMS_DATA).root,

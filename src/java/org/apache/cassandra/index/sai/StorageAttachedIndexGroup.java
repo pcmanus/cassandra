@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -36,7 +37,6 @@ import com.google.common.collect.ImmutableSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.RegularAndStaticColumns;
@@ -48,8 +48,8 @@ import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.sai.disk.StorageAttachedIndexWriter;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
-import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.metrics.IndexGroupMetrics;
 import org.apache.cassandra.index.sai.metrics.TableQueryMetrics;
 import org.apache.cassandra.index.sai.metrics.TableStateMetrics;
@@ -66,7 +66,6 @@ import org.apache.cassandra.notifications.MemtableRenewedNotification;
 import org.apache.cassandra.notifications.SSTableAddedNotification;
 import org.apache.cassandra.notifications.SSTableListChangedNotification;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
 
 /**
@@ -130,9 +129,11 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
          */
         if (indices.isEmpty())
         {
-            for (SSTableReader sstable : contextManager.sstables())
-                sstable.unregisterComponents(IndexDescriptor.createFrom(sstable).getLivePerSSTableComponents(), baseCfs.getTracker());
-            deletePerSSTableFiles(baseCfs.getLiveSSTables());
+            contextManager.releaseAll(context -> {
+                var componentGroup = context.indexDescriptor.perSSTableGroup();
+                context.sstable.unregisterComponents(componentGroup.allAsCustomComponents(), baseCfs.getTracker());
+                componentGroup.asWriter().forceDeleteAllComponents();
+            });
         }
     }
 
@@ -227,7 +228,7 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
     @Override
     public SSTableFlushObserver getFlushObserver(Descriptor descriptor, LifecycleNewTracker tracker, TableMetadata tableMetadata, long keyCount)
     {
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, tableMetadata.partitioner, tableMetadata.comparator);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, tableMetadata);
         try
         {
             return new StorageAttachedIndexWriter(indexDescriptor, indices, tracker, keyCount);
@@ -250,31 +251,61 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
     }
 
     @Override
-    public Set<Component> getComponents()
+    public Set<Component> componentsForNewBuid(Descriptor descriptor, TableMetadata metadata)
     {
-        return getComponents(indices);
+        return componentsForNewBuid(descriptor, metadata, indices);
     }
 
-    static Set<Component> getComponents(Collection<StorageAttachedIndex> indices)
+    static Set<Component> componentsForNewBuid(Descriptor descriptor, TableMetadata metadata, Collection<StorageAttachedIndex> indices)
     {
-        Set<Component> components = Version.latest().onDiskFormat()
-                                                  .perSSTableComponents()
-                                                  .stream()
-                                                  .map(c -> new Component(Component.Type.CUSTOM,
-                                                                          Version.latest().fileNameFormatter().format(c, null)))
-                                                  .collect(Collectors.toSet());
-        indices.forEach(index -> components.addAll(index.getComponents()));
+        // The components created depends, amongst other things, on the generation that needs to be used for the new
+        // build (which depends on the version, but that's always the latest for new builds). That generation is always
+        // 0 for new sstables, but may not be for rebuilds. To handle that, we rely on the same logic used when we do
+        // write the new components (`IndexDescriptor.newPerSSTableGroupWriter`/`IndexDescriptor.newPerIndexGroupWriter`),
+        // even if we don't write anything at that point.
+        // Do note that we create an `IndexDescriptor` from scratch, and do not look in the context manager for an
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, metadata);
+        Set<Component> components = indexDescriptor
+                                    .newPerSSTableGroupWriter()
+                                    .addAllComponentsForVersion()
+                                    .allComponents()
+                                    .stream()
+                                    .map(IndexComponentInfo::asCustomComponent)
+                                    .collect(Collectors.toSet());
+
+        for (StorageAttachedIndex index : indices)
+        {
+            indexDescriptor.newPerIndexGroupWriter(index.getIndexContext())
+                           .addAllComponentsForVersion()
+                           .allComponents()
+                           .stream()
+                           .map(IndexComponentInfo::asCustomComponent)
+                           .forEach(components::add);
+        }
+
         return components;
     }
 
-    // This differs from getComponents in that it only returns index components that exist on disk.
-    // It avoids errors being logged by the SSTable.readTOC method when we have an empty index.
-    @VisibleForTesting
-    public static Set<Component> getLiveComponents(SSTableReader sstable, Collection<StorageAttachedIndex> indices)
+    @Override
+    public Set<Component> activeComponents(SSTableReader sstable)
     {
-        IndexDescriptor indexDescriptor = IndexDescriptor.createFrom(sstable);
-        Set<Component> components = indexDescriptor.getLivePerSSTableComponents();
-        indices.stream().forEach(index -> components.addAll(indexDescriptor.getLivePerIndexComponents(index.getIndexContext())));
+        IndexDescriptor indexDescriptor = contextManager.getOrCreateIndexDescriptor(sstable);
+        Set<Component> components = indexDescriptor
+                                    .perSSTableGroup()
+                                    .allComponents()
+                                    .stream()
+                                    .map(IndexComponentInfo::asCustomComponent)
+                                    .collect(Collectors.toSet());
+
+        for (StorageAttachedIndex index : indices)
+        {
+            indexDescriptor.perIndexGroup(index.getIndexContext())
+                           .allComponents()
+                           .stream()
+                           .map(IndexComponentInfo::asCustomComponent)
+                           .forEach(components::add);
+        }
+
         return components;
     }
 
@@ -308,12 +339,6 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
         }
     }
 
-    void deletePerSSTableFiles(Collection<SSTableReader> sstables)
-    {
-        contextManager.release(sstables);
-        sstables.forEach(sstableReader -> IndexDescriptor.createFrom(sstableReader).deletePerSSTableIndexComponents());
-    }
-
     void dropIndexSSTables(Collection<SSTableReader> ss, StorageAttachedIndex index)
     {
         try
@@ -338,42 +363,24 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
     public synchronized Set<StorageAttachedIndex> onSSTableChanged(Collection<SSTableReader> removed, Iterable<SSTableReader> added,
                                                             Set<StorageAttachedIndex> indexes, boolean validate)
     {
-        Pair<Set<SSTableContext>, Set<SSTableReader>> results = contextManager.update(removed, added, validate);
+        Optional<Set<SSTableContext>> optValid = contextManager.update(removed, added, validate);
 
-        if (!results.right.isEmpty())
+        if (optValid.isEmpty())
         {
-            results.right.forEach(sstable -> {
-                IndexDescriptor indexDescriptor = IndexDescriptor.createFrom(sstable);
-                indexDescriptor.deletePerSSTableIndexComponents();
-                // Column indexes are invalid if their SSTable-level components are corrupted so delete
-                // their associated index files and mark them non-queryable.
-                indices.forEach(index -> {
-                    if (CassandraRelevantProperties.DELETE_CORRUPT_SAI_COMPONENTS.getBoolean())
-                        indexDescriptor.deleteColumnIndex(index.getIndexContext());
-                    index.makeIndexNonQueryable();
-                });
-
-                if (!CassandraRelevantProperties.DELETE_CORRUPT_SAI_COMPONENTS.getBoolean())
-                    logger.debug("Leaving believed-corrupt files for SSTable {} in place after failure loading per-sstable components", sstable);
-            });
-            return indices;
+            // This means at least one sstable had invalid per-sstable components, so mark all indexes non-queryable.
+            indices.forEach(StorageAttachedIndex::makeIndexNonQueryable);
+            return indexes;
         }
 
         Set<StorageAttachedIndex> incomplete = new HashSet<>();
 
         for (StorageAttachedIndex index : indexes)
         {
-            Set<SSTableContext> invalid = index.getIndexContext().onSSTableChanged(removed, results.left, validate);
+            Set<SSTableContext> invalid = index.getIndexContext().onSSTableChanged(removed, optValid.get(), validate);
 
             if (!invalid.isEmpty())
             {
-                // Delete the index files and mark the index non-queryable, as its view may be compromised,
-                // and incomplete, for our callers:
-                if (CassandraRelevantProperties.DELETE_CORRUPT_SAI_COMPONENTS.getBoolean())
-                    invalid.forEach(context -> context.indexDescriptor.deleteColumnIndex(index.getIndexContext()));
-                else
-                    logger.debug("Leaving believed-corrupt files for {} in place after failure loading per-column components",
-                                 invalid.stream().map(SSTableContext::toString).collect(Collectors.joining(", ")));
+                // Mark the index non-queryable, as its view may be compromised, and incomplete, for our callers.
                 index.makeIndexNonQueryable();
                 incomplete.add(index);
             }
@@ -429,6 +436,12 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
      */
     public long totalDiskUsage()
     {
+        // Note that this only account the "active" files. That is, if we have old versions/generations or incomplete
+        // build still on disk, those won't be counted. Counting only "live" data here is consistent with the fact
+        // that `TableStateMetrics.diskUsagePercentageOfBaseTable` compare the number obtain from this to the base
+        // table "live" disk space use. But there is certainly a small risk for being misleading, and where base
+        // tables expose both a "liveDiskSpaceUsed" and "totalDiskSpaceUsed", SAI only exposes "diskUsageBytes", which
+        // has we just mentioned is the "live" usage. Might be worth improving at some point.
         return diskUsage() + indices.stream().flatMap(i -> i.getIndexContext().getView().getIndexes().stream())
                                     .mapToLong(SSTableIndex::sizeOfPerColumnComponents).sum();
     }
@@ -447,6 +460,17 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
     public SSTableContextManager sstableContextManager()
     {
         return contextManager;
+    }
+
+    /**
+     * Returns the {@link IndexDescriptor} for the given {@link SSTableReader} (which must belong to the base table
+     * of this group).
+     * Note that this always return a non-null value, since all sstables must be indexed, but that descriptor could
+     * be "empty" if the sstable has never had an index built yet.
+     */
+    public IndexDescriptor descriptorFor(SSTableReader sstable)
+    {
+        return contextManager.getOrCreateIndexDescriptor(sstable);
     }
 
     /**

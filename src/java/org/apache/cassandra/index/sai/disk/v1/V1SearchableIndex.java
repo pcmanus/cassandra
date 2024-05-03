@@ -34,6 +34,7 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableContext;
 import org.apache.cassandra.index.sai.disk.SearchableIndex;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.plan.Expression;
 import org.apache.cassandra.index.sai.utils.PrimaryKey;
 import org.apache.cassandra.index.sai.utils.RangeConcatIterator;
@@ -78,11 +79,12 @@ public class V1SearchableIndex implements SearchableIndex
         this.indexContext = indexContext;
         try
         {
-            this.indexFiles = new PerIndexFiles(sstableContext.indexDescriptor, indexContext);
+            ComponentGroup.Reader componentsGroup = sstableContext.indexDescriptor.perIndexGroup(indexContext);
+            this.indexFiles = new PerIndexFiles(componentsGroup);
 
             ImmutableList.Builder<Segment> segmentsBuilder = ImmutableList.builder();
 
-            final MetadataSource source = MetadataSource.loadColumnMetadata(sstableContext.indexDescriptor, indexContext);
+            final MetadataSource source = MetadataSource.loadMetadata(componentsGroup);
 
             metadatas = SegmentMetadata.load(source, sstableContext.indexDescriptor.primaryKeyFactory);
 

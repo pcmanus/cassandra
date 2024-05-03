@@ -50,7 +50,7 @@ import org.apache.cassandra.db.memtable.Memtable;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.memory.MemtableIndex;
 import org.apache.cassandra.index.sai.plan.Expression;
@@ -375,9 +375,9 @@ public class VectorMemtableIndex implements MemtableIndex
         return graph.size();
     }
 
-    public SegmentMetadata.ComponentMetadataMap writeData(IndexDescriptor indexDescriptor, Set<Integer> deletedOrdinals) throws IOException
+    public SegmentMetadata.ComponentMetadataMap writeData(ComponentGroup.Writer group, Set<Integer> deletedOrdinals) throws IOException
     {
-        return graph.flush(indexDescriptor, deletedOrdinals);
+        return graph.flush(group, deletedOrdinals);
     }
 
     @Override

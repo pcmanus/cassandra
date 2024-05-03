@@ -32,6 +32,7 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.disk.PostingList;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.IndexWriterConfig;
@@ -357,8 +358,8 @@ public class BKDReaderTest extends SaiRandomizedTest
 
     private BKDReader finishAndOpenReaderOneDim(int maxPointsPerLeaf, BKDTreeRamBuffer buffer) throws IOException
     {
-        final NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                 indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        final NumericIndexWriter writer = new NumericIndexWriter(group,
                                                                  maxPointsPerLeaf,
                                                                  Integer.BYTES,
                                                                  Math.toIntExact(buffer.numRows()),
@@ -371,8 +372,8 @@ public class BKDReaderTest extends SaiRandomizedTest
         final long postingsPosition = metadata.get(IndexComponent.KD_TREE_POSTING_LISTS).root;
         assertThat(postingsPosition, is(greaterThan(0L)));
 
-        FileHandle kdtreeHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-        FileHandle kdtreePostingsHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+        FileHandle kdtreeHandle = group.get(IndexComponent.KD_TREE).createFileHandle();
+        FileHandle kdtreePostingsHandle = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
         return new BKDReader(indexContext,
                              kdtreeHandle,
                              bkdPosition,
@@ -382,8 +383,8 @@ public class BKDReaderTest extends SaiRandomizedTest
 
     private BKDReader finishAndOpenReaderOneDim(int maxPointsPerLeaf, MutableOneDimPointValues values, int numRows) throws IOException
     {
-        final NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                 indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        final NumericIndexWriter writer = new NumericIndexWriter(group,
                                                                  maxPointsPerLeaf,
                                                                  Integer.BYTES,
                                                                  Math.toIntExact(numRows),
@@ -396,8 +397,8 @@ public class BKDReaderTest extends SaiRandomizedTest
         final long postingsPosition = metadata.get(IndexComponent.KD_TREE_POSTING_LISTS).root;
         assertThat(postingsPosition, is(greaterThan(0L)));
 
-        FileHandle kdtreeHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-        FileHandle kdtreePostingsHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+        FileHandle kdtreeHandle = group.get(IndexComponent.KD_TREE).createFileHandle();
+        FileHandle kdtreePostingsHandle = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
         return new BKDReader(indexContext,
                              kdtreeHandle,
                              bkdPosition,

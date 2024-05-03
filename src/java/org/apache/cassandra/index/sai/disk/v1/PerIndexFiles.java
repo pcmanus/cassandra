@@ -26,9 +26,8 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 
-import org.apache.cassandra.index.sai.IndexContext;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.io.util.FileHandle;
 import org.apache.cassandra.io.util.FileUtils;
 
@@ -37,15 +36,13 @@ public class PerIndexFiles implements Closeable
     private static final Logger logger = org.slf4j.LoggerFactory.getLogger(PerIndexFiles.class);
 
     private final Map<IndexComponent, FileHandle> files = new EnumMap<>(IndexComponent.class);
-    private final IndexDescriptor indexDescriptor;
-    private final IndexContext indexContext;
+    private final ComponentGroup.Reader componentsGroup;
 
-    public PerIndexFiles(IndexDescriptor indexDescriptor, IndexContext indexContext)
+    public PerIndexFiles(ComponentGroup.Reader componentsGroup)
     {
-        this.indexDescriptor = indexDescriptor;
-        this.indexContext = indexContext;
+        this.componentsGroup = componentsGroup;
 
-        var toOpen = new HashSet<>(indexDescriptor.getVersion(indexContext).onDiskFormat().perIndexComponents(indexContext));
+        var toOpen = new HashSet<>(componentsGroup.expectedComponentsForVersion());
         toOpen.remove(IndexComponent.META);
         toOpen.remove(IndexComponent.COLUMN_COMPLETION_MARKER);
 
@@ -54,7 +51,7 @@ public class PerIndexFiles implements Closeable
         {
             try
             {
-                files.put(component, indexDescriptor.createPerIndexFileHandle(component, indexContext));
+                files.put(component, componentsGroup.get(component).createFileHandle());
                 componentsPresent.add(component);
             }
             catch (UncheckedIOException e)
@@ -63,7 +60,7 @@ public class PerIndexFiles implements Closeable
             }
         }
 
-        logger.info("Components present for {} are {}", indexDescriptor, componentsPresent);
+        logger.info("Components present for {} are {}", componentsGroup.indexDescriptor(), componentsPresent);
     }
 
     /** It is the caller's responsibility to close the returned file handle. */
@@ -106,9 +103,9 @@ public class PerIndexFiles implements Closeable
     {
         FileHandle file = files.get(indexComponent);
         if (file == null)
-            throw new IllegalArgumentException(String.format(indexContext.logMessage("Component %s not found for SSTable %s"),
+            throw new IllegalArgumentException(String.format(componentsGroup.logMessage("Component %s not found for SSTable %s"),
                                                              indexComponent,
-                                                             indexDescriptor.descriptor));
+                                                             componentsGroup.descriptor()));
 
         return file;
     }

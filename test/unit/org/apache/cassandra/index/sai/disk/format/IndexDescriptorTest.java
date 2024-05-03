@@ -76,10 +76,10 @@ public class IndexDescriptorTest
 
         createFileOnDisk("-SAI_GroupComplete.db");
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
 
         assertEquals(Version.AA, indexDescriptor.getVersion());
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.GROUP_COMPLETION_MARKER));
+        assertTrue(indexDescriptor.perSSTableGroup().has(IndexComponent.GROUP_COMPLETION_MARKER));
     }
 
     @Test
@@ -90,11 +90,11 @@ public class IndexDescriptorTest
         createFileOnDisk("-SAI_GroupComplete.db");
         createFileOnDisk("-SAI_test_index_ColumnComplete.db");
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
         IndexContext indexContext = SAITester.createIndexContext("test_index", UTF8Type.instance);
 
         assertEquals(Version.AA, indexDescriptor.getVersion());
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.COLUMN_COMPLETION_MARKER, indexContext));
+        assertTrue(indexDescriptor.perIndexGroup(indexContext).has(IndexComponent.COLUMN_COMPLETION_MARKER));
     }
 
     @Test
@@ -104,10 +104,10 @@ public class IndexDescriptorTest
 
         createFileOnDisk("-SAI+ba+GroupComplete.db");
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
 
         assertEquals(Version.BA, indexDescriptor.getVersion());
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.GROUP_COMPLETION_MARKER));
+        assertTrue(indexDescriptor.perSSTableGroup().has(IndexComponent.GROUP_COMPLETION_MARKER));
     }
 
     @Test
@@ -117,11 +117,11 @@ public class IndexDescriptorTest
 
         createFileOnDisk("-SAI+ba+test_index+ColumnComplete.db");
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
         IndexContext indexContext = SAITester.createIndexContext("test_index", UTF8Type.instance);
 
         assertEquals(Version.BA, indexDescriptor.getVersion());
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.COLUMN_COMPLETION_MARKER, indexContext));
+        assertTrue(indexDescriptor.perIndexGroup(indexContext).has(IndexComponent.COLUMN_COMPLETION_MARKER));
     }
 
     @Test
@@ -134,12 +134,12 @@ public class IndexDescriptorTest
         createFileOnDisk("-SAI_TokenValues.db");
         createFileOnDisk("-SAI_OffsetsValues.db");
 
-        IndexDescriptor result = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor result = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
 
-        assertTrue(result.hasComponent(IndexComponent.GROUP_COMPLETION_MARKER));
-        assertTrue(result.hasComponent(IndexComponent.GROUP_META));
-        assertTrue(result.hasComponent(IndexComponent.TOKEN_VALUES));
-        assertTrue(result.hasComponent(IndexComponent.OFFSETS_VALUES));
+        assertTrue(result.perSSTableGroup().has(IndexComponent.GROUP_COMPLETION_MARKER));
+        assertTrue(result.perSSTableGroup().has(IndexComponent.GROUP_META));
+        assertTrue(result.perSSTableGroup().has(IndexComponent.TOKEN_VALUES));
+        assertTrue(result.perSSTableGroup().has(IndexComponent.OFFSETS_VALUES));
     }
 
     @Test
@@ -154,13 +154,14 @@ public class IndexDescriptorTest
         createFileOnDisk("-SAI_test_index_PostingLists.db");
 
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
         IndexContext indexContext = SAITester.createIndexContext("test_index", UTF8Type.instance);
 
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.COLUMN_COMPLETION_MARKER, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.META, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.TERMS_DATA, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.POSTING_LISTS, indexContext));
+        ComponentGroup.Reader group = indexDescriptor.perIndexGroup(indexContext);
+        assertTrue(group.has(IndexComponent.COLUMN_COMPLETION_MARKER));
+        assertTrue(group.has(IndexComponent.META));
+        assertTrue(group.has(IndexComponent.TERMS_DATA));
+        assertTrue(group.has(IndexComponent.POSTING_LISTS));
     }
 
     @Test
@@ -174,13 +175,14 @@ public class IndexDescriptorTest
         createFileOnDisk("-SAI_test_index_KDTree.db");
         createFileOnDisk("-SAI_test_index_KDTreePostingLists.db");
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, Murmur3Partitioner.instance, SAITester.EMPTY_COMPARATOR);
         IndexContext indexContext = SAITester.createIndexContext("test_index", Int32Type.instance);
 
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.COLUMN_COMPLETION_MARKER, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.META, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.KD_TREE, indexContext));
-        assertTrue(indexDescriptor.hasComponent(IndexComponent.KD_TREE_POSTING_LISTS, indexContext));
+        ComponentGroup.Reader group = indexDescriptor.perIndexGroup(indexContext);
+        assertTrue(group.has(IndexComponent.COLUMN_COMPLETION_MARKER));
+        assertTrue(group.has(IndexComponent.META));
+        assertTrue(group.has(IndexComponent.KD_TREE));
+        assertTrue(group.has(IndexComponent.KD_TREE_POSTING_LISTS));
     }
 
     private void createFileOnDisk(String filename) throws Throwable

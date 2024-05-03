@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.virtual.SimpleDataSet;
@@ -109,7 +110,7 @@ public class SSTableIndex
      */
     public long sizeOfPerColumnComponents()
     {
-        return sstableContext.indexDescriptor.sizeOnDiskOfPerIndexComponents(indexContext);
+        return sstableContext.indexDescriptor.perIndexGroup(indexContext).liveSizeOnDiskInBytes();
     }
 
     /**
@@ -117,7 +118,7 @@ public class SSTableIndex
      */
     public long sizeOfPerSSTableComponents()
     {
-        return sstableContext.indexDescriptor.sizeOnDiskOfPerSSTableComponents();
+        return sstableContext.indexDescriptor.perSSTableGroup().liveSizeOnDiskInBytes();
     }
 
     /**
@@ -245,12 +246,12 @@ public class SSTableIndex
 
             /*
              * When SSTable is removed, storage-attached index components will be automatically removed by LogTransaction.
-             * We only remove index components explicitly in case of index corruption or index rebuild.
+             * We only remove index components explicitly in case of index corruption or index rebuild if immutable
+             * components are not in use.
              */
-            if (obsolete.get())
-            {
-                sstableContext.indexDescriptor.deleteColumnIndex(indexContext);
-            }
+            var group = sstableContext.indexDescriptor.perIndexGroup(indexContext);
+            if (obsolete.get() && !group.version().useImmutableComponentFiles())
+                group.asWriter().forceDeleteAllComponents();
         }
     }
 

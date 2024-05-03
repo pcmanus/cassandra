@@ -1762,7 +1762,7 @@ public class SecondaryIndexManager implements IndexRegistry, INotificationConsum
             if (notice.memtable().isEmpty())
             {
                 IndexBuildDecider.Decision decision = IndexBuildDecider.instance.onSSTableAdded(notice);
-                build(decision, notice.added, false);
+                build(decision, notice.added);
             }
         }
         else if (notification instanceof SSTableListChangedNotification)
@@ -1770,11 +1770,11 @@ public class SecondaryIndexManager implements IndexRegistry, INotificationConsum
             SSTableListChangedNotification notice = (SSTableListChangedNotification) notification;
 
             IndexBuildDecider.Decision decision = IndexBuildDecider.instance.onSSTableListChanged(notice);
-            build(decision, notice.added, false);
+            build(decision, notice.added);
         }
     }
 
-    private void build(IndexBuildDecider.Decision decision, Iterable<SSTableReader> sstables, boolean onlyIndexWithComponents)
+    private void build(IndexBuildDecider.Decision decision, Iterable<SSTableReader> sstables)
     {
         if (decision == IndexBuildDecider.Decision.ASYNC)
         {
@@ -1782,7 +1782,6 @@ public class SecondaryIndexManager implements IndexRegistry, INotificationConsum
                               indexes.values()
                                      .stream()
                                      .filter(Index::shouldBuildBlocking)
-                                     .filter(i -> !onlyIndexWithComponents || !i.getComponents().isEmpty())
                                      .collect(Collectors.toSet()),
                               false);
         }
@@ -1792,7 +1791,6 @@ public class SecondaryIndexManager implements IndexRegistry, INotificationConsum
                                  indexes.values()
                                         .stream()
                                         .filter(Index::shouldBuildBlocking)
-                                        .filter(i -> !onlyIndexWithComponents || !i.getComponents().isEmpty())
                                         .collect(Collectors.toSet()),
                                  false);
         }

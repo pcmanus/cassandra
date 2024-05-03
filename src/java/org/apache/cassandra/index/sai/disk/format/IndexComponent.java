@@ -18,6 +18,10 @@
 
 package org.apache.cassandra.index.sai.disk.format;
 
+import java.util.HashMap;
+import java.util.Map;
+import javax.annotation.Nullable;
+
 /**
  * This is a definitive list of all the on-disk components for all versions
  */
@@ -114,5 +118,17 @@ public enum IndexComponent
     IndexComponent(String representation)
     {
         this.representation = representation;
+    }
+
+    static final Map<String, IndexComponent> byRepresentation = new HashMap<>();
+    static
+    {
+        for (IndexComponent component : values())
+            byRepresentation.put(component.representation, component);
+    }
+
+    public static @Nullable IndexComponent fromRepresentation(String representation)
+    {
+        return byRepresentation.get(representation);
     }
 }

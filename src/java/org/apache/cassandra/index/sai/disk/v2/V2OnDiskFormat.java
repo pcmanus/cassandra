@@ -117,38 +117,7 @@ public class V2OnDiskFormat extends V1OnDiskFormat
     @Override
     public PerSSTableWriter newPerSSTableWriter(IndexDescriptor indexDescriptor) throws IOException
     {
-        return new SSTableComponentsWriter(indexDescriptor);
-    }
-
-    @Override
-    public boolean validatePerSSTableComponents(IndexDescriptor indexDescriptor, boolean checksum)
-    {
-        for (IndexComponent indexComponent : perSSTableComponents())
-        {
-            if (isBuildCompletionMarker(indexComponent))
-                continue;
-
-            try (IndexInput input = indexDescriptor.openPerSSTableInput(indexComponent))
-            {
-                Version earliest = getExpectedEarliestVersion(indexComponent);
-                if (checksum)
-                    SAICodecUtils.validateChecksum(input);
-                else
-                    SAICodecUtils.validate(input, earliest);
-            }
-            catch (Throwable e)
-            {
-                if (logger.isDebugEnabled())
-                {
-                    logger.debug(indexDescriptor.logMessage("{} failed for index component {} on SSTable {}"),
-                                 (checksum ? "Checksum validation" : "Validation"),
-                                 indexComponent,
-                                 indexDescriptor.descriptor);
-                }
-                return false;
-            }
-        }
-        return true;
+        return new SSTableComponentsWriter(indexDescriptor.newPerSSTableGroupWriter());
     }
 
     @Override

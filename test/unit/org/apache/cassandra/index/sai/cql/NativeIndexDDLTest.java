@@ -953,7 +953,7 @@ public class NativeIndexDDLTest extends SAITester
         // initial verification
         verifySSTableIndexes(numericIndexContext.getIndexName(), 1);
         verifySSTableIndexes(stringIndexContext.getIndexName(), 1);
-        verifyIndexFiles(numericIndexContext, stringIndexContext, 1, 1, 1, 1, 1);
+        verifyIndexComponentFiles(numericIndexContext, stringIndexContext);
         assertTrue(verifyChecksum(numericIndexContext));
         assertTrue(verifyChecksum(numericIndexContext));
 
@@ -968,15 +968,38 @@ public class NativeIndexDDLTest extends SAITester
         else
             corruptIndexComponent(component, corruptionType);
 
-        // If we are removing completion markers then the rest of the components should still have
-        // valid checksums.
-        boolean expectedNumericState = !failedNumericIndex || isBuildCompletionMarker(component);
-        boolean expectedLiteralState = !failedStringIndex || isBuildCompletionMarker(component);
+        // Reload all SSTable indexes to manifest the corruption:
+        reloadSSTableIndex();
 
-        assertEquals("Checksum verification for " + component + " should be " + expectedNumericState + " but was " + !expectedNumericState,
-                     expectedNumericState,
-                     verifyChecksum(numericIndexContext));
-        assertEquals(expectedLiteralState, verifyChecksum(stringIndexContext));
+        try
+        {
+            // If the corruption is that a file is missing entirely, the index won't be marked non-queryable...
+            rows = executeNet("SELECT id1 FROM %s WHERE v1>=0");
+            // If we corrupted the index (and it's still queryable), we get either 0 or 2, depending on whether
+            // there is previous build of the index that gets automatically picked up. But mostly, we want to ensure
+            // the index does work if it's not corrupted.
+            if (!failedNumericIndex)
+                assertEquals(rowCount, rows.all().size());
+
+            //assertEquals(failedNumericIndex ? 0 : rowCount, rows.all().size());
+        }
+        catch (ReadFailureException e)
+        {
+            // ...but most kind of corruption will result in the index being non-queryable.
+        }
+
+        try
+        {
+            // If the corruption is that a file is missing entirely, the index won't be marked non-queryable...
+            rows = executeNet("SELECT id1 FROM %s WHERE v2='0'");
+            // Same as above
+            if (!failedStringIndex)
+                assertEquals(rowCount, rows.all().size());
+        }
+        catch (ReadFailureException e)
+        {
+            // ...but most kind of corruption will result in the index being non-queryable.
+        }
 
         if (rebuild)
         {
@@ -984,35 +1007,6 @@ public class NativeIndexDDLTest extends SAITester
         }
         else
         {
-            // Reload all SSTable indexes to manifest the corruption:
-            reloadSSTableIndex();
-
-            // Verify the index cannot be read:
-            verifySSTableIndexes(numericIndexContext.getIndexName(), Version.latest().onDiskFormat().perSSTableComponents().contains(component) ? 0 : 1, failedNumericIndex ? 0 : 1);
-            verifySSTableIndexes(stringIndexContext.getIndexName(), Version.latest().onDiskFormat().perSSTableComponents().contains(component) ? 0 : 1, failedStringIndex ? 0 : 1);
-
-            try
-            {
-                // If the corruption is that a file is missing entirely, the index won't be marked non-queryable...
-                rows = executeNet("SELECT id1 FROM %s WHERE v1>=0");
-                assertEquals(failedNumericIndex ? 0 : rowCount, rows.all().size());
-            }
-            catch (ReadFailureException e)
-            {
-                // ...but most kind of corruption will result in the index being non-queryable.
-            }
-
-            try
-            {
-                // If the corruption is that a file is missing entirely, the index won't be marked non-queryable...
-                rows = executeNet("SELECT id1 FROM %s WHERE v2='0'");
-                assertEquals(failedStringIndex ? 0 : rowCount, rows.all().size());
-            }
-            catch (ReadFailureException e)
-            {
-                // ...but most kind of corruption will result in the index being non-queryable.
-            }
-
             // Simulate the index repair that would occur on restart:
             runInitializationTask();
         }
@@ -1020,7 +1014,7 @@ public class NativeIndexDDLTest extends SAITester
         // verify indexes are recovered
         verifySSTableIndexes(numericIndexContext.getIndexName(), 1);
         verifySSTableIndexes(numericIndexContext.getIndexName(), 1);
-        verifyIndexFiles(numericIndexContext, stringIndexContext, 1, 1, 1, 1, 1);
+        verifyIndexComponentFiles(numericIndexContext, stringIndexContext);
 
         rows = executeNet("SELECT id1 FROM %s WHERE v1>=0");
         assertEquals(rowCount, rows.all().size());

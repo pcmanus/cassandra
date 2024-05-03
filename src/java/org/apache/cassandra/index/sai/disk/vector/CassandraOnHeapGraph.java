@@ -21,7 +21,6 @@ package org.apache.cassandra.index.sai.disk.vector;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -74,15 +73,15 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SSTableIndex;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.v1.Segment;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
 import org.apache.cassandra.index.sai.disk.v2.V2VectorIndexSearcher;
 import org.apache.cassandra.index.sai.disk.v3.CassandraDiskAnn;
 import org.apache.cassandra.index.sai.disk.v3.V3OnDiskFormat;
 import org.apache.cassandra.index.sai.disk.vector.VectorCompression.CompressionType;
-import org.apache.cassandra.index.sai.utils.IndexFileUtils;
 import org.apache.cassandra.index.sai.utils.SAICodecUtils;
 import org.apache.cassandra.index.sai.utils.ScoredPrimaryKey;
 import org.apache.cassandra.io.util.SequentialWriter;
@@ -118,7 +117,6 @@ public class CassandraOnHeapGraph<T> implements Accountable
     private final NonBlockingHashMap<T, VectorFloat<?>> vectorsByKey;
     private final AtomicInteger nextOrdinal = new AtomicInteger();
     private final VectorSourceModel sourceModel;
-    private final IndexContext context;
     private final InvalidVectorBehavior invalidVectorBehavior;
     private volatile boolean hasDeletions;
 
@@ -130,7 +128,6 @@ public class CassandraOnHeapGraph<T> implements Accountable
      */
     public CassandraOnHeapGraph(IndexContext context, boolean forSearching)
     {
-        this.context = context;
         var indexConfig = context.getIndexWriterConfig();
         var termComparator = context.getValidator();
         serializer = (VectorType.VectorSerializer) termComparator.getSerializer();
@@ -330,7 +327,7 @@ public class CassandraOnHeapGraph<T> implements Accountable
         return deletedOrdinals;
     }
 
-    public SegmentMetadata.ComponentMetadataMap flush(IndexDescriptor descriptor, Set<Integer> deletedOrdinals) throws IOException
+    public SegmentMetadata.ComponentMetadataMap flush(ComponentGroup.Writer group, Set<Integer> deletedOrdinals) throws IOException
     {
         int nInProgress = builder.insertsInProgress();
         assert nInProgress == 0 : String.format("Attempting to write graph while %d inserts are in progress", nInProgress);
@@ -351,14 +348,13 @@ public class CassandraOnHeapGraph<T> implements Accountable
                                                 : x -> x;
         var finalOrdinalMap = ordinalMap == null ? OnDiskGraphIndexWriter.sequentialRenumbering(builder.getGraph()) : ordinalMap;
 
-        var indexFile = descriptor.fileFor(IndexComponent.TERMS_DATA, context);
+        IndexComponentInfo.Writer termsDataComponent = group.addOrGet(IndexComponent.TERMS_DATA);
+        var indexFile = termsDataComponent.file();
         long termsOffset = SAICodecUtils.headerSize();
         if (indexFile.exists())
             termsOffset += indexFile.length();
-        var pqOrder = descriptor.getVersion(context).onDiskFormat().byteOrderFor(IndexComponent.PQ, context);
-        var postingsOrder = descriptor.getVersion(context).onDiskFormat().byteOrderFor(IndexComponent.POSTING_LISTS, context);
-        try (var pqOutput = IndexFileUtils.instance.openOutput(descriptor.fileFor(IndexComponent.PQ, context), pqOrder, true);
-             var postingsOutput = IndexFileUtils.instance.openOutput(descriptor.fileFor(IndexComponent.POSTING_LISTS, context), postingsOrder, true);
+        try (var pqOutput = group.addOrGet(IndexComponent.PQ).openOutput(true);
+             var postingsOutput = group.addOrGet(IndexComponent.POSTING_LISTS).openOutput(true);
              var indexWriter = new OnDiskGraphIndexWriter.Builder(builder.getGraph(), indexFile.toPath())
                                .withVersion(JVECTOR_2_VERSION) // always write old-version format since we're not using the new features
                                .withMap(finalOrdinalMap)
@@ -374,7 +370,7 @@ public class CassandraOnHeapGraph<T> implements Accountable
 
             // compute and write PQ
             long pqOffset = pqOutput.getFilePointer();
-            long pqPosition = writePQ(pqOutput.asSequentialWriter(), reverseOrdinalMapper, context);
+            long pqPosition = writePQ(pqOutput.asSequentialWriter(), reverseOrdinalMapper, group.context());
             long pqLength = pqPosition - pqOffset;
 
             // write postings

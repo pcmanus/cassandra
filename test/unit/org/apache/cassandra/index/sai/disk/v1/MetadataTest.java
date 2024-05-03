@@ -33,6 +33,7 @@ import org.junit.rules.ExpectedException;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SAITester;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.io.IndexOutput;
@@ -65,7 +66,8 @@ public class MetadataTest extends SaiRandomizedTest
     public void shouldReadWrittenMetadata() throws Exception
     {
         final Map<String, byte[]> data = new HashMap<>();
-        try (MetadataWriter writer = new MetadataWriter(indexDescriptor.openPerIndexOutput(IndexComponent.META, indexContext)))
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        try (MetadataWriter writer = new MetadataWriter(group))
         {
             int num = nextInt(1, 50);
             for (int x = 0; x < num; x++)
@@ -81,7 +83,9 @@ public class MetadataTest extends SaiRandomizedTest
                 }
             }
         }
-        MetadataSource reader = MetadataSource.loadColumnMetadata(indexDescriptor, indexContext);
+        group.markComplete();
+
+        MetadataSource reader = MetadataSource.loadMetadata(indexDescriptor.perIndexGroup(indexContext));
 
         for (Map.Entry<String, byte[]> entry : data.entrySet())
         {
@@ -98,7 +102,8 @@ public class MetadataTest extends SaiRandomizedTest
     @Test
     public void shouldFailWhenFileHasNoHeader() throws IOException
     {
-        try (IndexOutputWriter out = indexDescriptor.openPerIndexOutput(IndexComponent.META, indexContext))
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        try (IndexOutputWriter out = group.addOrGet(IndexComponent.META).openOutput())
         {
             final byte[] bytes = nextBytes(13, 29);
             out.writeBytes(bytes, bytes.length);
@@ -106,13 +111,14 @@ public class MetadataTest extends SaiRandomizedTest
 
         expectedException.expect(CorruptIndexException.class);
         expectedException.expectMessage("codec header mismatch");
-        MetadataSource.loadColumnMetadata(indexDescriptor, indexContext);
+        MetadataSource.loadMetadata(group);
     }
 
     @Test
     public void shouldFailCrcCheckWhenFileIsTruncated() throws IOException
     {
-        final IndexOutputWriter output = writeRandomBytes();
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        final IndexOutputWriter output = writeRandomBytes(group);
 
         final File indexFile = output.getFile();
         final long length = indexFile.length();
@@ -130,13 +136,14 @@ public class MetadataTest extends SaiRandomizedTest
 
         expectedException.expect(CorruptIndexException.class);
         expectedException.expectMessage("misplaced codec footer (file truncated?)");
-        MetadataSource.loadColumnMetadata(indexDescriptor, indexContext);
+        MetadataSource.loadMetadata(group);
     }
 
     @Test
     public void shouldFailCrcCheckWhenFileIsCorrupted() throws IOException
     {
-        final IndexOutputWriter output = writeRandomBytes();
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        final IndexOutputWriter output = writeRandomBytes(group);
 
         final File indexFile = output.getFile();
         final long length = indexFile.length();
@@ -165,13 +172,12 @@ public class MetadataTest extends SaiRandomizedTest
 
         expectedException.expect(CorruptIndexException.class);
         expectedException.expectMessage("checksum failed");
-        MetadataSource.loadColumnMetadata(indexDescriptor, indexContext);
+        MetadataSource.loadMetadata(group);
     }
 
-    private IndexOutputWriter writeRandomBytes() throws IOException
+    private IndexOutputWriter writeRandomBytes(ComponentGroup.Writer group) throws IOException
     {
-        final IndexOutputWriter output = indexDescriptor.openPerIndexOutput(IndexComponent.META, indexContext);
-        try (MetadataWriter writer = new MetadataWriter(output))
+        try (MetadataWriter writer = new MetadataWriter(group))
         {
             byte[] bytes = nextBytes(11, 1024);
 
@@ -180,6 +186,6 @@ public class MetadataTest extends SaiRandomizedTest
                 builder.writeBytes(bytes, 0, bytes.length);
             }
         }
-        return output;
+        return group.addOrGet(group.metadataComponent()).openOutput();
     }
 }

@@ -24,9 +24,8 @@ import java.util.Map;
 import java.util.function.Supplier;
 import javax.annotation.concurrent.NotThreadSafe;
 
-import org.apache.cassandra.index.sai.IndexContext;
-import org.apache.cassandra.index.sai.disk.format.IndexComponent;
-import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
+import org.apache.cassandra.index.sai.disk.format.IndexComponentInfo;
 import org.apache.cassandra.index.sai.disk.format.Version;
 import org.apache.cassandra.index.sai.disk.io.IndexInput;
 import org.apache.cassandra.index.sai.utils.SAICodecUtils;
@@ -45,23 +44,12 @@ public class MetadataSource
         this.components = components;
     }
 
-    public static MetadataSource loadGroupMetadata(IndexDescriptor indexDescriptor) throws IOException
+    public static MetadataSource loadMetadata(ComponentGroup.Reader group) throws IOException
     {
-        try (var input = indexDescriptor.openCheckSummedPerSSTableInput(IndexComponent.GROUP_META))
+        IndexComponentInfo.Reader groupMeta = group.get(group.metadataComponent());
+        try (var input = groupMeta.openCheckSummedInput())
         {
-            var version = indexDescriptor.getVersion();
-            var order = version.onDiskFormat().byteOrderFor(IndexComponent.GROUP_META, null);
-            return MetadataSource.load(input, version, order);
-        }
-    }
-
-    public static MetadataSource loadColumnMetadata(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
-    {
-        try (var input = indexDescriptor.openCheckSummedPerIndexInput(IndexComponent.META, indexContext))
-        {
-            var version = indexDescriptor.getVersion(indexContext);
-            var order = version.onDiskFormat().byteOrderFor(IndexComponent.META, indexContext);
-            return MetadataSource.load(input, version, order);
+            return MetadataSource.load(input, group.version(), groupMeta.byteOrder());
         }
     }
 
@@ -93,6 +81,11 @@ public class MetadataSource
         SAICodecUtils.checkFooter(input);
 
         return new MetadataSource(version, components);
+    }
+
+    public IndexInput get(IndexComponentInfo component)
+    {
+        return get(component.fileNamePart());
     }
 
     public IndexInput get(String name)

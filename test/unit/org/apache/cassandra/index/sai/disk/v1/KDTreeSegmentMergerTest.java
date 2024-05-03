@@ -38,6 +38,7 @@ import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.QueryContext;
 import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.disk.PostingList;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.kdtree.BKDReader;
@@ -249,7 +250,7 @@ public class KDTreeSegmentMergerTest extends SAITester
 
         MergeOneDimPointValues merger = new MergeOneDimPointValues(segmentIterators, Integer.BYTES);
 
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(new Descriptor(new File(temporaryFolder.newFolder()),
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(temporaryFolder.newFolder()),
                                                                                    "test",
                                                                                    "test",
                                                                                    new SequenceBasedSSTableId(20)),
@@ -257,8 +258,8 @@ public class KDTreeSegmentMergerTest extends SAITester
                                                                     SAITester.EMPTY_COMPARATOR);
         IndexContext indexContext = SAITester.createIndexContext("test", Int32Type.instance);
 
-        try (NumericIndexWriter indexWriter = new NumericIndexWriter(indexDescriptor,
-                                                                     indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        try (NumericIndexWriter indexWriter = new NumericIndexWriter(group,
                                                                      Integer.BYTES,
                                                                      maxSegmentRowId,
                                                                      totalRows,
@@ -268,8 +269,8 @@ public class KDTreeSegmentMergerTest extends SAITester
             final long bkdPosition = metadata.get(IndexComponent.KD_TREE).root;
             final long postingsPosition = metadata.get(IndexComponent.KD_TREE_POSTING_LISTS).root;
 
-            FileHandle kdtree = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-            FileHandle kdtreePostings = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+            FileHandle kdtree = group.get(IndexComponent.KD_TREE).createFileHandle();
+            FileHandle kdtreePostings = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
             BKDReader reader = new BKDReader(indexContext, kdtree, bkdPosition, kdtreePostings, postingsPosition);
 
             for (int term : expected.keySet())
@@ -299,7 +300,7 @@ public class KDTreeSegmentMergerTest extends SAITester
 
     private BKDReader createReader(BKDTreeRamBuffer buffer, int maxSegmentRowId, int id) throws Throwable
     {
-        IndexDescriptor indexDescriptor = IndexDescriptor.createNew(new Descriptor(new File(temporaryFolder.newFolder()),
+        IndexDescriptor indexDescriptor = IndexDescriptor.create(new Descriptor(new File(temporaryFolder.newFolder()),
                                                                                    "test",
                                                                                    "test",
                                                                                    new SequenceBasedSSTableId(id)),
@@ -308,8 +309,8 @@ public class KDTreeSegmentMergerTest extends SAITester
 
         IndexContext indexContext = SAITester.createIndexContext("test", Int32Type.instance);
 
-        final NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                 indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        final NumericIndexWriter writer = new NumericIndexWriter(group,
                                                                  Integer.BYTES,
                                                                  maxSegmentRowId,
                                                                  buffer.numRows(),
@@ -319,8 +320,8 @@ public class KDTreeSegmentMergerTest extends SAITester
         final long bkdPosition = metadata.get(IndexComponent.KD_TREE).root;
         final long postingsPosition = metadata.get(IndexComponent.KD_TREE_POSTING_LISTS).root;
 
-        FileHandle kdtree = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-        FileHandle kdtreePostings = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+        FileHandle kdtree = group.get(IndexComponent.KD_TREE).createFileHandle();
+        FileHandle kdtreePostings = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
         return new BKDReader(indexContext, kdtree, bkdPosition, kdtreePostings, postingsPosition);
     }
 

@@ -33,6 +33,7 @@ import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.SAITester;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.io.IndexInput;
@@ -124,17 +125,17 @@ public abstract class AbstractOnDiskBenchmark
                                     metadata.keyspace,
                                     metadata.name,
                                     Util.newUUIDGen().get());
-        indexDescriptor = IndexDescriptor.createNew(descriptor, metadata.partitioner, metadata.comparator);
+        indexDescriptor = IndexDescriptor.create(descriptor, metadata);
         index = "test";
         indexContext = SAITester.createIndexContext(index, IntegerType.instance);
 
         // write per-sstable components: token and offset
         writeSSTableComponents(numRows());
-        token = indexDescriptor.createPerSSTableFileHandle(IndexComponent.TOKEN_VALUES);
+        token = indexDescriptor.perSSTableGroup().get(IndexComponent.TOKEN_VALUES).createFileHandle();
 
         // write postings
         summaryPosition = writePostings(numPostings());
-        postings = indexDescriptor.createPerIndexFileHandle(IndexComponent.POSTING_LISTS, indexContext);
+        postings = indexDescriptor.perIndexGroup(indexContext).get(IndexComponent.POSTING_LISTS).createFileHandle();
     }
 
     @TearDown(Level.Trial)
@@ -162,7 +163,7 @@ public abstract class AbstractOnDiskBenchmark
         final int[] postings = IntStream.range(0, rows).map(this::toPosting).toArray();
         final ArrayPostingList postingList = new ArrayPostingList(postings);
 
-        try (PostingsWriter writer = new PostingsWriter(indexDescriptor, indexContext))
+        try (PostingsWriter writer = new PostingsWriter(indexDescriptor.newPerIndexGroupWriter(indexContext)))
         {
             long summaryPosition = writer.write(postingList);
             writer.complete();
@@ -182,7 +183,7 @@ public abstract class AbstractOnDiskBenchmark
 
     private void writeSSTableComponents(int rows) throws IOException
     {
-        SSTableComponentsWriter writer = new SSTableComponentsWriter(indexDescriptor);
+        SSTableComponentsWriter writer = new SSTableComponentsWriter(indexDescriptor.newPerSSTableGroupWriter());
         for (int i = 0; i < rows; i++)
             writer.recordCurrentTokenOffset(toToken(i), toOffset(i));
 
@@ -191,8 +192,9 @@ public abstract class AbstractOnDiskBenchmark
 
     protected final LongArray openRowIdToTokenReader() throws IOException
     {
-        MetadataSource source = MetadataSource.loadGroupMetadata(indexDescriptor);
-        NumericValuesMeta tokensMeta = new NumericValuesMeta(source.get(indexDescriptor.componentFileName(IndexComponent.TOKEN_VALUES)));
+        ComponentGroup.Reader group = indexDescriptor.perSSTableGroup();
+        MetadataSource source = MetadataSource.loadMetadata(group);
+        NumericValuesMeta tokensMeta = new NumericValuesMeta(source.get(group.get(IndexComponent.TOKEN_VALUES)));
         return new BlockPackedReader(token, tokensMeta).open();
     }
 }

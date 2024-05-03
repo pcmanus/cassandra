@@ -32,6 +32,7 @@ import org.apache.cassandra.db.marshal.ByteBufferAccessor;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.index.sai.disk.PrimaryKeyMap;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.LongArray;
@@ -86,16 +87,17 @@ public class RowAwarePrimaryKeyMap implements PrimaryKeyMap
         {
             try
             {
-                MetadataSource metadataSource = MetadataSource.loadGroupMetadata(indexDescriptor);
-                NumericValuesMeta tokensMeta = new NumericValuesMeta(metadataSource.get(indexDescriptor.componentFileName(IndexComponent.TOKEN_VALUES)));
-                SortedTermsMeta sortedTermsMeta = new SortedTermsMeta(metadataSource.get(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCKS)));
-                NumericValuesMeta blockOffsetsMeta = new NumericValuesMeta(metadataSource.get(indexDescriptor.componentFileName(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS)));
+                ComponentGroup.Reader perSSTableGroup = indexDescriptor.perSSTableGroup();
+                MetadataSource metadataSource = MetadataSource.loadMetadata(perSSTableGroup);
+                NumericValuesMeta tokensMeta = new NumericValuesMeta(metadataSource.get(perSSTableGroup.get(IndexComponent.TOKEN_VALUES)));
+                SortedTermsMeta sortedTermsMeta = new SortedTermsMeta(metadataSource.get(perSSTableGroup.get(IndexComponent.PRIMARY_KEY_BLOCKS)));
+                NumericValuesMeta blockOffsetsMeta = new NumericValuesMeta(metadataSource.get(perSSTableGroup.get(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS)));
 
-                token = indexDescriptor.createPerSSTableFileHandle(IndexComponent.TOKEN_VALUES);
+                token = perSSTableGroup.get(IndexComponent.TOKEN_VALUES).createFileHandle();
                 this.tokenReaderFactory = new BlockPackedReader(token, tokensMeta);
-                this.termsDataBlockOffsets = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS);
-                this.termsData = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_BLOCKS);
-                this.termsTrie = indexDescriptor.createPerSSTableFileHandle(IndexComponent.PRIMARY_KEY_TRIE);
+                this.termsDataBlockOffsets = perSSTableGroup.get(IndexComponent.PRIMARY_KEY_BLOCK_OFFSETS).createFileHandle();
+                this.termsData = perSSTableGroup.get(IndexComponent.PRIMARY_KEY_BLOCKS).createFileHandle();
+                this.termsTrie = perSSTableGroup.get(IndexComponent.PRIMARY_KEY_TRIE).createFileHandle();
                 this.sortedTermsReader = new SortedTermsReader(termsData, termsDataBlockOffsets, termsTrie, sortedTermsMeta, blockOffsetsMeta);
                 this.partitioner = sstable.metadata().partitioner;
                 this.primaryKeyFactory = indexDescriptor.primaryKeyFactory;

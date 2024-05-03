@@ -205,8 +205,7 @@ public class SegmentsSystemViewTest extends SAITester
             {
                 SSTableReader sstable = sstableIndex.getSSTable();
 
-                IndexDescriptor indexDescriptor = IndexDescriptor.createFrom(sstable);
-                indexDescriptor.hasComponent(IndexComponent.COLUMN_COMPLETION_MARKER, index.getIndexContext());
+                IndexDescriptor indexDescriptor = IndexDescriptor.create(sstable);
 
                 if (TypeUtil.isLiteral(sstableIndex.getIndexContext().getValidator()))
                 {
@@ -227,7 +226,7 @@ public class SegmentsSystemViewTest extends SAITester
     private void addComponentSizeToMap(HashMap<String, Long> map, IndexComponent key, IndexContext indexContext, IndexDescriptor indexDescriptor)
     {
         map.compute(key.name(), (typeName, acc) -> {
-            final long size = indexDescriptor.sizeOnDiskOfPerIndexComponent(key, indexContext);
+            final long size = indexDescriptor.perIndexGroup(indexContext).get(key).file().length();
             return acc == null ? size : size + acc;
         });
     }

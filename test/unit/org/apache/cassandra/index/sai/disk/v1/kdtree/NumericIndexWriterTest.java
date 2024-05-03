@@ -31,6 +31,7 @@ import org.apache.cassandra.index.sai.SAITester;
 import org.apache.cassandra.index.sai.disk.MemtableTermsIterator;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.IndexWriterConfig;
@@ -87,8 +88,8 @@ public class NumericIndexWriterTest extends SaiRandomizedTest
 
         SegmentMetadata.ComponentMetadataMap indexMetas;
 
-        try (NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        try (NumericIndexWriter writer = new NumericIndexWriter(group,
                                                                 Integer.BYTES,
                                                                 docCount, docCount,
                                                                 IndexWriterConfig.defaultConfig("test")))
@@ -96,8 +97,8 @@ public class NumericIndexWriterTest extends SaiRandomizedTest
             indexMetas = writer.writeAll(pointValues);
         }
 
-        final FileHandle kdtreeHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-        final FileHandle kdtreePostingsHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+        final FileHandle kdtreeHandle = group.get(IndexComponent.KD_TREE).createFileHandle();
+        final FileHandle kdtreePostingsHandle = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
 
         try (BKDReader reader = new BKDReader(indexContext,
                                               kdtreeHandle,
@@ -139,8 +140,8 @@ public class NumericIndexWriterTest extends SaiRandomizedTest
                                                        .fromTermEnum(termEnum, Int32Type.instance);
 
         SegmentMetadata.ComponentMetadataMap indexMetas;
-        try (NumericIndexWriter writer = new NumericIndexWriter(indexDescriptor,
-                                                                indexContext,
+        ComponentGroup.Writer group = indexDescriptor.newPerIndexGroupWriter(indexContext);
+        try (NumericIndexWriter writer = new NumericIndexWriter(group,
                                                                 TypeUtil.fixedSizeOf(Int32Type.instance),
                                                                 maxSegmentRowId, maxSegmentRowId,
                                                                 IndexWriterConfig.defaultConfig("test")))
@@ -148,8 +149,8 @@ public class NumericIndexWriterTest extends SaiRandomizedTest
             indexMetas = writer.writeAll(pointValues);
         }
 
-        final FileHandle kdtreeHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE, indexContext);
-        final FileHandle kdtreePostingsHandle = indexDescriptor.createPerIndexFileHandle(IndexComponent.KD_TREE_POSTING_LISTS, indexContext);
+        final FileHandle kdtreeHandle = group.get(IndexComponent.KD_TREE).createFileHandle();
+        final FileHandle kdtreePostingsHandle = group.get(IndexComponent.KD_TREE_POSTING_LISTS).createFileHandle();
 
         try (BKDReader reader = new BKDReader(indexContext,
                                               kdtreeHandle,

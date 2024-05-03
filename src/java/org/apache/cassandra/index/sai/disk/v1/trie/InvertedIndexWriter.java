@@ -28,6 +28,7 @@ import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.cassandra.index.sai.IndexContext;
 import org.apache.cassandra.index.sai.disk.PostingList;
 import org.apache.cassandra.index.sai.disk.TermsIterator;
+import org.apache.cassandra.index.sai.disk.format.ComponentGroup;
 import org.apache.cassandra.index.sai.disk.format.IndexComponent;
 import org.apache.cassandra.index.sai.disk.format.IndexDescriptor;
 import org.apache.cassandra.index.sai.disk.v1.SegmentMetadata;
@@ -45,10 +46,10 @@ public class InvertedIndexWriter implements Closeable
     private final PostingsWriter postingsWriter;
     private long postingsAdded;
 
-    public InvertedIndexWriter(IndexDescriptor indexDescriptor, IndexContext indexContext) throws IOException
+    public InvertedIndexWriter(ComponentGroup.Writer groupWriter) throws IOException
     {
-        this.termsDictionaryWriter = new TrieTermsDictionaryWriter(indexDescriptor, indexContext);
-        this.postingsWriter = new PostingsWriter(indexDescriptor, indexContext);
+        this.termsDictionaryWriter = new TrieTermsDictionaryWriter(groupWriter);
+        this.postingsWriter = new PostingsWriter(groupWriter);
     }
 
     /**
