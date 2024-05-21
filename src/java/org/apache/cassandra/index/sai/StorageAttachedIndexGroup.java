@@ -263,7 +263,12 @@ public class StorageAttachedIndexGroup implements Index.Group, INotificationCons
         // 0 for new sstables, but may not be for rebuilds. To handle that, we rely on the same logic used when we do
         // write the new components (`IndexDescriptor.newPerSSTableGroupWriter`/`IndexDescriptor.newPerIndexGroupWriter`),
         // even if we don't write anything at that point.
-        // Do note that we create an `IndexDescriptor` from scratch, and do not look in the context manager for an
+        // Do note that we create an `IndexDescriptor` from scratch, rather than getting the one from the context
+        // manager, because in some cases, the underlying sstable will simply not exist yet (and when that's the case,
+        // we don't want to populate the context just yet). It will exist if this is called as part of a rebuild or is
+        // the build of a new index on an existing sstable, but this is also called for sstables that we're about to
+        // flush or about to create as result of compaction. Of course, we could it from the context in the case of
+        // existing stables, and create it otherwise, but it doesn't feel worth bothering here.
         IndexDescriptor indexDescriptor = IndexDescriptor.create(descriptor, metadata);
         Set<Component> components = indexDescriptor
                                     .newPerSSTableGroupWriter()
